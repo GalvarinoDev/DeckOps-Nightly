@@ -71,7 +71,7 @@ DeckOps installs four controller templates into Steam during setup - two gyro la
 
 ### 📟 Steam Deck LCD - Plutonium Offline Play
 
-Plutonium's dedicated servers are only stable on Steam Deck OLED. LCD users wanting Plutonium's improved campaigns or offline Zombies should check out **[PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher)** by framilano.
+Plutonium's dedicated servers are only available on Steam Deck OLED. LCD users wanting Plutonium's improved campaigns or offline Zombies should check out **[PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher)** by framilano.
 
 ---
 
