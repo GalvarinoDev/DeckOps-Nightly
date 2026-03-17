@@ -18,11 +18,13 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 
 1. Press the Steam button -> **Power** -> **Switch to Desktop**
 
-2. Download the **[DeckOps file](https://github.com/GalvarinoDev/DeckOps/releases/download/v1/DeckOps.desktop.download)** from this page
+2. Open a browser and navigate to this GitHub page
 
-3. Right-click the file -> **Properties** -> **Permissions** -> tick **"Is executable"** -> OK
+3. Download the **[DeckOps file](https://github.com/GalvarinoDev/DeckOps/releases/download/v1/DeckOps.desktop.download)**
 
-4. Double-click it
+4. Right-click the file -> **Properties** -> **Permissions** -> tick **"Is executable"** -> OK
+
+5. Double-click it
    - **First time:** DeckOps installs automatically
    - **Already installed:** A menu appears - choose to Launch, Reinstall, or Uninstall
 
@@ -34,14 +36,8 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 
 ## 📋 Requirements
 
-- Steam Deck running SteamOS
-- GE-Proton will be automatically downloaded and installed by DeckOps if not already present
+- Each supported game must be **installed through Steam and launched at least once** in the correct modes before running DeckOps - see the table below. DeckOps will show which games aren't ready and prevent you from selecting them.
 - Plutonium games require a free account at [plutonium.pw](https://plutonium.pw)
-- Each supported game must be **installed through Steam and launched at least once** before running DeckOps - see the table below for which modes need to be launched
-
-> DeckOps will show which games haven't been launched yet and prevent you from selecting them until they're ready.
-
-> **GE-Proton:** If you already have GE-Proton installed (e.g. via ProtonUp-Qt), DeckOps will use it. If a newer version is available it will be downloaded automatically.
 
 ---
 
@@ -58,23 +54,15 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 | Black Ops | Campaign **and** Multiplayer |
 | Black Ops II | Multiplayer **and** Zombies |
 
-> CoD4 Singleplayer and Multiplayer share the same Steam appid - both modes must be launched so DeckOps can set up IW3SP-MOD (SP) and CoD4x (MP) correctly.
-
-> MW2 and MW3 Campaign are launched natively through Steam - no extra steps needed for those.
-
 ---
 
 ## ⚠️ After Installation
-
-**Launch Steam in Desktop Mode before switching to Game Mode.** This lets Steam reload the config changes DeckOps made. Then switch to Game Mode and play normally.
 
 **If Steam asks about cloud saves, choose Keep Local.** DeckOps writes display and controller configs locally - choosing Upload or letting Steam overwrite will undo them.
 
 **When launching Modern Warfare 1 or World at War for the first time after DeckOps install, Steam will ask which mode you want to launch.** Select Singleplayer or Campaign and set it as your default. Multiplayer for these games launches via the DeckOps shortcuts in your library instead.
 
-**Black Ops II graphics settings must be set manually.** BO2 config files are encrypted and cannot be written by DeckOps. Set your resolution and display settings in-game after launching for the first time.
-
-> DeckOps sets GE-Proton as the compatibility tool for all supported games. Other games in your library are not affected.
+**Black Ops II config files are encrypted and cannot be written by DeckOps.** Set your resolution and display settings in-game after launching for the first time.
 
 ---
 
@@ -93,7 +81,7 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 | Black Ops II - Campaign | via Steam | LCD + OLED | SP | ✅ | ❌ | ✅ |
 | Black Ops II - Multiplayer & Zombies | Plutonium | OLED only | MP / ZM | ✅ | ✅ | ✅ |
 
-> Gyro is implemented via Steam Input and works on all titles regardless of native client support. During setup you'll choose between **Hold** (gyro active while R5 is held) or **Toggle** (R5 press turns gyro on/off). You can change this anytime in **Settings → Re-apply Controller Profiles**.
+> Gyro aiming works on all titles via Steam Input. Choose **Hold** (R5 held) or **Toggle** (R5 press) during setup. Change anytime in **Settings -> Re-apply Controller Profiles**.
 
 > **Steam Deck LCD:** Plutonium online servers require OLED. For offline Campaign and Zombies on LCD, see [PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher).
 
@@ -104,11 +92,8 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 **Modern Warfare 1 Multiplayer won't launch or crashes on first run?**
 This is normal - it needs to be launched three times through Steam to finish setup. Launch it once, let it close, launch it again, let it close, then on the third launch it will work.
 
-**Game is showing the wrong resolution or display settings?**
-Go to **Settings -> Repair Shortcuts** - this will also re-apply the optimal display config for each game.
-
-**Shortcuts not using GE-Proton?**
-Go to **Settings -> Repair Shortcuts** to re-apply GE-Proton and controller configs.
+**Game is showing the wrong resolution, display settings, or shortcuts not using GE-Proton?**
+Go to **Settings -> Repair Shortcuts** to re-apply GE-Proton, controller configs, and optimal display settings for each game.
 
 **Controller profiles not working?**
 Go to **Settings -> Re-apply Controller Profiles** to reinstall controller templates.
@@ -123,9 +108,11 @@ Choose **Keep Local** to preserve DeckOps settings.
 
 ## Credits
 
-DeckOps is an installer. The projects below are what actually make it work.
-
 **[PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher)** - Original inspiration for DeckOps.
+
+---
+
+**DeckOps is an installer. The projects below are what actually make it work.**
 
 **[Plutonium](https://plutonium.pw)** - MW3, World at War, Black Ops, Black Ops II. 💰 [Donate](https://forum.plutonium.pw/donate)
 
