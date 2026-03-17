@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Bringing the golden era of FPS to your Steam Deck, no terminal required.
+  Bringing the golden age of FPS to your Steam Deck, no terminal required.
 </p>
 
 ---
@@ -24,7 +24,7 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 
 4. Double-click it
    - **First time:** DeckOps installs automatically
-   - **Already installed:** A menu appears — choose to Launch, Reinstall, or Uninstall
+   - **Already installed:** A menu appears - choose to Launch, Reinstall, or Uninstall
 
 > Keep the DeckOps file on your Deck. Double-clicking it is how you launch, reinstall, or uninstall DeckOps in the future.
 
@@ -32,12 +32,12 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 
 ---
 
-## Requirements
+## 📋 Requirements
 
 - Steam Deck running SteamOS
 - GE-Proton will be automatically downloaded and installed by DeckOps if not already present
 - Plutonium games require a free account at [plutonium.pw](https://plutonium.pw)
-- Each supported game must be **installed through Steam and launched at least once** before running DeckOps — see the table below for which modes need to be launched
+- Each supported game must be **installed through Steam and launched at least once** before running DeckOps - see the table below for which modes need to be launched
 
 > DeckOps will show which games haven't been launched yet and prevent you from selecting them until they're ready.
 
@@ -58,7 +58,9 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 | Black Ops | Campaign **and** Multiplayer |
 | Black Ops II | Multiplayer **and** Zombies |
 
-> MW2 and MW3 Campaign are launched natively through Steam — no extra steps needed for those.
+> CoD4 Singleplayer and Multiplayer share the same Steam appid - both modes must be launched so DeckOps can set up IW3SP-MOD (SP) and CoD4x (MP) correctly.
+
+> MW2 and MW3 Campaign are launched natively through Steam - no extra steps needed for those.
 
 ---
 
@@ -66,9 +68,7 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 
 **Launch Steam in Desktop Mode before switching to Game Mode.** This lets Steam reload the config changes DeckOps made. Then switch to Game Mode and play normally.
 
-**If Steam asks about cloud saves, choose Keep Local.** DeckOps writes display and controller configs locally — choosing Upload or letting Steam overwrite will undo them.
-
-**CoD4 Multiplayer requires two launches to finish setup.** Launch it once through Steam, let it close on its own, then launch it again. This is normal.
+**If Steam asks about cloud saves, choose Keep Local.** DeckOps writes display and controller configs locally - choosing Upload or letting Steam overwrite will undo them.
 
 > DeckOps sets GE-Proton as the compatibility tool for all supported games. Other games in your library are not affected.
 
@@ -84,8 +84,8 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 | Modern Warfare 2 - Multiplayer | iw4x | LCD + OLED | MP | ✅ | ✅ | ✅ |
 | Modern Warfare 3 - Campaign | via Steam | LCD + OLED | SP | ✅ | ❌ | ✅ |
 | Modern Warfare 3 - Multiplayer | Plutonium | OLED only | MP | ✅ | ✅ | ✅ |
-| World at War | Plutonium | OLED only | SP / MP / ZM | ✅ | ✅ | ✅ |
-| Black Ops | Plutonium | OLED only | SP / MP / ZM | ✅ | ✅ | ✅ |
+| World at War - Campaign & Multiplayer & Zombies | Plutonium | OLED only | SP / MP / ZM | ✅ | ✅ | ✅ |
+| Black Ops - Campaign & Multiplayer & Zombies | Plutonium | OLED only | SP / MP / ZM | ✅ | ✅ | ✅ |
 | Black Ops II - Campaign | via Steam | LCD + OLED | SP | ✅ | ❌ | ✅ |
 | Black Ops II - Multiplayer & Zombies | Plutonium | OLED only | MP / ZM | ✅ | ✅ | ✅ |
 
@@ -97,23 +97,23 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 
 ## 🔧 Troubleshooting
 
-**CoD4 Multiplayer won't launch or crashes on first run?**
-This is normal — it needs to be launched twice through Steam to finish setup. Launch it once, let it close, then launch again.
+**Modern Warfare 1 Multiplayer won't launch or crashes on first run?**
+This is normal - it needs to be launched three times through Steam to finish setup. Launch it once, let it close, launch it again, let it close, then on the third launch it will work.
+
+**Game is showing the wrong resolution or display settings?**
+Go to **Settings -> Repair Shortcuts** - this will also re-apply the optimal display config for each game.
 
 **Shortcuts not using GE-Proton?**
-Go to **Settings → Repair Shortcuts** to re-apply GE-Proton and controller configs.
+Go to **Settings -> Repair Shortcuts** to re-apply GE-Proton and controller configs.
 
 **Controller profiles not working?**
-Go to **Settings → Re-apply Controller Profiles** to reinstall controller templates.
+Go to **Settings -> Re-apply Controller Profiles** to reinstall controller templates.
 
 **Game asks for Safe Mode or to override config?**
-Choose **No** — DeckOps has already configured optimal settings.
+Choose **No** - DeckOps has already configured optimal settings.
 
 **Cloud save out of sync?**
 Choose **Keep Local** to preserve DeckOps settings.
-
-**Plutonium login not persisting across games?**
-Go to **Settings → Sync to All Prefixes** after logging in to copy your credentials to all game prefixes.
 
 ---
 
@@ -137,10 +137,8 @@ Steam artwork from [SteamGridDB](https://www.steamgriddb.com) - thanks to Moohoo
 
 ---
 
+> DeckOps is not affiliated with Activision, Infinity Ward, Treyarch, or Valve. All trademarks belong to their respective owners. A legitimate Steam copy of each game is required. DeckOps does not provide or distribute game files.
+
 ## License
 
 [MIT License](LICENSE)
-
-DeckOps is not affiliated with Activision, Infinity Ward, Treyarch, or Valve. All trademarks belong to their respective owners.
-
-> A legitimate Steam copy of each game is required. DeckOps does not provide or distribute game files.
