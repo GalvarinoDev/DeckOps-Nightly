@@ -58,7 +58,9 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 
 ## ⚠️ After Installation
 
-**If Steam asks about cloud saves, choose Keep Local.** DeckOps writes display and controller configs locally - choosing Upload or letting Steam overwrite will undo them.
+**Do not open Steam in Desktop Mode. Switch to Game Mode and launch every modded game at least once.** Steam Cloud will overwrite your DeckOps setup if you open Steam while in Desktop Mode, which will require you to uninstall DeckOps and reinstall. Once every modded game has been launched in Game Mode at least once, it is safe to use Steam in Desktop Mode.
+
+If Steam asks about cloud saves, choose **Keep Local**. If a game asks for Safe Mode, choose **No**.
 
 **When launching Modern Warfare 1 or World at War for the first time after DeckOps install, Steam will ask which mode you want to launch.** Select Singleplayer or Campaign and set it as your default. Multiplayer for these games launches via the DeckOps shortcuts in your library instead.
 
