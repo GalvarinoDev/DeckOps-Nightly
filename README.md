@@ -24,7 +24,7 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 | Modern Warfare 3 | MP | Plutonium | OLED only | ✅ | ✅ | ✅ | MP |
 | World at War | SP / MP / ZM | Plutonium | OLED only | ✅ | ✅ | ✅ | SP + MP |
 | Black Ops | SP / MP / ZM | Plutonium | OLED only | ✅ | ✅ | ✅ | SP + MP |
-| Black Ops II | MP / ZM | Plutonium | OLED only | ✅ | ✅ | ✅ | MP + Zombies |
+| Black Ops II | MP / ZM | Plutonium | OLED only | ✅ | ✅ | ✅ | MP + ZM |
 
 > All titles support controller and gyro via Steam Input. Choose **Hold** (R5 held) or **Toggle** (R5 press) during setup. Aim assist is not available for Steam-native modes (MW2 SP, MW3 SP, BO2 SP) yet.
 
