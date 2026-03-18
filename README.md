@@ -51,7 +51,7 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 | Modern Warfare 2 | Multiplayer |
 | Modern Warfare 3 | Multiplayer |
 | World at War | Campaign **and** Multiplayer |
-| Black Ops | Campaign **and** Multiplayer |
+| Black Ops | Campaign **and** Multiplayer (these are separate Steam library entries - launch both) |
 | Black Ops II | Multiplayer **and** Zombies |
 
 ---
@@ -93,16 +93,22 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 This is normal - it needs to be launched three times through Steam to finish setup. Launch it once, let it close, launch it again, let it close, then on the third launch it will work.
 
 **Game is showing the wrong resolution, display settings, or shortcuts not using GE-Proton?**
-Go to **Settings -> Repair Shortcuts** to re-apply GE-Proton, controller configs, and optimal display settings for each game.
+Display configs are only applied during initial setup. To fix resolution or display issues, go to **Settings -> Repair Shortcuts** to re-apply GE-Proton and controller configs, then reinstall DeckOps to re-apply display settings.
 
 **Controller profiles not working?**
 Go to **Settings -> Re-apply Controller Profiles** to reinstall controller templates.
+
+**Plutonium login expired or not working?**
+Go to **Settings -> Reset Credentials** to clear your saved login, then launch any Plutonium game to log in again. After logging in, use **Settings -> Sync to All Prefixes** to copy credentials to all game prefixes.
 
 **Game asks for Safe Mode or to override config?**
 Choose **No** - DeckOps has already configured optimal settings.
 
 **Cloud save out of sync?**
 Choose **Keep Local** to preserve DeckOps settings.
+
+**Something went wrong during install?**
+Check the install log at the bottom of the install screen. It shows exactly which configs were applied, skipped, or failed. If reporting a bug, include the full log output.
 
 ---
 
