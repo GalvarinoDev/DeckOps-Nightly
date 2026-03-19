@@ -68,8 +68,6 @@ Plutonium games require a free account at [plutonium.pw](https://plutonium.pw).
 
 ## Credits
 
-**[PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher)** - Original inspiration for DeckOps.
-
 ---
 DeckOps is an installer. This project wouldn't exist without the years of foundational work from these teams, they truly deserve all of the credit:
 
@@ -82,6 +80,9 @@ DeckOps is an installer. This project wouldn't exist without the years of founda
 **[T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release)** - Black Ops II Singleplayer client by [Rattpak](https://github.com/Rattpak).
 
 **[Plutonium](https://plutonium.pw)** - MW3, World at War, Black Ops, Black Ops II. 💰 [Donate](https://forum.plutonium.pw/donate)
+
+---
+**[PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher)** - Original inspiration for DeckOps.
 
 Steam artwork from [SteamGridDB](https://www.steamgriddb.com) - thanks to [Moohoo](https://www.steamgriddb.com/profile/76561198009314736), [jarvis](https://www.steamgriddb.com/profile/76561198103947979), [Ramjez](https://www.steamgriddb.com/profile/76561198122547176), [Over](https://www.steamgriddb.com/profile/76561198049670875), [Uravity-PRO](https://www.steamgriddb.com/profile/76561198167607660), and [Maxine](https://www.steamgriddb.com/profile/76561198130550992).
 
