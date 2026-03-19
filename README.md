@@ -26,9 +26,7 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 | Black Ops | SP / MP / ZM | Plutonium | OLED only | ✅ | ✅ | ✅ | SP + MP |
 | Black Ops II | MP / ZM | Plutonium | OLED only | ✅ | ✅ | ✅ | MP + ZM |
 
-> All titles support controller and gyro via Steam Input. Choose **Hold** (R5 held) or **Toggle** (R5 press) during setup. Aim assist is not available for Steam-native modes (MW2 SP, MW3 SP, BO2 SP) yet.
-
-> **Black Ops II MP and Zombies** use a dedicated controller layout that does not support dual input - gyro feel may differ from other titles.
+> All titles support controller and gyro via Steam Input. Choose **Hold** (R5 held) or **Toggle** (R5 press) during setup. Aim assist is not available for Steam-native modes (MW2 SP, MW3 SP, BO2 SP) yet. Black Ops II uses a dedicated controller layout that does not support dual input.
 
 > **Steam Deck LCD:** Plutonium online servers require OLED. For offline Campaign and Zombies on LCD, see [PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher).
 
@@ -56,12 +54,12 @@ Plutonium games require a free account at [plutonium.pw](https://plutonium.pw). 
 
 ## ⚠️ After Installation
 
-**Steam will launch automatically - ignore it and return to Game Mode.** Do not open Steam in Desktop Mode until every modded game has been launched at least once in Game Mode, or Steam Cloud will overwrite your setup.
-
-If asked about cloud saves choose **Keep Local**. If asked about Safe Mode choose **No**.
+**Steam will launch automatically - ignore it and return to Game Mode.** Do not use Steam in Desktop Mode until every modded game has been launched at least once in Game Mode, or Steam Cloud will overwrite your setup. If asked about cloud saves choose **Keep Local**. If asked about launching in safe mode or changing your settings due to a hardware change choose **No**.
 
 - **MW1 MP** requires two Steam launches to finish setup, then runs normally on the third.
-- **BO2** display settings must be set manually in-game. MP and Zombies configs are written automatically - Singleplayer is encrypted and cannot be set by DeckOps.
+- **BO2 SP** display settings must be set manually in-game. MP and ZM are configured automatically.
+- The latest GE-Proton is downloaded and set automatically for all games.
+- XACT audio is installed automatically via Protontricks for WaW, BO1 SP, and BO1 MP. Protontricks will be downloaded via Flatpak if not already present.
 
 ---
 
