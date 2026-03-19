@@ -18,17 +18,25 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 
 | Game | Modes | Client | Deck Model | Aim Assist | Gyro |
 |---|---|---|---|---|---|
-| Modern Warfare 1 | SP | IW3SP-MOD | LCD + OLED | ✅ | ✅ |
-| Modern Warfare 1 | MP | CoD4x | LCD + OLED | ❌ | ✅ |
-| Modern Warfare 2 | MP | iw4x | LCD + OLED | ✅ | ✅ |
-| Modern Warfare 3 | MP | Plutonium | OLED only | ✅ | ✅ |
-| World at War | SP/ZM + MP | Plutonium | OLED only | ✅ | ✅ |
-| Black Ops | SP/ZM + MP | Plutonium | OLED only | ✅ | ✅ |
-| Black Ops II | ZM + MP | Plutonium | OLED only | ✅ | ✅ |
+| Modern Warfare 1 | SP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) | LCD + OLED | ✅ | ✅ |
+| Modern Warfare 1 | MP | [CoD4x](https://cod4x.ovh) | LCD + OLED | ❌ | ✅ |
+| Modern Warfare 2 | MP | [iw4x](https://iw4x.io) | LCD + OLED | ✅ | ✅ |
+| Modern Warfare 3 | MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
+| World at War | SP/ZM + MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
+| Black Ops | SP/ZM + MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
+| Black Ops II | ZM + MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
 
 > **Steam Deck LCD:** Plutonium online servers require OLED. For offline Campaign and Zombies on LCD, see [PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher).
 
 > All titles support controller and gyro via Steam Input. Choose **Hold** (R5 held) or **Toggle** (R5 press) during setup. Aim assist is not available for Steam-native modes (MW2 SP, MW3 SP, BO2 SP) yet. Black Ops II uses a dedicated controller layout that does not support dual input.
+
+---
+
+## 🔜 Coming Soon
+
+| Game | Modes | Client | Deck Model | Aim Assist | Gyro |
+|---|---|---|---|---|---|
+| Black Ops II | SP | [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) | LCD + OLED | ✅ | ✅ |
 
 ---
 
@@ -69,13 +77,15 @@ Plutonium games require a free account at [plutonium.pw](https://plutonium.pw). 
 
 ---
 
-**[Plutonium](https://plutonium.pw)** - MW3, World at War, Black Ops, Black Ops II. 💰 [Donate](https://forum.plutonium.pw/donate)
+**[CoD4x](https://cod4x.ovh)** - Call of Duty 4. [GitHub](https://github.com/callofduty4x)
+
+**[IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod)** - CoD4 Singleplayer client by [JerryALT](https://gitea.com/JerryALT).
 
 **[iw4x](https://iw4x.io)** - Modern Warfare 2. [GitHub](https://github.com/iw4x)
 
-**[CoD4x](https://cod4x.ovh)** - Call of Duty 4. [GitHub](https://github.com/callofduty4x)
+**[T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release)** - Black Ops II Singleplayer client by [Rattpak](https://github.com/Rattpak).
 
-**[IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod)** - CoD4 Campaign mod by JerryALT.
+**[Plutonium](https://plutonium.pw)** - MW3, World at War, Black Ops, Black Ops II. 💰 [Donate](https://forum.plutonium.pw/donate)
 
 Steam artwork from [SteamGridDB](https://www.steamgriddb.com) - thanks to [Moohoo](https://www.steamgriddb.com/profile/76561198009314736), [jarvis](https://www.steamgriddb.com/profile/76561198103947979), [Ramjez](https://www.steamgriddb.com/profile/76561198122547176), [Over](https://www.steamgriddb.com/profile/76561198049670875), [Uravity-PRO](https://www.steamgriddb.com/profile/76561198167607660), and [Maxine](https://www.steamgriddb.com/profile/76561198130550992).
 
