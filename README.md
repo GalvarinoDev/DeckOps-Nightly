@@ -41,8 +41,9 @@ DeckOps automates the installation of iw4x, CoD4x, IW3SP-MOD, and Plutonium on S
 ---
 
 ## ⚠️ Before You Install
+Before running DeckOps, launch each game through Steam in every mode shown in the table above. This creates the Proton prefix and starts shader cache downloads. Skipping this is the most common cause of install failures.
 
-Plutonium games require a free account at [plutonium.pw](https://plutonium.pw). Before running DeckOps, launch each game through Steam in every mode shown in the table above. This creates the Proton prefix and starts shader cache downloads. Skipping this is the most common cause of install failures.
+Plutonium games require a free account at [plutonium.pw](https://plutonium.pw). 
 
 ---
 
