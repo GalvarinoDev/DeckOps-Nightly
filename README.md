@@ -26,12 +26,16 @@ DeckOps automates the installation of CoD4x, IW3SP-MOD, iw4x, T6SP-Mod, and Plut
 | Black Ops | SP/ZM + MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
 | Modern Warfare 3 | SP | — | LCD + OLED | — | ✅ |
 | Modern Warfare 3 | MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
-| Black Ops II | SP | 🚧[T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release)🚧 | LCD + OLED | ✅ | ✅ |
+| Black Ops II | SP | [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) | LCD + OLED | ✅ | ✅ |
 | Black Ops II | ZM + MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
 
 > **Steam Deck LCD:** Plutonium online servers require OLED. For offline Campaign and Zombies on LCD, see [PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher).
 
-> All titles support controller and gyro via Steam Input. Choose **Hold** (R5 held) or **Toggle** (R5 press) during setup. Aim assist is not available for Steam-native modes (MW2 SP, MW3 SP, BO2 SP) yet. Black Ops II uses a dedicated controller layout that does not support dual input so Gyro feels a little different from other games. T6SP-Mod is not yet implemented as it has not officially released.
+> All titles support controller and gyro via Steam Input. Choose **Hold** (R5 held) or **Toggle** (R5 press) during setup. Aim assist is not available for Steam-native modes (MW2 SP, MW3 SP, BO2 SP) yet. Black Ops II uses a dedicated controller layout that does not support dual input so Gyro feels a little different from other games. 
+
+>T6SP-Mod is not officially released so it is not yet implemented but will be available as soon as Developer confirms it is ready to ship.
+
+>CoD4x has a controller mod with aim assist but it is also not officially released yet so it will not be implemented yet.
 
 ---
 
