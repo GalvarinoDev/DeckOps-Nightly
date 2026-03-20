@@ -18,16 +18,16 @@ DeckOps automates the installation of CoD4x, IW3SP-MOD, iw4x, T6SP-Mod, and Plut
 
 | Game | Mode | Client | Deck | Aim Assist | Gyro |
 |---|---|---|---|---|---|
-| Modern Warfare 1 | SP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) | LCD + OLED | Yes | Yes |
-| Modern Warfare 1 | MP | [CoD4x](https://cod4x.ovh) | LCD + OLED | No | Yes |
-| World at War | SP + ZM + MP | [Plutonium](https://plutonium.pw) | OLED only | Yes | Yes |
-| Modern Warfare 2 | SP | No client | LCD + OLED | No | Yes |
-| Modern Warfare 2 | MP | [iw4x](https://iw4x.io) | LCD + OLED | Yes | Yes |
-| Black Ops | SP + ZM + MP | [Plutonium](https://plutonium.pw) | OLED only | Yes | Yes |
-| Modern Warfare 3 | SP | No client | LCD + OLED | No | Yes |
-| Modern Warfare 3 | MP | [Plutonium](https://plutonium.pw) | OLED only | Yes | Yes |
-| Black Ops II | SP | T6SP-Mod ¹ | LCD + OLED | Yes | Yes |
-| Black Ops II | ZM + MP | [Plutonium](https://plutonium.pw) | OLED only | Yes | Yes |
+| Modern Warfare 1 | SP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) | LCD + OLED | ✅ | ✅ |
+| Modern Warfare 1 | MP | [CoD4x](https://cod4x.ovh) | LCD + OLED | ❌ | ✅ |
+| World at War | SP + ZM + MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
+| Modern Warfare 2 | SP | No client | LCD + OLED | ❌ | ✅ |
+| Modern Warfare 2 | MP | [iw4x](https://iw4x.io) | LCD + OLED | ✅ | ✅ |
+| Black Ops | SP + ZM + MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
+| Modern Warfare 3 | SP | No client | LCD + OLED | ❌ | ✅ |
+| Modern Warfare 3 | MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
+| Black Ops II | SP | T6SP-Mod ¹ | LCD + OLED | ✅ | ✅ |
+| Black Ops II | ZM + MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
 
 > Plutonium online servers require an OLED Steam Deck. LCD users can still play offline Campaign and Zombies via [PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher).
 
