@@ -18,17 +18,17 @@ DeckOps automates the installation of CoD4x, IW3SP-MOD, iw4x, T6SP-Mod, and Plut
 
 | Game | Mode | Client | Deck | Aim Assist | Gyro |
 |---|---|---|---|---|---|
-| Modern Warfare 1 | SP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) | LCD + OLED | ✅ | ✅ |
-| Modern Warfare 1 | MP | [CoD4x](https://cod4x.ovh) | LCD + OLED | ❌ | ✅ |
-| World at War | SP + ZM | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
-| World at War | MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
+| Modern Warfare | SP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) | LCD + OLED | ✅ | ✅ |
+| Modern Warfare | MP | [CoD4x](https://cod4x.ovh) | LCD + OLED | ❌ | ✅ |
 | Modern Warfare 2 | SP | — | LCD + OLED | ❌ | ✅ |
 | Modern Warfare 2 | MP | [iw4x](https://iw4x.io) | LCD + OLED | ✅ | ✅ |
-| Black Ops | SP + ZM | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
-| Black Ops | MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
 | Modern Warfare 3 | SP | — | LCD + OLED | ❌ | ✅ |
 | Modern Warfare 3 | MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
-| Black Ops II | SP | T6SP-Mod ¹ | LCD + OLED | ✅ | ✅ |
+| World at War | SP + ZM | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
+| World at War | MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
+| Black Ops | SP + ZM | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
+| Black Ops | MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
+| Black Ops II | SP | [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) ¹ | LCD + OLED | ✅ | ✅ |
 | Black Ops II | ZM | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
 | Black Ops II | MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
 
@@ -36,7 +36,7 @@ DeckOps automates the installation of CoD4x, IW3SP-MOD, iw4x, T6SP-Mod, and Plut
 
 > All titles support controller and gyro via Steam Input. During setup, choose your gyro style: **Hold** (R5 held), **ADS** (gyro activates when you aim down sights), or **Toggle** (R5 press). Aim assist is unavailable for MW2 SP, MW3 SP, and BO2 SP.
 
-> ¹ Not yet implemented, will be added once the developer confirms it is ready to ship.
+> ¹ Not yet implemented. BO2 SP currently launches through vanilla Steam. T6SP-Mod support will be added once the developer confirms it is ready to ship.
 
 ---
 
