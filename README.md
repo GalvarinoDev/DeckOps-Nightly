@@ -34,7 +34,7 @@ DeckOps automates the installation of CoD4x, IW3SP-MOD, iw4x, T6SP-Mod, and Plut
 
 > Plutonium online servers require an OLED Steam Deck. LCD users can still play offline Campaign and Zombies via [PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher).
 
-> All titles support controller and gyro via Steam Input. During setup, choose your gyro style: Hold (R5 held) or Toggle (R5 press). Aim assist is unavailable for MW2 SP, MW3 SP, and BO2 SP. 
+> All titles support controller and gyro via Steam Input. During setup, choose your gyro style: **Hold** (R5 held), **ADS** (gyro activates when you aim down sights), or **Toggle** (R5 press). Aim assist is unavailable for MW2 SP, MW3 SP, and BO2 SP.
 
 > ¹ Not yet implemented, will be added once the developer confirms it is ready to ship.
 
@@ -43,7 +43,7 @@ DeckOps automates the installation of CoD4x, IW3SP-MOD, iw4x, T6SP-Mod, and Plut
 ## ⚠️ Before You Install
 Before running DeckOps, launch each game through Steam in every mode that includes a named client shown in the table above. This creates the Proton prefix and starts shader cache downloads. Skipping this is the most common cause of install failures.
 
-Plutonium games require a free account at [plutonium.pw](https://plutonium.pw). 
+Plutonium games require a free account at [plutonium.pw](https://plutonium.pw).
 
 ---
 
@@ -66,7 +66,7 @@ Plutonium games require a free account at [plutonium.pw](https://plutonium.pw).
 
 ## ⚠️ After Installation
 
-**DeckOps will switch you to Game Mode automatically.** The transition may take a moment, do not turn off your Steam Deck. Launch every modded game at least once before using Steam in Desktop Mode, or Steam Cloud will overwrite your setup. If asked about cloud saves choose **Keep Local**. If asked about launching in safe mode or changing your settings due to a hardware change choose **No**.
+**Click Continue when installation finishes — DeckOps will reopen Steam automatically.** Launch every modded game at least once before using Steam in Desktop Mode, or Steam Cloud will overwrite your setup. If asked about cloud saves choose **Keep Local**. If asked about launching in safe mode or changing your settings due to a hardware change choose **No**.
 
 - **MW1 & WaW:** Steam will ask which mode to launch on first run. Select Singleplayer or Campaign and set it as your default. Multiplayer for these games launches via the DeckOps shortcuts in your library instead.
 - **MW1 SP (IW3SP-MOD):** On first launch, the game will ask you to select a profile. Choose **Player**, this is the profile DeckOps created with your display settings. Creating a new profile will use default settings instead.
@@ -74,6 +74,46 @@ Plutonium games require a free account at [plutonium.pw](https://plutonium.pw).
 - **BO2 SP** display settings must be set manually in-game. MP and ZM are configured automatically.
 - The latest GE-Proton is downloaded and set automatically for all games.
 - XACT audio is installed automatically via Protontricks for WaW, BO1 SP, and BO1 MP. Protontricks will be downloaded via Flatpak if not already present.
+
+---
+
+## 🎮 Gyro Controls
+
+DeckOps installs a custom Neptune controller profile for every game. During setup you choose one of three gyro schemes — you can change this anytime in **Settings → Re-apply Controller Profiles**.
+
+| Scheme | How it works |
+|---|---|
+| **Hold** | Gyro is active while R5 (right grip) is held down |
+| **ADS** | Gyro activates when you aim down sights |
+| **Toggle** | Press R5 once to turn gyro on, press again to turn it off |
+
+MW1 MP, MW2 SP, and MW3 SP use an alternate KB+M-based profile to handle mouse-look correctly. All other games use the standard gamepad layout.
+
+---
+
+## 🛠️ My Games Screen
+
+The My Games screen shows every supported game and its current status. From here you can:
+
+- **Set Up** — run the install wizard for a game that is installed but not yet set up
+- **Update / Reinstall** — re-download and reinstall the mod client for a game already set up
+- **Open Folder** — open the game's install directory in the file manager, useful for manual modding or troubleshooting
+- **Install on Steam** — opens the Steam store page for games not yet in your library
+
+---
+
+## ⚙️ Settings
+
+| Option | What it does |
+|---|---|
+| Background Music | Toggle and adjust volume |
+| Reset Credentials | Clear your Plutonium login from the prefix |
+| Sync to All Prefixes | Copy your Plutonium login to all game prefixes |
+| Re-apply Controller Profiles | Re-apply your chosen gyro scheme to all games |
+| Repair Shortcuts | Recreate non-Steam shortcuts for CoD4 MP and WaW MP |
+| Re-apply Game Configs | Re-write display configs for all set-up games |
+| Full Uninstall | Remove everything DeckOps installed |
+| Reset DeckOps Config | Wipe DeckOps config and run setup again |
 
 ---
 
