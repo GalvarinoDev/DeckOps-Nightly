@@ -1888,7 +1888,7 @@ class SourceScreen(QWidget):
         cards = QHBoxLayout(); cards.setSpacing(20)
 
         steam_card = QFrame()
-        steam_card.setStyleSheet(f"QFrame{{background:{C_CARD};border:2px solid #33333F;border-radius:10px;}}")
+        steam_card.setStyleSheet(f"QFrame{{background:{C_CARD};border:2px solid #33333F;border-radius:10px;}}QLabel{{background:transparent;}}")
         sc = QVBoxLayout(steam_card); sc.setContentsMargins(24, 24, 24, 24); sc.setSpacing(10)
         rec = QPushButton("RECOMMENDED"); rec.setFont(font(9, True)); rec.setFixedHeight(24); rec.setEnabled(False)
         rec.setStyleSheet(f"QPushButton{{background:{C_IW};color:#FFF;border:none;border-radius:5px;padding:0 10px;}}QPushButton:disabled{{background:{C_IW};color:#FFF;}}")
@@ -1903,7 +1903,7 @@ class SourceScreen(QWidget):
         cards.addWidget(steam_card)
 
         own_card = QFrame()
-        own_card.setStyleSheet(f"QFrame{{background:{C_CARD};border:2px solid #33333F;border-radius:10px;}}")
+        own_card.setStyleSheet(f"QFrame{{background:{C_CARD};border:2px solid #33333F;border-radius:10px;}}QLabel{{background:transparent;}}")
         oc = QVBoxLayout(own_card); oc.setContentsMargins(24, 24, 24, 24); oc.setSpacing(10)
         adv = QPushButton("ADVANCED"); adv.setFont(font(9, True)); adv.setFixedHeight(24); adv.setEnabled(False)
         adv.setStyleSheet(f"QPushButton{{background:{C_TREY};color:#FFF;border:none;border-radius:5px;padding:0 10px;}}QPushButton:disabled{{background:{C_TREY};color:#FFF;}}")
@@ -1942,27 +1942,63 @@ class SourceScreen(QWidget):
         from detect_shortcuts import CANONICAL_NAMES
         from detect_games import GAMES
 
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        inner = QWidget(); inner_lay = QVBoxLayout(inner)
-        inner_lay.setSpacing(6); inner_lay.setContentsMargins(0, 0, 0, 0)
+        items = list(CANONICAL_NAMES.items())
+        COLS = 3
+        # All items except the last go into the grid; last is centered below
+        grid_items = items[:-1]
+        last_key, last_canonical = items[-1]
 
-        for key, canonical in CANONICAL_NAMES.items():
+        grid_widget = QWidget()
+        grid_lay = QGridLayout(grid_widget)
+        grid_lay.setSpacing(0)
+        grid_lay.setContentsMargins(0, 0, 0, 0)
+        grid_lay.setHorizontalSpacing(20)
+        grid_lay.setVerticalSpacing(0)
+
+        for i, (key, canonical) in enumerate(grid_items):
+            row_idx = i // COLS
+            col_idx = i % COLS
             meta = GAMES.get(key, {})
             exe  = meta.get("exe", "")
-            row  = QHBoxLayout(); row.setSpacing(10)
-            name_lbl = _lbl(canonical, 12, "#FFF", align=Qt.AlignLeft, wrap=False)
-            exe_lbl  = _lbl(exe, 10, "#555568", align=Qt.AlignLeft, wrap=False)
+            cell = QWidget()
+            cell_lay = QHBoxLayout(cell)
+            cell_lay.setContentsMargins(0, 4, 0, 4)
+            cell_lay.setSpacing(8)
+            name_lbl = _lbl(canonical, 11, "#FFF", align=Qt.AlignLeft, wrap=False)
+            exe_lbl  = _lbl(exe, 9, "#555568", align=Qt.AlignLeft, wrap=False)
             name_wrap = QWidget()
             nw_lay = QVBoxLayout(name_wrap); nw_lay.setContentsMargins(0,0,0,0); nw_lay.setSpacing(1)
             nw_lay.addWidget(name_lbl); nw_lay.addWidget(exe_lbl)
-            copy_btn = _btn("Copy", C_DARK_BTN, size=10, h=32); copy_btn.setFixedWidth(70)
+            copy_btn = _btn("Copy", C_DARK_BTN, size=10, h=28); copy_btn.setFixedWidth(64)
             copy_btn.clicked.connect(lambda _, n=canonical: self._copy(n))
-            row.addWidget(name_wrap, stretch=1); row.addWidget(copy_btn)
-            inner_lay.addLayout(row)
+            cell_lay.addWidget(name_wrap, stretch=1); cell_lay.addWidget(copy_btn)
+            cell.setStyleSheet("border-bottom:1px solid #252530;")
+            grid_lay.addWidget(cell, row_idx, col_idx)
 
-        inner_lay.addStretch()
-        scroll.setWidget(inner); nv.addWidget(scroll, stretch=1)
+        nv.addWidget(grid_widget)
+
+        # Last item centered in column 1 (middle of 3)
+        last_row_widget = QWidget()
+        last_row_lay = QHBoxLayout(last_row_widget)
+        last_row_lay.setContentsMargins(0, 0, 0, 0)
+        last_row_lay.setSpacing(0)
+        meta = GAMES.get(last_key, {})
+        exe  = meta.get("exe", "")
+        last_cell = QWidget()
+        last_cell.setStyleSheet("border-bottom:1px solid #252530;")
+        last_cell_lay = QHBoxLayout(last_cell)
+        last_cell_lay.setContentsMargins(0, 4, 0, 4)
+        last_cell_lay.setSpacing(8)
+        name_lbl = _lbl(last_canonical, 11, "#FFF", align=Qt.AlignLeft, wrap=False)
+        exe_lbl  = _lbl(exe, 9, "#555568", align=Qt.AlignLeft, wrap=False)
+        name_wrap = QWidget()
+        nw_lay = QVBoxLayout(name_wrap); nw_lay.setContentsMargins(0,0,0,0); nw_lay.setSpacing(1)
+        nw_lay.addWidget(name_lbl); nw_lay.addWidget(exe_lbl)
+        copy_btn = _btn("Copy", C_DARK_BTN, size=10, h=28); copy_btn.setFixedWidth(64)
+        copy_btn.clicked.connect(lambda _, n=last_canonical: self._copy(n))
+        last_cell_lay.addWidget(name_wrap, stretch=1); last_cell_lay.addWidget(copy_btn)
+        last_row_lay.addStretch(1); last_row_lay.addWidget(last_cell, stretch=1); last_row_lay.addStretch(1)
+        nv.addWidget(last_row_widget)
 
         cont_btn = _btn("Continue >>", C_IW, h=48)
         cont_btn.clicked.connect(lambda: self._pick("own"))
