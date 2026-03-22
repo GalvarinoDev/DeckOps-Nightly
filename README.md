@@ -34,17 +34,16 @@ DeckOps automates the installation of CoD4x, IW3SP-MOD, iw4x, T6SP-Mod, and Plut
 
 ## Microsoft Store, CD, or Other Storefronts
 
-If you purchased your games through the Microsoft Store, a CD copy, GOG, or any other storefront outside of Steam, you will need to add them to Steam as a non-Steam game before running DeckOps.
+DeckOps Nightly supports games purchased outside of Steam, including the Microsoft Store, CD copies, GOG, and other storefronts. To use this feature:
 
 1. Open Steam -> **Games** -> **Add a Non-Steam Game to My Library**
 2. Browse to your game executable and add it
-3. Run DeckOps
-4. Name the game exe as the name that DeckOps tells you to. (It will allow you to copy and paste)
-5. Close DeckOps
-3. Launch the game at least once through Steam before running DeckOps. This creates the prefix folder DeckOps needs to do its work
-4. Run DeckOps again as normal
+3. Launch the game at least once through Steam to create the Proton prefix
+4. Run DeckOps Nightly and select **My Own** when asked how you installed your games
 
-Support for non-Steam installations is experimental and actively being developed in this Nightly build.
+DeckOps will automatically detect your games by their exe name, rename the shortcuts to the correct titles, download Steam artwork, and set up mod clients, controller profiles, and display configs just like it does for Steam purchases. No manual renaming required.
+
+> This feature is experimental and actively being developed in the Nightly build.
 
 ---
 
