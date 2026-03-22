@@ -1,21 +1,20 @@
 """
 artwork.py - DeckOps Steam artwork downloader for non-Steam shortcuts
 
-Downloads official Steam artwork for games detected via the "My Own" path
-(CD, GOG, Microsoft Store, etc.) and writes it into each Steam user's
-grid directory under the correct shortcut appid filename so Steam displays
+Downloads artwork for games detected via the "My Own" path (CD, GOG,
+Microsoft Store, etc.) and writes it into each Steam user's grid
+directory under the correct shortcut appid filename so Steam displays
 it properly in the library.
 
-Artwork types downloaded per game:
-    <appid>p.jpg          — grid/capsule (600x900)
-    <appid>.jpg           — wide capsule (header)
-    <appid>_hero.jpg      — hero banner
-    <appid>_logo.png      — logo
-    <appid>_icon.jpg      — icon
+Artwork types per game:
+    <appid>p.<ext>         -- capsule (600x900, library grid view)
+    <appid>.<ext>          -- header (wide, library list + store page)
+    <appid>_hero.<ext>     -- hero banner (behind logo on game page)
+    <appid>_logo.<ext>     -- logo (overlaid on hero)
+    <appid>_icon.<ext>     -- icon (taskbar and shortcut)
 
-Must be called after find_own_games() so shortcut_appid values are known.
-Steam must be closed before calling this so it picks up the new artwork
-on next launch.
+Called from detect_shortcuts.find_own_games() right after the shortcut
+rename so the artwork and name change land together before Steam reopens.
 """
 
 import os
@@ -31,29 +30,200 @@ _BROWSER_UA = {
     "Accept": "*/*",
 }
 
-_CDN = "https://cdn.akamai.steamstatic.com/steam/apps/{appid}/{filename}"
+# ── Per-game artwork URLs ─────────────────────────────────────────────────────
+#
+# Hardcoded so every game gets the right art regardless of what Steam's CDN
+# decides to serve. SP titles pull from Steam's official store assets.
+# MP/ZM titles use community artwork from SteamGridDB.
+#
+# Credits (SteamGridDB profiles):
+#   https://www.steamgriddb.com/profile/76561197985524535
+#   https://www.steamgriddb.com/profile/76561198015449572
+#   https://www.steamgriddb.com/profile/76561198018073166
+#   https://www.steamgriddb.com/profile/76561198018403239
+#   https://www.steamgriddb.com/profile/76561198022992095
+#   https://www.steamgriddb.com/profile/76561198027273869
+#   https://www.steamgriddb.com/profile/76561198031582867
+#   https://www.steamgriddb.com/profile/76561198038608428
+#   https://www.steamgriddb.com/profile/76561198040056867
+#   https://www.steamgriddb.com/profile/76561198041593264
+#   https://www.steamgriddb.com/profile/76561198135110632
+#   https://www.steamgriddb.com/profile/76561198143575007
+#   https://www.steamgriddb.com/profile/76561198319864298
+#   https://www.steamgriddb.com/profile/76561199034037601
 
-# Some games share artwork between their SP and MP appids.
-# MP appids listed here use their SP counterpart's artwork instead.
-# Mirrors the logic in bootstrap.py _HEADER_OVERRIDES.
-_APPID_ART_OVERRIDES = {
-    "10190":  "10180",   # MW2 MP  -> MW2 SP art
-    "42690":  "42680",   # MW3 MP  -> MW3 SP art
-    "202990": "202970",  # BO2 MP  -> BO2 SP art
-    "42710":  "42700",   # BO1 MP  -> BO1 SP art
-    "212910": "202970",  # BO2 ZM  -> BO2 SP art
+OWN_ARTWORK = {
+    # ── MW1 ───────────────────────────────────────────────────────────────
+    "cod4sp": {
+        "header_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/header.jpg",
+        "capsule_url": "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/library_600x900_2x.jpg",
+        "hero_url":    "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/library_hero_2x.jpg",
+        "logo_url":    "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/logo_2x.png",
+        "icon_url":    "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/7940/b40c43b0b14b7e124553e0220581a1b9ef8e38bf.jpg",
+        "header_ext":  "jpg",
+        "capsule_ext": "jpg",
+        "hero_ext":    "jpg",
+        "logo_ext":    "png",
+        "icon_ext":    "jpg",
+    },
+    "cod4mp": {
+        "header_url":  "https://cdn2.steamgriddb.com/thumb/69a24bf40cd265fb00ae685cdaa040c7.jpg",
+        "capsule_url": "https://cdn2.steamgriddb.com/thumb/7a22b900577a6edbffd53153cea2999c.jpg",
+        "hero_url":    "https://cdn2.steamgriddb.com/hero_thumb/95bc8e097e09212ec0160a7bc0b46fd6.jpg",
+        "logo_url":    "https://cdn2.steamgriddb.com/logo_thumb/0440169a43de927753429dd69ca8c735.png",
+        "icon_url":    "https://cdn2.steamgriddb.com/icon/59b109c700b500daa9ef3a6769bc8c6f.png",
+        "header_ext":  "jpg",
+        "capsule_ext": "jpg",
+        "hero_ext":    "jpg",
+        "logo_ext":    "png",
+        "icon_ext":    "png",
+    },
+
+    # ── MW2 ───────────────────────────────────────────────────────────────
+    "iw4sp": {
+        "header_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/header.jpg",
+        "capsule_url": "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
+        "hero_url":    "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_hero_2x.jpg",
+        "logo_url":    "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/logo_2x.png",
+        "icon_url":    "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10180/ad502494f1658220f9166c7e17ac90422bf6a479.jpg",
+        "header_ext":  "jpg",
+        "capsule_ext": "jpg",
+        "hero_ext":    "jpg",
+        "logo_ext":    "png",
+        "icon_ext":    "jpg",
+    },
+    "iw4mp": {
+        "header_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/10190/header.jpg",
+        "capsule_url": "https://cdn2.steamgriddb.com/thumb/4f4ecc161b18f07dcf2c8296fad55709.jpg",
+        "hero_url":    "https://cdn2.steamgriddb.com/hero_thumb/1fc214004c9481e4c8073e85323bfd4b.png",
+        "logo_url":    "https://cdn2.steamgriddb.com/logo_thumb/d79aac075930c83c2f1e369a511148fe.png",
+        "icon_url":    "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10190/7dd7c2d5bce2413131762d7cbee3f059614ed69d.jpg",
+        "header_ext":  "jpg",
+        "capsule_ext": "jpg",
+        "hero_ext":    "png",
+        "logo_ext":    "png",
+        "icon_ext":    "jpg",
+    },
+
+    # ── MW3 ───────────────────────────────────────────────────────────────
+    "iw5sp": {
+        "header_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/header.jpg",
+        "capsule_url": "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",
+        "hero_url":    "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_hero_2x.jpg",
+        "logo_url":    "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/logo_2x.png",
+        "icon_url":    "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42680/c3330a875925437d8216949b6571f6e941ba0679.jpg",
+        "header_ext":  "jpg",
+        "capsule_ext": "jpg",
+        "hero_ext":    "jpg",
+        "logo_ext":    "png",
+        "icon_ext":    "jpg",
+    },
+    "iw5mp": {
+        "header_url":  "https://cdn2.steamgriddb.com/thumb/ce65f40e3a20ad19fe352c52ce3bcf51.jpg",
+        "capsule_url": "https://cdn2.steamgriddb.com/thumb/54726e7600c9c297610f6ed9d7d19ca7.jpg",
+        "hero_url":    "https://cdn2.steamgriddb.com/hero_thumb/51770b1e6f66ba5d45e58a76e6a73dc2.jpg",
+        "logo_url":    "https://cdn2.steamgriddb.com/logo_thumb/4a64d913220fca4c33c140c6952688a8.png",
+        "icon_url":    "https://cdn2.steamgriddb.com/icon_thumb/67b48cc32ab9f04633bd50656a4a26fc.png",
+        "header_ext":  "jpg",
+        "capsule_ext": "jpg",
+        "hero_ext":    "jpg",
+        "logo_ext":    "png",
+        "icon_ext":    "png",
+    },
+
+    # ── WaW ───────────────────────────────────────────────────────────────
+    "t4sp": {
+        "header_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/header.jpg",
+        "capsule_url": "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/library_600x900_2x.jpg",
+        "hero_url":    "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/library_hero_2x.jpg",
+        "logo_url":    "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/logo_2x.png",
+        "icon_url":    "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10090/2bfb85222af4a01842baa5c3a16a080eb27ac6c3.jpg",
+        "header_ext":  "jpg",
+        "capsule_ext": "jpg",
+        "hero_ext":    "jpg",
+        "logo_ext":    "png",
+        "icon_ext":    "jpg",
+    },
+    "t4mp": {
+        "header_url":  "https://cdn2.steamgriddb.com/thumb/a6a0076c7e1907a4555b17cc2a6ebc85.jpg",
+        "capsule_url": "https://cdn2.steamgriddb.com/grid/bb933c55afc6987ae406e48ff58786d6.png",
+        "hero_url":    "https://cdn2.steamgriddb.com/hero_thumb/e369853df766fa44e1ed0ff613f563bd.jpg",
+        "logo_url":    "https://cdn2.steamgriddb.com/logo_thumb/0a32bfcf5c87aa42d2a0367c1f6bb17c.png",
+        "icon_url":    "https://cdn2.steamgriddb.com/icon/854d6fae5ee42911677c739ee1734486.png",
+        "header_ext":  "jpg",
+        "capsule_ext": "png",
+        "hero_ext":    "jpg",
+        "logo_ext":    "png",
+        "icon_ext":    "png",
+    },
+
+    # ── BO1 ───────────────────────────────────────────────────────────────
+    "t5sp": {
+        "header_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/header.jpg",
+        "capsule_url": "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_600x900_2x.jpg",
+        "hero_url":    "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_hero.jpg",
+        "logo_url":    "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/logo_2x.png",
+        "icon_url":    "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42700/ea744d59efded3feaeebcafed224be9eadde90ac.jpg",
+        "header_ext":  "jpg",
+        "capsule_ext": "jpg",
+        "hero_ext":    "jpg",
+        "logo_ext":    "png",
+        "icon_ext":    "jpg",
+    },
+    "t5mp": {
+        "header_url":  "https://cdn2.steamgriddb.com/thumb/a6330e9317a50ccf2d79c295dd18046f.png",
+        "capsule_url": "https://cdn2.steamgriddb.com/thumb/978f9d25644371a4c4b8df8c994cd880.png",
+        "hero_url":    "https://cdn2.steamgriddb.com/hero_thumb/dc82d632c9fcecb0778afbc7924494a6.png",
+        "logo_url":    "https://cdn2.steamgriddb.com/logo_thumb/dfb84a11f431c62436cfb760e30a34fe.png",
+        "icon_url":    "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42710/d595fb4b01201cade09e1232f2c41c0866840628.jpg",
+        "header_ext":  "png",
+        "capsule_ext": "png",
+        "hero_ext":    "png",
+        "logo_ext":    "png",
+        "icon_ext":    "jpg",
+    },
+
+    # ── BO2 ───────────────────────────────────────────────────────────────
+    "t6sp": {
+        "header_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/header.jpg",
+        "capsule_url": "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
+        "hero_url":    "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_hero.jpg",
+        "logo_url":    "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/logo_2x.png",
+        "icon_url":    "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/202970/0a23d78ade8c8d7b4cfa15bf71c9dd535b2998ca.jpg",
+        "header_ext":  "jpg",
+        "capsule_ext": "jpg",
+        "hero_ext":    "jpg",
+        "logo_ext":    "png",
+        "icon_ext":    "jpg",
+    },
+    "t6zm": {
+        "header_url":  "https://cdn2.steamgriddb.com/thumb/b87c4d009662bc436961d8f753a8de78.jpg",
+        "capsule_url": "https://cdn2.steamgriddb.com/thumb/3d9ffc992e48d2aeb4b06f05471f619d.jpg",
+        "hero_url":    "https://cdn2.steamgriddb.com/hero_thumb/e5e63da79fcd2bebbd7cb8bf1c1d0274.jpg",
+        "logo_url":    "https://cdn2.steamgriddb.com/logo_thumb/79514e888b8f2acacc68738d0cbb803e.png",
+        "icon_url":    "https://cdn2.steamgriddb.com/icon_thumb/743c11a9f3cb65cda4994bbdfb66c398.png",
+        "header_ext":  "jpg",
+        "capsule_ext": "jpg",
+        "hero_ext":    "jpg",
+        "logo_ext":    "png",
+        "icon_ext":    "png",
+    },
+    "t6mp": {
+        "header_url":  "https://cdn2.steamgriddb.com/thumb/d841ee63e07b28f94920b81d2e4c21c9.jpg",
+        "capsule_url": "https://cdn2.steamgriddb.com/thumb/7d3695ac5fbf55fb65ea261dd3a8577c.jpg",
+        "hero_url":    "https://cdn2.steamgriddb.com/hero_thumb/731c83db8d2ff01bdc000083fd3c3740.png",
+        "logo_url":    "https://cdn2.steamgriddb.com/logo_thumb/6271faadeedd7626d661856b7a004e27.png",
+        "icon_url":    "https://cdn2.steamgriddb.com/icon_thumb/715eb56d3f3b71792e230102d1da496d.png",
+        "header_ext":  "jpg",
+        "capsule_ext": "jpg",
+        "hero_ext":    "png",
+        "logo_ext":    "png",
+        "icon_ext":    "png",
+    },
 }
 
-# Artwork files to download per game, as (filename, dest_suffix) pairs.
-# dest_suffix is appended to the shortcut_appid to form the grid filename.
-_ARTWORK_FILES = [
-    ("library_600x900.jpg", "p.jpg"),     # grid/capsule
-    ("header.jpg",          ".jpg"),       # wide capsule
-    ("library_hero.jpg",    "_hero.jpg"),  # hero banner
-    ("logo.png",            "_logo.png"),  # logo
-    ("icon.jpg",            "_icon.jpg"),  # icon
-]
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _find_all_steam_uids() -> list[str]:
     """Return all valid Steam user ID folders from userdata/."""
@@ -78,8 +248,6 @@ def _download(url: str, dest: str) -> bool:
         req = urllib.request.Request(url, headers=_BROWSER_UA)
         with urllib.request.urlopen(req, timeout=30) as r:
             data = r.read()
-            # Steam returns a small error page for missing artwork rather
-            # than a 404 in some cases. Skip files under 1KB.
             if len(data) < 1024:
                 return False
             with open(dest, "wb") as f:
@@ -89,68 +257,77 @@ def _download(url: str, dest: str) -> bool:
         return False
 
 
-def download_artwork_for_own_games(own_games: dict, on_progress=None) -> None:
-    """
-    Download Steam artwork for all detected own games and write it into
-    each Steam user's grid directory under the correct shortcut appid filename.
+# ── Public API ────────────────────────────────────────────────────────────────
 
-    own_games  — dict returned by detect_shortcuts.find_own_games()
-    on_progress — optional callback(msg: str)
+def download_artwork(game_key: str, shortcut_appid: int, on_progress=None):
+    """
+    Download artwork for a single own game and write it into every Steam
+    user's grid directory under the correct shortcut appid filenames.
+
+    game_key       -- e.g. "iw4mp", "t4sp"
+    shortcut_appid -- the CRC-based appid Steam uses for this shortcut
+    on_progress    -- optional callback(msg: str)
     """
     def prog(msg):
         if on_progress:
             on_progress(msg)
 
-    uids = _find_all_steam_uids()
-    if not uids:
-        prog("No Steam user accounts found, skipping artwork download.")
+    art = OWN_ARTWORK.get(game_key)
+    if not art:
+        prog(f"  No artwork defined for {game_key}")
         return
 
-    # Cache downloaded artwork locally so we only hit Steam CDN once per game
-    # regardless of how many Steam user accounts exist on the Deck.
-    cache_dir = os.path.join(
-        os.path.expanduser("~"), "DeckOps-Nightly", "assets", "images", "own_art"
-    )
-    os.makedirs(cache_dir, exist_ok=True)
+    uids = _find_all_steam_uids()
+    if not uids:
+        prog(f"  No Steam user accounts found, skipping artwork")
+        return
 
-    for key, game in own_games.items():
-        shortcut_appid = str(game.get("shortcut_appid", ""))
-        if not shortcut_appid:
-            prog(f"  ⚠ {key}: no shortcut_appid, skipping artwork")
+    appid_str = str(shortcut_appid)
+
+    # Map each artwork type to its grid filename
+    artwork_map = [
+        ("header_url",  f"{appid_str}.{art['header_ext']}",       "header"),
+        ("capsule_url", f"{appid_str}p.{art['capsule_ext']}",     "capsule"),
+        ("hero_url",    f"{appid_str}_hero.{art['hero_ext']}",    "hero"),
+        ("logo_url",    f"{appid_str}_logo.{art['logo_ext']}",    "logo"),
+        ("icon_url",    f"{appid_str}_icon.{art['icon_ext']}",    "icon"),
+    ]
+
+    for url_key, filename, label in artwork_map:
+        url = art.get(url_key, "")
+        if not url:
             continue
 
-        steam_appid = str(game.get("appid", ""))
-        # Use the art override appid if one exists so MP titles get
-        # the correct artwork from their SP counterpart.
-        art_appid = _APPID_ART_OVERRIDES.get(steam_appid, steam_appid)
+        # Download once, then copy to all user grid dirs
+        downloaded = None
+        for uid in uids:
+            grid_dir  = os.path.join(USERDATA_DIR, uid, "config", "grid")
+            dest_path = os.path.join(grid_dir, filename)
 
-        prog(f"  Downloading artwork for {game.get('name', key)} (appid {art_appid})...")
+            if os.path.exists(dest_path):
+                prog(f"    ✓ {label} (cached)")
+                downloaded = True
+                break
 
-        for cdn_filename, dest_suffix in _ARTWORK_FILES:
-            url        = _CDN.format(appid=art_appid, filename=cdn_filename)
-            cache_path = os.path.join(cache_dir, f"{art_appid}_{cdn_filename}")
+        if downloaded:
+            continue
 
-            # Download to cache if not already there
-            if not os.path.exists(cache_path):
-                ok = _download(url, cache_path)
-                if not ok:
-                    prog(f"    - {cdn_filename} not available, skipping")
-                    continue
-            else:
-                prog(f"    (cached) {cdn_filename}")
+        # Download to first user's grid dir, then copy to the rest
+        first_uid = uids[0]
+        first_grid = os.path.join(USERDATA_DIR, first_uid, "config", "grid")
+        first_dest = os.path.join(first_grid, filename)
 
-            # Copy cached file into every user's grid directory
-            for uid in uids:
-                grid_dir  = os.path.join(USERDATA_DIR, uid, "config", "grid")
-                dest_name = f"{shortcut_appid}{dest_suffix}"
-                dest_path = os.path.join(grid_dir, dest_name)
+        if _download(url, first_dest):
+            prog(f"    ✓ {label}")
+            # Copy to remaining users
+            for uid in uids[1:]:
+                grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+                dest_path = os.path.join(grid_dir, filename)
                 os.makedirs(grid_dir, exist_ok=True)
                 try:
                     import shutil
-                    shutil.copy2(cache_path, dest_path)
-                except Exception as ex:
-                    prog(f"    ⚠ Could not write {dest_name} for uid {uid}: {ex}")
-
-            prog(f"    ✓ {cdn_filename}")
-
-    prog("Artwork download complete.")
+                    shutil.copy2(first_dest, dest_path)
+                except Exception:
+                    pass
+        else:
+            prog(f"    ⚠ {label} failed")

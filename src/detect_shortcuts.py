@@ -297,6 +297,18 @@ def find_own_games(on_progress=None) -> dict:
                 # (with quotes) + the shortcut name. We must use exe_raw here
                 # so our appid matches what Steam sees internally.
                 shortcut_appid = _calc_shortcut_appid(exe_raw, canonical_name)
+
+                # Download artwork immediately after rename so the shortcut
+                # name change and artwork files land together before Steam
+                # reopens. This matches how shortcut.py does it for the
+                # DeckOps-created shortcuts (cod4mp, t4mp).
+                try:
+                    from artwork import download_artwork
+                    prog(f"  Downloading artwork for {canonical_name}...")
+                    download_artwork(key, shortcut_appid, on_progress=on_progress)
+                except Exception as ex:
+                    prog(f"  ⚠ Artwork download failed: {ex}")
+
                 compatdata_path = os.path.join(
                     COMPAT_ROOT, str(shortcut_appid)
                 )
