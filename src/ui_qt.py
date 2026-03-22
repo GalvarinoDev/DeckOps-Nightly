@@ -453,7 +453,6 @@ class IntroScreen(QWidget):
 class WelcomeScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.installed={}; self.steam_root=""
-        self._rename_warning = []
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(14)
         _title_block(lay)
         lay.addSpacing(12)
@@ -494,19 +493,9 @@ class WelcomeScreen(QWidget):
         if source == "own":
             from detect_shortcuts import find_own_games
             self.installed = find_own_games()
-            # Warn if any shortcuts have the wrong name
-            needs_rename = [
-                g["canonical_name"] for g in self.installed.values()
-                if g.get("needs_rename")
-            ]
-            if needs_rename:
-                self._rename_warning = needs_rename
-            else:
-                self._rename_warning = []
         else:
             libs = parse_library_folders(self.steam_root)
             self.installed = find_installed_games(libs)
-            self._rename_warning = []
         if not cfg.is_oled():
             lcd_allowed = set()
             for g in ALL_GAMES:
@@ -519,13 +508,6 @@ class WelcomeScreen(QWidget):
         if not self.installed:
             self.status.setText("No supported games found.")
             self.status.setStyleSheet(f"color:{C_TREY};background:transparent;"); return
-        if getattr(self, "_rename_warning", []):
-            warn_names = "\n".join(f"  • {n}" for n in self._rename_warning)
-            self.status.setText(
-                f"⚠ Some shortcuts need renaming in Steam before setup.\n{warn_names}"
-            )
-            self.status.setStyleSheet(f"color:{C_TREY};background:transparent;")
-            return
         unique = len({g["name"].split(" - ")[0].split(" (")[0] for g in self.installed.values()})
         self.status.setText(f"Found {unique} supported game(s)!")
         self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
@@ -1881,24 +1863,18 @@ class UpdateScreen(QWidget):
 class SourceScreen(QWidget):
     """
     Shown on first run before IntroScreen. Asks how the user installed their
-    games. Steam path uses the standard detection flow. My Own path shows a
-    list of canonical shortcut names with one-tap copy buttons so users can
-    paste them directly into Steam's Add Non-Steam Game dialog.
+    games. Steam path uses the standard detection flow. My Own path detects
+    non-Steam shortcuts by exe name and auto-renames them.
     """
     def __init__(self, stack):
         super().__init__(); self.stack = stack
-        self._main_lay = QVBoxLayout(self)
-        self._main_lay.setContentsMargins(0, 0, 0, 0)
-
-        # ── View 1: Steam vs My Own selection ─────────────────────────────────
-        self._select_view = QWidget()
-        sv = QVBoxLayout(self._select_view)
-        sv.setContentsMargins(80, 60, 80, 60); sv.setSpacing(20)
-        sv.addStretch()
-        _title_block(sv)
-        sv.addSpacing(8)
-        sv.addWidget(_lbl("How did you install your games?", 15, "#CCC"))
-        sv.addSpacing(8)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(80, 60, 80, 60); lay.setSpacing(20)
+        lay.addStretch()
+        _title_block(lay)
+        lay.addSpacing(8)
+        lay.addWidget(_lbl("How did you install your games?", 15, "#CCC"))
+        lay.addSpacing(8)
 
         cards = QHBoxLayout(); cards.setSpacing(20)
 
@@ -1925,113 +1901,15 @@ class SourceScreen(QWidget):
         oc.addWidget(adv, alignment=Qt.AlignLeft)
         oc.addWidget(_lbl("My Own", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
         oc.addWidget(_lbl("You installed via CD, GOG, Microsoft Store, or another storefront and added them to Steam as non-Steam shortcuts.", 12, C_DIM, align=Qt.AlignLeft))
-        oc.addWidget(_lbl("Games must be added to Steam and launched at least once before continuing.", 11, "#555568", align=Qt.AlignLeft))
+        oc.addWidget(_lbl("Add your games to Steam and launch each one at least once before continuing. DeckOps will detect and rename them automatically.", 11, "#555568", align=Qt.AlignLeft))
         oc.addStretch()
         own_btn = _btn("Select My Own >>", C_TREY, h=44)
-        own_btn.clicked.connect(lambda: self._show_names())
+        own_btn.clicked.connect(lambda: self._pick("own"))
         oc.addWidget(own_btn)
         cards.addWidget(own_card)
 
-        sv.addLayout(cards)
-        sv.addStretch()
-        self._main_lay.addWidget(self._select_view)
-
-        # ── View 2: Canonical names list with copy buttons ────────────────────
-        self._names_view = QWidget(); self._names_view.setVisible(False)
-        nv = QVBoxLayout(self._names_view)
-        nv.setContentsMargins(60, 40, 60, 40); nv.setSpacing(12)
-
-        back_btn = _btn("← Back", C_DARK_BTN, size=11, h=34); back_btn.setFixedWidth(100)
-        back_btn.clicked.connect(self._show_select)
-        back_row = QHBoxLayout(); back_row.addWidget(back_btn); back_row.addStretch()
-        nv.addLayout(back_row)
-
-        nv.addWidget(_lbl("Name your shortcuts exactly as shown", 16, "#FFF", bold=True))
-        nv.addWidget(_lbl(
-            "In Steam, go to Games then Add a Non-Steam Game to My Library. "
-            "Add each game exe and rename the shortcut by copying the name below. "
-            "Then launch each game once through Steam before continuing.",
-            12, C_DIM, align=Qt.AlignLeft))
-        nv.addSpacing(4)
-
-        from detect_shortcuts import CANONICAL_NAMES
-        from detect_games import GAMES
-
-        items = list(CANONICAL_NAMES.items())
-        COLS = 3
-        # All items except the last go into the grid; last is centered below
-        grid_items = items[:-1]
-        last_key, last_canonical = items[-1]
-
-        grid_widget = QWidget()
-        grid_lay = QGridLayout(grid_widget)
-        grid_lay.setSpacing(0)
-        grid_lay.setContentsMargins(0, 0, 0, 0)
-        grid_lay.setHorizontalSpacing(20)
-        grid_lay.setVerticalSpacing(0)
-
-        for i, (key, canonical) in enumerate(grid_items):
-            row_idx = i // COLS
-            col_idx = i % COLS
-            meta = GAMES.get(key, {})
-            exe  = meta.get("exe", "")
-            cell = QWidget()
-            cell_lay = QHBoxLayout(cell)
-            cell_lay.setContentsMargins(0, 4, 0, 4)
-            cell_lay.setSpacing(8)
-            name_lbl = _lbl(canonical, 11, "#FFF", align=Qt.AlignLeft, wrap=False)
-            exe_lbl  = _lbl(exe, 9, "#555568", align=Qt.AlignLeft, wrap=False)
-            name_wrap = QWidget()
-            nw_lay = QVBoxLayout(name_wrap); nw_lay.setContentsMargins(0,0,0,0); nw_lay.setSpacing(1)
-            nw_lay.addWidget(name_lbl); nw_lay.addWidget(exe_lbl)
-            copy_btn = _btn("Copy", C_DARK_BTN, size=10, h=28); copy_btn.setFixedWidth(64)
-            copy_btn.clicked.connect(lambda _, n=canonical: self._copy(n))
-            cell_lay.addWidget(name_wrap, stretch=1); cell_lay.addWidget(copy_btn)
-            cell.setStyleSheet("border-bottom:1px solid #252530;")
-            grid_lay.addWidget(cell, row_idx, col_idx)
-
-        nv.addWidget(grid_widget)
-
-        # Last item centered in column 1 (middle of 3)
-        last_row_widget = QWidget()
-        last_row_lay = QHBoxLayout(last_row_widget)
-        last_row_lay.setContentsMargins(0, 0, 0, 0)
-        last_row_lay.setSpacing(0)
-        meta = GAMES.get(last_key, {})
-        exe  = meta.get("exe", "")
-        last_cell = QWidget()
-        last_cell.setStyleSheet("border-bottom:1px solid #252530;")
-        last_cell_lay = QHBoxLayout(last_cell)
-        last_cell_lay.setContentsMargins(0, 4, 0, 4)
-        last_cell_lay.setSpacing(8)
-        name_lbl = _lbl(last_canonical, 11, "#FFF", align=Qt.AlignLeft, wrap=False)
-        exe_lbl  = _lbl(exe, 9, "#555568", align=Qt.AlignLeft, wrap=False)
-        name_wrap = QWidget()
-        nw_lay = QVBoxLayout(name_wrap); nw_lay.setContentsMargins(0,0,0,0); nw_lay.setSpacing(1)
-        nw_lay.addWidget(name_lbl); nw_lay.addWidget(exe_lbl)
-        copy_btn = _btn("Copy", C_DARK_BTN, size=10, h=28); copy_btn.setFixedWidth(64)
-        copy_btn.clicked.connect(lambda _, n=last_canonical: self._copy(n))
-        last_cell_lay.addWidget(name_wrap, stretch=1); last_cell_lay.addWidget(copy_btn)
-        last_row_lay.addStretch(1); last_row_lay.addWidget(last_cell, stretch=1); last_row_lay.addStretch(1)
-        nv.addWidget(last_row_widget)
-
-        cont_btn = _btn("Continue >>", C_IW, h=48)
-        cont_btn.clicked.connect(lambda: self._pick("own"))
-        nv.addWidget(cont_btn)
-
-        self._main_lay.addWidget(self._names_view)
-
-    def _show_select(self):
-        self._names_view.setVisible(False)
-        self._select_view.setVisible(True)
-
-    def _show_names(self):
-        self._select_view.setVisible(False)
-        self._names_view.setVisible(True)
-
-    def _copy(self, text: str):
-        from PyQt5.QtWidgets import QApplication
-        QApplication.clipboard().setText(text)
+        lay.addLayout(cards)
+        lay.addStretch()
 
     def _pick(self, source: str):
         cfg.set_game_source(source)
