@@ -1556,10 +1556,25 @@ class ConfigureScreen(QWidget):
         _set_audio_volume(val / 100.0)
 
     def _pdirs(self):
-        sr = cfg.load().get("steam_root","")
-        return [d for g in ALL_GAMES if g["plutonium"]
-                for d in [os.path.join(sr,"steamapps","compatdata",str(g["appid"]),"pfx","drive_c","users","steamuser","AppData","Local","Plutonium")]
-                if os.path.isdir(d)]
+        # Use GAME_META from plutonium.py to find Plutonium prefix dirs.
+        # ALL_GAMES no longer has a "plutonium" flag since it was replaced
+        # by the lcd_keys system, so we pull the appid list from the source
+        # of truth instead.
+        from plutonium import GAME_META
+        sr = cfg.load().get("steam_root", "")
+        seen, dirs = set(), []
+        for _, (appid, _, _) in GAME_META.items():
+            if appid in seen:
+                continue
+            seen.add(appid)
+            d = os.path.join(
+                sr, "steamapps", "compatdata", str(appid),
+                "pfx", "drive_c", "users", "steamuser",
+                "AppData", "Local", "Plutonium"
+            )
+            if os.path.isdir(d):
+                dirs.append(d)
+        return dirs
 
     def _reset(self):
         dirs = self._pdirs()
