@@ -14,17 +14,17 @@ warn()    { printf "${YELLOW}${BOLD}[ WARN ]${CLEAR} %s\n" "$1"; }
 skip()    { printf "         %s\n" "$1"; }
 
 echo ""
-echo -e "${BOLD}  DeckOps -- Full Uninstaller${CLEAR}"
+echo -e "${BOLD}  DeckOps Nightly -- Full Uninstaller${CLEAR}"
 echo ""
 
 zenity --question \
-    --title="DeckOps Uninstaller" \
+    --title="DeckOps Nightly Uninstaller" \
     --text="This will clear all DeckOps launch options, remove client files, and remove ALL DeckOps and Plutonium data from your Wine prefixes.\n\nContinue?" \
     --ok-label="Cancel" \
     --cancel-label="Yes, Uninstall" 2>/dev/null
 
 if [ $? -eq 0 ]; then
-    zenity --info --title="DeckOps" --text="Uninstall cancelled." 2>/dev/null
+    zenity --info --title="DeckOps Nightly" --text="Uninstall cancelled." 2>/dev/null
     exit 0
 fi
 
@@ -342,10 +342,10 @@ echo ""
 info "Removing DeckOps install directory and config..."
 
 DECKOPS_DIRS=(
-    "$HOME/DeckOps"
-    "$HOME/.local/share/deckops"
-    "$HOME/.config/deckops"
-    "$HOME/.local/share/deckops/plutonium_prefix"
+    "$HOME/DeckOps-Nightly"
+    "$HOME/.local/share/deckops-nightly"
+    "$HOME/.config/deckops-nightly"
+    "$HOME/.local/share/deckops-nightly/plutonium_prefix"
 )
 
 for d in "${DECKOPS_DIRS[@]}"; do
@@ -899,7 +899,7 @@ echo ""
 
 # Show summary dialog in background while countdown runs in terminal
 zenity --info \
-    --title="DeckOps Uninstaller" \
+    --title="DeckOps Nightly Uninstaller" \
     --text="DeckOps fully uninstalled.\n\nYour Steam games are untouched.\nAll Plutonium data removed from Wine prefixes.\nAll IW3SP-MOD and IW4x client files removed.\nAll DeckOps controller templates and profiles removed." \
     --timeout=6 \
     2>/dev/null &
