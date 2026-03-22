@@ -860,15 +860,33 @@ class InstallScreen(QWidget):
 
         # ── Plutonium bootstrapper (Steam still running) ──────────────────────
         if has_plut:
-            if not is_plutonium_ready():
-                self._s.progress.emit(12, "Launching Plutonium — please log in...")
-                self._s.log.emit(
-                    "Plutonium is launching now.\n"
-                    "  1. Wait for it to finish downloading\n"
-                    "  2. Log in with your Plutonium account\n"
-                    "  3. Close the Plutonium window\n"
-                    "  4. Click the button below to continue"
-                )
+            is_lcd = not cfg.is_oled()
+            # LCD users only need the bootstrapper downloaded, no login required.
+            # OLED users need a full login so Plutonium creates the storage/ folder.
+            plut_ready = is_plutonium_ready()
+            if is_lcd:
+                from plutonium import is_bootstrapper_ready
+                plut_ready = plut_ready or is_bootstrapper_ready()
+
+            if not plut_ready:
+                if is_lcd:
+                    self._s.progress.emit(12, "Launching Plutonium...")
+                    self._s.log.emit(
+                        "Plutonium is launching now.\n"
+                        "  1. Wait for it to finish downloading\n"
+                        "  2. Do NOT log in (LCD does not need an account)\n"
+                        "  3. Close the Plutonium window once downloading finishes\n"
+                        "  4. Click the button below to continue"
+                    )
+                else:
+                    self._s.progress.emit(12, "Launching Plutonium — please log in...")
+                    self._s.log.emit(
+                        "Plutonium is launching now.\n"
+                        "  1. Wait for it to finish downloading\n"
+                        "  2. Log in with your Plutonium account\n"
+                        "  3. Close the Plutonium window\n"
+                        "  4. Click the button below to continue"
+                    )
                 try:
                     launch_bootstrapper(proton, on_progress=lambda p, m: self._s.progress.emit(p, m))
                 except Exception as ex:
@@ -879,12 +897,21 @@ class InstallScreen(QWidget):
                 self._plut_event.wait()
                 self._s.plut_go.emit()
 
-                if not is_plutonium_ready():
-                    self._s.log.emit(
-                        "✗  Plutonium does not appear to be fully set up.\n"
-                        "   Make sure you logged in and let it finish downloading."
-                    )
-                    self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
+                # Verify Plutonium is ready after the user closed the window
+                if is_lcd:
+                    if not is_bootstrapper_ready():
+                        self._s.log.emit(
+                            "✗  Plutonium bootstrapper not found.\n"
+                            "   Make sure you let it finish downloading before closing."
+                        )
+                        self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
+                else:
+                    if not is_plutonium_ready():
+                        self._s.log.emit(
+                            "✗  Plutonium does not appear to be fully set up.\n"
+                            "   Make sure you logged in and let it finish downloading."
+                        )
+                        self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
 
                 self._s.log.emit("✓  Plutonium ready.")
             else:
