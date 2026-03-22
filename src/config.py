@@ -15,7 +15,7 @@ import os
 import json
 from datetime import datetime
 
-CONFIG_PATH = os.path.expanduser("~/DeckOps/deckops.json")
+CONFIG_PATH = os.path.expanduser("~/DeckOps-Nightly/deckops.json")
 
 DEFAULTS = {
     "first_run_complete": False,

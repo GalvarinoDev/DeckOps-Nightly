@@ -1,8 +1,8 @@
 #!/bin/bash
 # launcher.sh — DeckOps entry point
 
-INSTALL_DIR="$HOME/DeckOps"
-GITHUB_RAW="https://raw.githubusercontent.com/GalvarinoDev/DeckOps/main"
+INSTALL_DIR="$HOME/DeckOps-Nightly"
+GITHUB_RAW="https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main"
 LOCKFILE="$HOME/.deckops_installing"
 
 # ── Installing or first-time — run install directly ───────────────────────────
@@ -16,8 +16,8 @@ fi
 # ── Already installed — ask what to do ───────────────────────────────────────
 choice=$(zenity \
     --list \
-    --title="DeckOps" \
-    --text="DeckOps is already installed.\nWhat would you like to do?" \
+    --title="DeckOps Nightly" \
+    --text="DeckOps Nightly is already installed.\nWhat would you like to do?" \
     --column="Action" \
     --hide-header \
     "Launch DeckOps" \
@@ -35,8 +35,8 @@ case "$choice" in
         if [ -f "$VENV_PYTHON" ] && [ -f "$ENTRY_POINT" ]; then
             exec "$VENV_PYTHON" "$ENTRY_POINT"
         else
-            zenity --error --title="DeckOps" \
-                --text="DeckOps installation appears incomplete.\nTry reinstalling." \
+            zenity --error --title="DeckOps Nightly" \
+                --text="DeckOps Nightly installation appears incomplete.\nTry reinstalling." \
                 2>/dev/null
         fi
         ;;

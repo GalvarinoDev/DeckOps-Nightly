@@ -282,6 +282,17 @@ def _title_block(lay, main_size=56):
         f'</span>'
     )
     lay.addWidget(sub)
+    # Nightly build badge — shown on every screen so users always know
+    # they are running the experimental build and not the stable release.
+    nightly = QLabel("NIGHTLY BUILD")
+    nightly.setFont(font(10, bold=True))
+    nightly.setAlignment(Qt.AlignCenter)
+    nightly.setStyleSheet(
+        "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
+        "border-radius:4px;padding:2px 10px;"
+    )
+    nw = QHBoxLayout(); nw.addStretch(); nw.addWidget(nightly); nw.addStretch()
+    lay.addLayout(nw)
 
 class _Sigs(QObject):
     progress    = pyqtSignal(int, str)
@@ -1170,7 +1181,14 @@ class ManagementScreen(QWidget):
         hl = QHBoxLayout(hdr); hl.setContentsMargins(20,0,20,0)
         title = QLabel("DECKOPS"); title.setFont(font(22, display=True))
         title.setStyleSheet("color:#FFF;background:transparent;")
-        hl.addWidget(title); hl.addStretch()
+        hl.addWidget(title)
+        nightly_lbl = QLabel("NIGHTLY"); nightly_lbl.setFont(font(9, bold=True))
+        nightly_lbl.setStyleSheet(
+            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
+            "border-radius:4px;padding:1px 6px;"
+        )
+        hl.addWidget(nightly_lbl)
+        hl.addStretch()
         guide_btn = _btn("📋  Guide", C_BLUE_BTN, size=11, h=36); guide_btn.setFixedWidth(100)
         guide_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
         hl.addWidget(guide_btn)
@@ -1803,7 +1821,7 @@ QCheckBox::indicator:checked {{ background:{C_IW}; border-color:{C_IW}; }}
 
 class DeckOpsWindow(QMainWindow):
     def __init__(self):
-        super().__init__(); self.setWindowTitle("DeckOps"); self.resize(1280,800); self.setMinimumSize(800,500)
+        super().__init__(); self.setWindowTitle("DeckOps Nightly"); self.resize(1280,800); self.setMinimumSize(800,500)
         self.stack = QStackedWidget(); self.setCentralWidget(self.stack)
         for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen]:
             self.stack.addWidget(cls(self.stack))
