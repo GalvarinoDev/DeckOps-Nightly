@@ -178,7 +178,8 @@ def _parse_shortcuts_vdf(path: str) -> list[dict]:
         if "exe" in entry:
             shortcuts.append({
                 "name":      entry.get("appname", ""),
-                "exe":       entry.get("exe", "").strip('"'),
+                "exe_raw":   entry.get("exe", ""),             # raw value with quotes, for appid calc
+                "exe":       entry.get("exe", "").strip('"'),  # stripped, for filesystem ops
                 "start_dir": entry.get("startdir", "").strip('"'),
             })
 
@@ -255,7 +256,8 @@ def find_own_games(on_progress=None) -> dict:
         shortcuts = _parse_shortcuts_vdf(vdf_path)
 
         for sc in shortcuts:
-            exe_path  = sc["exe"]
+            exe_path  = sc["exe"]       # stripped, for filesystem
+            exe_raw   = sc["exe_raw"]   # raw with quotes, for appid calc
             exe_name  = os.path.basename(exe_path).lower()
             name      = sc["name"]
             start_dir = sc["start_dir"]
@@ -291,7 +293,10 @@ def find_own_games(on_progress=None) -> dict:
                     else:
                         prog(f"  ⚠ Could not rename, appid may not match")
 
-                shortcut_appid = _calc_shortcut_appid(exe_path, canonical_name)
+                # Steam calculates shortcut appids from the raw exe string
+                # (with quotes) + the shortcut name. We must use exe_raw here
+                # so our appid matches what Steam sees internally.
+                shortcut_appid = _calc_shortcut_appid(exe_raw, canonical_name)
                 compatdata_path = os.path.join(
                     COMPAT_ROOT, str(shortcut_appid)
                 )
@@ -302,6 +307,7 @@ def find_own_games(on_progress=None) -> dict:
                     **meta,
                     "install_dir":      install_dir,
                     "exe_path":         actual_exe,
+                    "exe_raw":          exe_raw,
                     "exe_size":         os.path.getsize(actual_exe) if os.path.exists(actual_exe) else None,
                     "shortcut_appid":   shortcut_appid,
                     "compatdata_path":  compatdata_path,

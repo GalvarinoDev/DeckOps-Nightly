@@ -668,11 +668,12 @@ for uid in os.listdir(userdata):
         with open(vdf_path, "rb") as f:
             data = f.read()
         for m in re.finditer(b'\x01(?:exe|Exe)\x00([^\x00]+)\x00', data):
-            exe = m.group(1).decode("utf-8", errors="replace").strip('"')
-            exe_name = os.path.basename(exe).lower()
+            exe_raw = m.group(1).decode("utf-8", errors="replace")
+            exe_name = os.path.basename(exe_raw.strip('"')).lower()
             canonical = OWN_EXE_MAP.get(exe_name)
             if canonical:
-                appid = calc_shortcut_appid(exe, canonical)
+                # Use exe_raw (with quotes) for appid calc to match Steam
+                appid = calc_shortcut_appid(exe_raw, canonical)
                 if appid not in shortcut_appids:
                     shortcut_appids.add(appid)
                     print(f"  Found own game {canonical} → appid {appid}")
@@ -876,11 +877,12 @@ for uid in os.listdir(USERDATA):
         with open(vdf_path, "rb") as f:
             data = f.read()
         for m in re.finditer(b'\x01(?:exe|Exe)\x00([^\x00]+)\x00', data):
-            exe = m.group(1).decode("utf-8", errors="replace").strip('"')
-            exe_name = os.path.basename(exe).lower()
+            exe_raw = m.group(1).decode("utf-8", errors="replace")
+            exe_name = os.path.basename(exe_raw.strip('"')).lower()
             canonical = OWN_EXE_MAP.get(exe_name)
             if canonical:
-                appid = calc_shortcut_appid(exe, canonical)
+                # Use exe_raw (with quotes) for appid calc to match Steam
+                appid = calc_shortcut_appid(exe_raw, canonical)
                 all_appids.add(appid)
     except Exception:
         pass
@@ -1036,11 +1038,12 @@ if os.path.isdir(userdata):
             with open(vdf_path, "rb") as f:
                 vdf_data = f.read()
             for m in re.finditer(b'\x01(?:exe|Exe)\x00([^\x00]+)\x00', vdf_data):
-                exe = m.group(1).decode("utf-8", errors="replace").strip('"')
-                exe_name = os.path.basename(exe).lower()
+                exe_raw = m.group(1).decode("utf-8", errors="replace")
+                exe_name = os.path.basename(exe_raw.strip('"')).lower()
                 canonical = OWN_EXE_MAP.get(exe_name)
                 if canonical:
-                    appid = calc_shortcut_appid(exe, canonical)
+                    # Use exe_raw (with quotes) for appid calc to match Steam
+                    appid = calc_shortcut_appid(exe_raw, canonical)
                     all_appids.add(appid)
         except Exception:
             pass
