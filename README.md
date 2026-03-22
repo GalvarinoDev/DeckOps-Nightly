@@ -38,8 +38,11 @@ If you purchased your games through the Microsoft Store, a CD copy, GOG, or any 
 
 1. Open Steam -> **Games** -> **Add a Non-Steam Game to My Library**
 2. Browse to your game executable and add it
+3. Run DeckOps
+4. Name the game exe as the name that DeckOps tells you to. (It will allow you to copy and paste)
+5. Close DeckOps
 3. Launch the game at least once through Steam before running DeckOps. This creates the prefix folder DeckOps needs to do its work
-4. Run DeckOps as normal
+4. Run DeckOps again as normal
 
 Support for non-Steam installations is experimental and actively being developed in this Nightly build.
 
