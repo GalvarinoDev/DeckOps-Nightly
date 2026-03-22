@@ -23,8 +23,22 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FONTS_DIR    = os.path.join(PROJECT_ROOT, "assets", "fonts")
 HEADERS_DIR  = os.path.join(PROJECT_ROOT, "assets", "images", "headers")
 MUSIC_PATH   = os.path.join(PROJECT_ROOT, "assets", "music", "background.mp3")
+LOG_DIR      = os.path.join(PROJECT_ROOT, "logs")
+LOG_PATH     = os.path.join(LOG_DIR, "install.log")
 
 os.makedirs(HEADERS_DIR, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)
+
+
+def _log_to_file(text: str):
+    """Append a timestamped line to the install log file."""
+    from datetime import datetime
+    try:
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"[{ts}] {text}\n")
+    except Exception:
+        pass
 
 C_BG       = "#141416"
 C_CARD     = "#1E1E26"
@@ -746,6 +760,7 @@ class InstallScreen(QWidget):
     def _append_log(self, text):
         self.log.appendPlainText(text)
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
+        _log_to_file(text)
 
     def showEvent(self, e):
         super().showEvent(e)
@@ -753,6 +768,7 @@ class InstallScreen(QWidget):
         self.plut_btn.setVisible(False)
         self._stop_pulse()
         self._plut_event.clear()
+        _log_to_file("── Install started ──")
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
     def _confirm_plut(self):
@@ -1780,6 +1796,7 @@ class UpdateScreen(QWidget):
     def _append_log(self, text):
         self.log.appendPlainText(text)
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
+        _log_to_file(text)
 
     def showEvent(self, e):
         super().showEvent(e)
@@ -1787,6 +1804,7 @@ class UpdateScreen(QWidget):
         self.bar.setValue(0); self.log.clear()
         self.steam_btn.setVisible(False); self.back_btn.setVisible(False)
         self._steam_closed.clear()
+        _log_to_file(f"── {self.mode.title()} started ──")
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
     def _on_done(self, _):
