@@ -32,7 +32,7 @@ DeckOps automates the installation of CoD4x, IW3SP-MOD, iw4x, T6SP-Mod, and Plut
 | Black Ops II | ZM | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
 | Black Ops II | MP | [Plutonium](https://plutonium.pw) | OLED only | ✅ | ✅ |
 
-> Plutonium online servers require an OLED Steam Deck. LCD users can still play offline Campaign and Zombies via [PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher).
+> Plutonium online servers require an OLED Steam Deck. LCD users can still play offline Campaign and Zombies via [PlutoniumAltLauncher](https://github.com/framilano/PlutoniumAltLauncher). Do not attempt to play WaW or Black Ops online on an LCD Deck — you will run into errors.
 
 > All titles support controller and gyro via Steam Input. During setup, choose your gyro style: **Hold** (R5 held), **ADS** (gyro activates when you aim down sights), or **Toggle** (R5 press). Aim assist is unavailable for MW2 SP, MW3 SP, and BO2 SP.
 
