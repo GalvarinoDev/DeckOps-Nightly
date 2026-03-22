@@ -343,7 +343,7 @@ class BootstrapScreen(QWidget):
             pass  # Font missing — fall back gracefully, app still works
 
         if cfg.is_first_run():
-            self.stack.setCurrentIndex(1)
+            self.stack.setCurrentIndex(9)
         else:
             root = find_steam_root()
             self.stack.widget(5).set_installed(find_installed_games(parse_library_folders(root)))
@@ -444,6 +444,7 @@ class IntroScreen(QWidget):
 class WelcomeScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.installed={}; self.steam_root=""
+        self._rename_warning = []
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(14)
         _title_block(lay)
         lay.addSpacing(12)
@@ -480,10 +481,24 @@ class WelcomeScreen(QWidget):
 
     def _scan_games(self):
         self.status.setText("Scanning for games..."); self.bar.setValue(70)
-        libs = parse_library_folders(self.steam_root)
-        self.installed = find_installed_games(libs)
+        source = cfg.get_game_source() or "steam"
+        if source == "own":
+            from detect_shortcuts import find_own_games
+            self.installed = find_own_games()
+            # Warn if any shortcuts have the wrong name
+            needs_rename = [
+                g["canonical_name"] for g in self.installed.values()
+                if g.get("needs_rename")
+            ]
+            if needs_rename:
+                self._rename_warning = needs_rename
+            else:
+                self._rename_warning = []
+        else:
+            libs = parse_library_folders(self.steam_root)
+            self.installed = find_installed_games(libs)
+            self._rename_warning = []
         if not cfg.is_oled():
-            # LCD: only keep keys that appear in at least one card's lcd_keys
             lcd_allowed = set()
             for g in ALL_GAMES:
                 lcd_allowed.update(g.get("lcd_keys", g["keys"]))
@@ -495,6 +510,13 @@ class WelcomeScreen(QWidget):
         if not self.installed:
             self.status.setText("No supported games found.")
             self.status.setStyleSheet(f"color:{C_TREY};background:transparent;"); return
+        if getattr(self, "_rename_warning", []):
+            warn_names = "\n".join(f"  • {n}" for n in self._rename_warning)
+            self.status.setText(
+                f"⚠ Some shortcuts need renaming in Steam before setup.\n{warn_names}"
+            )
+            self.status.setStyleSheet(f"color:{C_TREY};background:transparent;")
+            return
         unique = len({g["name"].split(" - ")[0].split(" (")[0] for g in self.installed.values()})
         self.status.setText(f"Found {unique} supported game(s)!")
         self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
@@ -1825,6 +1847,131 @@ class UpdateScreen(QWidget):
         self._s.done.emit(True)
 
 
+# ── SourceScreen ──────────────────────────────────────────────────────────────
+class SourceScreen(QWidget):
+    """
+    Shown on first run before IntroScreen. Asks how the user installed their
+    games. Steam path uses the standard detection flow. My Own path shows a
+    list of canonical shortcut names with one-tap copy buttons so users can
+    paste them directly into Steam's Add Non-Steam Game dialog.
+    """
+    def __init__(self, stack):
+        super().__init__(); self.stack = stack
+        self._main_lay = QVBoxLayout(self)
+        self._main_lay.setContentsMargins(0, 0, 0, 0)
+
+        # ── View 1: Steam vs My Own selection ─────────────────────────────────
+        self._select_view = QWidget()
+        sv = QVBoxLayout(self._select_view)
+        sv.setContentsMargins(80, 60, 80, 60); sv.setSpacing(20)
+        sv.addStretch()
+        _title_block(sv)
+        sv.addSpacing(8)
+        sv.addWidget(_lbl("How did you install your games?", 15, "#CCC"))
+        sv.addSpacing(8)
+
+        cards = QHBoxLayout(); cards.setSpacing(20)
+
+        steam_card = QFrame()
+        steam_card.setStyleSheet(f"QFrame{{background:{C_CARD};border:2px solid #33333F;border-radius:10px;}}")
+        sc = QVBoxLayout(steam_card); sc.setContentsMargins(24, 24, 24, 24); sc.setSpacing(10)
+        rec = QPushButton("RECOMMENDED"); rec.setFont(font(9, True)); rec.setFixedHeight(24); rec.setEnabled(False)
+        rec.setStyleSheet(f"QPushButton{{background:{C_IW};color:#FFF;border:none;border-radius:5px;padding:0 10px;}}QPushButton:disabled{{background:{C_IW};color:#FFF;}}")
+        sc.addWidget(rec, alignment=Qt.AlignLeft)
+        sc.addWidget(_lbl("Steam", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
+        sc.addWidget(_lbl("Your games were purchased and installed through Steam. DeckOps will detect them automatically.", 12, C_DIM, align=Qt.AlignLeft))
+        sc.addWidget(_lbl("Works with games on internal storage or SD card.", 11, "#555568", align=Qt.AlignLeft))
+        sc.addStretch()
+        steam_btn = _btn("Select Steam >>", C_IW, h=44)
+        steam_btn.clicked.connect(lambda: self._pick("steam"))
+        sc.addWidget(steam_btn)
+        cards.addWidget(steam_card)
+
+        own_card = QFrame()
+        own_card.setStyleSheet(f"QFrame{{background:{C_CARD};border:2px solid #33333F;border-radius:10px;}}")
+        oc = QVBoxLayout(own_card); oc.setContentsMargins(24, 24, 24, 24); oc.setSpacing(10)
+        adv = QPushButton("ADVANCED"); adv.setFont(font(9, True)); adv.setFixedHeight(24); adv.setEnabled(False)
+        adv.setStyleSheet(f"QPushButton{{background:{C_TREY};color:#FFF;border:none;border-radius:5px;padding:0 10px;}}QPushButton:disabled{{background:{C_TREY};color:#FFF;}}")
+        oc.addWidget(adv, alignment=Qt.AlignLeft)
+        oc.addWidget(_lbl("My Own", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
+        oc.addWidget(_lbl("You installed via CD, GOG, Microsoft Store, or another storefront and added them to Steam as non-Steam shortcuts.", 12, C_DIM, align=Qt.AlignLeft))
+        oc.addWidget(_lbl("Games must be added to Steam and launched at least once before continuing.", 11, "#555568", align=Qt.AlignLeft))
+        oc.addStretch()
+        own_btn = _btn("Select My Own >>", C_TREY, h=44)
+        own_btn.clicked.connect(lambda: self._show_names())
+        oc.addWidget(own_btn)
+        cards.addWidget(own_card)
+
+        sv.addLayout(cards)
+        sv.addStretch()
+        self._main_lay.addWidget(self._select_view)
+
+        # ── View 2: Canonical names list with copy buttons ────────────────────
+        self._names_view = QWidget(); self._names_view.setVisible(False)
+        nv = QVBoxLayout(self._names_view)
+        nv.setContentsMargins(60, 40, 60, 40); nv.setSpacing(12)
+
+        back_btn = _btn("← Back", C_DARK_BTN, size=11, h=34); back_btn.setFixedWidth(100)
+        back_btn.clicked.connect(self._show_select)
+        back_row = QHBoxLayout(); back_row.addWidget(back_btn); back_row.addStretch()
+        nv.addLayout(back_row)
+
+        nv.addWidget(_lbl("Name your shortcuts exactly as shown", 16, "#FFF", bold=True))
+        nv.addWidget(_lbl(
+            "In Steam, go to Games then Add a Non-Steam Game to My Library. "
+            "Add each game exe and rename the shortcut by copying the name below. "
+            "Then launch each game once through Steam before continuing.",
+            12, C_DIM, align=Qt.AlignLeft))
+        nv.addSpacing(4)
+
+        from detect_shortcuts import CANONICAL_NAMES
+        from detect_games import GAMES
+
+        scroll = QScrollArea(); scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        inner = QWidget(); inner_lay = QVBoxLayout(inner)
+        inner_lay.setSpacing(6); inner_lay.setContentsMargins(0, 0, 0, 0)
+
+        for key, canonical in CANONICAL_NAMES.items():
+            meta = GAMES.get(key, {})
+            exe  = meta.get("exe", "")
+            row  = QHBoxLayout(); row.setSpacing(10)
+            name_lbl = _lbl(canonical, 12, "#FFF", align=Qt.AlignLeft, wrap=False)
+            exe_lbl  = _lbl(exe, 10, "#555568", align=Qt.AlignLeft, wrap=False)
+            name_wrap = QWidget()
+            nw_lay = QVBoxLayout(name_wrap); nw_lay.setContentsMargins(0,0,0,0); nw_lay.setSpacing(1)
+            nw_lay.addWidget(name_lbl); nw_lay.addWidget(exe_lbl)
+            copy_btn = _btn("Copy", C_DARK_BTN, size=10, h=32); copy_btn.setFixedWidth(70)
+            copy_btn.clicked.connect(lambda _, n=canonical: self._copy(n))
+            row.addWidget(name_wrap, stretch=1); row.addWidget(copy_btn)
+            inner_lay.addLayout(row)
+
+        inner_lay.addStretch()
+        scroll.setWidget(inner); nv.addWidget(scroll, stretch=1)
+
+        cont_btn = _btn("Continue >>", C_IW, h=48)
+        cont_btn.clicked.connect(lambda: self._pick("own"))
+        nv.addWidget(cont_btn)
+
+        self._main_lay.addWidget(self._names_view)
+
+    def _show_select(self):
+        self._names_view.setVisible(False)
+        self._select_view.setVisible(True)
+
+    def _show_names(self):
+        self._select_view.setVisible(False)
+        self._names_view.setVisible(True)
+
+    def _copy(self, text: str):
+        from PyQt5.QtWidgets import QApplication
+        QApplication.clipboard().setText(text)
+
+    def _pick(self, source: str):
+        cfg.set_game_source(source)
+        self.stack.setCurrentIndex(1)
+
+
 # ── App ────────────────────────────────────────────────────────────────────────
 def _app_style():
     return f"""
@@ -1844,7 +1991,7 @@ class DeckOpsWindow(QMainWindow):
     def __init__(self):
         super().__init__(); self.setWindowTitle("DeckOps Nightly"); self.resize(1280,800); self.setMinimumSize(800,500)
         self.stack = QStackedWidget(); self.setCentralWidget(self.stack)
-        for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen]:
+        for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen,SourceScreen]:
             self.stack.addWidget(cls(self.stack))
         self.stack.setCurrentIndex(0)
 
