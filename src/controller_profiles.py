@@ -359,4 +359,57 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
 
             prog(f"  ✓ [shortcut {shortcut_appid}] → {primary_filename}")
 
+    # ── "My Own" game controller profiles ────────────────────────────────────
+    # For users who installed via CD/GOG/etc, games were detected via
+    # shortcuts.vdf and have a dynamic shortcut_appid instead of a Steam appid.
+    # We assign profiles to that shortcut_appid so Steam picks them up.
+    try:
+        import config as cfg
+        if cfg.get_game_source() == "own":
+            from detect_shortcuts import find_own_games
+            own_games = find_own_games()
+            for key, game in own_games.items():
+                shortcut_appid = str(game.get("shortcut_appid", ""))
+                if not shortcut_appid:
+                    continue
+                # Determine profile type from the game's original Steam appid.
+                # "other" games need KB+M layout (MW2 SP, MW3 SP).
+                steam_appid = game.get("appid", "")
+                profile_type = APPID_PROFILE_MAP.get(steam_appid, "standard")
+                filenames = _profile_filename(profile_type, gyro_mode)
+                primary_filename = filenames[0] if filenames else None
+                if not primary_filename:
+                    continue
+                src_primary = os.path.join(ASSETS_DIR, primary_filename)
+                if not os.path.exists(src_primary):
+                    continue
+                for uid in uids:
+                    config_root = os.path.join(
+                        STEAM_DIR, "userdata", uid, "241100", "remote", "controller_config"
+                    )
+                    steam_cfg_root = os.path.join(
+                        STEAM_DIR, "steamapps", "common", "Steam Controller Configs", uid, "config"
+                    )
+                    configset_neptune = os.path.join(steam_cfg_root, "configset_controller_neptune.vdf")
+                    configset_serial_path = os.path.join(steam_cfg_root, f"configset_{serial}.vdf") if serial else None
+
+                    dest_dir = os.path.join(config_root, shortcut_appid)
+                    os.makedirs(dest_dir, exist_ok=True)
+                    for filename in filenames:
+                        src = os.path.join(ASSETS_DIR, filename)
+                        if os.path.exists(src):
+                            shutil.copy2(src, os.path.join(dest_dir, filename))
+
+                    cfg_dir_num = os.path.join(steam_cfg_root, shortcut_appid)
+                    os.makedirs(cfg_dir_num, exist_ok=True)
+                    shutil.copy2(src_primary, os.path.join(cfg_dir_num, "controller_neptune.vdf"))
+
+                    _patch_configset(configset_neptune, shortcut_appid, primary_filename)
+                    if configset_serial_path:
+                        _patch_configset(configset_serial_path, shortcut_appid, primary_filename)
+
+                prog(f"  ✓ [own shortcut {shortcut_appid}] {key} → {primary_filename}")
+    except Exception as ex:
+        prog(f"  ⚠ Could not assign profiles for own games: {ex}")
+
     prog("Controller profiles assigned.")
