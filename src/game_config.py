@@ -275,6 +275,15 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
 
             # Resolve destination directory
             if fixed_dest:
+                # For "own" games, fixed_dest was built using the Steam appid-based
+                # compatdata path. Swap the base out for the actual shortcut prefix
+                # stored in the game dict so configs land in the right prefix.
+                if game.get("source") == "own" and game.get("compatdata_path"):
+                    pfx_parts = fixed_dest.split("/pfx/", 1)
+                    if len(pfx_parts) == 2:
+                        fixed_dest = os.path.join(
+                            game["compatdata_path"], "pfx", pfx_parts[1]
+                        )
                 dest_dir = fixed_dest
             else:
                 if not install_dir:
