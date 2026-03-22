@@ -48,6 +48,28 @@ EXE_TO_KEYS = {
 }
 
 
+# Canonical shortcut names DeckOps expects for each game key.
+# Users must name their non-Steam shortcuts exactly as shown here.
+# detect_shortcuts.py matches on both exe name AND canonical name so
+# a shortcut with the right exe but wrong name is flagged for the user
+# to fix rather than silently skipped or incorrectly installed.
+CANONICAL_NAMES = {
+    "cod4mp": "Call of Duty 4: Modern Warfare - Multiplayer",
+    "cod4sp": "Call of Duty 4: Modern Warfare - Singleplayer",
+    "iw4mp":  "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
+    "iw4sp":  "Call of Duty: Modern Warfare 2 (2009) - Singleplayer",
+    "iw5mp":  "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
+    "iw5sp":  "Call of Duty: Modern Warfare 3 (2011) - Singleplayer",
+    "t4sp":   "Call of Duty: World at War",
+    "t4mp":   "Call of Duty: World at War - Multiplayer",
+    "t5sp":   "Call of Duty: Black Ops",
+    "t5mp":   "Call of Duty: Black Ops - Multiplayer",
+    "t6sp":   "Call of Duty: Black Ops II - Singleplayer",
+    "t6zm":   "Call of Duty: Black Ops II - Zombies",
+    "t6mp":   "Call of Duty: Black Ops II - Multiplayer",
+}
+
+
 def _find_all_steam_uids() -> list[str]:
     """Return all valid Steam user ID folders from userdata/."""
     if not os.path.isdir(USERDATA_DIR):
@@ -201,15 +223,23 @@ def find_own_games() -> dict:
                 if key in found:
                     continue
 
-                meta     = GAMES.get(key)
+                meta = GAMES.get(key)
                 if not meta:
                     continue
 
-                # Use the shortcut appid to find the Proton prefix.
-                # Steam creates compatdata/<shortcut_appid> when the game
-                # is launched through Steam for the first time.
-                shortcut_appid    = _calc_shortcut_appid(exe_path, name)
-                compatdata_path   = os.path.join(
+                # Check if the shortcut name matches the canonical name.
+                # If it matches we can calculate the correct shortcut appid.
+                # If it doesn't we flag it so the UI can warn the user to
+                # rename the shortcut rather than installing to the wrong prefix.
+                canonical_name = CANONICAL_NAMES.get(key, "")
+                name_matches   = (name == canonical_name)
+                # Use canonical name for appid calculation so it stays stable
+                # regardless of what the user actually named their shortcut.
+                # This way the appid matches what DeckOps expects even if the
+                # name is slightly off — the needs_rename flag handles the UX.
+                appid_name     = canonical_name if canonical_name else name
+                shortcut_appid = _calc_shortcut_appid(exe_path, appid_name)
+                compatdata_path = os.path.join(
                     COMPAT_ROOT, str(shortcut_appid)
                 )
                 install_dir = start_dir
@@ -222,8 +252,12 @@ def find_own_games() -> dict:
                     "exe_size":         os.path.getsize(actual_exe) if os.path.exists(actual_exe) else None,
                     "shortcut_appid":   shortcut_appid,
                     "compatdata_path":  compatdata_path,
-                    # Flag so the install flow knows this came from a non-Steam source
                     "source":           "own",
+                    # True if the shortcut name doesn't match the canonical name.
+                    # The UI shows a warning so the user can fix it in Steam.
+                    "needs_rename":     not name_matches,
+                    "current_name":     name,
+                    "canonical_name":   canonical_name,
                 }
 
     return found
