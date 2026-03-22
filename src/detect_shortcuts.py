@@ -2,9 +2,9 @@
 detect_shortcuts.py - DeckOps non-Steam game detector
 
 Scans shortcuts.vdf for all Steam user accounts and looks for known
-Call of Duty exe names. When found, it calculates the shortcut appid
-from the exe path and name using Steam's CRC32 algorithm, then derives
-the Proton prefix path from that appid.
+Call of Duty exe names. When found, it automatically renames the shortcut
+to the canonical DeckOps name so the shortcut appid is stable and
+predictable across artwork, controller configs, and prefix paths.
 
 Returns the same game dict structure as detect_games.find_installed_games()
 so the rest of the install flow (SetupScreen, InstallScreen, etc.) needs
@@ -29,8 +29,8 @@ COMPAT_ROOT  = os.path.join(STEAM_ROOT, "steamapps", "compatdata")
 MIN_UID = 10000
 
 # Map exe filename (lowercase) to game key(s).
-# Some games share an exe name — cod4 SP and MP have different exes so
-# there's no ambiguity there, but we list all of them for completeness.
+# Some games share an exe name but cod4 SP and MP have different exes so
+# there's no ambiguity there. We list all of them for completeness.
 EXE_TO_KEYS = {
     "iw3mp.exe":      ["cod4mp"],
     "iw3sp.exe":      ["cod4sp"],
@@ -48,11 +48,10 @@ EXE_TO_KEYS = {
 }
 
 
-# Canonical shortcut names DeckOps expects for each game key.
-# Users must name their non-Steam shortcuts exactly as shown here.
-# detect_shortcuts.py matches on both exe name AND canonical name so
-# a shortcut with the right exe but wrong name is flagged for the user
-# to fix rather than silently skipped or incorrectly installed.
+# Canonical shortcut names DeckOps uses for each game key.
+# When a shortcut is detected by exe name, DeckOps renames it to the
+# canonical name automatically. This keeps the shortcut appid stable
+# since Steam calculates it from exe_path + name.
 CANONICAL_NAMES = {
     "cod4mp": "Call of Duty 4: Modern Warfare - Multiplayer",
     "cod4sp": "Call of Duty 4: Modern Warfare - Singleplayer",
@@ -89,7 +88,7 @@ def _find_all_steam_uids() -> list[str]:
 def _calc_shortcut_appid(exe_path: str, name: str) -> int:
     """
     Calculate the Steam shortcut appid from exe path and name.
-    Must match Steam's internal algorithm exactly — same as shortcut.py.
+    Must match Steam's internal algorithm exactly, same as shortcut.py.
     Do not modify this function.
     """
     key = (exe_path + name).encode("utf-8")
@@ -103,10 +102,10 @@ def _parse_shortcuts_vdf(path: str) -> list[dict]:
     with keys: name, exe, start_dir.
 
     Binary VDF format:
-      0x00 <index> 0x00 — entry header
-      0x01 <key> 0x00 <value> 0x00 — string field
-      0x02 <key> 0x00 <4 bytes LE int> — int32 field
-      0x08 — end of block
+      0x00 <index> 0x00    -- entry header
+      0x01 <key> 0x00 <value> 0x00  -- string field
+      0x02 <key> 0x00 <4 bytes LE int>  -- int32 field
+      0x08  -- end of block
     """
     if not os.path.exists(path):
         return []
@@ -140,7 +139,7 @@ def _parse_shortcuts_vdf(path: str) -> list[dict]:
             i += 1
             continue
 
-        # Found an entry — scan forward for string fields we care about
+        # Found an entry, scan forward for string fields we care about
         entry = {}
         j = end + 1
         while j < len(data) and data[j] != 0x08:
@@ -167,13 +166,13 @@ def _parse_shortcuts_vdf(path: str) -> list[dict]:
                 if key.lower() in ("appname", "exe", "startdir"):
                     entry[key.lower()] = val
             elif field_type == 0x02:
-                # Int32 field — skip key + 4 bytes
+                # Int32 field, skip key + 4 bytes
                 key_end = data.find(b'\x00', j)
                 if key_end == -1:
                     break
                 j = key_end + 1 + 4
             else:
-                # Unknown field type — stop scanning this entry
+                # Unknown field type, stop scanning this entry
                 break
 
         if "exe" in entry:
@@ -188,14 +187,66 @@ def _parse_shortcuts_vdf(path: str) -> list[dict]:
     return shortcuts
 
 
-def find_own_games() -> dict:
+def _rename_shortcut_in_vdf(path: str, old_name: str, new_name: str) -> bool:
+    """
+    Rewrite a shortcut's AppName value in shortcuts.vdf.
+    Does a targeted binary replacement of the old name bytes with the new
+    name bytes. Returns True if the rename was applied.
+
+    Must be called while Steam is closed so it doesnt overwrite our change.
+    """
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except Exception:
+        return False
+
+    # The appname value sits between 0x01 + "AppName" + 0x00 and 0x00.
+    # We search for the exact old name bytes after the appname key marker
+    # and replace with the new name. This is safe because each shortcut
+    # entry has exactly one appname field.
+    old_marker = b'\x01AppName\x00' + old_name.encode("utf-8") + b'\x00'
+    new_marker = b'\x01AppName\x00' + new_name.encode("utf-8") + b'\x00'
+
+    # Also check lowercase variant since some Steam versions write it lowercase
+    old_marker_lc = b'\x01appname\x00' + old_name.encode("utf-8") + b'\x00'
+    new_marker_lc = b'\x01appname\x00' + new_name.encode("utf-8") + b'\x00'
+
+    modified = False
+    if old_marker in data:
+        data = data.replace(old_marker, new_marker, 1)
+        modified = True
+    elif old_marker_lc in data:
+        data = data.replace(old_marker_lc, new_marker_lc, 1)
+        modified = True
+
+    if modified:
+        try:
+            with open(path, "wb") as f:
+                f.write(data)
+            return True
+        except Exception:
+            return False
+
+    return False
+
+
+def find_own_games(on_progress=None) -> dict:
     """
     Scan shortcuts.vdf across all Steam user accounts and return a dict of
     detected DeckOps-supported games installed outside of Steam.
 
+    If a shortcut has the right exe but the wrong name, it is automatically
+    renamed to the canonical DeckOps name in shortcuts.vdf. This keeps the
+    shortcut appid stable for artwork, controller configs, and prefix paths.
+
     Returns the same structure as detect_games.find_installed_games() so
     the rest of the install flow needs no changes.
     """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
     found   = {}
     checked = set()  # avoid processing the same shortcut twice across users
 
@@ -212,11 +263,10 @@ def find_own_games() -> dict:
             if not exe_name or not start_dir:
                 continue
 
-            # Deduplicate by exe path + name across multiple user accounts
-            dedup_key = (exe_path, name)
-            if dedup_key in checked:
+            # Deduplicate by exe path across multiple user accounts
+            if exe_path in checked:
                 continue
-            checked.add(dedup_key)
+            checked.add(exe_path)
 
             keys = EXE_TO_KEYS.get(exe_name, [])
             for key in keys:
@@ -227,18 +277,21 @@ def find_own_games() -> dict:
                 if not meta:
                     continue
 
-                # Check if the shortcut name matches the canonical name.
-                # If it matches we can calculate the correct shortcut appid.
-                # If it doesn't we flag it so the UI can warn the user to
-                # rename the shortcut rather than installing to the wrong prefix.
                 canonical_name = CANONICAL_NAMES.get(key, "")
-                name_matches   = (name == canonical_name)
-                # Use canonical name for appid calculation so it stays stable
-                # regardless of what the user actually named their shortcut.
-                # This way the appid matches what DeckOps expects even if the
-                # name is slightly off — the needs_rename flag handles the UX.
-                appid_name     = canonical_name if canonical_name else name
-                shortcut_appid = _calc_shortcut_appid(exe_path, appid_name)
+                if not canonical_name:
+                    continue
+
+                # Auto-rename the shortcut if the name doesnt match.
+                # This makes the appid predictable for everything downstream.
+                if name != canonical_name:
+                    prog(f"  Renaming '{name}' to '{canonical_name}'...")
+                    renamed = _rename_shortcut_in_vdf(vdf_path, name, canonical_name)
+                    if renamed:
+                        prog(f"  ✓ Renamed in shortcuts.vdf")
+                    else:
+                        prog(f"  ⚠ Could not rename, appid may not match")
+
+                shortcut_appid = _calc_shortcut_appid(exe_path, canonical_name)
                 compatdata_path = os.path.join(
                     COMPAT_ROOT, str(shortcut_appid)
                 )
@@ -253,11 +306,6 @@ def find_own_games() -> dict:
                     "shortcut_appid":   shortcut_appid,
                     "compatdata_path":  compatdata_path,
                     "source":           "own",
-                    # True if the shortcut name doesn't match the canonical name.
-                    # The UI shows a warning so the user can fix it in Steam.
-                    "needs_rename":     not name_matches,
-                    "current_name":     name,
-                    "canonical_name":   canonical_name,
                 }
 
     return found
