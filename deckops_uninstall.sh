@@ -178,6 +178,84 @@ if [ -n "$STEAM_ROOT" ]; then
 fi
 echo ""
 
+info "Restoring non-Steam (My Own) game executables..."
+
+# Scan shortcuts.vdf for games added via the My Own flow. These were
+# detected by exe name and may have had their exes replaced with wrapper
+# scripts. We restore from .bak the same way we do for Steam games.
+python3 - << 'PYEOF'
+import os, re
+
+STEAM_DIR    = os.path.expanduser("~/.local/share/Steam")
+USERDATA_DIR = os.path.join(STEAM_DIR, "userdata")
+
+# Same exe list as detect_shortcuts.py EXE_TO_KEYS
+KNOWN_EXES = [
+    "iw3mp.exe", "iw3sp.exe", "iw4mp.exe", "iw4sp.exe",
+    "iw5mp.exe", "iw5sp.exe", "CoDWaW.exe", "CoDWaWmp.exe",
+    "BlackOps.exe", "BlackOpsMP.exe", "t6zm.exe", "t6mp.exe", "t6sp.exe",
+]
+
+def parse_shortcuts(path):
+    """Pull exe and start_dir from shortcuts.vdf entries."""
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except Exception:
+        return []
+    results = []
+    for m in re.finditer(b'\x01(?:exe|Exe)\x00([^\x00]+)\x00', data):
+        exe = m.group(1).decode("utf-8", errors="replace").strip('"')
+        results.append(exe)
+    return results
+
+if not os.path.isdir(USERDATA_DIR):
+    print("  No userdata found, skipping.")
+    exit(0)
+
+restored = set()
+for uid in os.listdir(USERDATA_DIR):
+    if not uid.isdigit() or int(uid) < 10000:
+        continue
+    vdf_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+    for exe_path in parse_shortcuts(vdf_path):
+        exe_name = os.path.basename(exe_path)
+        # Check both exact case and lowercase since detect_shortcuts matches lowercase
+        if exe_name not in KNOWN_EXES and exe_name.lower() not in [e.lower() for e in KNOWN_EXES]:
+            continue
+        if exe_path in restored:
+            continue
+        bak_path = exe_path + ".bak"
+        if os.path.exists(bak_path):
+            try:
+                os.rename(bak_path, exe_path)
+                print(f"  Restored {exe_name} (from .bak)")
+                restored.add(exe_path)
+            except Exception as ex:
+                print(f"  Failed to restore {exe_name}: {ex}")
+        else:
+            # Also check in the start_dir for the exe
+            install_dir = os.path.dirname(exe_path)
+            for known in KNOWN_EXES:
+                candidate = os.path.join(install_dir, known)
+                candidate_bak = candidate + ".bak"
+                if candidate_bak not in restored and os.path.exists(candidate_bak):
+                    try:
+                        if os.path.exists(candidate):
+                            os.remove(candidate)
+                        os.rename(candidate_bak, candidate)
+                        print(f"  Restored {known} (from .bak)")
+                        restored.add(candidate_bak)
+                    except Exception as ex:
+                        print(f"  Failed to restore {known}: {ex}")
+
+if not restored:
+    print("  No non-Steam game backups found.")
+PYEOF
+echo ""
+
 info "Removing iw4x / cod4x client files..."
 
 if [ -n "$STEAM_ROOT" ]; then
@@ -346,6 +424,8 @@ DECKOPS_DIRS=(
     "$HOME/.local/share/deckops-nightly"
     "$HOME/.config/deckops-nightly"
     "$HOME/.local/share/deckops-nightly/plutonium_prefix"
+    "$HOME/.local/share/deckops/plutonium_prefix"
+    "$HOME/.local/share/deckops"
 )
 
 for d in "${DECKOPS_DIRS[@]}"; do
@@ -368,6 +448,7 @@ SHORTCUT_NAMES = {
     "Call of Duty 4: Modern Warfare - Multiplayer",
     "Call of Duty: World at War - Multiplayer",
     "DeckOps",
+    "DeckOps Nightly",
 }
 
 steam_dir = os.path.expanduser("~/.local/share/Steam")
@@ -558,6 +639,46 @@ for key, info in SHORTCUTS.items():
         shortcut_appids.add(appid)
         print(f"  Found {info['name']} → appid {appid}")
 
+# Also find "own" game shortcut appids by scanning shortcuts.vdf for
+# known exe names. These were renamed to canonical names by DeckOps so
+# we calculate the appid from exe_path + canonical_name.
+OWN_EXE_MAP = {
+    "iw3mp.exe":      "Call of Duty 4: Modern Warfare - Multiplayer",
+    "iw3sp.exe":      "Call of Duty 4: Modern Warfare - Singleplayer",
+    "iw4mp.exe":      "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
+    "iw4sp.exe":      "Call of Duty: Modern Warfare 2 (2009) - Singleplayer",
+    "iw5mp.exe":      "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
+    "iw5sp.exe":      "Call of Duty: Modern Warfare 3 (2011) - Singleplayer",
+    "codwaw.exe":     "Call of Duty: World at War",
+    "codwawmp.exe":   "Call of Duty: World at War - Multiplayer",
+    "blackops.exe":   "Call of Duty: Black Ops",
+    "blackopsmp.exe": "Call of Duty: Black Ops - Multiplayer",
+    "t6sp.exe":       "Call of Duty: Black Ops II - Singleplayer",
+    "t6zm.exe":       "Call of Duty: Black Ops II - Zombies",
+    "t6mp.exe":       "Call of Duty: Black Ops II - Multiplayer",
+}
+
+for uid in os.listdir(userdata):
+    if not uid.isdigit() or int(uid) < 10000:
+        continue
+    vdf_path = os.path.join(userdata, uid, "config", "shortcuts.vdf")
+    if not os.path.exists(vdf_path):
+        continue
+    try:
+        with open(vdf_path, "rb") as f:
+            data = f.read()
+        for m in re.finditer(b'\x01(?:exe|Exe)\x00([^\x00]+)\x00', data):
+            exe = m.group(1).decode("utf-8", errors="replace").strip('"')
+            exe_name = os.path.basename(exe).lower()
+            canonical = OWN_EXE_MAP.get(exe_name)
+            if canonical:
+                appid = calc_shortcut_appid(exe, canonical)
+                if appid not in shortcut_appids:
+                    shortcut_appids.add(appid)
+                    print(f"  Found own game {canonical} → appid {appid}")
+    except Exception:
+        pass
+
 if not shortcut_appids:
     print("  No shortcut appids to clean up.")
     exit(0)
@@ -728,6 +849,42 @@ for key, info in SHORTCUTS.items():
         appid = calc_shortcut_appid(exe_path, info["name"])
         all_appids.add(appid)
 
+# Also find "own" game shortcut appids from shortcuts.vdf
+OWN_EXE_MAP = {
+    "iw3mp.exe":      "Call of Duty 4: Modern Warfare - Multiplayer",
+    "iw3sp.exe":      "Call of Duty 4: Modern Warfare - Singleplayer",
+    "iw4mp.exe":      "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
+    "iw4sp.exe":      "Call of Duty: Modern Warfare 2 (2009) - Singleplayer",
+    "iw5mp.exe":      "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
+    "iw5sp.exe":      "Call of Duty: Modern Warfare 3 (2011) - Singleplayer",
+    "codwaw.exe":     "Call of Duty: World at War",
+    "codwawmp.exe":   "Call of Duty: World at War - Multiplayer",
+    "blackops.exe":   "Call of Duty: Black Ops",
+    "blackopsmp.exe": "Call of Duty: Black Ops - Multiplayer",
+    "t6sp.exe":       "Call of Duty: Black Ops II - Singleplayer",
+    "t6zm.exe":       "Call of Duty: Black Ops II - Zombies",
+    "t6mp.exe":       "Call of Duty: Black Ops II - Multiplayer",
+}
+
+for uid in os.listdir(USERDATA):
+    if not uid.isdigit() or int(uid) < 10000:
+        continue
+    vdf_path = os.path.join(USERDATA, uid, "config", "shortcuts.vdf")
+    if not os.path.exists(vdf_path):
+        continue
+    try:
+        with open(vdf_path, "rb") as f:
+            data = f.read()
+        for m in re.finditer(b'\x01(?:exe|Exe)\x00([^\x00]+)\x00', data):
+            exe = m.group(1).decode("utf-8", errors="replace").strip('"')
+            exe_name = os.path.basename(exe).lower()
+            canonical = OWN_EXE_MAP.get(exe_name)
+            if canonical:
+                appid = calc_shortcut_appid(exe, canonical)
+                all_appids.add(appid)
+    except Exception:
+        pass
+
 # Build list of all keys to remove from configset files (appids + named keys)
 all_configset_keys = set(all_appids)
 for appid in MANAGED_STEAM_APPIDS:
@@ -850,6 +1007,44 @@ for key, info in SHORTCUTS.items():
         appid = calc_shortcut_appid(exe_path, info["name"])
         all_appids.add(appid)
 
+# Also find "own" game shortcut appids from shortcuts.vdf
+OWN_EXE_MAP = {
+    "iw3mp.exe":      "Call of Duty 4: Modern Warfare - Multiplayer",
+    "iw3sp.exe":      "Call of Duty 4: Modern Warfare - Singleplayer",
+    "iw4mp.exe":      "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
+    "iw4sp.exe":      "Call of Duty: Modern Warfare 2 (2009) - Singleplayer",
+    "iw5mp.exe":      "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
+    "iw5sp.exe":      "Call of Duty: Modern Warfare 3 (2011) - Singleplayer",
+    "codwaw.exe":     "Call of Duty: World at War",
+    "codwawmp.exe":   "Call of Duty: World at War - Multiplayer",
+    "blackops.exe":   "Call of Duty: Black Ops",
+    "blackopsmp.exe": "Call of Duty: Black Ops - Multiplayer",
+    "t6sp.exe":       "Call of Duty: Black Ops II - Singleplayer",
+    "t6zm.exe":       "Call of Duty: Black Ops II - Zombies",
+    "t6mp.exe":       "Call of Duty: Black Ops II - Multiplayer",
+}
+
+userdata = os.path.join(steam_root, "userdata")
+if os.path.isdir(userdata):
+    for uid in os.listdir(userdata):
+        if not uid.isdigit() or int(uid) < 10000:
+            continue
+        vdf_path = os.path.join(userdata, uid, "config", "shortcuts.vdf")
+        if not os.path.exists(vdf_path):
+            continue
+        try:
+            with open(vdf_path, "rb") as f:
+                vdf_data = f.read()
+            for m in re.finditer(b'\x01(?:exe|Exe)\x00([^\x00]+)\x00', vdf_data):
+                exe = m.group(1).decode("utf-8", errors="replace").strip('"')
+                exe_name = os.path.basename(exe).lower()
+                canonical = OWN_EXE_MAP.get(exe_name)
+                if canonical:
+                    appid = calc_shortcut_appid(exe, canonical)
+                    all_appids.add(appid)
+        except Exception:
+            pass
+
 with open(STEAM_CONFIG, "r", encoding="utf-8") as f:
     data = f.read()
 
@@ -869,8 +1064,10 @@ PYEOF
 echo ""
 
 SHORTCUTS=(
+    "$HOME/.local/share/applications/deckops-nightly.desktop"
     "$HOME/.local/share/applications/deckops.desktop"
     "$HOME/.local/share/applications/dev.galvarino.deckops.desktop"
+    "$HOME/Desktop/DeckOps-Nightly.desktop"
     "$HOME/Desktop/DeckOps.desktop"
     "$HOME/Desktop/deckops.desktop"
 )
