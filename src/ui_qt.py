@@ -1064,27 +1064,6 @@ class InstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Shortcuts skipped: {ex}")
 
-        # ── Artwork for own games ─────────────────────────────────────────────
-        # Download official Steam artwork for non-Steam shortcuts so they show
-        # up with proper grid, hero, logo, and icon in the Steam library.
-        # Only runs when the user selected the "My Own" source path.
-        if cfg.get_game_source() == "own":
-            try:
-                from artwork import download_artwork_for_own_games
-                from detect_shortcuts import find_own_games
-                self._s.log.emit("Downloading Steam artwork for your games...")
-                own_games = find_own_games()
-                if own_games:
-                    download_artwork_for_own_games(
-                        own_games,
-                        on_progress=lambda msg: self._s.log.emit(msg)
-                    )
-                    self._s.log.emit("✓  Artwork downloaded")
-                else:
-                    self._s.log.emit("  No own games found for artwork download")
-            except Exception as ex:
-                self._s.log.emit(f"  Artwork download skipped: {ex}")
-
         cfg.complete_first_run(self.steam_root)
         self._s.progress.emit(100, "All done!")
         self._s.done.emit(True)

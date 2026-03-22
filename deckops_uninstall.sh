@@ -1069,7 +1069,6 @@ echo ""
 SHORTCUTS=(
     "$HOME/.local/share/applications/deckops-nightly.desktop"
     "$HOME/.local/share/applications/deckops.desktop"
-    "$HOME/.local/share/applications/dev.galvarino.deckops.desktop"
     "$HOME/Desktop/DeckOps-Nightly.desktop"
     "$HOME/Desktop/DeckOps.desktop"
     "$HOME/Desktop/deckops.desktop"
