@@ -914,6 +914,24 @@ class InstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Launch option cleanup skipped: {ex}")
 
+        # ── Rename own game shortcuts now that Steam is closed ────────────────
+        # Artwork was already written under the old appid during find_own_games.
+        # rename_own_shortcuts renames the shortcut in shortcuts.vdf and moves
+        # the artwork files from old appid to new appid so everything matches
+        # when Steam reopens.
+        if cfg.get_game_source() == "own":
+            try:
+                from detect_shortcuts import rename_own_shortcuts
+                installed_for_rename = {k: g for k, gd, g in self.selected if g and g.get("source") == "own"}
+                if installed_for_rename:
+                    self._s.log.emit("Renaming shortcuts...")
+                    rename_own_shortcuts(
+                        installed_for_rename,
+                        on_progress=lambda msg: self._s.log.emit(msg)
+                    )
+            except Exception as ex:
+                self._s.log.emit(f"  Shortcut rename skipped: {ex}")
+
         # ── Plutonium games ───────────────────────────────────────────────────
         if has_plut:
             from plutonium import install_xact_once, XACT_GAME_KEYS

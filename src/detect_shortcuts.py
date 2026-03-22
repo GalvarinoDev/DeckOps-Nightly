@@ -237,9 +237,12 @@ def find_own_games(on_progress=None) -> dict:
     Scan shortcuts.vdf across all Steam user accounts and return a dict of
     detected DeckOps-supported games installed outside of Steam.
 
-    If a shortcut has the right exe but the wrong name, it is automatically
-    renamed to the canonical DeckOps name in shortcuts.vdf. This keeps the
-    shortcut appid stable for artwork, controller configs, and prefix paths.
+    Uses the shortcut's CURRENT name (whatever the user called it) for
+    the appid calculation and artwork download. This means artwork lands
+    under the appid Steam is actively using right now.
+
+    Renaming happens later via rename_own_shortcuts() after Steam is closed
+    during the install flow.
 
     Returns the same structure as detect_games.find_installed_games() so
     the rest of the install flow needs no changes.
@@ -283,28 +286,16 @@ def find_own_games(on_progress=None) -> dict:
                 if not canonical_name:
                     continue
 
-                # Auto-rename the shortcut if the name doesnt match.
-                # This makes the appid predictable for everything downstream.
-                if name != canonical_name:
-                    prog(f"  Renaming '{name}' to '{canonical_name}'...")
-                    renamed = _rename_shortcut_in_vdf(vdf_path, name, canonical_name)
-                    if renamed:
-                        prog(f"  ✓ Renamed in shortcuts.vdf")
-                    else:
-                        prog(f"  ⚠ Could not rename, appid may not match")
+                # Use the CURRENT shortcut name for appid calculation.
+                # This is what Steam is using right now, so artwork written
+                # under this appid will show up immediately.
+                shortcut_appid = _calc_shortcut_appid(exe_raw, name)
 
-                # Steam calculates shortcut appids from the raw exe string
-                # (with quotes) + the shortcut name. We must use exe_raw here
-                # so our appid matches what Steam sees internally.
-                shortcut_appid = _calc_shortcut_appid(exe_raw, canonical_name)
-
-                # Download artwork immediately after rename so the shortcut
-                # name change and artwork files land together before Steam
-                # reopens. This matches how shortcut.py does it for the
-                # DeckOps-created shortcuts (cod4mp, t4mp).
+                # Download artwork under the current appid so Steam sees it
+                # while the shortcut still has the original name.
                 try:
                     from artwork import download_artwork
-                    prog(f"  Downloading artwork for {canonical_name}...")
+                    prog(f"  Downloading artwork for {key}...")
                     download_artwork(key, shortcut_appid, on_progress=on_progress)
                 except Exception as ex:
                     prog(f"  ⚠ Artwork download failed: {ex}")
@@ -324,6 +315,83 @@ def find_own_games(on_progress=None) -> dict:
                     "shortcut_appid":   shortcut_appid,
                     "compatdata_path":  compatdata_path,
                     "source":           "own",
+                    "current_name":     name,
                 }
 
     return found
+
+
+def rename_own_shortcuts(own_games: dict, on_progress=None):
+    """
+    Rename all detected own game shortcuts to their canonical DeckOps names
+    in shortcuts.vdf. Must be called while Steam is closed.
+
+    After rename, the shortcut appid changes because Steam calculates it
+    from exe_path + name. This also moves artwork from the old appid to
+    the new one so Steam finds it after the rename.
+
+    own_games -- dict returned by find_own_games()
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    for key, game in own_games.items():
+        current_name   = game.get("current_name", "")
+        canonical_name = CANONICAL_NAMES.get(key, "")
+        exe_raw        = game.get("exe_raw", "")
+        old_appid      = game.get("shortcut_appid")
+
+        if not canonical_name or not exe_raw:
+            continue
+        if current_name == canonical_name:
+            prog(f"  {key}: already named correctly")
+            continue
+
+        # Rename in every user's shortcuts.vdf
+        for uid in _find_all_steam_uids():
+            vdf_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+            renamed = _rename_shortcut_in_vdf(vdf_path, current_name, canonical_name)
+            if renamed:
+                prog(f"  ✓ {key}: renamed to '{canonical_name}'")
+
+        # Calculate the new appid after rename
+        new_appid = _calc_shortcut_appid(exe_raw, canonical_name)
+
+        # Move artwork from old appid to new appid in every user's grid dir
+        if old_appid and old_appid != new_appid:
+            _move_artwork(old_appid, new_appid, on_progress=on_progress)
+
+        # Update the game dict so downstream code uses the new appid
+        game["shortcut_appid"]  = new_appid
+        game["current_name"]    = canonical_name
+        game["compatdata_path"] = os.path.join(COMPAT_ROOT, str(new_appid))
+
+
+def _move_artwork(old_appid: int, new_appid: int, on_progress=None):
+    """
+    Rename artwork files in every user's grid directory from old_appid
+    to new_appid so Steam finds them after the shortcut rename.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    old_str = str(old_appid)
+    new_str = str(new_appid)
+
+    for uid in _find_all_steam_uids():
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+        if not os.path.isdir(grid_dir):
+            continue
+        for filename in os.listdir(grid_dir):
+            if filename.startswith(old_str):
+                suffix   = filename[len(old_str):]
+                new_name = new_str + suffix
+                old_path = os.path.join(grid_dir, filename)
+                new_path = os.path.join(grid_dir, new_name)
+                try:
+                    os.rename(old_path, new_path)
+                except Exception as ex:
+                    prog(f"  ⚠ Could not rename {filename}: {ex}")
+
