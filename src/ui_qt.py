@@ -944,7 +944,7 @@ class SetupScreen(QWidget):
                     pre_ready = True if installed else False
                 else:
                     pre_ready = _is_prefix_ready(self.steam_root, appid) if appid else False
-                already_done = cfg.is_game_setup(key)
+                already_done = cfg.is_game_setup_for_source(key, "own" if is_own else "steam")
 
                 slot = QWidget()
                 slot.setFixedWidth(SLOT_W)
@@ -1510,7 +1510,7 @@ class InstallScreen(QWidget):
                     compat = find_compatdata(self.steam_root, _plut_appid)
                     install_plutonium(game, key, self.steam_root, proton, compat, op_plut,
                                       protontricks_ready=xact_ready)
-                    cfg.mark_game_setup(key, "plutonium")
+                    cfg.mark_game_setup(key, "plutonium", source="steam")
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
@@ -1526,7 +1526,7 @@ class InstallScreen(QWidget):
                 try:
                     compat = find_compatdata(self.steam_root, gd["appid"])
                     install_iw4x(game, self.steam_root, proton, compat, op_iw4x)
-                    cfg.mark_game_setup(key, "iw4x")
+                    cfg.mark_game_setup(key, "iw4x", source="steam")
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)
                 except Exception as ex:
@@ -1547,7 +1547,7 @@ class InstallScreen(QWidget):
                                       appid=gd["appid"])
                     elif c == "iw3sp":
                         install_iw3sp(game, self.steam_root, proton, compat, op_cod4)
-                    cfg.mark_game_setup(key, c)
+                    cfg.mark_game_setup(key, c, source="steam")
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
@@ -1566,8 +1566,8 @@ class InstallScreen(QWidget):
         # display configs and controller profiles applied below.
         for key, gd, game in self.selected:
             c = KEY_CLIENT.get(key, "")
-            if c == "steam" and not cfg.is_game_setup(key):
-                cfg.mark_game_setup(key, "steam")
+            if c == "steam" and not cfg.is_game_setup_for_source(key, "steam"):
+                cfg.mark_game_setup(key, "steam", source="steam")
                 self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
 
         # ── game display configs ──────────────────────────────────────────────
@@ -2610,7 +2610,7 @@ class OwnInstallScreen(QWidget):
                 try:
                     compat = game.get("compatdata_path", "")
                     install_iw4x(game, self.steam_root, proton, compat, op_iw4x)
-                    cfg.mark_game_setup(key, "iw4x")
+                    cfg.mark_game_setup(key, "iw4x", source="own")
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)
                 except Exception as ex:
@@ -2632,7 +2632,7 @@ class OwnInstallScreen(QWidget):
                                       appid=game.get("shortcut_appid", 7940))
                     elif c == "iw3sp":
                         install_iw3sp(game, self.steam_root, proton, compat, op_cod4)
-                    cfg.mark_game_setup(key, c)
+                    cfg.mark_game_setup(key, c, source="own")
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
@@ -2642,8 +2642,8 @@ class OwnInstallScreen(QWidget):
         # ── Mark vanilla games ────────────────────────────────────────────
         for key, gd, game in self.selected:
             c = KEY_CLIENT.get(key, "")
-            if c == "steam" and not cfg.is_game_setup(key):
-                cfg.mark_game_setup(key, "steam")
+            if c == "steam" and not cfg.is_game_setup_for_source(key, "own"):
+                cfg.mark_game_setup(key, "steam", source="own")
                 self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
 
         # ── Game display configs ──────────────────────────────────────────

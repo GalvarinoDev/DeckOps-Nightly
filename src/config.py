@@ -27,7 +27,7 @@ DEFAULTS = {
                                  # NOTE: this will also be used for future Bazzite, Steam Box, and other handheld support on SteamOS
     "ge_proton_version": None,   # e.g. "GE-Proton10-32"
     "steam_root": None,
-    "setup_games": {},           # key: game key, value: { "client": "cod4x"|"iw4x"|"plutonium", "setup_at": timestamp }
+    "setup_games": {},           # key: game key, value: { "client": ..., "source": "steam"|"own", "setup_at": timestamp }
     "game_source": None,         # "steam" or "own"
     "music_enabled": True,       # background music on/off
     "music_volume":  0.4,        # 0.0 to 1.0
@@ -181,23 +181,34 @@ def set_ge_proton_version(version: str):
     save(config)
 
 
-def mark_game_setup(game_key: str, client: str):
+def mark_game_setup(game_key: str, client: str, source: str = "steam"):
     """
     Record that a game has been set up successfully.
     game_key -- e.g. 'cod4mp', 'iw4mp', 't5sp'
     client   -- e.g. 'cod4x', 'iw4x', 'plutonium'
+    source   -- 'steam' or 'own' (which install path was used)
     """
     config = load()
     config["setup_games"][game_key] = {
         "client": client,
+        "source": source,
         "setup_at": datetime.now().isoformat(),
     }
     save(config)
 
 
 def is_game_setup(game_key: str) -> bool:
-    """Returns True if this game key has been set up."""
+    """Returns True if this game key has been set up (any source)."""
     return game_key in load().get("setup_games", {})
+
+
+def is_game_setup_for_source(game_key: str, source: str) -> bool:
+    """Returns True if this game key has been set up from the given source.
+    Entries without a 'source' field are treated as 'steam' for backward compat."""
+    entry = load().get("setup_games", {}).get(game_key)
+    if entry is None:
+        return False
+    return entry.get("source", "steam") == source
 
 
 def get_setup_games() -> dict:
