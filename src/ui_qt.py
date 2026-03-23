@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
     QLabel, QPushButton, QCheckBox, QProgressBar,
     QFrame, QSizePolicy, QMessageBox, QPlainTextEdit,
+    QFileDialog,
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QFont, QFontDatabase, QPixmap
@@ -660,16 +661,28 @@ class IntroScreen(QWidget):
         self._model_section.setVisible(False)
         self._gyro_section.setVisible(True)
 
+    def _next_screen(self):
+        """Route to the correct next screen based on game_source."""
+        source = cfg.get_game_source() or "steam"
+        if source == "own":
+            self.stack.setCurrentIndex(11)   # OwnScanScreen
+        else:
+            self.stack.setCurrentIndex(2)    # WelcomeScreen (standard)
+
     def _pick_gyro(self, mode):
         cfg.set_gyro_mode(mode)
-        # Skip play mode screen if already set from a previous run.
-        # If play_mode is set AND (handheld OR docked with resolution+controller set), skip ahead.
+        source = cfg.get_game_source() or "steam"
+        if source == "steam":
+            # Standard flow: no play mode questions, go straight to detection
+            self._next_screen()
+            return
+        # Advanced flow: check if play mode already set from a previous run.
         play_mode = cfg.get_play_mode()
         if play_mode:
             if play_mode == "handheld":
-                self.stack.setCurrentIndex(2)
+                self._next_screen()
             elif cfg.get_docked_resolution() and cfg.get_external_controller():
-                self.stack.setCurrentIndex(2)
+                self._next_screen()
             elif cfg.get_docked_resolution():
                 # Resolution set but no controller type chosen yet
                 self._gyro_section.setVisible(False)
@@ -689,7 +702,7 @@ class IntroScreen(QWidget):
             self._play_section.setVisible(False)
             self._resolution_section.setVisible(True)
         else:
-            self.stack.setCurrentIndex(2)
+            self._next_screen()
 
     def _pick_resolution(self, resolution):
         cfg.set_docked_resolution(resolution)
@@ -698,17 +711,18 @@ class IntroScreen(QWidget):
             self._resolution_section.setVisible(False)
             self._controller_section.setVisible(True)
         else:
-            self.stack.setCurrentIndex(2)
+            self._next_screen()
 
     def _pick_controller(self, controller_type):
         cfg.set_external_controller(controller_type)
-        self.stack.setCurrentIndex(2)
+        self._next_screen()
 
 # ── WelcomeScreen ──────────────────────────────────────────────────────────────
 class WelcomeScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.installed={}
         self.steam_installed={}; self.own_installed={}; self.steam_root=""
+        self._steam_only = False  # set by OwnScanScreen skip or advanced flow
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(14)
         _title_block(lay)
         lay.addSpacing(12)
@@ -750,16 +764,10 @@ class WelcomeScreen(QWidget):
         libs = parse_library_folders(self.steam_root)
         steam_found = find_installed_games(libs)
         self.steam_installed = steam_found
-        if source == "own":
+        if source == "own" and not self._steam_only:
             from detect_games import find_own_installed
             own_found = find_own_installed()
-            # Keep own games that are NOT already on Steam, plus all own games.
-            # Both dicts are kept separate so SetupScreen can show two sections.
-            # The user can choose which source to install from per game.
             self.own_installed = own_found
-            # Combined dict for LCD filtering and count display.
-            # Own entries fill in first, then Steam overwrites on collision
-            # so the combined view prefers Steam (for status display only).
             self.installed = {**own_found, **steam_found}
         else:
             self.own_installed = {}
@@ -2703,6 +2711,211 @@ class OwnInstallScreen(QWidget):
         self._s.done.emit(True)
 
 
+# ── OwnScanScreen ─────────────────────────────────────────────────────────────
+class OwnScanScreen(QWidget):
+    """
+    Advanced flow step 1: scan for non-Steam games in ~/Games, ~/games,
+    SD card, or a user-chosen folder. Shows detected games with checkboxes
+    (all pre-checked). User can uncheck games they don't want, pick a custom
+    folder if nothing was found, or skip to Steam-only setup.
+    """
+    def __init__(self, stack):
+        super().__init__(); self.stack = stack
+        self._own_found = {}       # full scan results
+        self._checks = {}          # key -> QCheckBox
+        self._extra_paths = []     # user-chosen folders
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(60, 40, 60, 40); lay.setSpacing(14)
+
+        # Back button
+        back = _btn("\u2190 Back", C_DARK_BTN, size=10, h=30)
+        back.setFixedWidth(80)
+        back.clicked.connect(lambda: self.stack.setCurrentIndex(1))
+        back_row = QHBoxLayout()
+        back_row.addWidget(back); back_row.addStretch()
+        lay.addLayout(back_row)
+
+        t = QLabel("YOUR GAMES")
+        t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
+        t.setStyleSheet("color:#FFF;background:transparent;")
+        lay.addWidget(t)
+
+        self.status = _lbl("Scanning for your games...", 13, C_DIM)
+        lay.addWidget(self.status)
+
+        self.bar = QProgressBar()
+        self.bar.setMaximum(100); self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(14)
+        bw = QHBoxLayout(); bw.addStretch(); bw.addWidget(self.bar, 6); bw.addStretch()
+        lay.addLayout(bw)
+        lay.addSpacing(6)
+
+        # Scrollable game list
+        scroll = QScrollArea(); scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._list_widget = QWidget()
+        self._list_layout = QVBoxLayout(self._list_widget)
+        self._list_layout.setSpacing(6)
+        self._list_layout.addStretch()
+        scroll.setWidget(self._list_widget)
+        lay.addWidget(scroll, stretch=1)
+
+        # No-games message (hidden by default)
+        self._no_games_msg = _lbl(
+            "No supported games found in the default locations.\n"
+            "Use \"Choose Folder\" to pick where your games are installed.",
+            13, C_TREY, align=Qt.AlignCenter)
+        self._no_games_msg.setVisible(False)
+        lay.addWidget(self._no_games_msg)
+
+        # Button row
+        btn_row = QHBoxLayout(); btn_row.setSpacing(16)
+
+        self._folder_btn = _btn("Choose Folder", C_DARK_BTN, h=52)
+        self._folder_btn.setFixedWidth(200)
+        self._folder_btn.clicked.connect(self._pick_folder)
+
+        self._skip_btn = _btn("Skip >>", C_DARK_BTN, h=52)
+        self._skip_btn.setFixedWidth(140)
+        self._skip_btn.setVisible(False)
+        self._skip_btn.clicked.connect(self._skip)
+
+        self._cont_btn = _btn("Continue >>", C_IW, h=52)
+        self._cont_btn.setVisible(False)
+        self._cont_btn.clicked.connect(self._continue)
+
+        btn_row.addWidget(self._folder_btn)
+        btn_row.addWidget(self._skip_btn)
+        btn_row.addWidget(self._cont_btn, stretch=1)
+        lay.addLayout(btn_row)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self._own_found.clear()
+        self._checks.clear()
+        self._extra_paths.clear()
+        self._no_games_msg.setVisible(False)
+        self._skip_btn.setVisible(False)
+        self._cont_btn.setVisible(False)
+        self.bar.setValue(0)
+        self.status.setText("Scanning for your games...")
+        # Clear previous game rows
+        while self._list_layout.count() > 1:
+            item = self._list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        QTimer.singleShot(200, self._scan)
+
+    def _scan(self):
+        self.bar.setValue(30)
+        self.status.setText("Scanning game folders...")
+        self._s = _Sigs()
+        self._s.progress.connect(lambda p, m: (self.bar.setValue(p), self.status.setText(m)))
+        self._s.done.connect(lambda _: self._show_results())
+        threading.Thread(target=self._do_scan, daemon=True).start()
+
+    def _do_scan(self):
+        from detect_games import find_own_installed
+        results = find_own_installed(
+            extra_paths=self._extra_paths if self._extra_paths else None,
+            on_progress=lambda msg: self._s.progress.emit(60, msg),
+        )
+        self._own_found = results
+        self._s.progress.emit(100, "Scan complete.")
+        self._s.done.emit(True)
+
+    def _show_results(self):
+        self.bar.setValue(100)
+        self._checks.clear()
+
+        # Clear previous game rows (keep the trailing stretch)
+        while self._list_layout.count() > 1:
+            item = self._list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not self._own_found:
+            self.status.setText("No supported games found.")
+            self.status.setStyleSheet(f"color:{C_TREY};background:transparent;")
+            self._no_games_msg.setVisible(True)
+            self._skip_btn.setVisible(True)
+            self._cont_btn.setVisible(False)
+            return
+
+        self._no_games_msg.setVisible(False)
+        self._skip_btn.setVisible(False)
+        count = len(self._own_found)
+        self.status.setText(f"Found {count} game(s)!")
+        self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
+
+        # Build game rows sorted by order
+        for key in sorted(self._own_found, key=lambda k: self._own_found[k].get("order", 99)):
+            game = self._own_found[key]
+            row = QHBoxLayout(); row.setSpacing(12); row.setContentsMargins(8, 6, 8, 6)
+
+            cb = QCheckBox()
+            cb.setChecked(True)
+            cb.toggled.connect(self._update_continue)
+            self._checks[key] = cb
+            row.addWidget(cb)
+
+            name_lbl = _lbl(game["name"], 13, "#FFF", align=Qt.AlignLeft, wrap=False)
+            row.addWidget(name_lbl, stretch=1)
+
+            path_lbl = _lbl(game["install_dir"], 10, C_DIM, align=Qt.AlignRight, wrap=False)
+            row.addWidget(path_lbl)
+
+            cw = QWidget(); cw.setLayout(row)
+            cw.setStyleSheet(f"background:{C_CARD};border-radius:6px;")
+            self._list_layout.insertWidget(self._list_layout.count() - 1, cw)
+
+        self._cont_btn.setVisible(True)
+
+    def _update_continue(self):
+        """Show Continue only if at least one game is checked."""
+        any_checked = any(cb.isChecked() for cb in self._checks.values())
+        self._cont_btn.setVisible(any_checked)
+        if not any_checked:
+            self._skip_btn.setVisible(True)
+        else:
+            self._skip_btn.setVisible(False)
+
+    def _pick_folder(self):
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select your games folder", os.path.expanduser("~"),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
+        if folder:
+            if folder not in self._extra_paths:
+                self._extra_paths.append(folder)
+            # Re-scan with the new path included
+            self.status.setText(f"Scanning {folder}...")
+            self.bar.setValue(0)
+            self._no_games_msg.setVisible(False)
+            self._skip_btn.setVisible(False)
+            self._cont_btn.setVisible(False)
+            QTimer.singleShot(200, self._scan)
+
+    def _skip(self):
+        """Skip own games, go straight to Steam detection."""
+        # Set a flag so WelcomeScreen knows to skip own scanning
+        ws = self.stack.widget(2)
+        ws._steam_only = True
+        self.stack.setCurrentIndex(2)
+
+    def _continue(self):
+        """Pass selected own games to OwnAddScreen and advance."""
+        selected = {}
+        for key, cb in self._checks.items():
+            if cb.isChecked() and key in self._own_found:
+                selected[key] = self._own_found[key]
+        # Store selected own games on OwnAddScreen (index 12)
+        add_screen = self.stack.widget(12)
+        add_screen.own_selected = selected
+        add_screen.steam_root = find_steam_root() or ""
+        self.stack.setCurrentIndex(12)
+
+
 # ── SourceScreen ──────────────────────────────────────────────────────────────
 class SourceScreen(QWidget):
     """
@@ -2779,7 +2992,7 @@ class DeckOpsWindow(QMainWindow):
     def __init__(self):
         super().__init__(); self.setWindowTitle("DeckOps Nightly"); self.resize(1280,800); self.setMinimumSize(800,500)
         self.stack = QStackedWidget(); self.setCentralWidget(self.stack)
-        for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen,SourceScreen,OwnInstallScreen]:
+        for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen,SourceScreen,OwnInstallScreen,OwnScanScreen]:
             self.stack.addWidget(cls(self.stack))
         self.stack.setCurrentIndex(0)
 
