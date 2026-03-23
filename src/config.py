@@ -23,6 +23,8 @@ DEFAULTS = {
     "gyro_mode":  None,          # "hold", "toggle", or "ads"
     "play_mode":  None,          # "handheld" or "docked"
     "external_controller": None, # "playstation", "xbox", or "other" -- only used when play_mode is "docked"
+    "docked_resolution": None,   # "1280x720", "1280x800", "1920x1080", "1920x1200", or "own" -- only used when play_mode is "docked"
+                                 # NOTE: this will also be used for future Bazzite, Steam Box, and other handheld support on SteamOS
     "ge_proton_version": None,   # e.g. "GE-Proton10-32"
     "steam_root": None,
     "setup_games": {},           # key: game key, value: { "client": "cod4x"|"iw4x"|"plutonium", "setup_at": timestamp }
@@ -116,6 +118,18 @@ def set_external_controller(controller_type: str):
     """Save the user's external controller type. Should be 'playstation', 'xbox', or 'other'."""
     config = load()
     config["external_controller"] = controller_type
+    save(config)
+
+
+def get_docked_resolution() -> str | None:
+    """Returns '1280x720', '1280x800', '1920x1080', '1920x1200', 'own', or None."""
+    return load().get("docked_resolution")
+
+
+def set_docked_resolution(resolution: str):
+    """Save the user's docked display resolution. 'own' means user sets it in-game."""
+    config = load()
+    config["docked_resolution"] = resolution
     save(config)
 
 
