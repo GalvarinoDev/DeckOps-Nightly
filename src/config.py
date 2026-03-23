@@ -22,6 +22,7 @@ DEFAULTS = {
     "deck_model": None,          # "oled" or "lcd"
     "gyro_mode":  None,          # "hold", "toggle", or "ads"
     "play_mode":  None,          # "handheld" or "docked"
+    "external_controller": None, # "playstation", "xbox", or "other" -- only used when play_mode is "docked"
     "ge_proton_version": None,   # e.g. "GE-Proton10-32"
     "steam_root": None,
     "setup_games": {},           # key: game key, value: { "client": "cod4x"|"iw4x"|"plutonium", "setup_at": timestamp }
@@ -104,6 +105,18 @@ def set_play_mode(mode: str):
 
 def is_docked() -> bool:
     return load().get("play_mode") == "docked"
+
+
+def get_external_controller() -> str | None:
+    """Returns 'playstation', 'xbox', 'other', or None if not yet set."""
+    return load().get("external_controller")
+
+
+def set_external_controller(controller_type: str):
+    """Save the user's external controller type. Should be 'playstation', 'xbox', or 'other'."""
+    config = load()
+    config["external_controller"] = controller_type
+    save(config)
 
 
 def get_game_source() -> str | None:
