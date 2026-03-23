@@ -891,14 +891,37 @@ class SetupScreen(QWidget):
         selected = []
         from detect_games import GAMES
         is_own = cfg.get_game_source() == "own"
+
+        # Steam path: hard block if any checked game hasn't been launched yet.
+        # My Own path: hands-off, assume the user knows what they're doing.
+        if not is_own:
+            not_launched = []
+            for key, (cb, gd) in self._checks.items():
+                if not cb.isChecked(): continue
+                if key not in self.installed: continue
+                appid = GAMES[key]["appid"] if key in GAMES else None
+                if appid and not _is_prefix_ready(self.steam_root, appid):
+                    not_launched.append(gd["base"])
+            if not_launched:
+                # Deduplicate game names (multiple keys share a base name)
+                seen, unique = set(), []
+                for name in not_launched:
+                    if name not in seen:
+                        seen.add(name)
+                        unique.append(name)
+                self.warning.setText(
+                    "These games need to be launched through Steam at least once before setup:\n"
+                    + ", ".join(unique) + "\n\n"
+                    "Close DeckOps, launch each game through Steam, then reopen DeckOps "
+                    "from the desktop shortcut."
+                )
+                self.warning.setVisible(True)
+                return
+
         for key, (cb, gd) in self._checks.items():
             if not cb.isChecked(): continue
             if key not in self.installed: continue
-            game = self.installed[key]
-            if not is_own:
-                appid = GAMES[key]["appid"] if key in GAMES else None
-                if appid and not _is_prefix_ready(self.steam_root, appid): continue
-            selected.append((key, gd, game))
+            selected.append((key, gd, self.installed[key]))
         if not selected:
             self.warning.setText("Select at least one game to continue.")
             self.warning.setVisible(True); return
