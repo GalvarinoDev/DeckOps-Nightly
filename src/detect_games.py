@@ -253,6 +253,130 @@ def find_installed_games(library_folders, steam_root=None):
     return installed
 
 
+# ── "My Own" game detection ───────────────────────────────────────────────────
+# Scans common game install locations on Steam Deck for known Call of Duty
+# executables. Used when the user selects "My Own" on the source screen,
+# meaning they installed their games via CD, GOG, Microsoft Store, etc.
+
+# Map exe filename (lowercase) to game key(s).
+EXE_TO_KEYS = {
+    "iw3mp.exe":      ["cod4mp"],
+    "iw3sp.exe":      ["cod4sp"],
+    "iw4mp.exe":      ["iw4mp"],
+    "iw4sp.exe":      ["iw4sp"],
+    "iw5mp.exe":      ["iw5mp"],
+    "iw5sp.exe":      ["iw5sp"],
+    "codwaw.exe":     ["t4sp"],
+    "codwawmp.exe":   ["t4mp"],
+    "blackops.exe":   ["t5sp"],
+    "blackopsmp.exe": ["t5mp"],
+    "t6zm.exe":       ["t6zm"],
+    "t6mp.exe":       ["t6mp"],
+    "t6sp.exe":       ["t6sp"],
+}
+
+# Default scan locations — case-sensitive on Linux.
+OWN_SCAN_PATHS = [
+    os.path.expanduser("~/Games"),
+    os.path.expanduser("~/games"),
+    "/run/media/deck/*/Games",
+    "/run/media/deck/*/games",
+]
+
+# Maximum directory depth to walk. CoD games are typically 1-3 levels deep.
+_MAX_SCAN_DEPTH = 5
+
+
+def _walk_limited(root, max_depth):
+    """Walk a directory tree up to max_depth levels deep."""
+    skip = {".steam", ".local", ".cache", ".config", "__pycache__"}
+    for dirpath, dirnames, filenames in os.walk(root):
+        rel = os.path.relpath(dirpath, root)
+        depth = 0 if rel == "." else rel.count(os.sep) + 1
+        if depth >= max_depth:
+            dirnames.clear()
+            continue
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in skip]
+        yield dirpath, filenames
+
+
+def find_own_installed(extra_paths=None, on_progress=None):
+    """
+    Scan the filesystem for known Call of Duty executables outside of Steam.
+
+    Searches ~/Games, ~/games, SD card game folders, plus any user-provided
+    extra paths (e.g. from a folder picker in the UI).
+
+    Returns the same dict structure as find_installed_games() with an added
+    "source": "own" field, so the rest of the install flow works unchanged.
+
+    extra_paths — optional list of additional directories to scan
+    on_progress — optional callback(msg: str)
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    # Build scan list: defaults + globs + extras
+    scan_dirs = []
+    seen = set()
+    for pattern in OWN_SCAN_PATHS:
+        for path in glob.glob(pattern):
+            path = os.path.normpath(path)
+            if path not in seen and os.path.isdir(path):
+                seen.add(path)
+                scan_dirs.append(path)
+    if extra_paths:
+        for path in extra_paths:
+            path = os.path.normpath(path)
+            if path not in seen and os.path.isdir(path):
+                seen.add(path)
+                scan_dirs.append(path)
+
+    if not scan_dirs:
+        prog("No game folders found to scan.")
+        return {}
+
+    found = {}
+    exe_lookup = {name.lower(): keys for name, keys in EXE_TO_KEYS.items()}
+
+    for scan_dir in scan_dirs:
+        prog(f"Scanning {scan_dir}...")
+        for dirpath, filenames in _walk_limited(scan_dir, _MAX_SCAN_DEPTH):
+            for fname in filenames:
+                fname_lower = fname.lower()
+                if fname_lower not in exe_lookup:
+                    continue
+
+                exe_path = os.path.join(dirpath, fname)
+                if not os.path.isfile(exe_path):
+                    continue
+
+                keys = exe_lookup[fname_lower]
+                for key in keys:
+                    if key in found:
+                        continue
+                    meta = GAMES.get(key)
+                    if not meta:
+                        continue
+
+                    found[key] = {
+                        **meta,
+                        "install_dir": dirpath,
+                        "exe_path":    exe_path,
+                        "exe_size":    get_exe_size(exe_path),
+                        "source":      "own",
+                    }
+                    prog(f"  ✓ {key}: {meta['name']}")
+
+    if not found:
+        prog("No supported games found.")
+    else:
+        prog(f"Found {len(found)} game(s).")
+
+    return found
+
+
 if __name__ == "__main__":
     steam_root = find_steam_root()
     if not steam_root:
