@@ -2,7 +2,7 @@
 config.py - DeckOps configuration manager
 
 Handles reading and writing deckops.json which lives at:
-    ~/DeckOps/deckops.json
+    ~/DeckOps-Nightly/deckops.json
 
 The config file tracks:
     - Whether first-time setup has been completed
@@ -20,7 +20,8 @@ CONFIG_PATH = os.path.expanduser("~/DeckOps-Nightly/deckops.json")
 DEFAULTS = {
     "first_run_complete": False,
     "deck_model": None,          # "oled" or "lcd"
-    "gyro_mode":  None,          # "hold" or "toggle"
+    "gyro_mode":  None,          # "hold", "toggle", or "ads"
+    "play_mode":  None,          # "handheld" or "docked"
     "ge_proton_version": None,   # e.g. "GE-Proton10-32"
     "steam_root": None,
     "setup_games": {},           # key: game key, value: { "client": "cod4x"|"iw4x"|"plutonium", "setup_at": timestamp }
@@ -78,15 +79,31 @@ def is_oled() -> bool:
 
 
 def get_gyro_mode() -> str | None:
-    """Returns 'hold', 'toggle', or None if not yet set."""
+    """Returns 'hold', 'toggle', 'ads', or None if not yet set."""
     return load().get("gyro_mode")
 
 
 def set_gyro_mode(mode: str):
-    """Save the user's gyro preference. mode should be 'hold' or 'toggle'."""
+    """Save the user's gyro preference. mode should be 'hold', 'toggle', or 'ads'."""
     config = load()
     config["gyro_mode"] = mode
     save(config)
+
+
+def get_play_mode() -> str | None:
+    """Returns 'handheld', 'docked', or None if not yet set."""
+    return load().get("play_mode")
+
+
+def set_play_mode(mode: str):
+    """Save the user's play mode. mode should be 'handheld' or 'docked'."""
+    config = load()
+    config["play_mode"] = mode
+    save(config)
+
+
+def is_docked() -> bool:
+    return load().get("play_mode") == "docked"
 
 
 def get_game_source() -> str | None:
@@ -140,8 +157,8 @@ def set_ge_proton_version(version: str):
 def mark_game_setup(game_key: str, client: str):
     """
     Record that a game has been set up successfully.
-    game_key — e.g. 'cod4mp', 'iw4mp', 't5sp'
-    client   — e.g. 'cod4x', 'iw4x', 'plutonium'
+    game_key -- e.g. 'cod4mp', 'iw4mp', 't5sp'
+    client   -- e.g. 'cod4x', 'iw4x', 'plutonium'
     """
     config = load()
     config["setup_games"][game_key] = {
