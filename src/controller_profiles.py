@@ -398,7 +398,14 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
                 if os.path.exists(src):
                     shutil.copy2(src, dest)
 
-            # Path 2: patch configset files -- this sets the active default
+            # Path 2: numbered appid folder under Steam Controller Configs
+            # Writes controller_neptune.vdf so Steam can find the profile
+            # even if the configset patching has not taken effect yet.
+            cfg_dir_num = os.path.join(steam_cfg_root, appid)
+            os.makedirs(cfg_dir_num, exist_ok=True)
+            shutil.copy2(src_primary, os.path.join(cfg_dir_num, "controller_neptune.vdf"))
+
+            # Path 3: patch configset files -- this sets the active default
             _patch_configset(configset_neptune, appid, primary_filename)
             if configset_serial:
                 _patch_configset(configset_serial, appid, primary_filename)
@@ -431,6 +438,10 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
                 src = os.path.join(ASSETS_DIR, filename)
                 if os.path.exists(src):
                     shutil.copy2(src, os.path.join(dest_dir, filename))
+
+            cfg_dir_num = os.path.join(steam_cfg_root, shortcut_appid)
+            os.makedirs(cfg_dir_num, exist_ok=True)
+            shutil.copy2(src_primary, os.path.join(cfg_dir_num, "controller_neptune.vdf"))
 
             _patch_configset(configset_neptune, shortcut_appid, primary_filename)
             if configset_serial:
@@ -573,6 +584,14 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
                 if os.path.exists(src):
                     shutil.copy2(src, os.path.join(dest_dir, filename))
 
+            # Path 2: numbered appid folder -- derive canonical name from
+            # template filename by stripping _deckops suffix.
+            # e.g. controller_ps5_deckops.vdf -> controller_ps5.vdf
+            canonical_vdf = primary_filename.replace("_deckops", "")
+            cfg_dir_num = os.path.join(steam_cfg_root, appid)
+            os.makedirs(cfg_dir_num, exist_ok=True)
+            shutil.copy2(src_primary, os.path.join(cfg_dir_num, canonical_vdf))
+
             # Patch all relevant external configset files
             for cs_filename in configset_filenames:
                 configset_path = os.path.join(steam_cfg_root, cs_filename)
@@ -604,6 +623,11 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
                 src = os.path.join(ASSETS_DIR, filename)
                 if os.path.exists(src):
                     shutil.copy2(src, os.path.join(dest_dir, filename))
+
+            canonical_vdf = primary_filename.replace("_deckops", "")
+            cfg_dir_num = os.path.join(steam_cfg_root, shortcut_appid)
+            os.makedirs(cfg_dir_num, exist_ok=True)
+            shutil.copy2(src_primary, os.path.join(cfg_dir_num, canonical_vdf))
 
             for cs_filename in configset_filenames:
                 configset_path = os.path.join(steam_cfg_root, cs_filename)
