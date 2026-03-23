@@ -2851,7 +2851,7 @@ class OwnAddScreen(QWidget):
                     if g.get("shortcut_appid")
                 ]
                 if shortcut_appids:
-                    set_compat_tool(shortcut_appids, "Proton 10.0")
+                    set_compat_tool(shortcut_appids, "proton_10")
 
                 self._s.progress.emit(75, "Relaunching Steam...")
                 import subprocess
