@@ -193,6 +193,70 @@ def _all_prefixes_ready(steam_root: str, gd: dict) -> bool:
     appids_needed = {GAMES[k]["appid"] for k in keys if k in GAMES}
     return all(_is_prefix_ready(steam_root, aid) for aid in appids_needed)
 
+
+def _create_own_prefixes(selected, ge_version, on_progress=None):
+    """
+    Create Proton compatdata prefixes for own games by copying GE-Proton's
+    default_pfx. This eliminates the need for the user to launch each game
+    once before mods can be installed.
+
+    selected   — list of (key, gd, game) tuples from OwnInstallScreen
+    ge_version — GE-Proton version string (e.g. "GE-Proton9-22")
+    on_progress — optional callback(msg: str)
+    """
+    import shutil
+
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    COMPAT_DIR = os.path.expanduser("~/.local/share/Steam/compatibilitytools.d")
+    COMPAT_ROOT = os.path.expanduser("~/.local/share/Steam/steamapps/compatdata")
+
+    # Find default_pfx from GE-Proton
+    default_pfx = None
+    if ge_version:
+        candidate = os.path.join(COMPAT_DIR, ge_version, "files", "share", "default_pfx")
+        if os.path.isdir(candidate):
+            default_pfx = candidate
+
+    # Fallback: search for any GE-Proton default_pfx
+    if not default_pfx:
+        if os.path.isdir(COMPAT_DIR):
+            for entry in sorted(os.listdir(COMPAT_DIR), reverse=True):
+                candidate = os.path.join(COMPAT_DIR, entry, "files", "share", "default_pfx")
+                if os.path.isdir(candidate):
+                    default_pfx = candidate
+                    prog(f"  Using fallback prefix from {entry}")
+                    break
+
+    if not default_pfx:
+        prog("⚠ No default_pfx found. Users will need to launch each game once.")
+        return
+
+    created = 0
+    for key, gd, game in selected:
+        compat_path = game.get("compatdata_path", "")
+        if not compat_path:
+            continue
+        pfx_dir = os.path.join(compat_path, "pfx")
+        if os.path.isdir(pfx_dir):
+            prog(f"  {key}: prefix already exists")
+            continue
+        try:
+            os.makedirs(compat_path, exist_ok=True)
+            shutil.copytree(default_pfx, pfx_dir, symlinks=True)
+            prog(f"  ✓ {key}: prefix created")
+            created += 1
+        except Exception as ex:
+            prog(f"  ⚠ {key}: prefix creation failed: {ex}")
+
+    if created > 0:
+        prog(f"✓ Created {created} Proton prefix(es).")
+    else:
+        prog("  All prefixes already exist.")
+
+
 SP_IMAGE_URLS = {
     7940:   "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/header.jpg",
     10180:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/header.jpg",
@@ -610,12 +674,11 @@ class SetupScreen(QWidget):
             for key in keys:
                 appid       = GAMES[key]["appid"] if key in GAMES else None
                 installed   = key in self.installed
-                # Own games: check compatdata_path directly.
+                # Own games: no prefix check needed. OwnInstallScreen creates
+                # the shortcut and waits for the user to launch before installing.
                 # Steam games: check by Steam appid.
-                if is_own and installed:
-                    game = self.installed[key]
-                    compat = game.get("compatdata_path", "")
-                    pre_ready = compat and os.path.isdir(os.path.join(compat, "pfx"))
+                if is_own:
+                    pre_ready = True if installed else False
                 else:
                     pre_ready = _is_prefix_ready(self.steam_root, appid) if appid else False
                 already_done = cfg.is_game_setup(key)
@@ -662,11 +725,7 @@ class SetupScreen(QWidget):
             name_wrap_lay.setSpacing(2)
 
             if is_own:
-                any_ready = any(
-                    self.installed.get(k, {}).get("compatdata_path") and
-                    os.path.isdir(os.path.join(self.installed[k]["compatdata_path"], "pfx"))
-                    for k in ik
-                )
+                any_ready = len(ik) > 0
             else:
                 any_ready = any(
                     _is_prefix_ready(self.steam_root, GAMES[k]["appid"])
@@ -706,13 +765,10 @@ class SetupScreen(QWidget):
             if not cb.isChecked(): continue
             if key not in self.installed: continue
             game = self.installed[key]
-            # Own games have their prefix under the shortcut appid — check
-            # compatdata_path directly instead of looking up by Steam appid.
-            if is_own:
-                compat = game.get("compatdata_path", "")
-                if compat and not os.path.isdir(os.path.join(compat, "pfx")):
-                    continue
-            else:
+            # Own games: no prefix check. OwnInstallScreen creates the
+            # shortcut and waits for the user to launch before installing.
+            # Steam games: verify prefix exists.
+            if not is_own:
                 appid = GAMES[key]["appid"] if key in GAMES else None
                 if appid and not _is_prefix_ready(self.steam_root, appid): continue
             selected.append((key, gd, game))
@@ -1933,17 +1989,15 @@ class OwnInstallScreen(QWidget):
     """
     Install flow for games detected via filesystem scan ("My Own" path).
 
-    Phase 1: Kill Steam → create shortcuts in shortcuts.vdf with artwork
-             → reopen Steam → tell user to launch each game once.
-    Phase 2: User confirms → kill Steam → install mod clients using
-             game["compatdata_path"] → apply configs + controllers → done.
+    Creates non-Steam shortcuts, copies GE-Proton's default_pfx to build
+    each game's compatdata prefix automatically, then installs mod clients.
+    No manual game launch step required.
     """
 
     def __init__(self, stack):
         super().__init__(); self.stack = stack
         self.selected   = []
         self.steam_root = ""
-        self._launch_event = threading.Event()
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
         t = QLabel("INSTALLING"); t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
@@ -1958,13 +2012,6 @@ class OwnInstallScreen(QWidget):
         self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
         lay.addWidget(self.log, stretch=1)
 
-        # "I've launched every game" button — shown between phase 1 and phase 2
-        self.launch_btn = _btn("I've launched every game  ✓", C_TREY, size=13, h=52)
-        self.launch_btn.setFixedWidth(460); self.launch_btn.setVisible(False)
-        self.launch_btn.clicked.connect(self._confirm_launched)
-        lw = QHBoxLayout(); lw.addStretch(); lw.addWidget(self.launch_btn); lw.addStretch()
-        lay.addLayout(lw)
-
         self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
         self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
         self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
@@ -1975,8 +2022,6 @@ class OwnInstallScreen(QWidget):
         self._s.progress.connect(lambda p, m: (self.bar.setValue(p), self.cur.setText(m)))
         self._s.log.connect(self._append_log)
         self._s.done.connect(self._on_done)
-        self._s.plut_wait.connect(lambda: self.launch_btn.setVisible(True))
-        self._s.plut_go.connect(lambda: self.launch_btn.setVisible(False))
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
 
@@ -2003,16 +2048,11 @@ class OwnInstallScreen(QWidget):
         self.log.appendPlainText(text)
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
 
-    def _confirm_launched(self):
-        self._launch_event.set()
-
     def showEvent(self, e):
         super().showEvent(e)
         self.bar.setValue(0); self.log.clear()
-        self.launch_btn.setVisible(False)
         self.cont_btn.setVisible(False)
         self._stop_pulse()
-        self._launch_event.clear()
         _log_to_file("── Own Install started ──")
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
@@ -2033,9 +2073,8 @@ class OwnInstallScreen(QWidget):
         own_games     = {k: g for k, gd, g in self.selected if g}
         logged_bases  = set()
 
-        # ── Phase 1: GE-Proton + create shortcuts ─────────────────────────
-
-        # Download GE-Proton (Steam still running)
+        # ── GE-Proton download (Steam still running) ─────────────────────
+        ge_version = None
         try:
             self._s.pulse_start.emit("Installing GE-Proton")
             self._s.log.emit("Installing GE-Proton...")
@@ -2049,7 +2088,7 @@ class OwnInstallScreen(QWidget):
             self._s.pulse_stop.emit()
             self._s.log.emit(f"  GE-Proton setup skipped: {ex}")
 
-        # Kill Steam to write shortcuts.vdf
+        # ── Kill Steam ────────────────────────────────────────────────────
         self._s.progress.emit(15, "Closing Steam...")
         self._s.log.emit("Closing Steam...")
         try:
@@ -2058,8 +2097,7 @@ class OwnInstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Could not close Steam: {ex}")
 
-        # Create shortcuts with artwork, controller configs, and GE-Proton.
-        # This enriches own_games with shortcut_appid and compatdata_path.
+        # ── Create shortcuts with artwork + controller configs ────────────
         self._s.progress.emit(20, "Creating shortcuts and downloading artwork...")
         self._s.log.emit("Creating non-Steam shortcuts...")
         gyro_mode = cfg.get_gyro_mode() or "hold"
@@ -2073,36 +2111,16 @@ class OwnInstallScreen(QWidget):
         # Update self.selected with enriched game dicts
         self.selected = [(k, gd, own_games.get(k, g)) for k, gd, g in self.selected]
 
-        # Reopen Steam so the user can launch each game
-        self._s.progress.emit(35, "Reopening Steam...")
-        self._s.log.emit("Reopening Steam...")
-        _reopen_steam_bg(self.steam_root)
-
-        # Wait for user to launch every game once
-        self._s.progress.emit(36, "Waiting for you to launch each game...")
-        self._s.log.emit(
-            "\n⚠  Launch each game at least once through Steam now.\n"
-            "   This creates the Proton prefix needed for mod installation.\n"
-            "   Close each game after it reaches the main menu.\n"
-            "   Click the button below when you've launched them all."
-        )
-        self._s.plut_wait.emit()
-        self._launch_event.wait()
-        self._s.plut_go.emit()
-
-        # ── Phase 2: Install mod clients ──────────────────────────────────
-
-        self._s.progress.emit(40, "Closing Steam...")
-        self._s.log.emit("Closing Steam for mod installation...")
-        try:
-            kill_steam()
-            self._s.log.emit("  ✓ Steam closed.")
-        except Exception as ex:
-            self._s.log.emit(f"  Could not close Steam: {ex}")
+        # ── Create Proton prefixes automatically ──────────────────────────
+        # Copy GE-Proton's default_pfx into each game's compatdata folder
+        # so mod clients can be installed without the user launching first.
+        self._s.progress.emit(35, "Creating Proton prefixes...")
+        self._s.log.emit("Creating Proton prefixes...")
+        _create_own_prefixes(self.selected, ge_version, lambda msg: self._s.log.emit(msg))
 
         proton = get_proton_path(self.steam_root)
 
-        # Install iw4x
+        # ── Install iw4x ─────────────────────────────────────────────────
         has_iw4x = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
         if has_iw4x:
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "iw4x"]:
@@ -2118,7 +2136,7 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-        # Install CoD4 (iw3sp + cod4x)
+        # ── Install CoD4 (iw3sp + cod4x) ─────────────────────────────────
         has_cod4 = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k in selected_keys)
         if has_cod4:
             cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4x", "iw3sp")]
@@ -2141,14 +2159,14 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-        # Mark vanilla games
+        # ── Mark vanilla games ────────────────────────────────────────────
         for key, gd, game in self.selected:
             c = KEY_CLIENT.get(key, "")
             if c == "steam" and not cfg.is_game_setup(key):
                 cfg.mark_game_setup(key, "steam")
                 self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
 
-        # Game display configs
+        # ── Game display configs ──────────────────────────────────────────
         self._s.progress.emit(75, "Applying game configs...")
         try:
             from game_config import apply_game_configs
@@ -2166,8 +2184,7 @@ class OwnInstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Game configs skipped: {ex}")
 
-        # Controller templates (already assigned per-shortcut in create_own_shortcuts,
-        # but install the global templates too)
+        # ── Controller templates ──────────────────────────────────────────
         self._s.progress.emit(88, "Installing controller templates...")
         try:
             from controller_profiles import install_controller_templates
@@ -2184,7 +2201,7 @@ class OwnInstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Steam Input setup skipped: {ex}")
 
-        # Done
+        # ── Done ──────────────────────────────────────────────────────────
         cfg.complete_first_run(self.steam_root)
         self._s.progress.emit(100, "All done!")
         self._s.done.emit(True)
