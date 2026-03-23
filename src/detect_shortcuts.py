@@ -166,21 +166,34 @@ def _parse_shortcuts_vdf(path: str) -> list[dict]:
                 if key.lower() in ("appname", "exe", "startdir"):
                     entry[key.lower()] = val
             elif field_type == 0x02:
-                # Int32 field, skip key + 4 bytes
+                # Int32 field: key\x00<4 bytes LE int>
                 key_end = data.find(b'\x00', j)
                 if key_end == -1:
                     break
-                j = key_end + 1 + 4
+                try:
+                    int_key = data[j:key_end].decode("utf-8")
+                except UnicodeDecodeError:
+                    int_key = ""
+                j = key_end + 1
+                if j + 4 <= len(data):
+                    int_val = struct.unpack('<i', data[j:j+4])[0]
+                    if int_key.lower() == "appid":
+                        entry["appid"] = int_val
+                j += 4
             else:
                 # Unknown field type, stop scanning this entry
                 break
 
         if "exe" in entry:
+            # Convert signed int32 appid to unsigned for grid filenames
+            signed_appid = entry.get("appid", 0)
+            unsigned_appid = signed_appid & 0xFFFFFFFF if signed_appid < 0 else signed_appid
             shortcuts.append({
                 "name":      entry.get("appname", ""),
                 "exe_raw":   entry.get("exe", ""),             # raw value with quotes, for appid calc
                 "exe":       entry.get("exe", "").strip('"'),  # stripped, for filesystem ops
                 "start_dir": entry.get("startdir", "").strip('"'),
+                "appid":     unsigned_appid,                   # Steam's stored appid (unsigned)
             })
 
         i = end + 1
@@ -232,14 +245,60 @@ def _rename_shortcut_in_vdf(path: str, old_name: str, new_name: str) -> bool:
     return False
 
 
+def _set_icon_in_vdf(path: str, shortcut_name: str, icon_path: str) -> bool:
+    """
+    Set the icon field for a shortcut in shortcuts.vdf.
+    Finds the shortcut by AppName, then replaces the empty icon value
+    with the given file path. Returns True if the icon was set.
+
+    Must be called while Steam is closed.
+    """
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except Exception:
+        return False
+
+    # Find the AppName field for this shortcut to locate the right entry
+    name_bytes = shortcut_name.encode("utf-8")
+    icon_bytes = icon_path.encode("utf-8")
+
+    # Look for the AppName marker, then find the icon field nearby
+    for appname_key in [b'\x01AppName\x00', b'\x01appname\x00']:
+        marker = appname_key + name_bytes + b'\x00'
+        pos = data.find(marker)
+        if pos == -1:
+            continue
+
+        # Found the entry — now find its empty icon field after this position.
+        # The icon field is: \x01icon\x00\x00 (string type, key "icon", empty value)
+        empty_icon = b'\x01icon\x00\x00'
+        icon_pos = data.find(empty_icon, pos)
+        if icon_pos == -1 or icon_pos - pos > 500:
+            # Icon field not found near this entry, or already set
+            return False
+
+        new_icon = b'\x01icon\x00' + icon_bytes + b'\x00'
+        data = data[:icon_pos] + new_icon + data[icon_pos + len(empty_icon):]
+
+        try:
+            with open(path, "wb") as f:
+                f.write(data)
+            return True
+        except Exception:
+            return False
+
+    return False
+
+
 def find_own_games(on_progress=None) -> dict:
     """
     Scan shortcuts.vdf across all Steam user accounts and return a dict of
     detected DeckOps-supported games installed outside of Steam.
 
-    Uses the shortcut's CURRENT name (whatever the user called it) for
-    the appid calculation and artwork download. This means artwork lands
-    under the appid Steam is actively using right now.
+    Uses the appid stored directly in shortcuts.vdf rather than calculating
+    it via CRC. This matches what Steam actually uses for grid artwork,
+    compatdata prefixes, and controller configs.
 
     Renaming happens later via rename_own_shortcuts() after Steam is closed
     during the install flow.
@@ -260,12 +319,14 @@ def find_own_games(on_progress=None) -> dict:
 
         for sc in shortcuts:
             exe_path  = sc["exe"]       # stripped, for filesystem
-            exe_raw   = sc["exe_raw"]   # raw with quotes, for appid calc
             exe_name  = os.path.basename(exe_path).lower()
             name      = sc["name"]
             start_dir = sc["start_dir"]
+            stored_appid = sc.get("appid", 0)
 
             if not exe_name or not start_dir:
+                continue
+            if not stored_appid:
                 continue
 
             # Deduplicate by exe path across multiple user accounts
@@ -286,13 +347,11 @@ def find_own_games(on_progress=None) -> dict:
                 if not canonical_name:
                     continue
 
-                # Use the CURRENT shortcut name for appid calculation.
-                # This is what Steam is using right now, so artwork written
-                # under this appid will show up immediately.
-                shortcut_appid = _calc_shortcut_appid(exe_raw, name)
+                # Use the appid Steam stored in shortcuts.vdf. This is what
+                # Steam uses for grid artwork, compatdata, and everything else.
+                shortcut_appid = stored_appid
 
-                # Download artwork under the current appid so Steam sees it
-                # while the shortcut still has the original name.
+                # Download artwork under Steam's actual appid
                 try:
                     from artwork import download_artwork
                     prog(f"  Downloading artwork for {key}...")
@@ -310,7 +369,7 @@ def find_own_games(on_progress=None) -> dict:
                     **meta,
                     "install_dir":      install_dir,
                     "exe_path":         actual_exe,
-                    "exe_raw":          exe_raw,
+                    "exe_raw":          sc.get("exe_raw", ""),
                     "exe_size":         os.path.getsize(actual_exe) if os.path.exists(actual_exe) else None,
                     "shortcut_appid":   shortcut_appid,
                     "compatdata_path":  compatdata_path,
@@ -324,11 +383,12 @@ def find_own_games(on_progress=None) -> dict:
 def rename_own_shortcuts(own_games: dict, on_progress=None):
     """
     Rename all detected own game shortcuts to their canonical DeckOps names
-    in shortcuts.vdf. Must be called while Steam is closed.
+    in shortcuts.vdf, and set the icon field to point to the downloaded
+    icon file in the grid folder. Must be called while Steam is closed.
 
-    After rename, the shortcut appid changes because Steam calculates it
-    from exe_path + name. This also moves artwork from the old appid to
-    the new one so Steam finds it after the rename.
+    The stored appid in shortcuts.vdf does NOT change when the name changes —
+    Steam writes it as a fixed int32 at shortcut creation time. So artwork,
+    compatdata, and controller configs all remain valid after the rename.
 
     own_games -- dict returned by find_own_games()
     """
@@ -339,59 +399,35 @@ def rename_own_shortcuts(own_games: dict, on_progress=None):
     for key, game in own_games.items():
         current_name   = game.get("current_name", "")
         canonical_name = CANONICAL_NAMES.get(key, "")
-        exe_raw        = game.get("exe_raw", "")
-        old_appid      = game.get("shortcut_appid")
+        shortcut_appid = game.get("shortcut_appid")
 
-        if not canonical_name or not exe_raw:
-            continue
-        if current_name == canonical_name:
-            prog(f"  {key}: already named correctly")
+        if not canonical_name:
             continue
 
-        # Rename in every user's shortcuts.vdf
         for uid in _find_all_steam_uids():
             vdf_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
-            renamed = _rename_shortcut_in_vdf(vdf_path, current_name, canonical_name)
-            if renamed:
-                prog(f"  ✓ {key}: renamed to '{canonical_name}'")
 
-        # Calculate the new appid after rename
-        new_appid = _calc_shortcut_appid(exe_raw, canonical_name)
+            # Rename the shortcut to the canonical DeckOps name
+            if current_name and current_name != canonical_name:
+                renamed = _rename_shortcut_in_vdf(vdf_path, current_name, canonical_name)
+                if renamed:
+                    prog(f"  ✓ {key}: renamed to '{canonical_name}'")
 
-        # Move artwork from old appid to new appid in every user's grid dir
-        if old_appid and old_appid != new_appid:
-            _move_artwork(old_appid, new_appid, on_progress=on_progress)
+            # Set the icon field so Steam displays the shortcut icon.
+            # Steam reads icons from the path in shortcuts.vdf, not the grid folder.
+            if shortcut_appid:
+                from artwork import OWN_ARTWORK
+                art = OWN_ARTWORK.get(key, {})
+                icon_ext = art.get("icon_ext", "png")
+                grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+                icon_file = os.path.join(grid_dir, f"{shortcut_appid}_icon.{icon_ext}")
+                if os.path.exists(icon_file):
+                    # Use the current name if not yet renamed, canonical if already renamed
+                    target_name = canonical_name if current_name != canonical_name else current_name
+                    if _set_icon_in_vdf(vdf_path, target_name, icon_file):
+                        prog(f"  ✓ {key}: icon set")
+                    elif _set_icon_in_vdf(vdf_path, current_name, icon_file):
+                        prog(f"  ✓ {key}: icon set")
 
-        # Update the game dict so downstream code uses the new appid
-        game["shortcut_appid"]  = new_appid
-        game["current_name"]    = canonical_name
-        game["compatdata_path"] = os.path.join(COMPAT_ROOT, str(new_appid))
-
-
-def _move_artwork(old_appid: int, new_appid: int, on_progress=None):
-    """
-    Rename artwork files in every user's grid directory from old_appid
-    to new_appid so Steam finds them after the shortcut rename.
-    """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    old_str = str(old_appid)
-    new_str = str(new_appid)
-
-    for uid in _find_all_steam_uids():
-        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
-        if not os.path.isdir(grid_dir):
-            continue
-        for filename in os.listdir(grid_dir):
-            if filename.startswith(old_str):
-                suffix   = filename[len(old_str):]
-                new_name = new_str + suffix
-                old_path = os.path.join(grid_dir, filename)
-                new_path = os.path.join(grid_dir, new_name)
-                try:
-                    os.rename(old_path, new_path)
-                except Exception as ex:
-                    prog(f"  ⚠ Could not rename {filename}: {ex}")
+        game["current_name"] = canonical_name
 
