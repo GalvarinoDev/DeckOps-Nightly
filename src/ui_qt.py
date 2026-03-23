@@ -669,7 +669,16 @@ class WelcomeScreen(QWidget):
         source = cfg.get_game_source() or "steam"
         if source == "own":
             from detect_games import find_own_installed
-            self.installed = find_own_installed()
+            # Merge Steam games and filesystem-scanned games.
+            # Run Steam detection first, then own detection.
+            # Own games only fill in keys that Steam didn't find.
+            # Steam entries win on collision so source field is preserved.
+            libs = parse_library_folders(self.steam_root)
+            steam_found = find_installed_games(libs)
+            own_found   = find_own_installed()
+            # Merge: start with own, overwrite with Steam so Steam takes precedence
+            merged = {**own_found, **steam_found}
+            self.installed = merged
         else:
             libs = parse_library_folders(self.steam_root)
             self.installed = find_installed_games(libs)
@@ -804,10 +813,10 @@ class SetupScreen(QWidget):
             for key in keys:
                 appid       = GAMES[key]["appid"] if key in GAMES else None
                 installed   = key in self.installed
-                # Own games: no prefix check needed. OwnInstallScreen creates
-                # the shortcut and waits for the user to launch before installing.
-                # Steam games: check by Steam appid.
-                if is_own:
+                # Check source per key, not per screen, so mixed Steam+own
+                # installs get the right prefix check for each game.
+                key_is_own = self.installed.get(key, {}).get("source") == "own"
+                if key_is_own:
                     pre_ready = True if installed else False
                 else:
                     pre_ready = _is_prefix_ready(self.steam_root, appid) if appid else False
@@ -854,13 +863,13 @@ class SetupScreen(QWidget):
             name_wrap_lay.setContentsMargins(0, 0, 0, 0)
             name_wrap_lay.setSpacing(2)
 
-            if is_own:
-                any_ready = len(ik) > 0
-            else:
-                any_ready = any(
-                    _is_prefix_ready(self.steam_root, GAMES[k]["appid"])
-                    for k in ik if k in GAMES
-                )
+            # Per-key: own-sourced games are always considered ready.
+            # Steam-sourced games need their prefix checked.
+            any_ready = any(
+                self.installed.get(k, {}).get("source") == "own"
+                or _is_prefix_ready(self.steam_root, GAMES[k]["appid"])
+                for k in ik if k in GAMES
+            ) if ik else False
             name_color = "#FFF" if any_ready else "#555566"
             name_lbl = _lbl(gd["base"], 14, name_color, align=Qt.AlignLeft, wrap=False)
             name_wrap_lay.addWidget(name_lbl)
@@ -926,13 +935,23 @@ class SetupScreen(QWidget):
             self.warning.setText("Select at least one game to continue.")
             self.warning.setVisible(True); return
         self._selected = selected
-        if is_own:
-            # Show Add Games button — user kicks off the shortcut/Proton setup
+
+        # Split selected into Steam-sourced and own-sourced.
+        steam_selected = [(k, gd, g) for k, gd, g in selected if g.get("source") != "own"]
+        own_selected   = [(k, gd, g) for k, gd, g in selected if g.get("source") == "own"]
+
+        if steam_selected:
+            # Run Steam install first. If there are also own games, store them
+            # on InstallScreen so it can hand off to OwnInstallScreen when done.
+            s = self.stack.widget(4)
+            s.selected        = steam_selected
+            s.steam_root      = self.steam_root
+            s.pending_own     = own_selected  # may be empty
+            self.stack.setCurrentIndex(4)
+        elif own_selected:
+            # No Steam games — show Add Games button for own flow only
             self.inst_btn.setVisible(False)
             self._add_games_btn.setVisible(True)
-        else:
-            s = self.stack.widget(4); s.selected=selected; s.steam_root=self.steam_root
-            self.stack.setCurrentIndex(4)
 
     def _do_add_games(self):
         """
@@ -1022,6 +1041,7 @@ class SetupScreen(QWidget):
 class InstallScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.selected=[]; self.steam_root=""
+        self.pending_own  = []  # own-sourced games to hand off after Steam install
         self._plut_event = threading.Event()
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
@@ -1098,6 +1118,15 @@ class InstallScreen(QWidget):
     def _on_done(self, _):
         self._stop_pulse()
         self.cur.setText("Installation complete!")
+        if self.pending_own:
+            # Steam install done — hand off own games to OwnInstallScreen.
+            # cont_btn routes to OwnInstallScreen instead of ControllerInfoScreen.
+            self.cont_btn.setText("Continue to Own Games  >>")
+            own_screen = self.stack.widget(10)
+            own_screen.selected   = self.pending_own
+            own_screen.steam_root = self.steam_root
+            self.cont_btn.clicked.disconnect()
+            self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(10))
         self.cont_btn.setVisible(True)
 
     def _go_management(self):
