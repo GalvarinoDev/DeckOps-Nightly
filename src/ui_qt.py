@@ -584,6 +584,8 @@ class SetupScreen(QWidget):
         SLOT_GAP   = 8
         CHECKS_W   = MAX_SLOTS * SLOT_W + (MAX_SLOTS - 1) * SLOT_GAP
 
+        is_own = cfg.get_game_source() == "own"
+
         for gd in ALL_GAMES:
             keys = _active_keys(gd)
             if not keys: continue
@@ -608,7 +610,14 @@ class SetupScreen(QWidget):
             for key in keys:
                 appid       = GAMES[key]["appid"] if key in GAMES else None
                 installed   = key in self.installed
-                pre_ready   = _is_prefix_ready(self.steam_root, appid) if appid else False
+                # Own games: check compatdata_path directly.
+                # Steam games: check by Steam appid.
+                if is_own and installed:
+                    game = self.installed[key]
+                    compat = game.get("compatdata_path", "")
+                    pre_ready = compat and os.path.isdir(os.path.join(compat, "pfx"))
+                else:
+                    pre_ready = _is_prefix_ready(self.steam_root, appid) if appid else False
                 already_done = cfg.is_game_setup(key)
 
                 slot = QWidget()
@@ -652,10 +661,17 @@ class SetupScreen(QWidget):
             name_wrap_lay.setContentsMargins(0, 0, 0, 0)
             name_wrap_lay.setSpacing(2)
 
-            any_ready = any(
-                _is_prefix_ready(self.steam_root, GAMES[k]["appid"])
-                for k in ik if k in GAMES
-            )
+            if is_own:
+                any_ready = any(
+                    self.installed.get(k, {}).get("compatdata_path") and
+                    os.path.isdir(os.path.join(self.installed[k]["compatdata_path"], "pfx"))
+                    for k in ik
+                )
+            else:
+                any_ready = any(
+                    _is_prefix_ready(self.steam_root, GAMES[k]["appid"])
+                    for k in ik if k in GAMES
+                )
             name_color = "#FFF" if any_ready else "#555566"
             name_lbl = _lbl(gd["base"], 14, name_color, align=Qt.AlignLeft, wrap=False)
             name_wrap_lay.addWidget(name_lbl)
@@ -685,18 +701,30 @@ class SetupScreen(QWidget):
     def _go_install(self):
         selected = []
         from detect_games import GAMES
+        is_own = cfg.get_game_source() == "own"
         for key, (cb, gd) in self._checks.items():
             if not cb.isChecked(): continue
             if key not in self.installed: continue
-            # Only install keys whose prefix is actually ready.
-            appid = GAMES[key]["appid"] if key in GAMES else None
-            if appid and not _is_prefix_ready(self.steam_root, appid): continue
-            selected.append((key, gd, self.installed[key]))
+            game = self.installed[key]
+            # Own games have their prefix under the shortcut appid — check
+            # compatdata_path directly instead of looking up by Steam appid.
+            if is_own:
+                compat = game.get("compatdata_path", "")
+                if compat and not os.path.isdir(os.path.join(compat, "pfx")):
+                    continue
+            else:
+                appid = GAMES[key]["appid"] if key in GAMES else None
+                if appid and not _is_prefix_ready(self.steam_root, appid): continue
+            selected.append((key, gd, game))
         if not selected:
             self.warning.setText("Select at least one game to continue.")
             self.warning.setVisible(True); return
-        s = self.stack.widget(4); s.selected=selected; s.steam_root=self.steam_root
-        self.stack.setCurrentIndex(4)
+        if is_own:
+            s = self.stack.widget(10); s.selected=selected; s.steam_root=self.steam_root
+            self.stack.setCurrentIndex(10)
+        else:
+            s = self.stack.widget(4); s.selected=selected; s.steam_root=self.steam_root
+            self.stack.setCurrentIndex(4)
 
 # ── InstallScreen ──────────────────────────────────────────────────────────────
 class InstallScreen(QWidget):
@@ -1907,6 +1935,248 @@ class UpdateScreen(QWidget):
         self._s.done.emit(True)
 
 
+# ── OwnInstallScreen ──────────────────────────────────────────────────────────
+class OwnInstallScreen(QWidget):
+    """
+    Install flow for games detected via non-Steam shortcuts ("My Own" path).
+
+    Uses game["compatdata_path"] (the shortcut appid prefix) instead of
+    find_compatdata(steam_root, steam_appid). Skips Plutonium entirely
+    since it requires Steam appids for online play. Skips non-Steam
+    shortcut creation since games are already non-Steam shortcuts.
+    """
+
+    def __init__(self, stack):
+        super().__init__(); self.stack = stack
+        self.selected   = []
+        self.steam_root = ""
+
+        lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
+        t = QLabel("INSTALLING"); t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
+        t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
+        self.cur = _lbl("Preparing...", 16, "#CCC"); lay.addWidget(self.cur)
+        self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(22)
+        bw = QHBoxLayout(); bw.setContentsMargins(60,0,60,0); bw.addWidget(self.bar)
+        lay.addLayout(bw)
+        self.stat = _lbl("", 13, C_IW); lay.addWidget(self.stat)
+        self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setFont(font(11))
+        self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
+        lay.addWidget(self.log, stretch=1)
+
+        self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
+        self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
+        self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
+        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont_btn); cw.addStretch()
+        lay.addLayout(cw)
+
+        self._s = _Sigs()
+        self._s.progress.connect(lambda p, m: (self.bar.setValue(p), self.cur.setText(m)))
+        self._s.log.connect(self._append_log)
+        self._s.done.connect(self._on_done)
+        self._s.pulse_start.connect(self._start_pulse)
+        self._s.pulse_stop.connect(self._stop_pulse)
+
+        self._pulse_timer = QTimer()
+        self._pulse_timer.timeout.connect(self._do_pulse)
+        self._pulse_msg   = ""
+        self._pulse_count = 0
+
+    def _start_pulse(self, base_msg):
+        self._pulse_msg   = base_msg
+        self._pulse_count = 0
+        self._pulse_timer.start(500)
+
+    def _do_pulse(self):
+        dots = "." * (self._pulse_count % 4)
+        self.cur.setText(f"{self._pulse_msg}{dots}")
+        self._pulse_count += 1
+
+    def _stop_pulse(self):
+        self._pulse_timer.stop()
+
+    def _append_log(self, text):
+        _log_to_file(text)
+        self.log.appendPlainText(text)
+        self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self.bar.setValue(0); self.log.clear()
+        self.cont_btn.setVisible(False)
+        self._stop_pulse()
+        _log_to_file("── Own Install started ──")
+        QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
+
+    def _on_done(self, _):
+        self._stop_pulse()
+        self.cur.setText("Installation complete!")
+        self.cont_btn.setVisible(True)
+
+    def _go_management(self):
+        root = find_steam_root()
+        self.stack.widget(5).set_installed(find_installed_games(parse_library_folders(root)))
+        self.stack.setCurrentIndex(5)
+
+    def _run(self):
+        from wrapper import get_proton_path, kill_steam
+        from cod4x import install_cod4x
+        from iw4x import install_iw4x
+        from iw3sp import install_iw3sp
+        from ge_proton import install_ge_proton, set_compat_tool
+
+        selected_keys = [key for key, _, _ in self.selected]
+        has_cod4      = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k in selected_keys)
+        has_iw4x      = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
+        logged_bases  = set()
+        ge_version    = None
+
+        # ── GE-Proton download + extract (Steam still running) ────────────
+        try:
+            self._s.pulse_start.emit("Installing GE-Proton")
+            self._s.log.emit("Installing GE-Proton...")
+            ge_version = install_ge_proton(
+                on_progress=lambda pct, msg: self._s.progress.emit(2 + int(pct * 0.08), msg)
+            )
+            self._s.pulse_stop.emit()
+            self._s.log.emit(f"✓  {ge_version} downloaded")
+        except Exception as ex:
+            self._s.pulse_stop.emit()
+            self._s.log.emit(f"  GE-Proton setup skipped: {ex}")
+
+        proton = get_proton_path(self.steam_root)
+
+        # ── Kill Steam ────────────────────────────────────────────────────
+        self._s.progress.emit(15, "Closing Steam...")
+        self._s.log.emit("Closing Steam...")
+        try:
+            kill_steam()
+            self._s.log.emit("  ✓ Steam closed.")
+        except Exception as ex:
+            self._s.log.emit(f"  Could not close Steam: {ex}")
+
+        # ── Set GE-Proton compat tool for own game shortcut appids ────────
+        if ge_version:
+            shortcut_appids = [
+                str(g.get("shortcut_appid", ""))
+                for _, _, g in self.selected
+                if g.get("shortcut_appid")
+            ]
+            if shortcut_appids:
+                try:
+                    set_compat_tool(shortcut_appids, ge_version)
+                    cfg.set_ge_proton_version(ge_version)
+                    self._s.log.emit(f"✓  GE-Proton {ge_version} set for {len(shortcut_appids)} game(s)")
+                except Exception as ex:
+                    self._s.log.emit(f"  CompatToolMapping skipped: {ex}")
+
+        # ── Rename own shortcuts ──────────────────────────────────────────
+        try:
+            from detect_shortcuts import rename_own_shortcuts
+            installed_for_rename = {k: g for k, gd, g in self.selected if g and g.get("source") == "own"}
+            if installed_for_rename:
+                self._s.log.emit("Renaming shortcuts and setting icons...")
+                rename_own_shortcuts(
+                    installed_for_rename,
+                    on_progress=lambda msg: self._s.log.emit(msg)
+                )
+        except Exception as ex:
+            self._s.log.emit(f"  Shortcut rename skipped: {ex}")
+
+        # ── iw4x ─────────────────────────────────────────────────────────
+        if has_iw4x:
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "iw4x"]:
+                base_name = gd["base"]
+                self._s.progress.emit(30, f"Setting up {base_name}...")
+                def op_iw4x(pct, msg): self._s.progress.emit(30 + int(pct / 100 * 15), msg)
+                try:
+                    compat = game.get("compatdata_path", "")
+                    install_iw4x(game, self.steam_root, proton, compat, op_iw4x)
+                    cfg.mark_game_setup(key, "iw4x")
+                    self._s.log.emit(f"✓  {base_name} done")
+                    logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # ── CoD4 (iw3sp + cod4x) ─────────────────────────────────────────
+        if has_cod4:
+            cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4x", "iw3sp")]
+            for key, gd, game in cod4_selected:
+                base_name = gd["base"]
+                self._s.progress.emit(50, f"Setting up {base_name}...")
+                def op_cod4(pct, msg): self._s.progress.emit(50 + int(pct / 100 * 15), msg)
+                try:
+                    compat = game.get("compatdata_path", "")
+                    c = KEY_CLIENT.get(key, gd["client"])
+                    if c == "cod4x":
+                        install_cod4x(game, self.steam_root, proton, compat, op_cod4,
+                                      appid=game.get("shortcut_appid", 7940))
+                    elif c == "iw3sp":
+                        install_iw3sp(game, self.steam_root, proton, compat, op_cod4)
+                    cfg.mark_game_setup(key, c)
+                    if base_name not in logged_bases:
+                        self._s.log.emit(f"✓  {base_name} done")
+                        logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # ── Mark vanilla games (SP titles with no mod client) ─────────────
+        for key, gd, game in self.selected:
+            c = KEY_CLIENT.get(key, "")
+            if c == "steam" and not cfg.is_game_setup(key):
+                cfg.mark_game_setup(key, "steam")
+                self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
+
+        # ── Game display configs ──────────────────────────────────────────
+        self._s.progress.emit(70, "Applying game configs...")
+        try:
+            from game_config import apply_game_configs
+            applied, skipped, failed = apply_game_configs(
+                selected_keys=selected_keys,
+                installed_games={k: g for k, gd, g in self.selected if g},
+                steam_root=self.steam_root,
+                deck_model=cfg.get_deck_model() or "oled",
+                on_progress=lambda msg: self._s.log.emit(msg),
+            )
+            if applied > 0:
+                self._s.log.emit(f"✓  Game display configs: {applied} written"
+                                 + (f", {skipped} skipped" if skipped else "")
+                                 + (f", {failed} failed" if failed else ""))
+            elif skipped > 0:
+                self._s.log.emit(f"⚠  Game display configs: none applied ({skipped} skipped)")
+        except Exception as ex:
+            self._s.log.emit(f"  Game configs skipped: {ex}")
+
+        # ── Controller templates + profiles ───────────────────────────────
+        self._s.progress.emit(85, "Installing controller profiles...")
+        self._s.log.emit("Installing controller profiles...")
+        try:
+            from controller_profiles import install_controller_templates, assign_controller_profiles
+            install_controller_templates(
+                on_progress=lambda msg: self._s.log.emit(f"  {msg}")
+            )
+            gyro_mode = cfg.get_gyro_mode() or "hold"
+            assign_controller_profiles(
+                gyro_mode,
+                on_progress=lambda msg: self._s.log.emit(f"  {msg}")
+            )
+            self._s.log.emit(f"✓  Controller profiles assigned ({gyro_mode} mode)")
+        except Exception as ex:
+            self._s.log.emit(f"  Templates skipped: {ex}")
+
+        try:
+            from wrapper import set_steam_input_enabled
+            set_steam_input_enabled(self.steam_root)
+            self._s.log.emit("✓  Steam Input enabled for all games")
+        except Exception as ex:
+            self._s.log.emit(f"  Steam Input setup skipped: {ex}")
+
+        # ── Done ──────────────────────────────────────────────────────────
+        cfg.complete_first_run(self.steam_root)
+        self._s.progress.emit(100, "All done!")
+        self._s.done.emit(True)
+
+
 # ── SourceScreen ──────────────────────────────────────────────────────────────
 class SourceScreen(QWidget):
     """
@@ -1983,7 +2253,7 @@ class DeckOpsWindow(QMainWindow):
     def __init__(self):
         super().__init__(); self.setWindowTitle("DeckOps Nightly"); self.resize(1280,800); self.setMinimumSize(800,500)
         self.stack = QStackedWidget(); self.setCentralWidget(self.stack)
-        for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen,SourceScreen]:
+        for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen,SourceScreen,OwnInstallScreen]:
             self.stack.addWidget(cls(self.stack))
         self.stack.setCurrentIndex(0)
 
