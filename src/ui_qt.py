@@ -1109,6 +1109,15 @@ class InstallScreen(QWidget):
         self.plut_btn.setVisible(False)
         self._stop_pulse()
         self._plut_event.clear()
+        # Reset cont_btn to its default target in case a previous run
+        # rewired it to OwnInstallScreen for the mixed install flow.
+        self.pending_own = []
+        try:
+            self.cont_btn.clicked.disconnect()
+        except Exception:
+            pass
+        self.cont_btn.setText("Continue  >>")
+        self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
         _log_to_file("── Install started ──")
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
@@ -1121,11 +1130,14 @@ class InstallScreen(QWidget):
         if self.pending_own:
             # Steam install done — hand off own games to OwnInstallScreen.
             # cont_btn routes to OwnInstallScreen instead of ControllerInfoScreen.
-            self.cont_btn.setText("Continue to Own Games  >>")
             own_screen = self.stack.widget(10)
             own_screen.selected   = self.pending_own
             own_screen.steam_root = self.steam_root
-            self.cont_btn.clicked.disconnect()
+            self.cont_btn.setText("Continue to Own Games  >>")
+            try:
+                self.cont_btn.clicked.disconnect()
+            except Exception:
+                pass
             self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(10))
         self.cont_btn.setVisible(True)
 
@@ -1466,7 +1478,10 @@ class InstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Steam artwork skipped: {ex}")
 
-        cfg.complete_first_run(self.steam_root)
+        # Only mark first run complete if there are no own games queued.
+        # OwnInstallScreen will call complete_first_run when it finishes.
+        if not self.pending_own:
+            cfg.complete_first_run(self.steam_root)
         self._s.progress.emit(100, "All done!")
         self._s.done.emit(True)
 
