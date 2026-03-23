@@ -515,9 +515,44 @@ class IntroScreen(QWidget):
         gl.addStretch()
         main_lay.addWidget(self._gyro_section)
 
+        # ── Play mode section (third screen, replaces gyro section) ──────────
+        self._play_section = QWidget(); self._play_section.setVisible(False)
+        pl = QVBoxLayout(self._play_section); pl.setContentsMargins(80,60,80,60); pl.setSpacing(16)
+
+        self._back_gyro_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
+        self._back_gyro_btn.setFixedWidth(80)
+        self._back_gyro_btn.clicked.connect(self._back_to_gyro)
+        back_row2 = QHBoxLayout()
+        back_row2.addStretch(); back_row2.addWidget(self._back_gyro_btn); back_row2.addStretch()
+        pl.addLayout(back_row2)
+
+        pl.addStretch()
+        _title_block(pl)
+        pl.addSpacing(16)
+        pl.addWidget(_lbl("How do you play?", 15, "#CCC"))
+        pl.addSpacing(4)
+        pl.addWidget(_lbl(
+            "Handheld Only  --  you play exclusively on the Steam Deck screen.\n"
+            "Also Docked  --  you also connect to a TV or monitor with an external controller.",
+            13, C_DIM, align=Qt.AlignLeft))
+        pl.addSpacing(12)
+        prow = QHBoxLayout(); prow.setSpacing(20)
+        handheld_btn = _btn("Handheld Only", C_DARK_BTN, h=56)
+        docked_btn   = _btn("Also Docked",   C_DARK_BTN, h=56)
+        handheld_btn.clicked.connect(lambda: self._pick_play_mode("handheld"))
+        docked_btn.clicked.connect(lambda: self._pick_play_mode("docked"))
+        prow.addWidget(handheld_btn); prow.addWidget(docked_btn)
+        pl.addLayout(prow)
+        pl.addStretch()
+        main_lay.addWidget(self._play_section)
+
     def _back_to_model(self):
         self._gyro_section.setVisible(False)
         self._model_section.setVisible(True)
+
+    def _back_to_gyro(self):
+        self._play_section.setVisible(False)
+        self._gyro_section.setVisible(True)
 
     def _pick_model(self, model):
         cfg.set_deck_model(model)
@@ -526,6 +561,15 @@ class IntroScreen(QWidget):
 
     def _pick_gyro(self, mode):
         cfg.set_gyro_mode(mode)
+        # Skip play mode screen if already set from a previous run
+        if cfg.get_play_mode():
+            self.stack.setCurrentIndex(2)
+        else:
+            self._gyro_section.setVisible(False)
+            self._play_section.setVisible(True)
+
+    def _pick_play_mode(self, mode):
+        cfg.set_play_mode(mode)
         self.stack.setCurrentIndex(2)
 
 # ── WelcomeScreen ──────────────────────────────────────────────────────────────
@@ -2247,9 +2291,9 @@ class SourceScreen(QWidget):
         adv = QPushButton("ADVANCED"); adv.setFont(font(9, True)); adv.setFixedHeight(24); adv.setEnabled(False)
         adv.setStyleSheet(f"QPushButton{{background:{C_TREY};color:#FFF;border:none;border-radius:5px;padding:0 10px;}}QPushButton:disabled{{background:{C_TREY};color:#FFF;}}")
         oc.addWidget(adv, alignment=Qt.AlignLeft)
-        oc.addWidget(_lbl("My Own", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
-        oc.addWidget(_lbl("You installed via CD, GOG, Microsoft Store, or another storefront and added them to Steam as non-Steam shortcuts.", 12, C_DIM, align=Qt.AlignLeft))
-        oc.addWidget(_lbl("Add your games to Steam and launch each one at least once before continuing. DeckOps will detect and rename them automatically.", 11, "#555568", align=Qt.AlignLeft))
+        oc.addWidget(_lbl("Other", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
+        oc.addWidget(_lbl("You installed via the Microsoft Store, installed a CD, or purchased the game on another store front.", 12, C_DIM, align=Qt.AlignLeft))
+        oc.addWidget(_lbl("Please make sure your installed games are in /home/deck/games before continuing.", 11, "#555568", align=Qt.AlignLeft))
         oc.addStretch()
         own_btn = _btn("Select My Own >>", C_TREY, h=44)
         own_btn.clicked.connect(lambda: self._pick("own"))
