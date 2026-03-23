@@ -22,7 +22,7 @@ DeckOps automates the installation of CoD4x, IW3SP-MOD, iw4x, T6SP-Mod, and Plut
 
 1. Press the Steam button -> **Power** -> **Switch to Desktop**
 2. Open a browser and navigate to this GitHub page
-3. Download the **[DeckOps Nightly file](https://github.com/GalvarinoDev/DeckOps-Nightly/releases/download/v1/DeckOps-Nightly.desktop.download)**
+3. Download the **[DeckOps Nightly file](https://github.com/GalvarinoDev/DeckOps-Nightly/releases/download/v1/DeckOps-Nightly.desktop)**
 4. Right-click the file -> **Properties** -> **Permissions** -> tick **"Is executable"** -> OK
 5. Double-click it
    - **First time:** DeckOps installs automatically
@@ -36,12 +36,11 @@ DeckOps automates the installation of CoD4x, IW3SP-MOD, iw4x, T6SP-Mod, and Plut
 
 DeckOps Nightly supports games purchased outside of Steam, including the Microsoft Store, CD copies, GOG, and other storefronts. To use this feature:
 
-1. Open Steam -> **Games** -> **Add a Non-Steam Game to My Library**
-2. Browse to your game executable and add it
-3. Launch the game at least once through Steam to create the Proton prefix
-4. Run DeckOps Nightly and select **My Own** when asked how you installed your games
+1. Place your game files in `~/Games` or `~/games` (or an SD card under `/run/media/deck/*/Games`)
+2. Run DeckOps Nightly and select **My Own** when asked how you installed your games
+3. DeckOps will scan for your games automatically
 
-DeckOps will automatically detect your games by their exe name, rename the shortcuts to the correct titles, download Steam artwork, and set up mod clients, controller profiles, and display configs just like it does for Steam purchases. No manual renaming required.
+DeckOps creates the non-Steam shortcuts, downloads artwork, sets up Proton prefixes, and installs mod clients, controller profiles, and display configs. No manual shortcut creation or game launching required.
 
 > This feature is experimental and actively being developed in the Nightly build.
 
