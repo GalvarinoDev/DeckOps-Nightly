@@ -160,8 +160,8 @@ KEY_MODE_LABEL = {
     "cod4mp": "MP",    "cod4sp": "SP",
     "iw4mp":  "MP",    "iw4sp":  "SP",
     "iw5mp":  "MP",    "iw5sp":  "SP",
-    "t4sp":   "SP+ZM", "t4mp":   "MP",
-    "t5sp":   "SP+ZM", "t5mp":   "MP",
+    "t4sp":   "S/Z",   "t4mp":   "MP",
+    "t5sp":   "S/Z",   "t5mp":   "MP",
     "t6sp":   "SP",    "t6zm":   "ZM",    "t6mp":   "MP",
 }
 
@@ -629,7 +629,8 @@ class IntroScreen(QWidget):
 # ── WelcomeScreen ──────────────────────────────────────────────────────────────
 class WelcomeScreen(QWidget):
     def __init__(self, stack):
-        super().__init__(); self.stack=stack; self.installed={}; self.steam_root=""
+        super().__init__(); self.stack=stack; self.installed={}
+        self.steam_installed={}; self.own_installed={}; self.steam_root=""
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(14)
         _title_block(lay)
         lay.addSpacing(12)
@@ -668,26 +669,30 @@ class WelcomeScreen(QWidget):
     def _scan_games(self):
         self.status.setText("Scanning for games..."); self.bar.setValue(70)
         source = cfg.get_game_source() or "steam"
+        libs = parse_library_folders(self.steam_root)
+        steam_found = find_installed_games(libs)
+        self.steam_installed = steam_found
         if source == "own":
             from detect_games import find_own_installed
-            # Merge Steam games and filesystem-scanned games.
-            # Run Steam detection first, then own detection.
-            # Own games only fill in keys that Steam didn't find.
-            # Steam entries win on collision so source field is preserved.
-            libs = parse_library_folders(self.steam_root)
-            steam_found = find_installed_games(libs)
-            own_found   = find_own_installed()
-            # Merge: start with own, overwrite with Steam so Steam takes precedence
-            merged = {**own_found, **steam_found}
-            self.installed = merged
+            own_found = find_own_installed()
+            # Keep own games that are NOT already on Steam, plus all own games.
+            # Both dicts are kept separate so SetupScreen can show two sections.
+            # The user can choose which source to install from per game.
+            self.own_installed = own_found
+            # Combined dict for LCD filtering and count display.
+            # Own entries fill in first, then Steam overwrites on collision
+            # so the combined view prefers Steam (for status display only).
+            self.installed = {**own_found, **steam_found}
         else:
-            libs = parse_library_folders(self.steam_root)
-            self.installed = find_installed_games(libs)
+            self.own_installed = {}
+            self.installed = steam_found
         if not cfg.is_oled():
             lcd_allowed = set()
             for g in ALL_GAMES:
                 lcd_allowed.update(g.get("lcd_keys", g["keys"]))
             self.installed = {k:v for k,v in self.installed.items() if k in lcd_allowed}
+            self.steam_installed = {k:v for k,v in self.steam_installed.items() if k in lcd_allowed}
+            self.own_installed = {k:v for k,v in self.own_installed.items() if k in lcd_allowed}
         QTimer.singleShot(200, self._show_results)
 
     def _show_results(self):
@@ -698,21 +703,29 @@ class WelcomeScreen(QWidget):
         unique = len({g["name"].split(" - ")[0].split(" (")[0] for g in self.installed.values()})
         self.status.setText(f"Found {unique} supported game(s)!")
         self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
-        seen,lines = set(),[]
-        for g in sorted(self.installed.values(), key=lambda x: x.get("order",99)):
+        lines = []
+        # Steam games
+        seen_steam = set()
+        for g in sorted(self.steam_installed.values(), key=lambda x: x.get("order",99)):
             base = g["name"].split(" - ")[0].split(" (")[0]
-            if base not in seen:
-                seen.add(base)
-                # Color-coded tags: green for Steam, orange for Own
-                if g.get("source") == "own":
-                    lines.append(f'<span style="color:{C_TREY}">{base} (Own)</span>')
-                else:
-                    lines.append(f'<span style="color:{C_IW}">{base} (Steam)</span>')
+            if base not in seen_steam:
+                seen_steam.add(base)
+                lines.append(f'<span style="color:{C_IW}">{base} (Steam)</span>')
+        # Own games
+        seen_own = set()
+        for g in sorted(self.own_installed.values(), key=lambda x: x.get("order",99)):
+            base = g["name"].split(" - ")[0].split(" (")[0]
+            if base not in seen_own:
+                seen_own.add(base)
+                lines.append(f'<span style="color:{C_TREY}">{base} (Other)</span>')
         self.results.setText("\n".join(lines)); self.cont.setVisible(True)
 
     def _go_next(self):
         if cfg.is_first_run():
-            s = self.stack.widget(3); s.installed=self.installed; s.steam_root=self.steam_root
+            s = self.stack.widget(3)
+            s.steam_installed = self.steam_installed
+            s.own_installed   = self.own_installed
+            s.steam_root      = self.steam_root
             self.stack.setCurrentIndex(3)
         else:
             self.stack.widget(5).set_installed(self.installed); self.stack.setCurrentIndex(5)
@@ -720,7 +733,13 @@ class WelcomeScreen(QWidget):
 # ── SetupScreen ────────────────────────────────────────────────────────────────
 class SetupScreen(QWidget):
     def __init__(self, stack):
-        super().__init__(); self.stack=stack; self.installed={}; self.steam_root=""; self._checks={}
+        super().__init__(); self.stack=stack
+        self.steam_installed={}; self.own_installed={}; self.steam_root=""
+        self._steam_checks={}; self._own_checks={}
+        # Track whether each checkbox was originally enabled so mutual
+        # exclusion can restore the right state when the partner is unchecked.
+        self._check_base_enabled={}
+
         lay = QVBoxLayout(self); lay.setContentsMargins(60,40,60,40); lay.setSpacing(14)
         t = QLabel("SETUP"); t.setFont(font(36,True)); t.setAlignment(Qt.AlignCenter)
         t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
@@ -772,13 +791,9 @@ class SetupScreen(QWidget):
     def showEvent(self, e):
         super().showEvent(e)
         self.warning.setVisible(False)
-        # Show Install button unless there are actual own-sourced games detected.
-        # Checking game_source alone breaks "Steam or Other" users who only
-        # have Steam games — they need the Install button, not Add Games.
-        has_own_games = any(
-            g.get("source") == "own" for g in self.installed.values()
-        )
-        self.inst_btn.setVisible(not has_own_games)
+        # Always show Install button. _go_install handles routing based on
+        # what's actually checked (Steam, Own, or both).
+        self.inst_btn.setVisible(True)
         self._add_games_btn.setVisible(False)
         self._verify_msg.setVisible(False)
         self._own_continue_btn.setVisible(False)
@@ -788,23 +803,45 @@ class SetupScreen(QWidget):
         while self._ll.count() > 1:
             item = self._ll.takeAt(0)
             if item.widget(): item.widget().deleteLater()
-        self._checks.clear()
+        self._steam_checks.clear()
+        self._own_checks.clear()
+        self._check_base_enabled.clear()
 
+        has_steam = bool(self.steam_installed)
+        has_own   = bool(self.own_installed)
+
+        # ── Steam Games section ───────────────────────────────────────────
+        if has_steam:
+            hdr = _lbl("Steam Games", 16, C_IW, bold=True, align=Qt.AlignLeft)
+            hdr.setContentsMargins(8, 12, 0, 4)
+            self._ll.insertWidget(self._ll.count() - 1, hdr)
+            self._build_section(self.steam_installed, self._steam_checks, is_own=False)
+
+        # ── Other Installs section ────────────────────────────────────────
+        if has_own:
+            if has_steam:
+                self._ll.insertWidget(self._ll.count() - 1, _hdiv())
+            hdr = _lbl("Other Installs", 16, C_TREY, bold=True, align=Qt.AlignLeft)
+            hdr.setContentsMargins(8, 12, 0, 4)
+            self._ll.insertWidget(self._ll.count() - 1, hdr)
+            self._build_section(self.own_installed, self._own_checks, is_own=True)
+
+        # ── Wire up mutual exclusion between sections ─────────────────────
+        self._wire_exclusion()
+
+    def _build_section(self, installed_dict, check_dict, is_own):
+        """Build game card rows for one section (Steam or Own)."""
         from detect_games import GAMES
         _LCD_OFFLINE_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "iw5mp"}
-        # Each card gets up to 3 checkbox slots. Empty slots are transparent
-        # placeholders that take space but draw nothing, keeping all rows aligned.
         MAX_SLOTS  = 3
         SLOT_W     = 28
         SLOT_GAP   = 8
         CHECKS_W   = MAX_SLOTS * SLOT_W + (MAX_SLOTS - 1) * SLOT_GAP
 
-        is_own = cfg.get_game_source() == "own"
-
         for gd in ALL_GAMES:
             keys = _active_keys(gd)
             if not keys: continue
-            ik = [k for k in keys if k in self.installed]
+            ik = [k for k in keys if k in installed_dict]
             if not ik: continue
 
             color  = C_IW if gd["dev"] == "iw" else C_TREY
@@ -815,7 +852,7 @@ class SetupScreen(QWidget):
             row.setSpacing(12)
             row.setContentsMargins(8, 8, 8, 8)
 
-            # ── Per-key checkbox column ────────────────────────────────────────
+            # ── Per-key checkbox column ────────────────────────────────────
             checks_widget = QWidget()
             checks_widget.setFixedWidth(CHECKS_W)
             checks_layout = QHBoxLayout(checks_widget)
@@ -823,12 +860,9 @@ class SetupScreen(QWidget):
             checks_layout.setSpacing(SLOT_GAP)
 
             for key in keys:
-                appid       = GAMES[key]["appid"] if key in GAMES else None
-                installed   = key in self.installed
-                # Check source per key, not per screen, so mixed Steam+own
-                # installs get the right prefix check for each game.
-                key_is_own = self.installed.get(key, {}).get("source") == "own"
-                if key_is_own:
+                appid     = GAMES[key]["appid"] if key in GAMES else None
+                installed = key in installed_dict
+                if is_own:
                     pre_ready = True if installed else False
                 else:
                     pre_ready = _is_prefix_ready(self.steam_root, appid) if appid else False
@@ -842,13 +876,18 @@ class SetupScreen(QWidget):
                 slot_lay.setAlignment(Qt.AlignHCenter)
 
                 cb = QCheckBox()
-                if not installed or not pre_ready:
+                # Determine base enabled state before mutual exclusion
+                base_enabled = installed and pre_ready and not already_done
+                if not base_enabled:
                     cb.setChecked(False)
                     cb.setEnabled(False)
-                elif already_done:
-                    cb.setChecked(False)
                 else:
                     cb.setChecked(True)
+
+                # Track base enabled state for mutual exclusion restore.
+                # Key is (source, game_key) to distinguish Steam vs Own.
+                src_tag = "own" if is_own else "steam"
+                self._check_base_enabled[(src_tag, key)] = base_enabled
 
                 mode_color = C_TREY if (not installed or not pre_ready) else "#666677"
                 mode_lbl = _lbl(KEY_MODE_LABEL.get(key, key), 9, mode_color,
@@ -858,7 +897,7 @@ class SetupScreen(QWidget):
                 slot_lay.addWidget(mode_lbl)
                 checks_layout.addWidget(slot)
 
-                self._checks[key] = (cb, gd)
+                check_dict[key] = (cb, gd)
 
             # Fill remaining slots with transparent spacers for alignment
             for _ in range(MAX_SLOTS - len(keys)):
@@ -869,18 +908,17 @@ class SetupScreen(QWidget):
 
             row.addWidget(checks_widget)
 
-            # ── Game name + optional offline note ──────────────────────────────
+            # ── Game name + optional offline note ──────────────────────────
             name_wrap = QWidget()
             name_wrap_lay = QVBoxLayout(name_wrap)
             name_wrap_lay.setContentsMargins(0, 0, 0, 0)
             name_wrap_lay.setSpacing(2)
 
-            # Per-key: own-sourced games are always considered ready.
-            # Steam-sourced games need their prefix checked.
+            from detect_games import GAMES as _G
             any_ready = any(
-                self.installed.get(k, {}).get("source") == "own"
-                or _is_prefix_ready(self.steam_root, GAMES[k]["appid"])
-                for k in ik if k in GAMES
+                (is_own and k in installed_dict)
+                or (not is_own and _is_prefix_ready(self.steam_root, _G[k]["appid"]))
+                for k in ik if k in _G
             ) if ik else False
             name_color = "#FFF" if any_ready else "#555566"
             name_lbl = _lbl(gd["base"], 14, name_color, align=Qt.AlignLeft, wrap=False)
@@ -893,7 +931,7 @@ class SetupScreen(QWidget):
 
             row.addWidget(name_wrap, stretch=1)
 
-            # ── Client badge ───────────────────────────────────────────────────
+            # ── Client badge ───────────────────────────────────────────────
             badge = QPushButton(client.upper())
             badge.setFont(font(10, True))
             badge.setFixedSize(160, 30)
@@ -908,23 +946,73 @@ class SetupScreen(QWidget):
             cw.setLayout(row)
             self._ll.insertWidget(self._ll.count() - 1, cw)
 
-    def _go_install(self):
-        selected = []
-        from detect_games import GAMES
-        is_own = cfg.get_game_source() == "own"
+    def _wire_exclusion(self):
+        """
+        Mutual exclusion: if the same game key appears in both Steam and Own
+        sections, checking it in one disables it in the other. Unchecking
+        restores the partner's original enabled state.
+        """
+        shared_keys = set(self._steam_checks) & set(self._own_checks)
+        for key in shared_keys:
+            steam_cb, _ = self._steam_checks[key]
+            own_cb, _   = self._own_checks[key]
+            # Use a helper to capture key by value in the lambda
+            steam_cb.toggled.connect(
+                lambda checked, k=key: self._toggle_partner(k, "steam", checked))
+            own_cb.toggled.connect(
+                lambda checked, k=key: self._toggle_partner(k, "own", checked))
+            # Apply initial state: if Steam is checked, disable Own
+            if steam_cb.isChecked() and own_cb.isEnabled():
+                own_cb.setChecked(False)
+                own_cb.setEnabled(False)
 
-        # Steam path: hard block if any checked game hasn't been launched yet.
-        # My Own path: hands-off, assume the user knows what they're doing.
-        if not is_own:
+    def _toggle_partner(self, key, source, checked):
+        """Disable or re-enable the partner checkbox in the other section."""
+        if source == "steam":
+            partner_cb, _ = self._own_checks.get(key, (None, None))
+            partner_tag   = ("own", key)
+        else:
+            partner_cb, _ = self._steam_checks.get(key, (None, None))
+            partner_tag   = ("steam", key)
+        if partner_cb is None:
+            return
+        if checked:
+            partner_cb.setChecked(False)
+            partner_cb.setEnabled(False)
+        else:
+            # Only re-enable if the checkbox was originally usable
+            if self._check_base_enabled.get(partner_tag, False):
+                partner_cb.setEnabled(True)
+
+    def _go_install(self):
+        from detect_games import GAMES
+
+        # Collect checked games from both sections
+        steam_selected = []
+        for key, (cb, gd) in self._steam_checks.items():
+            if not cb.isChecked(): continue
+            if key not in self.steam_installed: continue
+            steam_selected.append((key, gd, self.steam_installed[key]))
+
+        own_selected = []
+        for key, (cb, gd) in self._own_checks.items():
+            if not cb.isChecked(): continue
+            if key not in self.own_installed: continue
+            own_selected.append((key, gd, self.own_installed[key]))
+
+        if not steam_selected and not own_selected:
+            self.warning.setText("Select at least one game to continue.")
+            self.warning.setVisible(True); return
+
+        # Steam path: hard block if any checked Steam game hasn't been launched yet.
+        # Own games skip this check - prefixes are created automatically.
+        if steam_selected:
             not_launched = []
-            for key, (cb, gd) in self._checks.items():
-                if not cb.isChecked(): continue
-                if key not in self.installed: continue
+            for key, gd, game in steam_selected:
                 appid = GAMES[key]["appid"] if key in GAMES else None
                 if appid and not _is_prefix_ready(self.steam_root, appid):
                     not_launched.append(gd["base"])
             if not_launched:
-                # Deduplicate game names (multiple keys share a base name)
                 seen, unique = set(), []
                 for name in not_launched:
                     if name not in seen:
@@ -939,29 +1027,19 @@ class SetupScreen(QWidget):
                 self.warning.setVisible(True)
                 return
 
-        for key, (cb, gd) in self._checks.items():
-            if not cb.isChecked(): continue
-            if key not in self.installed: continue
-            selected.append((key, gd, self.installed[key]))
-        if not selected:
-            self.warning.setText("Select at least one game to continue.")
-            self.warning.setVisible(True); return
-        self._selected = selected
-
-        # Split selected into Steam-sourced and own-sourced.
-        steam_selected = [(k, gd, g) for k, gd, g in selected if g.get("source") != "own"]
-        own_selected   = [(k, gd, g) for k, gd, g in selected if g.get("source") == "own"]
+        # Store own selection for the Add Games flow
+        self._own_selected = own_selected
 
         if steam_selected:
             # Run Steam install first. If there are also own games, store them
             # on InstallScreen so it can hand off to OwnInstallScreen when done.
             s = self.stack.widget(4)
-            s.selected        = steam_selected
-            s.steam_root      = self.steam_root
-            s.pending_own     = own_selected  # may be empty
+            s.selected    = steam_selected
+            s.steam_root  = self.steam_root
+            s.pending_own = own_selected  # may be empty
             self.stack.setCurrentIndex(4)
         elif own_selected:
-            # No Steam games — show Add Games button for own flow only
+            # No Steam games selected -- show Add Games button for own flow only
             self.inst_btn.setVisible(False)
             self._add_games_btn.setVisible(True)
 
@@ -976,7 +1054,7 @@ class SetupScreen(QWidget):
         self._add_games_btn.setText("Setting up...")
         self.warning.setVisible(False)
 
-        selected = self._selected
+        selected = self._own_selected
         selected_keys = [k for k, gd, g in selected]
 
         def _run():
@@ -1037,7 +1115,7 @@ class SetupScreen(QWidget):
         threading.Thread(target=_run, daemon=True).start()
 
     def _show_verify_phase(self):
-        """Switch to Phase 2 — show verify message and Continue button."""
+        """Switch to Phase 2 -- show verify message and Continue button."""
         self._add_games_btn.setVisible(False)
         self._verify_msg.setVisible(True)
         self._own_continue_btn.setVisible(True)
@@ -1045,7 +1123,7 @@ class SetupScreen(QWidget):
     def _go_own_install(self):
         """Continue to OwnInstallScreen after user has verified games launch."""
         s = self.stack.widget(10)
-        s.selected   = self._selected
+        s.selected   = self._own_selected
         s.steam_root = self.steam_root
         self.stack.setCurrentIndex(10)
 
@@ -1123,7 +1201,9 @@ class InstallScreen(QWidget):
         self._plut_event.clear()
         # Reset cont_btn to its default target in case a previous run
         # rewired it to OwnInstallScreen for the mixed install flow.
-        self.pending_own = []
+        # NOTE: do NOT clear self.pending_own here -- SetupScreen sets it
+        # right before switching to this screen and showEvent fires
+        # immediately. Clearing it would wipe the handoff every time.
         try:
             self.cont_btn.clicked.disconnect()
         except Exception:
@@ -1151,6 +1231,8 @@ class InstallScreen(QWidget):
             except Exception:
                 pass
             self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(10))
+            # Clear after handoff so stale data can't carry over
+            self.pending_own = []
         self.cont_btn.setVisible(True)
 
     def _go_management(self):
@@ -1703,10 +1785,15 @@ class ManagementScreen(QWidget):
 
     def _setup(self, gd):
         root = find_steam_root()
-        inst = find_installed_games(parse_library_folders(root))
+        steam_inst = find_installed_games(parse_library_folders(root))
+        own_inst = {}
+        if cfg.get_game_source() == "own":
+            from detect_games import find_own_installed
+            own_inst = find_own_installed()
         s = self.stack.widget(3)
-        s.installed  = inst
-        s.steam_root = root
+        s.steam_installed = steam_inst
+        s.own_installed   = own_inst
+        s.steam_root      = root
         self.stack.setCurrentIndex(3)
 
     def _update(self, gd, keys):
