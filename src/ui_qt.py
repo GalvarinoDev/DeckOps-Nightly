@@ -700,7 +700,11 @@ class WelcomeScreen(QWidget):
         seen,lines = set(),[]
         for g in sorted(self.installed.values(), key=lambda x: x.get("order",99)):
             base = g["name"].split(" - ")[0].split(" (")[0]
-            if base not in seen: seen.add(base); lines.append(base)
+            if base not in seen:
+                seen.add(base)
+                # Tag own-sourced games so the user knows what was found from each source
+                tag = " (Own)" if g.get("source") == "own" else " (Steam)"
+                lines.append(base + tag)
         self.results.setText("\n".join(lines)); self.cont.setVisible(True)
 
     def _go_next(self):
