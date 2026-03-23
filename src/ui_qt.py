@@ -546,15 +546,74 @@ class IntroScreen(QWidget):
         pl.addStretch()
         main_lay.addWidget(self._play_section)
 
-        # ── Controller type section (fourth screen, docked users only) ────────
+        # ── Resolution section (docked users only, between play mode and controller) ──
+        # NOTE: this will also be used for future Bazzite, Steam Box, and
+        # other handheld support on SteamOS where the native screen isn't 1280x800.
+        self._resolution_section = QWidget(); self._resolution_section.setVisible(False)
+        rl = QVBoxLayout(self._resolution_section); rl.setContentsMargins(80,60,80,60); rl.setSpacing(16)
+
+        self._back_play_btn2 = _btn("← Back", C_DARK_BTN, size=10, h=30)
+        self._back_play_btn2.setFixedWidth(80)
+        self._back_play_btn2.clicked.connect(self._back_to_play_from_res)
+        back_row_res = QHBoxLayout()
+        back_row_res.addWidget(self._back_play_btn2); back_row_res.addStretch()
+        rl.addLayout(back_row_res)
+
+        rl.addStretch()
+        _title_block(rl)
+        rl.addSpacing(16)
+        rl.addWidget(_lbl("What resolution is your external display?", 15, "#CCC"))
+        rl.addSpacing(4)
+        rl.addWidget(_lbl(
+            "Default is 1280x800 (Steam Deck screen). Pick the resolution that matches "
+            "your TV or monitor, or choose My Own to set it yourself in-game.",
+            13, C_DIM, align=Qt.AlignLeft))
+        rl.addSpacing(12)
+
+        res_cols = QHBoxLayout(); res_cols.setSpacing(20)
+
+        # Left column: 16:10
+        col_1610 = QVBoxLayout(); col_1610.setSpacing(10)
+        col_1610.addWidget(_lbl("16:10", 13, C_IW, bold=True))
+        res_800 = _btn("1280 x 800", C_DARK_BTN, h=52)
+        res_1200 = _btn("1920 x 1200", C_DARK_BTN, h=52)
+        res_800.clicked.connect(lambda: self._pick_resolution("1280x800"))
+        res_1200.clicked.connect(lambda: self._pick_resolution("1920x1200"))
+        col_1610.addWidget(res_800); col_1610.addWidget(res_1200)
+        res_cols.addLayout(col_1610)
+
+        # Right column: 16:9
+        col_169 = QVBoxLayout(); col_169.setSpacing(10)
+        col_169.addWidget(_lbl("16:9", 13, C_IW, bold=True))
+        res_720 = _btn("1280 x 720", C_DARK_BTN, h=52)
+        res_1080 = _btn("1920 x 1080", C_DARK_BTN, h=52)
+        res_720.clicked.connect(lambda: self._pick_resolution("1280x720"))
+        res_1080.clicked.connect(lambda: self._pick_resolution("1920x1080"))
+        col_169.addWidget(res_720); col_169.addWidget(res_1080)
+        res_cols.addLayout(col_169)
+
+        rl.addLayout(res_cols)
+        rl.addSpacing(8)
+
+        # Centered "My Own" button
+        own_res_btn = _btn("My Own", C_DARK_BTN, h=44)
+        own_res_btn.setFixedWidth(200)
+        own_res_btn.clicked.connect(lambda: self._pick_resolution("own"))
+        own_row = QHBoxLayout(); own_row.addStretch(); own_row.addWidget(own_res_btn); own_row.addStretch()
+        rl.addLayout(own_row)
+
+        rl.addStretch()
+        main_lay.addWidget(self._resolution_section)
+
+        # ── Controller type section (docked users only, after resolution) ─────
         self._controller_section = QWidget(); self._controller_section.setVisible(False)
         cl = QVBoxLayout(self._controller_section); cl.setContentsMargins(80,60,80,60); cl.setSpacing(16)
 
-        self._back_play_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_play_btn.setFixedWidth(80)
-        self._back_play_btn.clicked.connect(self._back_to_play)
+        self._back_res_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
+        self._back_res_btn.setFixedWidth(80)
+        self._back_res_btn.clicked.connect(self._back_to_resolution)
         back_row3 = QHBoxLayout()
-        back_row3.addWidget(self._back_play_btn); back_row3.addStretch()
+        back_row3.addWidget(self._back_res_btn); back_row3.addStretch()
         cl.addLayout(back_row3)
 
         cl.addStretch()
@@ -588,9 +647,13 @@ class IntroScreen(QWidget):
         self._play_section.setVisible(False)
         self._gyro_section.setVisible(True)
 
-    def _back_to_play(self):
-        self._controller_section.setVisible(False)
+    def _back_to_play_from_res(self):
+        self._resolution_section.setVisible(False)
         self._play_section.setVisible(True)
+
+    def _back_to_resolution(self):
+        self._controller_section.setVisible(False)
+        self._resolution_section.setVisible(True)
 
     def _pick_model(self, model):
         cfg.set_deck_model(model)
@@ -600,24 +663,39 @@ class IntroScreen(QWidget):
     def _pick_gyro(self, mode):
         cfg.set_gyro_mode(mode)
         # Skip play mode screen if already set from a previous run.
-        # If play_mode is set AND (handheld OR external_controller also set), go straight to stack.
+        # If play_mode is set AND (handheld OR docked with resolution+controller set), skip ahead.
         play_mode = cfg.get_play_mode()
         if play_mode:
-            if play_mode == "handheld" or cfg.get_external_controller():
+            if play_mode == "handheld":
                 self.stack.setCurrentIndex(2)
-            else:
-                # Docked but no controller type chosen yet
+            elif cfg.get_docked_resolution() and cfg.get_external_controller():
+                self.stack.setCurrentIndex(2)
+            elif cfg.get_docked_resolution():
+                # Resolution set but no controller type chosen yet
                 self._gyro_section.setVisible(False)
                 self._controller_section.setVisible(True)
+            else:
+                # Docked but no resolution chosen yet
+                self._gyro_section.setVisible(False)
+                self._resolution_section.setVisible(True)
         else:
             self._gyro_section.setVisible(False)
             self._play_section.setVisible(True)
 
     def _pick_play_mode(self, mode):
         cfg.set_play_mode(mode)
-        if mode == "docked" and not cfg.get_external_controller():
-            # Docked users need to pick their controller type before continuing
+        if mode == "docked":
+            # Docked users pick resolution next, then controller
             self._play_section.setVisible(False)
+            self._resolution_section.setVisible(True)
+        else:
+            self.stack.setCurrentIndex(2)
+
+    def _pick_resolution(self, resolution):
+        cfg.set_docked_resolution(resolution)
+        if not cfg.get_external_controller():
+            # Still need to pick controller type
+            self._resolution_section.setVisible(False)
             self._controller_section.setVisible(True)
         else:
             self.stack.setCurrentIndex(2)
