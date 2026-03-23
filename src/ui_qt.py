@@ -489,7 +489,7 @@ class IntroScreen(QWidget):
         self._back_btn.setFixedWidth(80)
         self._back_btn.clicked.connect(self._back_to_model)
         back_row = QHBoxLayout()
-        back_row.addStretch(); back_row.addWidget(self._back_btn); back_row.addStretch()
+        back_row.addWidget(self._back_btn); back_row.addStretch()
         gl.addLayout(back_row)
 
         gl.addStretch()
@@ -523,7 +523,7 @@ class IntroScreen(QWidget):
         self._back_gyro_btn.setFixedWidth(80)
         self._back_gyro_btn.clicked.connect(self._back_to_gyro)
         back_row2 = QHBoxLayout()
-        back_row2.addStretch(); back_row2.addWidget(self._back_gyro_btn); back_row2.addStretch()
+        back_row2.addWidget(self._back_gyro_btn); back_row2.addStretch()
         pl.addLayout(back_row2)
 
         pl.addStretch()
@@ -554,7 +554,7 @@ class IntroScreen(QWidget):
         self._back_play_btn.setFixedWidth(80)
         self._back_play_btn.clicked.connect(self._back_to_play)
         back_row3 = QHBoxLayout()
-        back_row3.addStretch(); back_row3.addWidget(self._back_play_btn); back_row3.addStretch()
+        back_row3.addWidget(self._back_play_btn); back_row3.addStretch()
         cl.addLayout(back_row3)
 
         cl.addStretch()
@@ -641,6 +641,7 @@ class WelcomeScreen(QWidget):
         lay.addLayout(bw)
         lay.addSpacing(10)
         self.results = _lbl("", 13, C_IW)
+        self.results.setTextFormat(Qt.RichText)
         lay.addWidget(self.results)
         lay.addStretch()
         self.cont = _btn("Continue >>", C_IW, h=52)
@@ -702,9 +703,11 @@ class WelcomeScreen(QWidget):
             base = g["name"].split(" - ")[0].split(" (")[0]
             if base not in seen:
                 seen.add(base)
-                # Tag own-sourced games so the user knows what was found from each source
-                tag = " (Own)" if g.get("source") == "own" else " (Steam)"
-                lines.append(base + tag)
+                # Color-coded tags: green for Steam, orange for Own
+                if g.get("source") == "own":
+                    lines.append(f'<span style="color:{C_TREY}">{base} (Own)</span>')
+                else:
+                    lines.append(f'<span style="color:{C_IW}">{base} (Steam)</span>')
         self.results.setText("\n".join(lines)); self.cont.setVisible(True)
 
     def _go_next(self):
@@ -723,7 +726,7 @@ class SetupScreen(QWidget):
         t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
         lay.addWidget(_lbl(
             "Choose which games to set up. "
-            "Games marked with ⚠ must be launched through Steam first.", 13, C_DIM))
+            "Steam games marked with ⚠ must be launched through Steam at least once first.", 13, C_DIM))
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._lw = QWidget(); self._ll = QVBoxLayout(self._lw)
