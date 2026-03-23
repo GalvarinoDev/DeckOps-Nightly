@@ -2508,6 +2508,23 @@ class OwnInstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Steam Input setup skipped: {ex}")
 
+        # ── Apply GE-Proton to own shortcut appids ────────────────────────
+        # OwnAddScreen set Proton 10.0 as a placeholder so prefixes could be
+        # created. Now that mod clients are installed, switch to GE-Proton.
+        if ge_version:
+            try:
+                from wrapper import set_compat_tool
+                shortcut_appids = [
+                    str(g.get("shortcut_appid", ""))
+                    for g in own_games.values()
+                    if g.get("shortcut_appid")
+                ]
+                if shortcut_appids:
+                    set_compat_tool(shortcut_appids, ge_version)
+                    self._s.log.emit(f"✓  {ge_version} set for own game shortcuts")
+            except Exception as ex:
+                self._s.log.emit(f"  GE-Proton compat mapping skipped: {ex}")
+
         # ── Done ──────────────────────────────────────────────────────────
         cfg.complete_first_run(self.steam_root)
         self._s.progress.emit(100, "All done!")
