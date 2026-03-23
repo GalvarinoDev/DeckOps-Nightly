@@ -306,12 +306,7 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
                 if os.path.exists(src):
                     shutil.copy2(src, dest)
 
-            # Path 2: numbered appid folder — controller_neptune.vdf
-            cfg_dir_num = os.path.join(steam_cfg_root, appid)
-            os.makedirs(cfg_dir_num, exist_ok=True)
-            shutil.copy2(src_primary, os.path.join(cfg_dir_num, "controller_neptune.vdf"))
-
-            # Path 3: patch configset files — this sets the active default
+            # Path 2: patch configset files — this sets the active default
             _patch_configset(configset_neptune, appid, primary_filename)
             if configset_serial:
                 _patch_configset(configset_serial, appid, primary_filename)
@@ -348,10 +343,6 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
                 src = os.path.join(ASSETS_DIR, filename)
                 if os.path.exists(src):
                     shutil.copy2(src, os.path.join(dest_dir, filename))
-
-            cfg_dir_num = os.path.join(steam_cfg_root, shortcut_appid)
-            os.makedirs(cfg_dir_num, exist_ok=True)
-            shutil.copy2(src_primary, os.path.join(cfg_dir_num, "controller_neptune.vdf"))
 
             _patch_configset(configset_neptune, shortcut_appid, primary_filename)
             if configset_serial:
@@ -406,10 +397,6 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
                         src = os.path.join(ASSETS_DIR, filename)
                         if os.path.exists(src):
                             shutil.copy2(src, os.path.join(dest_dir, filename))
-
-                    cfg_dir_num = os.path.join(steam_cfg_root, shortcut_appid)
-                    os.makedirs(cfg_dir_num, exist_ok=True)
-                    shutil.copy2(src_primary, os.path.join(cfg_dir_num, "controller_neptune.vdf"))
 
                     _patch_configset(configset_neptune, shortcut_appid, primary_filename)
                     if configset_serial_path:
