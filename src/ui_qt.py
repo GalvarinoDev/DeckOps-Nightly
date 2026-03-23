@@ -784,6 +784,23 @@ class WelcomeScreen(QWidget):
     def _show_results(self):
         self.bar.setValue(100)
         if not self.installed:
+            # If we came from the advanced flow and have pending own games,
+            # skip Steam setup and go directly to OwnInstallScreen.
+            pending_verify = getattr(self, '_pending_own_from_verify', None)
+            if pending_verify:
+                self.status.setText("No Steam games found. Continuing with your games...")
+                self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
+                from detect_games import GAMES as _G2
+                own_list = []
+                for k, g in pending_verify.items():
+                    for gd in ALL_GAMES:
+                        if k in _active_keys(gd):
+                            own_list.append((k, gd, g)); break
+                own_screen = self.stack.widget(10)
+                own_screen.selected = own_list
+                own_screen.steam_root = getattr(self, '_pending_own_steam_root', self.steam_root)
+                QTimer.singleShot(1500, lambda: self.stack.setCurrentIndex(10))
+                return
             self.status.setText("No supported games found.")
             self.status.setStyleSheet(f"color:{C_TREY};background:transparent;"); return
         unique = len({g["name"].split(" - ")[0].split(" (")[0] for g in self.installed.values()})
@@ -812,6 +829,9 @@ class WelcomeScreen(QWidget):
             s.steam_installed = self.steam_installed
             s.own_installed   = self.own_installed
             s.steam_root      = self.steam_root
+            # Pass pending own games from the advanced verify flow
+            s._pending_own_from_verify = getattr(self, '_pending_own_from_verify', None)
+            s._pending_own_steam_root = getattr(self, '_pending_own_steam_root', self.steam_root)
             self.stack.setCurrentIndex(3)
         else:
             self.stack.widget(5).set_installed(self.installed); self.stack.setCurrentIndex(5)
@@ -1122,7 +1142,20 @@ class SetupScreen(QWidget):
             s = self.stack.widget(4)
             s.selected    = steam_selected
             s.steam_root  = self.steam_root
-            s.pending_own = own_selected  # may be empty
+
+            # Own games from SetupScreen two-section (legacy) or from advanced
+            # verify flow. Advanced flow passes a dict, convert to tuples.
+            pending_verify = getattr(self, '_pending_own_from_verify', None)
+            if pending_verify:
+                from detect_games import GAMES as _G2
+                pending_list = []
+                for k, g in pending_verify.items():
+                    for gd in ALL_GAMES:
+                        if k in _active_keys(gd):
+                            pending_list.append((k, gd, g)); break
+                s.pending_own = pending_list
+            else:
+                s.pending_own = own_selected  # may be empty
             self.stack.setCurrentIndex(4)
         elif own_selected:
             # No Steam games selected -- show Add Games button for own flow only
@@ -2916,6 +2949,225 @@ class OwnScanScreen(QWidget):
         self.stack.setCurrentIndex(12)
 
 
+# ── OwnAddScreen ──────────────────────────────────────────────────────────────
+class OwnAddScreen(QWidget):
+    """
+    Advanced flow step 2: close Steam, create non-Steam shortcuts for
+    the user's own games, set Proton 10 compat, relaunch Steam.
+    Auto-advances to OwnVerifyScreen when done.
+    """
+    def __init__(self, stack):
+        super().__init__(); self.stack = stack
+        self.own_selected = {}   # set by OwnScanScreen._continue
+        self.steam_root = ""
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(60, 40, 60, 40); lay.setSpacing(14)
+
+        # Back button (hidden once add starts)
+        self._back_btn = _btn("\u2190 Back", C_DARK_BTN, size=10, h=30)
+        self._back_btn.setFixedWidth(80)
+        self._back_btn.clicked.connect(lambda: self.stack.setCurrentIndex(11))
+        back_row = QHBoxLayout()
+        back_row.addWidget(self._back_btn); back_row.addStretch()
+        lay.addLayout(back_row)
+
+        t = QLabel("ADDING YOUR GAMES")
+        t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
+        t.setStyleSheet("color:#FFF;background:transparent;")
+        lay.addWidget(t)
+
+        lay.addSpacing(8)
+        self._info = _lbl(
+            "Steam will be closed to add your games as non-Steam shortcuts.\n"
+            "This only takes a moment.", 13, C_DIM)
+        lay.addWidget(self._info)
+        lay.addSpacing(8)
+
+        # Game list (read-only display of what will be added)
+        self._game_list = _lbl("", 13, C_IW, align=Qt.AlignLeft)
+        lay.addWidget(self._game_list)
+
+        lay.addStretch()
+
+        # Status area
+        self._status = _lbl("", 13, C_DIM)
+        lay.addWidget(self._status)
+
+        self.bar = QProgressBar()
+        self.bar.setMaximum(100); self.bar.setTextVisible(False)
+        self.bar.setFixedHeight(14); self.bar.setVisible(False)
+        bw = QHBoxLayout(); bw.addStretch(); bw.addWidget(self.bar, 6); bw.addStretch()
+        lay.addLayout(bw)
+
+        # Error label
+        self._error = _lbl("", 12, C_TREY, align=Qt.AlignLeft)
+        self._error.setVisible(False)
+        lay.addWidget(self._error)
+
+        # Add Games button
+        self._add_btn = _btn("Add Games", C_IW, h=52)
+        self._add_btn.clicked.connect(self._do_add)
+        brow = QHBoxLayout(); brow.addStretch()
+        brow.addWidget(self._add_btn, stretch=1); brow.addStretch()
+        lay.addLayout(brow)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self._add_btn.setEnabled(True)
+        self._add_btn.setText("Add Games")
+        self._back_btn.setVisible(True)
+        self._error.setVisible(False)
+        self._status.setText("")
+        self.bar.setVisible(False)
+        self.bar.setValue(0)
+        # Build game list display
+        names = sorted(
+            set(g["name"].split(" - ")[0].split(" (")[0]
+                for g in self.own_selected.values()),
+            key=lambda n: min(
+                g.get("order", 99) for g in self.own_selected.values()
+                if g["name"].split(" - ")[0].split(" (")[0] == n
+            )
+        )
+        self._game_list.setText("\n".join(f"  \u2022 {n}" for n in names))
+
+    def _do_add(self):
+        self._add_btn.setEnabled(False)
+        self._add_btn.setText("Setting up...")
+        self._back_btn.setVisible(False)
+        self._error.setVisible(False)
+        self.bar.setVisible(True)
+        self.bar.setValue(10)
+        self._status.setText("Closing Steam...")
+
+        selected = self.own_selected
+
+        def _run():
+            import time
+            from wrapper import kill_steam, set_compat_tool
+            from shortcut import create_own_shortcuts
+
+            try:
+                kill_steam()
+                self._s.progress.emit(30, "Creating shortcuts...")
+
+                gyro_mode = cfg.get_gyro_mode() or "hold"
+                selected_keys = list(selected.keys())
+                create_own_shortcuts(selected, selected_keys, gyro_mode)
+
+                self._s.progress.emit(60, "Setting Proton compatibility...")
+
+                shortcut_appids = [
+                    str(g.get("shortcut_appid", ""))
+                    for g in selected.values()
+                    if g.get("shortcut_appid")
+                ]
+                if shortcut_appids:
+                    set_compat_tool(shortcut_appids, "Proton 10.0")
+
+                self._s.progress.emit(75, "Relaunching Steam...")
+                import subprocess
+                subprocess.Popen(
+                    ["bash", "-c",
+                     "nohup ~/.local/share/Steam/steam.sh > /dev/null 2>&1 &"]
+                )
+                time.sleep(6)
+
+                self._s.progress.emit(100, "Done!")
+                self._s.done.emit(True)
+
+            except Exception as ex:
+                self._s.progress.emit(0, f"Error: {ex}")
+                self._s.done.emit(False)
+
+        self._s = _Sigs()
+        self._s.progress.connect(lambda p, m: (self.bar.setValue(p), self._status.setText(m)))
+        self._s.done.connect(self._on_done)
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _on_done(self, success):
+        if success:
+            # Pass selected games to OwnVerifyScreen
+            verify = self.stack.widget(13)
+            verify.own_selected = self.own_selected
+            verify.steam_root = self.steam_root
+            self.stack.setCurrentIndex(13)
+        else:
+            self._error.setText(self._status.text())
+            self._error.setVisible(True)
+            self._add_btn.setEnabled(True)
+            self._add_btn.setText("Retry")
+            self._back_btn.setVisible(True)
+
+
+# ── OwnVerifyScreen ───────────────────────────────────────────────────────────
+class OwnVerifyScreen(QWidget):
+    """
+    Advanced flow step 3: ask the user to launch each own game once to
+    verify it works. Continue button is always visible (not gated).
+    No back button since shortcuts are already written.
+    """
+    def __init__(self, stack):
+        super().__init__(); self.stack = stack
+        self.own_selected = {}   # set by OwnAddScreen._on_done
+        self.steam_root = ""
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(60, 40, 60, 40); lay.setSpacing(14)
+
+        t = QLabel("VERIFY YOUR GAMES")
+        t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
+        t.setStyleSheet("color:#FFF;background:transparent;")
+        lay.addWidget(t)
+
+        lay.addSpacing(12)
+        lay.addWidget(_lbl(
+            "Your games have been added to Steam as shortcuts.\n\n"
+            "Please launch each game once to make sure it works.\n"
+            "Hold STEAM + B to force-close a game if needed.\n\n"
+            "Once you've tested every game, hit Continue.",
+            14, C_DIM, align=Qt.AlignCenter))
+
+        lay.addSpacing(12)
+
+        # Game list display
+        self._game_list = _lbl("", 14, C_IW, align=Qt.AlignCenter)
+        lay.addWidget(self._game_list)
+
+        lay.addStretch()
+
+        # Continue button
+        cont = _btn("Continue >>", C_IW, h=52)
+        cont.setFixedWidth(260)
+        cont.clicked.connect(self._continue)
+        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(cont); cw.addStretch()
+        lay.addLayout(cw)
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        names = sorted(
+            set(g["name"].split(" - ")[0].split(" (")[0]
+                for g in self.own_selected.values()),
+            key=lambda n: min(
+                g.get("order", 99) for g in self.own_selected.values()
+                if g["name"].split(" - ")[0].split(" (")[0] == n
+            )
+        )
+        self._game_list.setText("\n".join(f"\u2022 {n}" for n in names))
+
+    def _continue(self):
+        """Advance to WelcomeScreen for Steam game detection."""
+        # Tell WelcomeScreen to only scan Steam (own games already handled)
+        ws = self.stack.widget(2)
+        ws._steam_only = True
+        # Store own_selected so it can be passed to OwnInstallScreen later
+        # via InstallScreen's pending_own mechanism
+        ws._pending_own_from_verify = self.own_selected
+        ws._pending_own_steam_root = self.steam_root
+        self.stack.setCurrentIndex(2)
+
+
 # ── SourceScreen ──────────────────────────────────────────────────────────────
 class SourceScreen(QWidget):
     """
@@ -2992,7 +3244,7 @@ class DeckOpsWindow(QMainWindow):
     def __init__(self):
         super().__init__(); self.setWindowTitle("DeckOps Nightly"); self.resize(1280,800); self.setMinimumSize(800,500)
         self.stack = QStackedWidget(); self.setCentralWidget(self.stack)
-        for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen,SourceScreen,OwnInstallScreen,OwnScanScreen]:
+        for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen,SourceScreen,OwnInstallScreen,OwnScanScreen,OwnAddScreen,OwnVerifyScreen]:
             self.stack.addWidget(cls(self.stack))
         self.stack.setCurrentIndex(0)
 
