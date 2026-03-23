@@ -302,6 +302,103 @@ if [ -n "$STEAM_ROOT" ]; then
 fi
 echo ""
 
+info "Removing mod client files from non-Steam (My Own) game folders..."
+
+# For games added via the My Own flow, the install dir isnt in any Steam
+# library. We find them by scanning shortcuts.vdf for known exe names and
+# cleaning up the same files we would for Steam installs.
+python3 - << 'PYEOF'
+import os, re, shutil
+
+STEAM_DIR    = os.path.expanduser("~/.local/share/Steam")
+USERDATA_DIR = os.path.join(STEAM_DIR, "userdata")
+
+# Map exe filename (lowercase) to cleanup actions.
+# "files" are removed, "dirs" are removed recursively.
+# Must match what iw4x.py, cod4x.py, and iw3sp.py install.
+OWN_CLEANUP = {
+    "iw4mp.exe": {
+        "files": ["iw4x.dll", "iw4x.exe"],
+        "dirs":  ["iw4x", "iw4x-updoot"],
+    },
+    "iw3mp.exe": {
+        "files": ["cod4x_021.dll", "cod4x_loader.exe", "cod4x.exe",
+                  "deckops_cod4x.json", "servercache.dat"],
+        "dirs":  [],
+    },
+    "iw3sp.exe": {
+        "files": ["iw3sp_mod.exe", "iw3sp_mod.dll", "deckops_iw3sp.json"],
+        "dirs":  ["iw3sp_mod"],
+    },
+}
+
+if not os.path.isdir(USERDATA_DIR):
+    print("  No userdata found, skipping.")
+    exit(0)
+
+cleaned = set()
+for uid in os.listdir(USERDATA_DIR):
+    if not uid.isdigit() or int(uid) < 10000:
+        continue
+    vdf_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+    if not os.path.exists(vdf_path):
+        continue
+    try:
+        with open(vdf_path, "rb") as f:
+            data = f.read()
+    except Exception:
+        continue
+
+    # Pull exe paths and start dirs from shortcuts.vdf
+    for exe_m in re.finditer(b'\x01(?:exe|Exe)\x00([^\x00]+)\x00', data):
+        exe_raw = exe_m.group(1).decode("utf-8", errors="replace")
+        exe_path = exe_raw.strip('"')
+        exe_name = os.path.basename(exe_path).lower()
+
+        cleanup = OWN_CLEANUP.get(exe_name)
+        if not cleanup:
+            continue
+
+        install_dir = os.path.dirname(exe_path)
+        if not install_dir or install_dir in cleaned:
+            continue
+        if not os.path.isdir(install_dir):
+            continue
+        cleaned.add(install_dir)
+
+        print(f"  Cleaning {install_dir}...")
+        for fname in cleanup["files"]:
+            fpath = os.path.join(install_dir, fname)
+            if os.path.exists(fpath):
+                try:
+                    os.remove(fpath)
+                    print(f"    Removed {fname}")
+                except Exception as ex:
+                    print(f"    Failed to remove {fname}: {ex}")
+
+        for dname in cleanup["dirs"]:
+            dpath = os.path.join(install_dir, dname)
+            if os.path.isdir(dpath):
+                try:
+                    shutil.rmtree(dpath)
+                    print(f"    Removed {dname}/")
+                except Exception as ex:
+                    print(f"    Failed to remove {dname}/: {ex}")
+
+        # Also remove plutonium metadata if present
+        plut_meta = os.path.join(install_dir, "deckops_plutonium.json")
+        if os.path.exists(plut_meta):
+            try:
+                os.remove(plut_meta)
+                print(f"    Removed deckops_plutonium.json")
+            except Exception:
+                pass
+
+if not cleaned:
+    print("  No non-Steam game folders found to clean.")
+PYEOF
+echo ""
+
 info "Removing DeckOps Deck configurator launch defaults from localconfig.vdf..."
 
 # Mirrors: wrapper.py set_default_launch_option()
@@ -445,10 +542,23 @@ remove_steam_shortcuts() {
 import os, struct
 
 SHORTCUT_NAMES = {
+    # Steam-path shortcuts (shortcut.py SHORTCUTS)
     "Call of Duty 4: Modern Warfare - Multiplayer",
     "Call of Duty: World at War - Multiplayer",
     "DeckOps",
     "DeckOps Nightly",
+    # Own-path shortcuts (shortcut.py OWN_SHORTCUTS)
+    "Call of Duty 4: Modern Warfare - Singleplayer",
+    "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
+    "Call of Duty: Modern Warfare 2 (2009) - Singleplayer",
+    "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
+    "Call of Duty: Modern Warfare 3 (2011) - Singleplayer",
+    "Call of Duty: World at War",
+    "Call of Duty: Black Ops",
+    "Call of Duty: Black Ops - Multiplayer",
+    "Call of Duty: Black Ops II - Singleplayer",
+    "Call of Duty: Black Ops II - Zombies",
+    "Call of Duty: Black Ops II - Multiplayer",
 }
 
 steam_dir = os.path.expanduser("~/.local/share/Steam")
@@ -682,6 +792,12 @@ for uid in os.listdir(userdata):
 
 if not shortcut_appids:
     print("  No shortcut appids to clean up.")
+
+# Also clean up custom artwork we applied to Steam MP/ZM games
+STEAM_ART_APPIDS = {"10190", "42690", "42710", "202990", "212910"}
+all_appids = shortcut_appids | STEAM_ART_APPIDS
+
+if not all_appids:
     exit(0)
 
 # Remove artwork files matching these appids
@@ -692,7 +808,7 @@ for uid in os.listdir(userdata):
     if not os.path.isdir(grid_dir):
         continue
     for f in os.listdir(grid_dir):
-        for appid in shortcut_appids:
+        for appid in all_appids:
             if f.startswith(appid):
                 path = os.path.join(grid_dir, f)
                 os.remove(path)
