@@ -21,9 +21,8 @@ choice=$(zenity \
     --column="Action" \
     --hide-header \
     "Launch DeckOps" \
-    "Reinstall" \
     "Uninstall" \
-    --width=300 --height=220 \
+    --width=300 --height=200 \
     2>/dev/null)
 
 [ $? -ne 0 ] && exit 0
@@ -39,12 +38,6 @@ case "$choice" in
                 --text="DeckOps Nightly installation appears incomplete.\nTry reinstalling." \
                 2>/dev/null
         fi
-        ;;
-    "Reinstall")
-        touch "$LOCKFILE"
-        curl -sL "$GITHUB_RAW/install.sh" | bash
-        rm -f "$LOCKFILE"
-        exit 0
         ;;
     "Uninstall")
         if [ -f "$INSTALL_DIR/deckops_uninstall.sh" ]; then
