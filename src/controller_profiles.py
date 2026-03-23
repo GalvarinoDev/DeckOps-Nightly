@@ -1,21 +1,28 @@
 """
 controller_profiles.py - DeckOps controller template installer
 
-Copies the bundled Neptune controller templates from assets/controllers/
+Copies the bundled controller templates from assets/controllers/
 into Steam's controller_base/templates/ directory so they are available
 globally across all games without any per-game or per-account setup.
 
-Also patches configset_controller_neptune.vdf to set our template as the
+Also patches the appropriate configset VDFs to set our template as the
 active default for each managed game, overriding any community config or
 workshop ID that Steam would otherwise use.
 
-Templates (2 variants × 3 schemes = 6 total):
+Neptune templates (2 variants x 3 schemes = 6 total):
     controller_neptune_deckops_hold.vdf
     controller_neptune_deckops_toggle.vdf
     controller_neptune_deckops_ads.vdf
     controller_neptune_deckops_other_hold.vdf
     controller_neptune_deckops_other_toggle.vdf
     controller_neptune_deckops_other_ads.vdf
+
+External controller templates (14 total):
+    PS5:     controller_ps5_deckops.vdf, _ads.vdf, _other.vdf, _other_ads.vdf
+    PS4:     controller_ps4_deckops.vdf, _ads.vdf, _other.vdf, _other_ads.vdf
+    Xbox360: controller_xbox360_deckops.vdf, _other.vdf
+    XboxOne: controller_xboxone_deckops.vdf, _other.vdf
+    Generic: controller_generic_deckops.vdf, _other.vdf
 
 Must be called while Steam is closed.
 """
@@ -35,43 +42,62 @@ STEAM_DIR     = os.path.expanduser("~/.local/share/Steam")
 STEAM_CONFIG  = os.path.join(STEAM_DIR, "config", "config.vdf")
 
 TEMPLATES = [
+    # Neptune
     "controller_neptune_deckops_hold.vdf",
     "controller_neptune_deckops_toggle.vdf",
     "controller_neptune_deckops_ads.vdf",
     "controller_neptune_deckops_other_hold.vdf",
     "controller_neptune_deckops_other_toggle.vdf",
     "controller_neptune_deckops_other_ads.vdf",
+    # PS5
+    "controller_ps5_deckops.vdf",
+    "controller_ps5_deckops_ads.vdf",
+    "controller_ps5_deckops_other.vdf",
+    "controller_ps5_deckops_other_ads.vdf",
+    # PS4
+    "controller_ps4_deckops.vdf",
+    "controller_ps4_deckops_ads.vdf",
+    "controller_ps4_deckops_other.vdf",
+    "controller_ps4_deckops_other_ads.vdf",
+    # Xbox 360
+    "controller_xbox360_deckops.vdf",
+    "controller_xbox360_deckops_other.vdf",
+    # Xbox One
+    "controller_xboxone_deckops.vdf",
+    "controller_xboxone_deckops_other.vdf",
+    # Generic (covers 8BitDo and anything else Steam maps as generic)
+    "controller_generic_deckops.vdf",
+    "controller_generic_deckops_other.vdf",
 ]
 
 # ── Per-game profile assignment map ───────────────────────────────────────────
 #
-# "standard" — the user's scheme choice (normal gamepad layout)
-# "other"    — the user's scheme choice but KB+M variant (for SP campaigns
-#              that need mouse-look via Steam Input)
+# "standard" -- the user's scheme choice (normal gamepad layout)
+# "other"    -- KB+M variant for SP campaigns that need mouse-look
+#               via Steam Input (CoD4 MP, MW2 SP, MW3 SP)
 
 APPID_PROFILE_MAP = {
     "7940":   "standard",  # CoD4 SP (IW3SP-MOD)
-    "10090":  "standard",  # WaW — Plutonium SP/ZM/MP
-    "10180":  "other",     # MW2 SP — via Steam, KB+M layout
-    "10190":  "standard",  # MW2 MP — iw4x
-    "42680":  "other",     # MW3 SP — via Steam, KB+M layout
-    "42690":  "standard",  # MW3 MP — Plutonium
-    "42700":  "standard",  # BO1 SP/ZM — Plutonium
-    "42710":  "standard",  # BO1 MP — Plutonium
-    "202970": "standard",  # BO2 SP — via Steam
-    "202990": "standard",  # BO2 MP — Plutonium
-    "212910": "standard",  # BO2 ZM — Plutonium
+    "10090":  "standard",  # WaW -- Plutonium SP/ZM/MP
+    "10180":  "other",     # MW2 SP -- via Steam, KB+M layout
+    "10190":  "standard",  # MW2 MP -- iw4x
+    "42680":  "other",     # MW3 SP -- via Steam, KB+M layout
+    "42690":  "standard",  # MW3 MP -- Plutonium
+    "42700":  "standard",  # BO1 SP/ZM -- Plutonium
+    "42710":  "standard",  # BO1 MP -- Plutonium
+    "202970": "standard",  # BO2 SP -- via Steam
+    "202990": "standard",  # BO2 MP -- Plutonium
+    "212910": "standard",  # BO2 ZM -- Plutonium
 }
 
-# ── Named game keys used in configset_controller_neptune.vdf ──────────────────
+# ── Named game keys used in configset VDFs ────────────────────────────────────
 #
 # Steam resolves controller profiles by both numeric appid AND a named key
 # string in the configset files. We write both so the profile sticks.
 #
-# 10180 and 42680 are empty because they're SP titles that share a named key
-# with their MP counterpart (10190 and 42690). If both wrote to the same
-# named key, the MP entry would overwrite the SP entry every time since
-# the loop processes them in order. Using appid-only for SP avoids that.
+# 10180 and 42680 are empty because they share a named key with their MP
+# counterpart (10190 and 42690). Writing both would cause the MP entry to
+# overwrite the SP entry since the loop processes them in order.
 # See also: deckops_uninstall.sh mirrors this map for cleanup.
 
 APPID_NAMED_KEYS = {
@@ -88,6 +114,26 @@ APPID_NAMED_KEYS = {
     "202970": [],
     "202990": ["call of duty black ops ii - multiplayer"],
     "212910": ["call of duty black ops ii - zombies"],
+}
+
+# ── External controller configset filenames ───────────────────────────────────
+#
+# Maps the user's controller_type config value to the list of configset VDF
+# filenames that need to be patched. PlayStation covers both PS4 and PS5 since
+# we install both template variants and let Steam match the connected hardware.
+
+EXTERNAL_CONFIGSET_NAMES = {
+    "playstation": [
+        "configset_controller_ps5.vdf",
+        "configset_controller_ps4.vdf",
+    ],
+    "xbox": [
+        "configset_controller_xbox360.vdf",
+        "configset_controller_xboxone.vdf",
+    ],
+    "other": [
+        "configset_controller_generic.vdf",
+    ],
 }
 
 # ── Non-Steam shortcut definitions ────────────────────────────────────────────
@@ -162,7 +208,7 @@ def _get_deck_serial() -> str | None:
 
 
 def _profile_filename(profile_type: str, gyro_mode: str) -> list[str]:
-    """Return the list of VDF filenames for a given profile type and gyro mode."""
+    """Return the list of Neptune VDF filenames for a given profile type and gyro mode."""
     if profile_type == "standard":
         return [f"controller_neptune_deckops_{gyro_mode}.vdf"]
     elif profile_type == "other":
@@ -170,9 +216,55 @@ def _profile_filename(profile_type: str, gyro_mode: str) -> list[str]:
     return []
 
 
+def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mode: str) -> list[str]:
+    """
+    Return the list of external controller VDF filenames for a given
+    controller type, profile type, and gyro mode.
+
+    PS5/PS4 gyro logic:
+        hold or ads -> _ads variant (gyro on left trigger pull)
+        toggle      -> standard variant (gyro off - toggle users don't want it)
+
+    Xbox/Generic: gyro_mode is ignored - no gyro hardware on these controllers.
+
+    NOTE - advanced install: in a future advanced setup flow we could let
+    PS5/PS4 users explicitly opt out of gyro even if they picked hold/ads.
+    For now we default to gyro on unless they picked toggle.
+    """
+    use_ads = gyro_mode in ("hold", "ads")
+
+    if controller_type == "playstation":
+        if profile_type == "other":
+            suffix = "_other_ads" if use_ads else "_other"
+        else:
+            suffix = "_ads" if use_ads else ""
+        return [
+            f"controller_ps5_deckops{suffix}.vdf",
+            f"controller_ps4_deckops{suffix}.vdf",
+        ]
+
+    elif controller_type == "xbox":
+        if profile_type == "other":
+            return [
+                "controller_xbox360_deckops_other.vdf",
+                "controller_xboxone_deckops_other.vdf",
+            ]
+        return [
+            "controller_xbox360_deckops.vdf",
+            "controller_xboxone_deckops.vdf",
+        ]
+
+    elif controller_type == "other":
+        if profile_type == "other":
+            return ["controller_generic_deckops_other.vdf"]
+        return ["controller_generic_deckops.vdf"]
+
+    return []
+
+
 def _patch_configset(configset_path: str, key: str, template_name: str):
     """
-    Patch a single key in configset_controller_neptune.vdf to use our template.
+    Patch a single key in a configset VDF to use our template.
     If the key exists, replace its contents. If not, insert it.
     """
     entry = f'\t"{key}"\n\t{{\n\t\t"template"\t\t"{template_name}"\n\t}}\n'
@@ -206,8 +298,9 @@ def _patch_configset(configset_path: str, key: str, template_name: str):
 
 def install_controller_templates(on_progress=None):
     """
-    Copy all DeckOps Neptune templates into Steam's global templates directory.
-    Safe to call multiple times — existing files are overwritten.
+    Copy all DeckOps controller templates into Steam's global templates directory.
+    Covers Neptune and all external controller types.
+    Safe to call multiple times -- existing files are overwritten.
     Must be called while Steam is closed.
     """
     def prog(msg):
@@ -232,9 +325,9 @@ def install_controller_templates(on_progress=None):
 
 def assign_controller_profiles(gyro_mode: str, on_progress=None):
     """
-    Assign DeckOps controller profiles for all managed games.
+    Assign DeckOps Neptune controller profiles for all managed games.
 
-    gyro_mode — "hold", "toggle", or "ads"
+    gyro_mode -- "hold", "toggle", or "ads"
     Must be called while Steam is closed.
     """
     def prog(msg):
@@ -242,22 +335,21 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
             on_progress(msg)
 
     if gyro_mode not in ("hold", "toggle", "ads"):
-        prog(f"  ⚠ Invalid gyro_mode '{gyro_mode}' — must be 'hold', 'toggle', or 'ads'.")
+        prog(f"  ⚠ Invalid gyro_mode '{gyro_mode}' -- must be 'hold', 'toggle', or 'ads'.")
         return
 
     uids = _find_all_steam_uids()
     if not uids:
-        prog("  ⚠ No Steam user accounts found — controller assignment skipped.")
+        prog("  ⚠ No Steam user accounts found -- controller assignment skipped.")
         return
 
     serial = _get_deck_serial()
     if serial:
         prog(f"  Deck serial: {serial}")
     else:
-        prog("  ⚠ Could not read Deck serial — serial configset write skipped.")
+        prog("  ⚠ Could not read Deck serial -- serial configset write skipped.")
 
     # Pre-calculate non-Steam shortcut appids before entering the uid loop.
-    # These depend on the exe path which is the same for all users.
     shortcut_appids = {}
     try:
         from detect_games import find_steam_root, parse_library_folders, find_installed_games
@@ -306,7 +398,7 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
                 if os.path.exists(src):
                     shutil.copy2(src, dest)
 
-            # Path 2: patch configset files — this sets the active default
+            # Path 2: patch configset files -- this sets the active default
             _patch_configset(configset_neptune, appid, primary_filename)
             if configset_serial:
                 _patch_configset(configset_serial, appid, primary_filename)
@@ -319,9 +411,6 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
             prog(f"  ✓ [{appid}] → {primary_filename}")
 
         # ── Non-Steam shortcut controller profiles ────────────────────────────
-        # These have dynamic appids calculated from exe path + name. We need
-        # to find the actual install dirs to get the right appid. Without this,
-        # re-applying profiles from Settings would miss MW1 MP and WaW MP.
         for key, sdef in SHORTCUT_DEFS.items():
             if key not in shortcut_appids:
                 continue
@@ -336,7 +425,6 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
             if not os.path.exists(src_primary):
                 continue
 
-            # Write to all three paths, same as static appids above
             dest_dir = os.path.join(config_root, shortcut_appid)
             os.makedirs(dest_dir, exist_ok=True)
             for filename in filenames:
@@ -407,3 +495,170 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
         prog(f"  ⚠ Could not assign profiles for own games: {ex}")
 
     prog("Controller profiles assigned.")
+
+
+def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on_progress=None):
+    """
+    Assign DeckOps external controller profiles for all managed games.
+
+    controller_type -- "playstation", "xbox", or "other"
+    gyro_mode       -- "hold", "toggle", or "ads" (only affects PS5/PS4 templates)
+
+    Patches configset VDFs for the relevant external controller types so
+    Steam picks up our templates when the user plugs in their controller.
+    Must be called while Steam is closed.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    if controller_type not in ("playstation", "xbox", "other"):
+        prog(f"  ⚠ Invalid controller_type '{controller_type}'.")
+        return
+
+    if gyro_mode not in ("hold", "toggle", "ads"):
+        prog(f"  ⚠ Invalid gyro_mode '{gyro_mode}' -- must be 'hold', 'toggle', or 'ads'.")
+        return
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        prog("  ⚠ No Steam user accounts found -- external controller assignment skipped.")
+        return
+
+    configset_filenames = EXTERNAL_CONFIGSET_NAMES.get(controller_type, [])
+
+    # Pre-calculate non-Steam shortcut appids
+    shortcut_appids = {}
+    try:
+        from detect_games import find_steam_root, parse_library_folders, find_installed_games
+        steam_root = find_steam_root()
+        if steam_root:
+            installed = find_installed_games(parse_library_folders(steam_root))
+            for key, sdef in SHORTCUT_DEFS.items():
+                game = installed.get(key)
+                if not game:
+                    continue
+                install_dir = game.get("install_dir", "")
+                if not install_dir:
+                    continue
+                exe_path = os.path.join(install_dir, sdef["exe_name"])
+                shortcut_appids[key] = _calc_shortcut_appid(exe_path, sdef["name"])
+    except Exception as ex:
+        prog(f"  ⚠ Could not detect shortcut appids: {ex}")
+
+    for uid in uids:
+        config_root    = os.path.join(
+            STEAM_DIR, "userdata", uid, "241100", "remote", "controller_config"
+        )
+        steam_cfg_root = os.path.join(
+            STEAM_DIR, "steamapps", "common", "Steam Controller Configs", uid, "config"
+        )
+
+        for appid, profile_type in APPID_PROFILE_MAP.items():
+            filenames        = _external_profile_filenames(controller_type, profile_type, gyro_mode)
+            primary_filename = filenames[0] if filenames else None
+            if not primary_filename:
+                continue
+
+            src_primary = os.path.join(ASSETS_DIR, primary_filename)
+            if not os.path.exists(src_primary):
+                prog(f"  ⚠ Asset missing, skipping: {primary_filename}")
+                continue
+
+            # Copy all matching templates into the userdata controller_config dir
+            dest_dir = os.path.join(config_root, appid)
+            os.makedirs(dest_dir, exist_ok=True)
+            for filename in filenames:
+                src = os.path.join(ASSETS_DIR, filename)
+                if os.path.exists(src):
+                    shutil.copy2(src, os.path.join(dest_dir, filename))
+
+            # Patch all relevant external configset files
+            for cs_filename in configset_filenames:
+                configset_path = os.path.join(steam_cfg_root, cs_filename)
+                _patch_configset(configset_path, appid, primary_filename)
+
+                for named_key in APPID_NAMED_KEYS.get(appid, []):
+                    _patch_configset(configset_path, named_key, primary_filename)
+
+            prog(f"  ✓ [{appid}] → {primary_filename}")
+
+        # ── Non-Steam shortcut controller profiles ────────────────────────────
+        for key, sdef in SHORTCUT_DEFS.items():
+            if key not in shortcut_appids:
+                continue
+
+            shortcut_appid   = shortcut_appids[key]
+            filenames        = _external_profile_filenames(controller_type, sdef["profile_type"], gyro_mode)
+            primary_filename = filenames[0] if filenames else None
+            if not primary_filename:
+                continue
+
+            src_primary = os.path.join(ASSETS_DIR, primary_filename)
+            if not os.path.exists(src_primary):
+                continue
+
+            dest_dir = os.path.join(config_root, shortcut_appid)
+            os.makedirs(dest_dir, exist_ok=True)
+            for filename in filenames:
+                src = os.path.join(ASSETS_DIR, filename)
+                if os.path.exists(src):
+                    shutil.copy2(src, os.path.join(dest_dir, filename))
+
+            for cs_filename in configset_filenames:
+                configset_path = os.path.join(steam_cfg_root, cs_filename)
+                _patch_configset(configset_path, shortcut_appid, primary_filename)
+
+            prog(f"  ✓ [shortcut {shortcut_appid}] → {primary_filename}")
+
+    # ── "My Own" game external controller profiles ────────────────────────────
+    try:
+        import config as cfg
+        if cfg.get_game_source() == "own":
+            from detect_games import find_own_installed
+            from shortcut import OWN_SHORTCUTS
+            own_games = find_own_installed()
+            for key, game in own_games.items():
+                if key not in OWN_SHORTCUTS:
+                    continue
+                own_def = OWN_SHORTCUTS[key]
+                canonical_name = own_def["name"]
+                exe_path = game.get("exe_path", "")
+                if not exe_path:
+                    continue
+                quoted_exe = f'"{exe_path}"'
+                shortcut_appid = _calc_shortcut_appid(quoted_exe, canonical_name)
+
+                steam_appid  = game.get("appid", "")
+                profile_type = APPID_PROFILE_MAP.get(steam_appid, "standard")
+                filenames    = _external_profile_filenames(controller_type, profile_type, gyro_mode)
+                primary_filename = filenames[0] if filenames else None
+                if not primary_filename:
+                    continue
+                src_primary = os.path.join(ASSETS_DIR, primary_filename)
+                if not os.path.exists(src_primary):
+                    continue
+
+                for uid in uids:
+                    config_root    = os.path.join(
+                        STEAM_DIR, "userdata", uid, "241100", "remote", "controller_config"
+                    )
+                    steam_cfg_root = os.path.join(
+                        STEAM_DIR, "steamapps", "common", "Steam Controller Configs", uid, "config"
+                    )
+                    dest_dir = os.path.join(config_root, shortcut_appid)
+                    os.makedirs(dest_dir, exist_ok=True)
+                    for filename in filenames:
+                        src = os.path.join(ASSETS_DIR, filename)
+                        if os.path.exists(src):
+                            shutil.copy2(src, os.path.join(dest_dir, filename))
+
+                    for cs_filename in configset_filenames:
+                        configset_path = os.path.join(steam_cfg_root, cs_filename)
+                        _patch_configset(configset_path, shortcut_appid, primary_filename)
+
+                prog(f"  ✓ [own {shortcut_appid}] {key} → {primary_filename}")
+    except Exception as ex:
+        prog(f"  ⚠ Could not assign external profiles for own games: {ex}")
+
+    prog("External controller profiles assigned.")
