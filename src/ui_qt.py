@@ -672,9 +672,41 @@ class SetupScreen(QWidget):
         self.inst_btn.clicked.connect(self._go_install)
         brow.addWidget(back); brow.addWidget(self.inst_btn, stretch=1); lay.addLayout(brow)
 
+        # ── Add Games phase (My Own path only) ───────────────────────────────
+        # Shown after game selection for own games. Replaces Install button flow.
+        # Phase 1: Add Games button kills Steam, writes shortcuts, sets Proton 10,
+        #          waits, relaunches Steam.
+        # Phase 2: Verify message + Continue button appear after Steam relaunches.
+        self._add_games_btn = _btn("Add Games", C_IW, h=52)
+        self._add_games_btn.setVisible(False)
+        self._add_games_btn.clicked.connect(self._do_add_games)
+        agw = QHBoxLayout(); agw.addStretch()
+        agw.addWidget(self._add_games_btn, stretch=1); agw.addStretch()
+        lay.addLayout(agw)
+
+        self._verify_msg = _lbl(
+            "Open each game you selected to make sure it works.\n"
+            "Hold STEAM + B to force-close a game if needed.\n\n"
+            "Only continue once you've opened every game you selected.",
+            13, C_DIM, align=Qt.AlignCenter)
+        self._verify_msg.setVisible(False)
+        lay.addWidget(self._verify_msg)
+
+        self._own_continue_btn = _btn("Continue >>", C_IW, h=52)
+        self._own_continue_btn.setVisible(False)
+        self._own_continue_btn.clicked.connect(self._go_own_install)
+        ocw = QHBoxLayout(); ocw.addStretch()
+        ocw.addWidget(self._own_continue_btn); ocw.addStretch()
+        lay.addLayout(ocw)
+
     def showEvent(self, e):
         super().showEvent(e)
         self.warning.setVisible(False)
+        is_own = cfg.get_game_source() == "own"
+        self.inst_btn.setVisible(not is_own)
+        self._add_games_btn.setVisible(False)
+        self._verify_msg.setVisible(False)
+        self._own_continue_btn.setVisible(False)
         self._build()
 
     def _build(self):
@@ -809,9 +841,6 @@ class SetupScreen(QWidget):
             if not cb.isChecked(): continue
             if key not in self.installed: continue
             game = self.installed[key]
-            # Own games: no prefix check. OwnInstallScreen creates the
-            # shortcut and waits for the user to launch before installing.
-            # Steam games: verify prefix exists.
             if not is_own:
                 appid = GAMES[key]["appid"] if key in GAMES else None
                 if appid and not _is_prefix_ready(self.steam_root, appid): continue
@@ -819,12 +848,98 @@ class SetupScreen(QWidget):
         if not selected:
             self.warning.setText("Select at least one game to continue.")
             self.warning.setVisible(True); return
+        self._selected = selected
         if is_own:
-            s = self.stack.widget(10); s.selected=selected; s.steam_root=self.steam_root
-            self.stack.setCurrentIndex(10)
+            # Show Add Games button — user kicks off the shortcut/Proton setup
+            self.inst_btn.setVisible(False)
+            self._add_games_btn.setVisible(True)
         else:
             s = self.stack.widget(4); s.selected=selected; s.steam_root=self.steam_root
             self.stack.setCurrentIndex(4)
+
+    def _do_add_games(self):
+        """
+        Phase 1 of the My Own install flow.
+        Kills Steam, writes shortcuts, sets Proton 10 compat, waits 6 seconds,
+        relaunches Steam, then shows the verify message and Continue button.
+        Runs the heavy work on a background thread so the UI stays responsive.
+        """
+        self._add_games_btn.setEnabled(False)
+        self._add_games_btn.setText("Setting up...")
+        self.warning.setVisible(False)
+
+        selected = self._selected
+        selected_keys = [k for k, gd, g in selected]
+
+        def _run():
+            import time
+            from wrapper import kill_steam, set_compat_tool
+            from shortcut import create_own_shortcuts
+
+            try:
+                # Kill Steam so we can safely write shortcuts.vdf
+                kill_steam()
+
+                # Write non-Steam shortcuts and download artwork
+                gyro_mode = cfg.get_gyro_mode() or "hold"
+                own_games  = {k: g for k, gd, g in selected}
+                create_own_shortcuts(own_games, selected_keys, gyro_mode)
+
+                # Set Proton 10 as the compat tool for each shortcut appid.
+                # We use the shortcut appids that create_own_shortcuts enriched
+                # into the game dicts, not the Steam appids.
+                shortcut_appids = [
+                    str(g.get("shortcut_appid", ""))
+                    for g in own_games.values()
+                    if g.get("shortcut_appid")
+                ]
+                if shortcut_appids:
+                    set_compat_tool(shortcut_appids, "Proton 10.0")
+
+                # Wait for Steam to relaunch and write the shortcut appids
+                time.sleep(6)
+
+                # Relaunch Steam
+                import subprocess
+                subprocess.Popen(
+                    ["bash", "-c",
+                     "nohup ~/.local/share/Steam/steam.sh > /dev/null 2>&1 &"]
+                )
+
+                # Update own_games back onto selected so OwnInstallScreen has
+                # the enriched dicts (shortcut_appid, compatdata_path, etc.)
+                for k, gd, g in selected:
+                    if k in own_games:
+                        g.update(own_games[k])
+
+            except Exception as ex:
+                # Show the error on the warning label via a timer so it's
+                # called on the main thread safely
+                QTimer.singleShot(0, lambda: (
+                    self.warning.setText(f"Error: {ex}"),
+                    self.warning.setVisible(True),
+                    self._add_games_btn.setEnabled(True),
+                    self._add_games_btn.setText("Add Games"),
+                ))
+                return
+
+            # Switch to verify phase on the main thread
+            QTimer.singleShot(0, self._show_verify_phase)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _show_verify_phase(self):
+        """Switch to Phase 2 — show verify message and Continue button."""
+        self._add_games_btn.setVisible(False)
+        self._verify_msg.setVisible(True)
+        self._own_continue_btn.setVisible(True)
+
+    def _go_own_install(self):
+        """Continue to OwnInstallScreen after user has verified games launch."""
+        s = self.stack.widget(10)
+        s.selected   = self._selected
+        s.steam_root = self.steam_root
+        self.stack.setCurrentIndex(10)
 
 # ── InstallScreen ──────────────────────────────────────────────────────────────
 class InstallScreen(QWidget):
