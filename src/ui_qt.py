@@ -2486,8 +2486,8 @@ class OwnInstallScreen(QWidget):
 class SourceScreen(QWidget):
     """
     Shown on first run before IntroScreen. Asks how the user installed their
-    games. Steam path uses the standard detection flow. My Own path detects
-    non-Steam shortcuts by exe name and auto-renames them.
+    games. Steam path uses the standard detection flow. Steam or Other detects
+    both Steam games and games installed via CD, GOG, Microsoft Store, etc.
     """
     def __init__(self, stack):
         super().__init__(); self.stack = stack
@@ -2522,11 +2522,11 @@ class SourceScreen(QWidget):
         adv = QPushButton("ADVANCED"); adv.setFont(font(9, True)); adv.setFixedHeight(24); adv.setEnabled(False)
         adv.setStyleSheet(f"QPushButton{{background:{C_TREY};color:#FFF;border:none;border-radius:5px;padding:0 10px;}}QPushButton:disabled{{background:{C_TREY};color:#FFF;}}")
         oc.addWidget(adv, alignment=Qt.AlignLeft)
-        oc.addWidget(_lbl("Other", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
-        oc.addWidget(_lbl("You installed via the Microsoft Store, installed a CD, or purchased the game on another store front.", 12, C_DIM, align=Qt.AlignLeft))
-        oc.addWidget(_lbl("Please make sure your installed games are in /home/deck/games before continuing.", 11, "#555568", align=Qt.AlignLeft))
+        oc.addWidget(_lbl("Steam or Other", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
+        oc.addWidget(_lbl("You installed via the Microsoft Store, CD Install, GOG, or other storefronts. Steam games are also detected automatically.", 12, C_DIM, align=Qt.AlignLeft))
+        oc.addWidget(_lbl("Make sure your non-Steam games are in /home/deck/games before continuing.", 11, "#555568", align=Qt.AlignLeft))
         oc.addStretch()
-        own_btn = _btn("Select My Own >>", C_TREY, h=44)
+        own_btn = _btn("Select Steam or Other >>", C_TREY, h=44)
         own_btn.clicked.connect(lambda: self._pick("own"))
         oc.addWidget(own_btn)
         cards.addWidget(own_card)
