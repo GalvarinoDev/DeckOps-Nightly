@@ -83,6 +83,148 @@ SHORTCUTS = {
 }
 
 
+# ── Own game shortcut definitions ─────────────────────────────────────────────
+#
+# Used when the user selects "My Own" on the source screen. DeckOps creates
+# non-Steam shortcuts for games installed outside of Steam (CD, GOG, etc.)
+# with canonical names so the appid is deterministic and controllable.
+#
+# Artwork credits (SteamGridDB): see README.md
+
+OWN_SHORTCUTS = {
+    "cod4sp": {
+        "name":           "Call of Duty 4: Modern Warfare - Singleplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/7940/b40c43b0b14b7e124553e0220581a1b9ef8e38bf.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/library_hero_2x.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "cod4mp": {
+        "name":           "Call of Duty 4: Modern Warfare - Multiplayer",
+        "template_type":  "other",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon/59b109c700b500daa9ef3a6769bc8c6f.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/7a22b900577a6edbffd53153cea2999c.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/69a24bf40cd265fb00ae685cdaa040c7.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/95bc8e097e09212ec0160a7bc0b46fd6.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/0440169a43de927753429dd69ca8c735.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "iw4sp": {
+        "name":           "Call of Duty: Modern Warfare 2 (2009) - Singleplayer",
+        "template_type":  "other",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10180/ad502494f1658220f9166c7e17ac90422bf6a479.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_hero_2x.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "iw4mp": {
+        "name":           "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10190/7dd7c2d5bce2413131762d7cbee3f059614ed69d.jpg",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/4f4ecc161b18f07dcf2c8296fad55709.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10190/header.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/1fc214004c9481e4c8073e85323bfd4b.png",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/d79aac075930c83c2f1e369a511148fe.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
+    "iw5sp": {
+        "name":           "Call of Duty: Modern Warfare 3 (2011) - Singleplayer",
+        "template_type":  "other",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42680/c3330a875925437d8216949b6571f6e941ba0679.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_hero_2x.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "iw5mp": {
+        "name":           "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon_thumb/67b48cc32ab9f04633bd50656a4a26fc.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/54726e7600c9c297610f6ed9d7d19ca7.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/ce65f40e3a20ad19fe352c52ce3bcf51.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/51770b1e6f66ba5d45e58a76e6a73dc2.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/4a64d913220fca4c33c140c6952688a8.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "t4sp": {
+        "name":           "Call of Duty: World at War",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10090/2bfb85222af4a01842baa5c3a16a080eb27ac6c3.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/library_hero_2x.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "t4mp": {
+        "name":           "Call of Duty: World at War - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon/854d6fae5ee42911677c739ee1734486.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/bb933c55afc6987ae406e48ff58786d6.png",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/a6a0076c7e1907a4555b17cc2a6ebc85.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/e369853df766fa44e1ed0ff613f563bd.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/0a32bfcf5c87aa42d2a0367c1f6bb17c.png",
+        "icon_ext": "png", "grid_ext": "png", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "t5sp": {
+        "name":           "Call of Duty: Black Ops",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42700/ea744d59efded3feaeebcafed224be9eadde90ac.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_hero.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "t5mp": {
+        "name":           "Call of Duty: Black Ops - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42710/d595fb4b01201cade09e1232f2c41c0866840628.jpg",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/978f9d25644371a4c4b8df8c994cd880.png",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/a6330e9317a50ccf2d79c295dd18046f.png",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/dc82d632c9fcecb0778afbc7924494a6.png",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/dfb84a11f431c62436cfb760e30a34fe.png",
+        "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
+    },
+    "t6sp": {
+        "name":           "Call of Duty: Black Ops II - Singleplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/202970/0a23d78ade8c8d7b4cfa15bf71c9dd535b2998ca.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_hero.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "t6zm": {
+        "name":           "Call of Duty: Black Ops II - Zombies",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon_thumb/743c11a9f3cb65cda4994bbdfb66c398.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/3d9ffc992e48d2aeb4b06f05471f619d.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/b87c4d009662bc436961d8f753a8de78.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/e5e63da79fcd2bebbd7cb8bf1c1d0274.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/79514e888b8f2acacc68738d0cbb803e.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "t6mp": {
+        "name":           "Call of Duty: Black Ops II - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon_thumb/715eb56d3f3b71792e230102d1da496d.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/7d3695ac5fbf55fb65ea261dd3a8577c.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/d841ee63e07b28f94920b81d2e4c21c9.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/731c83db8d2ff01bdc000083fd3c3740.png",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/6271faadeedd7626d661856b7a004e27.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
+}
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _find_all_steam_uids():
@@ -618,6 +760,141 @@ def remove_shortcuts(on_progress=None):
             prog(f"  ✓ Shortcuts removed for user {uid}")
         except Exception as e:
             prog(f"  ⚠ Could not write shortcuts.vdf for user {uid}: {e}")
+
+
+def create_own_shortcuts(own_games: dict, selected_keys: list,
+                        gyro_mode: str, on_progress=None):
+    """
+    Create non-Steam shortcuts for games detected via find_own_installed().
+
+    DeckOps controls the shortcut name and exe path, so the appid is
+    deterministic and artwork, controller configs, and compat tools all
+    land in the right place from the start. No rename step needed.
+
+    own_games     — dict from detect_games.find_own_installed()
+    selected_keys — list of game keys the user selected
+    gyro_mode     — "hold", "ads", or "toggle"
+    on_progress   — optional callback(msg: str)
+
+    Returns own_games dict enriched with shortcut_appid, compatdata_path,
+    and source fields so the install flow can use them directly.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    to_create = []
+    for key in selected_keys:
+        if key not in own_games:
+            continue
+        if key not in OWN_SHORTCUTS:
+            continue
+        game = own_games[key]
+        install_dir = game.get("install_dir", "")
+        if not install_dir:
+            continue
+        to_create.append((key, OWN_SHORTCUTS[key], game))
+
+    if not to_create:
+        prog("No own game shortcuts to create.")
+        return own_games
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        prog("⚠ No Steam user accounts found — shortcuts skipped.")
+        return own_games
+
+    for uid in uids:
+        prog(f"Creating own game shortcuts for user {uid}...")
+
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+
+        existing_names = _read_existing_shortcuts(shortcuts_path)
+        existing_raw = _read_shortcuts_raw(shortcuts_path)
+        next_idx = _get_next_index(existing_raw)
+
+        new_entries = []
+
+        for key, shortcut_def, game in to_create:
+            name        = shortcut_def["name"]
+            install_dir = game["install_dir"]
+            exe_path    = game["exe_path"]
+
+            # Calculate appid from quoted exe + canonical name.
+            # We control both, so this is deterministic.
+            quoted_exe     = f'"{exe_path}"'
+            shortcut_appid = _calc_shortcut_appid(quoted_exe, name)
+            compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
+            icon_path      = os.path.join(grid_dir, f"{shortcut_appid}_icon.{shortcut_def['icon_ext']}")
+
+            # Enrich the game dict so downstream code has the appid and paths
+            game["shortcut_appid"]  = shortcut_appid
+            game["compatdata_path"] = compatdata_path
+            game["source"]          = "own"
+            game["current_name"]    = name
+
+            launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+
+            prog(f"  → {name}")
+            prog(f"    appid: {shortcut_appid}")
+
+            if name in existing_names:
+                prog(f"    ✓ Shortcut exists")
+            else:
+                entry = {
+                    "appid":               _to_signed32(shortcut_appid),
+                    "AppName":             name,
+                    "Exe":                 quoted_exe,
+                    "StartDir":            f'"{install_dir}"',
+                    "icon":                icon_path,
+                    "ShortcutPath":        "",
+                    "LaunchOptions":       launch_options,
+                    "IsHidden":            0,
+                    "AllowDesktopConfig":  1,
+                    "AllowOverlay":        1,
+                    "OpenVR":              0,
+                    "Devkit":              0,
+                    "DevkitGameID":        "",
+                    "DevkitOverrideAppID": 0,
+                    "LastPlayTime":        0,
+                    "FlatpakAppID":        "",
+                    "tags":                {"0": "DeckOps"},
+                }
+
+                entry_bytes = _make_shortcut_entry(next_idx, entry)
+                new_entries.append(entry_bytes)
+                next_idx += 1
+                prog(f"    ✓ Shortcut created")
+
+            # Download artwork
+            _download_artwork(grid_dir, shortcut_appid, shortcut_def, prog)
+
+            # Assign controller config
+            _assign_controller_config(uid, shortcut_appid, shortcut_def, gyro_mode, prog)
+
+            # Set GE-Proton compat tool
+            try:
+                import config as _cfg
+                from wrapper import set_compat_tool
+                ge_version = _cfg.get_ge_proton_version()
+                if ge_version:
+                    set_compat_tool([str(shortcut_appid)], ge_version)
+                    prog(f"    ✓ GE-Proton {ge_version} set")
+            except Exception as ex:
+                prog(f"    ⚠ Could not set GE-Proton: {ex}")
+
+        if new_entries:
+            try:
+                _write_shortcuts_vdf(shortcuts_path, existing_raw, new_entries)
+                prog(f"  ✓ shortcuts.vdf saved")
+            except Exception as e:
+                prog(f"  ⚠ Failed to write shortcuts.vdf: {e}")
+        else:
+            prog(f"  ✓ No new shortcuts needed")
+
+    prog("✓ Own game shortcuts created.")
+    return own_games
 
 
 # ── CLI for testing ───────────────────────────────────────────────────────────
