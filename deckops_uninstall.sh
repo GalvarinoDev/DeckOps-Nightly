@@ -826,7 +826,21 @@ for f in \
     "controller_neptune_deckops_ads.vdf" \
     "controller_neptune_deckops_other_hold.vdf" \
     "controller_neptune_deckops_other_toggle.vdf" \
-    "controller_neptune_deckops_other_ads.vdf"; do
+    "controller_neptune_deckops_other_ads.vdf" \
+    "controller_ps5_deckops.vdf" \
+    "controller_ps5_deckops_ads.vdf" \
+    "controller_ps5_deckops_other.vdf" \
+    "controller_ps5_deckops_other_ads.vdf" \
+    "controller_ps4_deckops.vdf" \
+    "controller_ps4_deckops_ads.vdf" \
+    "controller_ps4_deckops_other.vdf" \
+    "controller_ps4_deckops_other_ads.vdf" \
+    "controller_xbox360_deckops.vdf" \
+    "controller_xbox360_deckops_other.vdf" \
+    "controller_xboxone_deckops.vdf" \
+    "controller_xboxone_deckops_other.vdf" \
+    "controller_generic_deckops.vdf" \
+    "controller_generic_deckops_other.vdf"; do
     target="$TEMPLATE_DIR/$f"
     if [ -f "$target" ]; then
         rm -f "$target" && success "Removed $f" || warn "Failed to remove $f"
@@ -1039,8 +1053,15 @@ for uid in os.listdir(USERDATA):
                 shutil.rmtree(appid_dir)
                 print(f"  uid {uid}: removed Steam Controller Config for appid {appid}")
         
-        # Clean configset files (neptune + serial-specific)
-        configsets_to_clean = ["configset_controller_neptune.vdf"]
+        # Clean configset files (neptune + serial-specific + all external types)
+        configsets_to_clean = [
+            "configset_controller_neptune.vdf",
+            "configset_controller_ps5.vdf",
+            "configset_controller_ps4.vdf",
+            "configset_controller_xbox360.vdf",
+            "configset_controller_xboxone.vdf",
+            "configset_controller_generic.vdf",
+        ]
         if deck_serial:
             configsets_to_clean.append(f"configset_{deck_serial}.vdf")
         
