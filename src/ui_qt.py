@@ -546,6 +546,40 @@ class IntroScreen(QWidget):
         pl.addStretch()
         main_lay.addWidget(self._play_section)
 
+        # ── Controller type section (fourth screen, docked users only) ────────
+        self._controller_section = QWidget(); self._controller_section.setVisible(False)
+        cl = QVBoxLayout(self._controller_section); cl.setContentsMargins(80,60,80,60); cl.setSpacing(16)
+
+        self._back_play_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
+        self._back_play_btn.setFixedWidth(80)
+        self._back_play_btn.clicked.connect(self._back_to_play)
+        back_row3 = QHBoxLayout()
+        back_row3.addStretch(); back_row3.addWidget(self._back_play_btn); back_row3.addStretch()
+        cl.addLayout(back_row3)
+
+        cl.addStretch()
+        _title_block(cl)
+        cl.addSpacing(16)
+        cl.addWidget(_lbl("What external controller do you use?", 15, "#CCC"))
+        cl.addSpacing(4)
+        cl.addWidget(_lbl(
+            "PlayStation  --  PS5 or PS4 DualShock/DualSense. Includes gyro aiming.\n"
+            "Xbox  --  Xbox 360 or Xbox One controller. Standard layout, no gyro.\n"
+            "Other  --  Generic or 8BitDo controller. Standard layout, no gyro.",
+            13, C_DIM, align=Qt.AlignLeft))
+        cl.addSpacing(12)
+        crow = QHBoxLayout(); crow.setSpacing(20)
+        ps_btn      = _btn("PlayStation", C_DARK_BTN, h=56)
+        xbox_btn    = _btn("Xbox",        C_DARK_BTN, h=56)
+        other_btn   = _btn("Other",       C_DARK_BTN, h=56)
+        ps_btn.clicked.connect(lambda: self._pick_controller("playstation"))
+        xbox_btn.clicked.connect(lambda: self._pick_controller("xbox"))
+        other_btn.clicked.connect(lambda: self._pick_controller("other"))
+        crow.addWidget(ps_btn); crow.addWidget(xbox_btn); crow.addWidget(other_btn)
+        cl.addLayout(crow)
+        cl.addStretch()
+        main_lay.addWidget(self._controller_section)
+
     def _back_to_model(self):
         self._gyro_section.setVisible(False)
         self._model_section.setVisible(True)
@@ -554,6 +588,10 @@ class IntroScreen(QWidget):
         self._play_section.setVisible(False)
         self._gyro_section.setVisible(True)
 
+    def _back_to_play(self):
+        self._controller_section.setVisible(False)
+        self._play_section.setVisible(True)
+
     def _pick_model(self, model):
         cfg.set_deck_model(model)
         self._model_section.setVisible(False)
@@ -561,15 +599,31 @@ class IntroScreen(QWidget):
 
     def _pick_gyro(self, mode):
         cfg.set_gyro_mode(mode)
-        # Skip play mode screen if already set from a previous run
-        if cfg.get_play_mode():
-            self.stack.setCurrentIndex(2)
+        # Skip play mode screen if already set from a previous run.
+        # If play_mode is set AND (handheld OR external_controller also set), go straight to stack.
+        play_mode = cfg.get_play_mode()
+        if play_mode:
+            if play_mode == "handheld" or cfg.get_external_controller():
+                self.stack.setCurrentIndex(2)
+            else:
+                # Docked but no controller type chosen yet
+                self._gyro_section.setVisible(False)
+                self._controller_section.setVisible(True)
         else:
             self._gyro_section.setVisible(False)
             self._play_section.setVisible(True)
 
     def _pick_play_mode(self, mode):
         cfg.set_play_mode(mode)
+        if mode == "docked" and not cfg.get_external_controller():
+            # Docked users need to pick their controller type before continuing
+            self._play_section.setVisible(False)
+            self._controller_section.setVisible(True)
+        else:
+            self.stack.setCurrentIndex(2)
+
+    def _pick_controller(self, controller_type):
+        cfg.set_external_controller(controller_type)
         self.stack.setCurrentIndex(2)
 
 # ── WelcomeScreen ──────────────────────────────────────────────────────────────
@@ -716,7 +770,7 @@ class SetupScreen(QWidget):
         self._checks.clear()
 
         from detect_games import GAMES
-        _LCD_OFFLINE_KEYS = {"t4sp", "t5sp", "t6zm"}
+        _LCD_OFFLINE_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "iw5mp"}
         # Each card gets up to 3 checkbox slots. Empty slots are transparent
         # placeholders that take space but draw nothing, keeping all rows aligned.
         MAX_SLOTS  = 3
@@ -1305,16 +1359,26 @@ class InstallScreen(QWidget):
         self._s.progress.emit(90, "Installing controller templates...")
         self._s.log.emit("Installing controller templates...")
         try:
-            from controller_profiles import install_controller_templates, assign_controller_profiles
+            from controller_profiles import install_controller_templates, assign_controller_profiles, assign_external_controller_profiles
             install_controller_templates(
                 on_progress=lambda msg: self._s.log.emit(f"  {msg}")
             )
             gyro_mode = cfg.get_gyro_mode() or "hold"
+            # Neptune profiles always assigned - user may play handheld too
             assign_controller_profiles(
                 gyro_mode,
                 on_progress=lambda msg: self._s.log.emit(f"  {msg}")
             )
-            self._s.log.emit(f"✓  Controller profiles assigned ({gyro_mode} mode)")
+            self._s.log.emit(f"✓  Neptune controller profiles assigned ({gyro_mode} mode)")
+            # Docked users also get external controller profiles
+            if cfg.is_docked():
+                controller_type = cfg.get_external_controller() or "playstation"
+                assign_external_controller_profiles(
+                    controller_type,
+                    gyro_mode,
+                    on_progress=lambda msg: self._s.log.emit(f"  {msg}")
+                )
+                self._s.log.emit(f"✓  External controller profiles assigned ({controller_type})")
         except Exception as ex:
             self._s.log.emit(f"  Templates skipped: {ex}")
 
@@ -1901,7 +1965,7 @@ class ConfigureScreen(QWidget):
         ))
         def _run():
             try:
-                from controller_profiles import install_controller_templates, assign_controller_profiles
+                from controller_profiles import install_controller_templates, assign_controller_profiles, assign_external_controller_profiles
                 from wrapper import kill_steam, set_steam_input_enabled
                 s.log.emit("Closing Steam...")
                 kill_steam()
@@ -1909,10 +1973,19 @@ class ConfigureScreen(QWidget):
                     on_progress=lambda msg: s.log.emit(msg)
                 )
                 gyro_mode = cfg.get_gyro_mode() or "hold"
+                # Neptune profiles always assigned
                 assign_controller_profiles(
                     gyro_mode,
                     on_progress=lambda msg: s.log.emit(msg)
                 )
+                # Docked users also get external controller profiles
+                if cfg.is_docked():
+                    controller_type = cfg.get_external_controller() or "playstation"
+                    assign_external_controller_profiles(
+                        controller_type,
+                        gyro_mode,
+                        on_progress=lambda msg: s.log.emit(msg)
+                    )
                 sr = cfg.load().get("steam_root", "")
                 if sr:
                     set_steam_input_enabled(sr)
@@ -2350,10 +2423,26 @@ class OwnInstallScreen(QWidget):
         # ── Controller templates ──────────────────────────────────────────
         self._s.progress.emit(88, "Installing controller templates...")
         try:
-            from controller_profiles import install_controller_templates
+            from controller_profiles import install_controller_templates, assign_controller_profiles, assign_external_controller_profiles
             install_controller_templates(
                 on_progress=lambda msg: self._s.log.emit(f"  {msg}")
             )
+            gyro_mode = cfg.get_gyro_mode() or "hold"
+            # Neptune profiles always assigned - user may play handheld too
+            assign_controller_profiles(
+                gyro_mode,
+                on_progress=lambda msg: self._s.log.emit(f"  {msg}")
+            )
+            self._s.log.emit(f"✓  Neptune controller profiles assigned ({gyro_mode} mode)")
+            # Docked users also get external controller profiles
+            if cfg.is_docked():
+                controller_type = cfg.get_external_controller() or "playstation"
+                assign_external_controller_profiles(
+                    controller_type,
+                    gyro_mode,
+                    on_progress=lambda msg: self._s.log.emit(f"  {msg}")
+                )
+                self._s.log.emit(f"✓  External controller profiles assigned ({controller_type})")
         except Exception as ex:
             self._s.log.emit(f"  Templates skipped: {ex}")
 
