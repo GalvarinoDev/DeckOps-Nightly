@@ -765,8 +765,13 @@ class SetupScreen(QWidget):
     def showEvent(self, e):
         super().showEvent(e)
         self.warning.setVisible(False)
-        is_own = cfg.get_game_source() == "own"
-        self.inst_btn.setVisible(not is_own)
+        # Show Install button unless there are actual own-sourced games detected.
+        # Checking game_source alone breaks "Steam or Other" users who only
+        # have Steam games — they need the Install button, not Add Games.
+        has_own_games = any(
+            g.get("source") == "own" for g in self.installed.values()
+        )
+        self.inst_btn.setVisible(not has_own_games)
         self._add_games_btn.setVisible(False)
         self._verify_msg.setVisible(False)
         self._own_continue_btn.setVisible(False)
