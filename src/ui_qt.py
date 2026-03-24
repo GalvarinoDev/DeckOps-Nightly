@@ -2482,9 +2482,9 @@ class OwnInstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Steam Input setup skipped: {ex}")
 
-        # ── Apply GE-Proton to own shortcut appids ────────────────────────
-        # OwnAddScreen set Proton 10.0 as a placeholder so prefixes could be
-        # created. Now that mod clients are installed, switch to GE-Proton.
+        # ── Ensure newest GE-Proton is set for own shortcut appids ─────────
+        # OwnAddScreen may have used an older GE-Proton or Proton 10 as a
+        # fallback. Make sure all shortcuts point to the newest GE-Proton.
         if ge_version:
             try:
                 from wrapper import set_compat_tool
@@ -2714,7 +2714,8 @@ class OwnScanScreen(QWidget):
 class OwnAddScreen(QWidget):
     """
     Advanced flow step 2: close Steam, create non-Steam shortcuts for
-    the user's own games, set Proton 10 compat, relaunch Steam.
+    the user's own games, set newest GE-Proton compat (falls back to
+    Proton 10 if GE-Proton isn't installed yet), relaunch Steam.
     Auto-advances to OwnVerifyScreen when done.
     """
     def __init__(self, stack):
@@ -2819,13 +2820,17 @@ class OwnAddScreen(QWidget):
 
                 self._s.progress.emit(60, "Setting Proton compatibility...")
 
+                # Use newest GE-Proton if already installed, otherwise fall
+                # back to Proton 10 — OwnInstallScreen will swap to GE-Proton
+                # later if needed
+                compat_version = cfg.get_ge_proton_version() or "proton_10"
                 shortcut_appids = [
                     str(g.get("shortcut_appid", ""))
                     for g in selected.values()
                     if g.get("shortcut_appid")
                 ]
                 if shortcut_appids:
-                    set_compat_tool(shortcut_appids, "proton_10")
+                    set_compat_tool(shortcut_appids, compat_version)
 
                 self._s.progress.emit(75, "Relaunching Steam...")
                 import subprocess
@@ -2865,8 +2870,10 @@ class OwnAddScreen(QWidget):
 # ── OwnVerifyScreen ───────────────────────────────────────────────────────────
 class OwnVerifyScreen(QWidget):
     """
-    Advanced flow step 3: ask the user to launch each own game once to
-    verify it works. Continue button is always visible (not gated).
+    Advanced flow step 3: optional screen where the user can test-launch
+    their own games to verify they work. Dependencies are installed
+    automatically so launching is not required. Continue button is
+    always visible (not gated).
     No back button since shortcuts are already written.
     """
     def __init__(self, stack):
@@ -2885,9 +2892,10 @@ class OwnVerifyScreen(QWidget):
         lay.addSpacing(12)
         lay.addWidget(_lbl(
             "Your games have been added to Steam as shortcuts.\n\n"
-            "Please launch each game once to make sure it works.\n"
-            "Hold STEAM + B to force-close a game if needed.\n\n"
-            "Once you've tested every game, hit Continue.",
+            "Launching each game is no longer required. DeckOps now sets up\n"
+            "all dependencies automatically. You can still test-launch your\n"
+            "games here if you'd like to verify they work before continuing.\n\n"
+            "Hold STEAM + B to force-close a game if needed.",
             14, C_DIM, align=Qt.AlignCenter))
 
         lay.addSpacing(12)
