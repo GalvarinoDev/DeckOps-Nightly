@@ -18,6 +18,7 @@ Progress is reported via a callback:
     on_progress(percent: int, status: str)
 """
 
+import hashlib
 import os
 import stat
 import shutil
@@ -83,6 +84,30 @@ XACT_DLLS = [
     "xact3.dll",
     "xaudio2_0.dll",
 ]
+
+
+# ── DirectX June 2010 redist ──────────────────────────────────────────────────
+# XACT DLLs are extracted from this single cabinet file by winetricks.
+# We pre-download it ourselves so protontricks finds it cached and skips
+# the download entirely — letting us run this concurrently with other
+# large downloads (Plutonium bootstrapper, GE-Proton, etc.).
+#
+# URL sourced from the winetricks script bundled with protontricks Flatpak:
+#   flatpak run --command=sh com.github.Matoking.protontricks \
+#     -c "grep -A3 'helper_directx_Jun2010' \$(which winetricks)"
+
+DIRECTX_JUN2010_URL    = "https://files.holarse-linuxgaming.de/mirrors/microsoft/directx_Jun2010_redist.exe"
+DIRECTX_JUN2010_SHA256 = "8746ee1a84a083a90e37899d71d50d5c7c015e69688a466aa80447f011780c0d"
+
+# Flatpak protontricks uses a sandboxed cache path. Native protontricks
+# uses the standard XDG cache. We write to whichever is appropriate based
+# on which protontricks is available.
+_DIRECTX_CACHE_FLATPAK = os.path.expanduser(
+    "~/.var/app/com.github.Matoking.protontricks/cache/winetricks/directx9"
+)
+_DIRECTX_CACHE_NATIVE = os.path.expanduser(
+    "~/.cache/winetricks/directx9"
+)
 
 
 # ── path helpers ──────────────────────────────────────────────────────────────
@@ -230,17 +255,138 @@ def _copy_plut_to_prefix(src_plut_dir: str, dest_plut_dir: str,
 def _is_xact_installed(compatdata_path: str) -> bool:
     """
     Check whether XACT is installed in a given Wine prefix.
-    We look for xactengine2_0.dll and xact3.dll in system32.
-    Both must be present and non-empty to be considered installed.
+    We look for xactengine2_0.dll in system32 — it's the reliable sentinel
+    that's present in every prefix after a successful install.
+    (xact3.dll is never present in practice even when audio works fine,
+    so we no longer check for it.)
     """
     sys32 = _system32(compatdata_path)
-    dlls  = ["xactengine2_0.dll", "xact3.dll"]
-    found = [
-        os.path.join(sys32, dll) for dll in dlls
-        if os.path.exists(os.path.join(sys32, dll))
-           and os.path.getsize(os.path.join(sys32, dll)) > 0
-    ]
-    return len(found) == len(dlls)
+    sentinel = os.path.join(sys32, "xactengine2_0.dll")
+    return os.path.exists(sentinel) and os.path.getsize(sentinel) > 0
+
+
+def _needs_xact_download(xact_game_keys: list[str], steam_root: str) -> bool:
+    """
+    Returns True if any Steam XACT game prefix is missing xactengine2_0.dll,
+    meaning we need to download directx_Jun2010_redist.exe and run protontricks.
+
+    Also checks the dedicated plutonium prefix itself since that's the primary
+    install target before DLLs are copied out to game prefixes.
+
+    Only checks Steam-path prefixes (appid-based compatdata). Own game prefixes
+    are not checked here — own games always need the download since their
+    shortcut appids are DeckOps-generated and we don't track them here.
+    """
+    # Check the dedicated plutonium prefix first
+    if not _is_xact_installed(DEDICATED_PREFIX):
+        return True
+
+    # Check each Steam game prefix
+    from detect_games import _all_library_dirs
+    seen_appids = set()
+    for key in xact_game_keys:
+        if key not in GAME_META:
+            continue
+        appid = GAME_META[key][0]
+        if appid in seen_appids:
+            continue
+        seen_appids.add(appid)
+
+        # Search all library dirs so SD card installs are covered
+        compat = None
+        for lib_dir in _all_library_dirs(steam_root):
+            candidate = os.path.join(lib_dir, "compatdata", str(appid))
+            if os.path.isdir(candidate):
+                compat = candidate
+                break
+
+        if compat is None or not _is_xact_installed(compat):
+            return True
+
+    return False
+
+
+def _get_directx_cache_path() -> str:
+    """
+    Return the correct winetricks cache directory for directx_Jun2010_redist.exe
+    based on which protontricks is available. Flatpak uses a sandboxed path,
+    native uses the standard XDG cache.
+    """
+    # Check for Flatpak protontricks first (most common on Steam Deck)
+    try:
+        result = subprocess.run(
+            ["flatpak", "info", "com.github.Matoking.protontricks"],
+            capture_output=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return _DIRECTX_CACHE_FLATPAK
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    return _DIRECTX_CACHE_NATIVE
+
+
+def download_directx_jun2010(on_progress=None) -> bool:
+    """
+    Pre-download directx_Jun2010_redist.exe into the winetricks cache so
+    protontricks finds it already cached and skips the download entirely.
+
+    Designed to be called concurrently alongside other large downloads
+    (Plutonium bootstrapper, GE-Proton, etc.) via threading.
+
+    Skips if the file already exists and its sha256 matches.
+    Returns True on success, False on failure.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    cache_dir  = _get_directx_cache_path()
+    cache_file = os.path.join(cache_dir, "directx_Jun2010_redist.exe")
+
+    # Check if already cached with a valid sha256
+    if os.path.exists(cache_file) and os.path.getsize(cache_file) > 0:
+        prog("Verifying cached DirectX Jun2010 redist...")
+        sha256 = hashlib.sha256()
+        with open(cache_file, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                sha256.update(chunk)
+        if sha256.hexdigest() == DIRECTX_JUN2010_SHA256:
+            prog("DirectX Jun2010 redist already cached, skipping download.")
+            return True
+        else:
+            prog("Cached file checksum mismatch, re-downloading...")
+
+    os.makedirs(cache_dir, exist_ok=True)
+    prog("Downloading DirectX Jun2010 redist (95 MB)...")
+
+    import time
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(DIRECTX_JUN2010_URL, timeout=120) as r, \
+                 open(cache_file, "wb") as f:
+                f.write(r.read())
+            break
+        except Exception as ex:
+            if attempt == 2:
+                prog(f"DirectX Jun2010 download failed: {ex}")
+                return False
+            time.sleep(2 ** attempt)
+
+    # Verify sha256 after download
+    prog("Verifying DirectX Jun2010 redist...")
+    sha256 = hashlib.sha256()
+    with open(cache_file, "rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            sha256.update(chunk)
+    if sha256.hexdigest() != DIRECTX_JUN2010_SHA256:
+        prog("DirectX Jun2010 checksum mismatch after download — file may be corrupt.")
+        os.remove(cache_file)
+        return False
+
+    prog("DirectX Jun2010 redist downloaded and verified.")
+    return True
 
 
 def _find_protontricks() -> list[str] | None:
@@ -349,7 +495,7 @@ def _install_xact(compatdata_path: str, proton_path: str,
     compatdata_path , path to this game's compatdata prefix
     proton_path     , kept for API consistency, not used
     steam_root      , kept for API consistency, not used
-    appid           , Steam appid for the game (protontricks requires this)
+    appid           , Steam appid or shortcut appid (protontricks handles both)
     game_name       , display name shown in progress messages
     """
     def prog(msg):
@@ -423,14 +569,30 @@ def install_xact_once(
     steam_root: str,
     proton_path: str,
     on_progress=None,
+    own_xact_targets: list[tuple[int, str]] | None = None,
 ) -> bool:
     """
-    Install XACT into the first eligible prefix, then copy DLLs to all
-    remaining XACT-requiring prefixes. Avoids re-running protontricks
-    (which is slow) for every game that shares the same requirement.
+    Install XACT into all required prefixes as efficiently as possible.
 
-    Prefixes are deduped by appid — t4sp and t4mp share appid 10090 so
-    only one protontricks run is needed for both.
+    For Steam games:
+      - Checks all relevant prefixes first. If XACT is already installed
+        everywhere, skips the download and protontricks entirely.
+      - Otherwise pre-downloads directx_Jun2010_redist.exe (should already
+        be cached if download_directx_jun2010() was called concurrently
+        earlier), then runs protontricks on the first prefix and copies
+        DLLs to the rest.
+
+    For own games (own_xact_targets):
+      - Always runs protontricks — no skip check since shortcut appids
+        are DeckOps-generated and we don't track their prefix state.
+      - Expects directx_Jun2010_redist.exe to already be cached from
+        the concurrent pre-download.
+
+    xact_game_keys     , Steam game keys that need XACT (subset of XACT_GAME_KEYS)
+    steam_root         , path to Steam root
+    proton_path        , kept for API consistency
+    own_xact_targets   , list of (shortcut_appid, compatdata_path) for own games
+                         that need XACT. Pass None or [] if no own games.
 
     Returns True if XACT is available in all target prefixes after this call.
     """
@@ -438,50 +600,82 @@ def install_xact_once(
         if on_progress:
             on_progress(msg)
 
-    if not xact_game_keys:
+    own_xact_targets = own_xact_targets or []
+    has_steam_keys   = bool(xact_game_keys)
+    has_own_targets  = bool(own_xact_targets)
+
+    if not has_steam_keys and not has_own_targets:
         return True
 
+    # ── Steam games: check if we can skip everything ──────────────────────────
+    steam_needs_install = has_steam_keys and _needs_xact_download(xact_game_keys, steam_root)
+
+    if not steam_needs_install and not has_own_targets:
+        prog("XACT already installed in all prefixes, skipping.")
+        return True
+
+    # ── Ensure protontricks is available ──────────────────────────────────────
     if not _ensure_protontricks(on_progress=on_progress):
         return False
 
-    # Build deduped list of (key, appid, compatdata_path) by appid.
-    seen_appids = {}
-    targets = []
-    for key in xact_game_keys:
-        if key not in GAME_META:
-            continue
-        appid = GAME_META[key][0]
-        if appid not in seen_appids:
-            compat = os.path.join(
-                steam_root, "steamapps", "compatdata", str(appid)
+    # ── Pre-download directx_Jun2010_redist.exe if not already cached ─────────
+    # This should be a no-op if download_directx_jun2010() was already called
+    # concurrently during the main download phase. If it wasn't (e.g. caller
+    # skipped the concurrent step), we download it here as a fallback.
+    if not download_directx_jun2010(on_progress=on_progress):
+        prog("DirectX Jun2010 download failed — XACT install may be slow or fail.")
+        # Don't abort — protontricks will try its own download as a last resort
+
+    # ── Steam games ───────────────────────────────────────────────────────────
+    if has_steam_keys and steam_needs_install:
+        # Build deduped list of (key, appid, compatdata_path) by appid.
+        seen_appids = {}
+        targets = []
+        for key in xact_game_keys:
+            if key not in GAME_META:
+                continue
+            appid = GAME_META[key][0]
+            if appid not in seen_appids:
+                compat = os.path.join(
+                    steam_root, "steamapps", "compatdata", str(appid)
+                )
+                seen_appids[appid] = compat
+                targets.append((key, appid, compat))
+
+        if targets:
+            # Install into the first prefix via protontricks.
+            primary_key, primary_appid, primary_compat = targets[0]
+            prog(f"Installing XACT into primary prefix (appid {primary_appid})...")
+            success = _install_xact(
+                primary_compat, proton_path, steam_root,
+                appid=primary_appid,
+                game_name=primary_key,
+                on_progress=on_progress,
             )
-            seen_appids[appid] = compat
-            targets.append((key, appid, compat))
 
-    if not targets:
-        return True
+            if not success:
+                prog("XACT install failed on primary prefix — skipping copy step.")
+                return False
 
-    # Install into the first prefix via protontricks.
-    primary_key, primary_appid, primary_compat = targets[0]
-    prog(f"Installing XACT into primary prefix (appid {primary_appid})...")
-    success = _install_xact(
-        primary_compat, proton_path, steam_root,
-        appid=primary_appid,
-        game_name=primary_key,
-        on_progress=on_progress,
-    )
+            # Copy DLLs to remaining Steam prefixes instead of re-running protontricks.
+            for key, appid, compat in targets[1:]:
+                if _is_xact_installed(compat):
+                    prog(f"XACT already present in prefix {appid}, skipping.")
+                    continue
+                prog(f"Copying XACT DLLs to prefix {appid}...")
+                _copy_xact_dlls(primary_compat, compat, on_progress=on_progress)
 
-    if not success:
-        prog("XACT install failed on primary prefix — skipping copy step.")
-        return False
-
-    # Copy DLLs to remaining prefixes instead of re-running protontricks.
-    for key, appid, compat in targets[1:]:
-        if _is_xact_installed(compat):
-            prog(f"XACT already present in prefix {appid}, skipping.")
-            continue
-        prog(f"Copying XACT DLLs to prefix {appid}...")
-        _copy_xact_dlls(primary_compat, compat, on_progress=on_progress)
+    # ── Own games ─────────────────────────────────────────────────────────────
+    # Shortcut appids are DeckOps-generated so protontricks can resolve them.
+    # We run protontricks per-prefix since we can't safely dedupe by appid here.
+    for shortcut_appid, compatdata_path in own_xact_targets:
+        prog(f"Installing XACT for own game (appid {shortcut_appid})...")
+        _install_xact(
+            compatdata_path, proton_path, steam_root,
+            appid=shortcut_appid,
+            game_name=f"own:{shortcut_appid}",
+            on_progress=on_progress,
+        )
 
     return True
 
