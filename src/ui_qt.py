@@ -195,69 +195,6 @@ def _all_prefixes_ready(steam_root: str, gd: dict) -> bool:
     return all(_is_prefix_ready(steam_root, aid) for aid in appids_needed)
 
 
-def _create_own_prefixes(selected, ge_version, on_progress=None):
-    """
-    Create Proton compatdata prefixes for own games by copying GE-Proton's
-    default_pfx. This eliminates the need for the user to launch each game
-    once before mods can be installed.
-
-    selected   — list of (key, gd, game) tuples from OwnInstallScreen
-    ge_version — GE-Proton version string (e.g. "GE-Proton9-22")
-    on_progress — optional callback(msg: str)
-    """
-    import shutil
-
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    COMPAT_DIR = os.path.expanduser("~/.local/share/Steam/compatibilitytools.d")
-    COMPAT_ROOT = os.path.expanduser("~/.local/share/Steam/steamapps/compatdata")
-
-    # Find default_pfx from GE-Proton
-    default_pfx = None
-    if ge_version:
-        candidate = os.path.join(COMPAT_DIR, ge_version, "files", "share", "default_pfx")
-        if os.path.isdir(candidate):
-            default_pfx = candidate
-
-    # Fallback: search for any GE-Proton default_pfx
-    if not default_pfx:
-        if os.path.isdir(COMPAT_DIR):
-            for entry in sorted(os.listdir(COMPAT_DIR), reverse=True):
-                candidate = os.path.join(COMPAT_DIR, entry, "files", "share", "default_pfx")
-                if os.path.isdir(candidate):
-                    default_pfx = candidate
-                    prog(f"  Using fallback prefix from {entry}")
-                    break
-
-    if not default_pfx:
-        prog("⚠ No default_pfx found. Users will need to launch each game once.")
-        return
-
-    created = 0
-    for key, gd, game in selected:
-        compat_path = game.get("compatdata_path", "")
-        if not compat_path:
-            continue
-        pfx_dir = os.path.join(compat_path, "pfx")
-        if os.path.isdir(pfx_dir):
-            prog(f"  {key}: prefix already exists")
-            continue
-        try:
-            os.makedirs(compat_path, exist_ok=True)
-            shutil.copytree(default_pfx, pfx_dir, symlinks=True)
-            prog(f"  ✓ {key}: prefix created")
-            created += 1
-        except Exception as ex:
-            prog(f"  ⚠ {key}: prefix creation failed: {ex}")
-
-    if created > 0:
-        prog(f"✓ Created {created} Proton prefix(es).")
-    else:
-        prog("  All prefixes already exist.")
-
-
 SP_IMAGE_URLS = {
     7940:   "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/header.jpg",
     10180:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/header.jpg",
@@ -1200,6 +1137,31 @@ class InstallScreen(QWidget):
         except Exception as ex:
             self._s.pulse_stop.emit()
             self._s.log.emit(f"  GE-Proton setup skipped: {ex}")
+
+        # ── Copy deps from GE-Proton default_pfx into all game prefixes ──────
+        # GE-Proton's default_pfx ships with d3dx, vcrun, xinput, and partial
+        # xact — everything these CoD games need. We copy them into each prefix
+        # so users don't have to launch every game through Steam first.
+        if ge_version:
+            from ge_proton import ensure_all_prefix_deps
+            self._s.log.emit("Installing prefix dependencies...")
+            dep_targets = []
+            for key, gd, game in self.selected:
+                appid = gd["appid"]
+                compat = find_compatdata(self.steam_root, appid)
+                if not compat and game and game.get("install_dir"):
+                    # Prefix doesn't exist yet — build the path from the game's
+                    # steamapps dir so ensure_prefix_deps can create it
+                    steamapps = os.path.dirname(os.path.dirname(game["install_dir"]))
+                    compat = os.path.join(steamapps, "compatdata", str(appid))
+                if compat:
+                    dep_targets.append((key, compat))
+            if dep_targets:
+                done = ensure_all_prefix_deps(
+                    ge_version, dep_targets,
+                    on_progress=lambda msg: self._s.log.emit(msg),
+                )
+                self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
 
         proton = get_proton_path(self.steam_root)
 
@@ -2402,12 +2364,24 @@ class OwnInstallScreen(QWidget):
         # Update self.selected with enriched game dicts
         self.selected = [(k, gd, own_games.get(k, g)) for k, gd, g in self.selected]
 
-        # ── Create Proton prefixes automatically ──────────────────────────
-        # Copy GE-Proton's default_pfx into each game's compatdata folder
-        # so mod clients can be installed without the user launching first.
+        # ── Create prefixes + install deps from GE-Proton default_pfx ─────
+        # Copies GE-Proton's default_pfx into each game's compatdata folder.
+        # This gives every prefix the full dependency set (d3dx, vcrun, xinput,
+        # partial xact) so mod clients can be installed without launching first.
         self._s.progress.emit(35, "Creating Proton prefixes...")
-        self._s.log.emit("Creating Proton prefixes...")
-        _create_own_prefixes(self.selected, ge_version, lambda msg: self._s.log.emit(msg))
+        self._s.log.emit("Creating Proton prefixes and installing dependencies...")
+        from ge_proton import ensure_all_prefix_deps
+        dep_targets = [
+            (key, game.get("compatdata_path", ""))
+            for key, gd, game in self.selected
+            if game and game.get("compatdata_path")
+        ]
+        if dep_targets:
+            done = ensure_all_prefix_deps(
+                ge_version, dep_targets,
+                on_progress=lambda msg: self._s.log.emit(msg),
+            )
+            self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
 
         proton = get_proton_path(self.steam_root)
 

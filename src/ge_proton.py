@@ -5,6 +5,11 @@ Downloads and installs the latest GE-Proton release from GitHub, then
 writes the CompatToolMapping entry in Steam's config.vdf so each game
 uses it automatically.
 
+Also provides ensure_prefix_deps() which copies the full dependency set
+(d3dx, vcrun, xinput, partial xact) from GE-Proton's default_pfx into
+any game prefix that's missing them. This eliminates the need for users
+to launch each game once before mods can be installed.
+
 Install path:
     ~/.steam/root/compatibilitytools.d/GE-ProtonX-XX/
 
@@ -41,6 +46,12 @@ _BROWSER_UA = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     "Accept": "*/*",
 }
+
+# Sentinel DLL used to check if the dependency set is already installed.
+# msvcp140.dll is part of the vcrun set and is always present when deps
+# have been copied from default_pfx. It's a good sentinel because it's
+# not something Wine provides on its own — it comes from the Proton prefix.
+_DEP_SENTINEL = "msvcp140.dll"
 
 
 # ── GitHub API ────────────────────────────────────────────────────────────────
@@ -100,6 +111,33 @@ def _get_local_version() -> str | None:
 
     candidates.sort(key=_version_key, reverse=True)
     return candidates[0]
+
+
+# ── default_pfx resolution ───────────────────────────────────────────────────
+
+def _find_default_pfx(ge_version: str | None) -> str | None:
+    """
+    Locate GE-Proton's default_pfx directory.
+
+    Tries the exact version first, then falls back to scanning for the
+    newest available GE-Proton install. Returns the path or None.
+    """
+    # Try exact version first
+    if ge_version:
+        candidate = os.path.join(COMPAT_DIR, ge_version, "files", "share", "default_pfx")
+        if os.path.isdir(candidate):
+            return candidate
+
+    # Fallback: newest GE-Proton that has a default_pfx
+    if os.path.isdir(COMPAT_DIR):
+        for entry in sorted(os.listdir(COMPAT_DIR), reverse=True):
+            if not entry.startswith("GE-Proton"):
+                continue
+            candidate = os.path.join(COMPAT_DIR, entry, "files", "share", "default_pfx")
+            if os.path.isdir(candidate):
+                return candidate
+
+    return None
 
 
 # ── Download helpers ──────────────────────────────────────────────────────────
@@ -219,6 +257,121 @@ def install_ge_proton(on_progress=None):
 # Imported here so callers can use ge_proton.set_compat_tool as before.
 
 from wrapper import set_compat_tool  # noqa: F401
+
+
+# ── Prefix dependency management ─────────────────────────────────────────────
+# GE-Proton's default_pfx ships with the full d3dx, vcrun, xinput, and
+# partial xact dependency set that these CoD games need. Instead of
+# running winetricks verbs or relying on Steam to install them on first
+# launch, we copy the DLLs directly from default_pfx into each game's
+# prefix. This works for both Steam and own games.
+#
+# The only DLLs NOT in default_pfx are the 9 extra XACT files needed by
+# t4/t5 (WaW, Black Ops). Those are still handled by the protontricks
+# xact verb in plutonium.py.
+
+def _copy_dlls(src_dir: str, dest_dir: str) -> int:
+    """
+    Copy all .dll files from src_dir into dest_dir, overwriting existing.
+    Returns the number of files copied.
+    """
+    if not os.path.isdir(src_dir):
+        return 0
+    os.makedirs(dest_dir, exist_ok=True)
+    count = 0
+    for fname in os.listdir(src_dir):
+        if fname.lower().endswith(".dll"):
+            shutil.copy2(os.path.join(src_dir, fname), os.path.join(dest_dir, fname))
+            count += 1
+    return count
+
+
+def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
+                       on_progress=None) -> bool:
+    """
+    Make sure a game's compatdata prefix has the full dependency set from
+    GE-Proton's default_pfx. Handles three cases:
+
+      1. No prefix at all → copy entire default_pfx (creates everything)
+      2. Prefix exists but missing deps → copy DLLs into system32 + syswow64
+      3. Deps already present → skip
+
+    ge_version  — GE-Proton version string (e.g. "GE-Proton10-33")
+    prefix_path — compatdata root (e.g. ~/.../compatdata/10090)
+    on_progress — optional callback(msg: str) for log messages
+
+    Returns True if deps are now in place, False if we couldn't do it.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    default_pfx = _find_default_pfx(ge_version)
+    if not default_pfx:
+        prog("⚠ No GE-Proton default_pfx found — cannot install dependencies")
+        return False
+
+    pfx_dir = os.path.join(prefix_path, "pfx")
+    sys32_target = os.path.join(pfx_dir, "drive_c", "windows", "system32")
+    wow64_target = os.path.join(pfx_dir, "drive_c", "windows", "syswow64")
+
+    # Case 1: No prefix at all — copy entire default_pfx
+    if not os.path.isdir(pfx_dir):
+        try:
+            os.makedirs(prefix_path, exist_ok=True)
+            shutil.copytree(default_pfx, pfx_dir, symlinks=True)
+            prog("  ✓ Prefix created from default_pfx (all deps included)")
+            return True
+        except Exception as ex:
+            prog(f"  ⚠ Prefix creation failed: {ex}")
+            return False
+
+    # Case 3: Deps already present — skip
+    sentinel = os.path.join(sys32_target, _DEP_SENTINEL)
+    if os.path.isfile(sentinel):
+        prog("  Dependencies already present — skipping")
+        return True
+
+    # Case 2: Prefix exists but missing deps — copy DLLs from default_pfx
+    sys32_src = os.path.join(default_pfx, "drive_c", "windows", "system32")
+    wow64_src = os.path.join(default_pfx, "drive_c", "windows", "syswow64")
+
+    try:
+        n32 = _copy_dlls(sys32_src, sys32_target)
+        n64 = _copy_dlls(wow64_src, wow64_target)
+        prog(f"  ✓ Copied {n32 + n64} DLLs into prefix (system32: {n32}, syswow64: {n64})")
+        return True
+    except Exception as ex:
+        prog(f"  ⚠ DLL copy failed: {ex}")
+        return False
+
+
+def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str, str]],
+                           on_progress=None) -> int:
+    """
+    Run ensure_prefix_deps for a list of games. Convenience wrapper for
+    the install flow in ui_qt.py.
+
+    prefix_paths — list of (label, compatdata_path) tuples
+                   label is for logging (e.g. game key or display name)
+    on_progress  — optional callback(msg: str)
+
+    Returns the number of prefixes that now have deps installed.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    success = 0
+    for label, compat_path in prefix_paths:
+        if not compat_path:
+            prog(f"  {label}: no compatdata path — skipped")
+            continue
+        prog(f"  {label}: checking dependencies...")
+        if ensure_prefix_deps(ge_version, compat_path, on_progress=on_progress):
+            success += 1
+
+    return success
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
