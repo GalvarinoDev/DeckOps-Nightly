@@ -194,6 +194,9 @@ KNOWN_EXES = [
     "iw3mp.exe", "iw3sp.exe", "iw4mp.exe", "iw4sp.exe",
     "iw5mp.exe", "iw5sp.exe", "CoDWaW.exe", "CoDWaWmp.exe",
     "BlackOps.exe", "BlackOpsMP.exe", "t6zm.exe", "t6mp.exe", "t6sp.exe",
+    # LCD own Plutonium wrapper exes (written by plutonium.py, not original game files)
+    "t4plutsp.exe", "t4plutmp.exe", "t5plutsp.exe", "t5plutmp.exe",
+    "t6plutmp.exe", "t6plutzm.exe", "iw5plutmp.exe",
 ]
 
 def parse_shortcuts(path):
@@ -331,6 +334,20 @@ OWN_CLEANUP = {
         "dirs":  ["iw3sp_mod"],
     },
 }
+
+# LCD own Plutonium wrapper exes - these are DeckOps-created bash scripts,
+# not original game files. Safe to delete. The shortcut exe field points at
+# these so we find the game folder through them during cleanup.
+PLUT_WRAPPER_EXES = [
+    "t4plutsp.exe", "t4plutmp.exe", "t5plutsp.exe", "t5plutmp.exe",
+    "t6plutmp.exe", "t6plutzm.exe", "iw5plutmp.exe",
+]
+# Add wrapper exes to cleanup map - each one just removes itself
+for _wrapper in PLUT_WRAPPER_EXES:
+    OWN_CLEANUP[_wrapper] = {
+        "files": [_wrapper],
+        "dirs":  [],
+    }
 
 if not os.path.isdir(USERDATA_DIR):
     print("  No userdata found, skipping.")
@@ -766,6 +783,14 @@ OWN_EXE_MAP = {
     "t6sp.exe":       "Call of Duty: Black Ops II - Singleplayer",
     "t6zm.exe":       "Call of Duty: Black Ops II - Zombies",
     "t6mp.exe":       "Call of Duty: Black Ops II - Multiplayer",
+    # LCD own Plutonium wrapper exes
+    "t4plutsp.exe":   "Call of Duty: World at War",
+    "t4plutmp.exe":   "Call of Duty: World at War - Multiplayer",
+    "t5plutsp.exe":   "Call of Duty: Black Ops",
+    "t5plutmp.exe":   "Call of Duty: Black Ops - Multiplayer",
+    "t6plutmp.exe":   "Call of Duty: Black Ops II - Multiplayer",
+    "t6plutzm.exe":   "Call of Duty: Black Ops II - Zombies",
+    "iw5plutmp.exe":  "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
 }
 
 for uid in os.listdir(userdata):
@@ -995,6 +1020,14 @@ OWN_EXE_MAP = {
     "t6sp.exe":       "Call of Duty: Black Ops II - Singleplayer",
     "t6zm.exe":       "Call of Duty: Black Ops II - Zombies",
     "t6mp.exe":       "Call of Duty: Black Ops II - Multiplayer",
+    # LCD own Plutonium wrapper exes
+    "t4plutsp.exe":   "Call of Duty: World at War",
+    "t4plutmp.exe":   "Call of Duty: World at War - Multiplayer",
+    "t5plutsp.exe":   "Call of Duty: Black Ops",
+    "t5plutmp.exe":   "Call of Duty: Black Ops - Multiplayer",
+    "t6plutmp.exe":   "Call of Duty: Black Ops II - Multiplayer",
+    "t6plutzm.exe":   "Call of Duty: Black Ops II - Zombies",
+    "iw5plutmp.exe":  "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
 }
 
 for uid in os.listdir(USERDATA):
@@ -1161,6 +1194,14 @@ OWN_EXE_MAP = {
     "t6sp.exe":       "Call of Duty: Black Ops II - Singleplayer",
     "t6zm.exe":       "Call of Duty: Black Ops II - Zombies",
     "t6mp.exe":       "Call of Duty: Black Ops II - Multiplayer",
+    # LCD own Plutonium wrapper exes
+    "t4plutsp.exe":   "Call of Duty: World at War",
+    "t4plutmp.exe":   "Call of Duty: World at War - Multiplayer",
+    "t5plutsp.exe":   "Call of Duty: Black Ops",
+    "t5plutmp.exe":   "Call of Duty: Black Ops - Multiplayer",
+    "t6plutmp.exe":   "Call of Duty: Black Ops II - Multiplayer",
+    "t6plutzm.exe":   "Call of Duty: Black Ops II - Zombies",
+    "iw5plutmp.exe":  "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
 }
 
 userdata = os.path.join(steam_root, "userdata")
