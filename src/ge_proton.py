@@ -287,18 +287,28 @@ def _copy_dlls(src_dir: str, dest_dir: str) -> int:
 
 
 def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
-                       on_progress=None) -> bool:
+                       on_progress=None, proton_path: str | None = None) -> bool:
     """
     Make sure a game's compatdata prefix has the full dependency set from
     GE-Proton's default_pfx. Handles three cases:
 
-      1. No prefix at all → copy entire default_pfx (creates everything)
+      1. No prefix at all:
+         a. If proton_path is provided, let Proton initialize the prefix
+            properly via `proton run cmd /c exit`, then copy extra DLLs.
+            This is the preferred path for own games — Proton sets up
+            the registry, version file, tracked_files, and everything
+            else it needs to recognize the prefix.
+         b. If no proton_path, copy entire default_pfx (legacy fallback).
       2. Prefix exists but missing deps → copy DLLs into system32 + syswow64
       3. Deps already present → skip
 
     ge_version  — GE-Proton version string (e.g. "GE-Proton10-33")
     prefix_path — compatdata root (e.g. ~/.../compatdata/10090)
     on_progress — optional callback(msg: str) for log messages
+    proton_path — path to the proton binary. When provided, new prefixes
+                  are initialized by Proton itself instead of copying
+                  default_pfx. This produces a fully valid prefix that
+                  Steam recognizes on first launch.
 
     Returns True if deps are now in place, False if we couldn't do it.
     """
@@ -315,21 +325,42 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
     sys32_target = os.path.join(pfx_dir, "drive_c", "windows", "system32")
     wow64_target = os.path.join(pfx_dir, "drive_c", "windows", "syswow64")
 
-    # Case 1: No prefix at all — copy entire default_pfx
+    # Case 1: No prefix at all
     if not os.path.isdir(pfx_dir):
-        try:
-            os.makedirs(prefix_path, exist_ok=True)
-            shutil.copytree(default_pfx, pfx_dir, symlinks=True)
-            # Write a version file so Proton recognizes this as an
-            # initialized prefix. Without this, Proton refuses to launch.
-            if ge_version:
-                with open(os.path.join(prefix_path, "version"), "w") as f:
-                    f.write(ge_version + "\n")
-            prog("  ✓ Prefix created from default_pfx (all deps included)")
-            return True
-        except Exception as ex:
-            prog(f"  ⚠ Prefix creation failed: {ex}")
-            return False
+        if proton_path:
+            # Let Proton create and initialize the prefix properly.
+            # This sets up registry, version, tracked_files, and all
+            # the management files that Steam expects.
+            try:
+                os.makedirs(prefix_path, exist_ok=True)
+                env = os.environ.copy()
+                env["STEAM_COMPAT_DATA_PATH"] = prefix_path
+                env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = os.path.dirname(
+                    os.path.dirname(proton_path)
+                )
+                import subprocess
+                subprocess.run(
+                    [proton_path, "run", "cmd", "/c", "exit"],
+                    env=env, capture_output=True, timeout=60,
+                )
+                prog("  ✓ Prefix initialized by Proton")
+            except Exception as ex:
+                prog(f"  ⚠ Proton prefix init failed: {ex}")
+                return False
+        else:
+            # Fallback: copy default_pfx directly (Steam flow where
+            # the prefix should already exist from user launching the game)
+            try:
+                os.makedirs(prefix_path, exist_ok=True)
+                shutil.copytree(default_pfx, pfx_dir, symlinks=True)
+                if ge_version:
+                    with open(os.path.join(prefix_path, "version"), "w") as f:
+                        f.write(ge_version + "\n")
+                prog("  ✓ Prefix created from default_pfx (all deps included)")
+                return True
+            except Exception as ex:
+                prog(f"  ⚠ Prefix creation failed: {ex}")
+                return False
 
     # Case 3: Deps already present — skip
     sentinel = os.path.join(sys32_target, _DEP_SENTINEL)
@@ -344,11 +375,6 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
     try:
         n32 = _copy_dlls(sys32_src, sys32_target)
         n64 = _copy_dlls(wow64_src, wow64_target)
-        # Ensure version file exists so Proton recognizes the prefix
-        version_path = os.path.join(prefix_path, "version")
-        if ge_version and not os.path.exists(version_path):
-            with open(version_path, "w") as f:
-                f.write(ge_version + "\n")
         prog(f"  ✓ Copied {n32 + n64} DLLs into prefix (system32: {n32}, syswow64: {n64})")
         return True
     except Exception as ex:
@@ -357,7 +383,7 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
 
 
 def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str, str]],
-                           on_progress=None) -> int:
+                           on_progress=None, proton_path: str | None = None) -> int:
     """
     Run ensure_prefix_deps for a list of games. Convenience wrapper for
     the install flow in ui_qt.py.
@@ -365,6 +391,7 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
     prefix_paths — list of (label, compatdata_path) tuples
                    label is for logging (e.g. game key or display name)
     on_progress  — optional callback(msg: str)
+    proton_path  — passed through to ensure_prefix_deps for Proton init
 
     Returns the number of prefixes that now have deps installed.
     """
@@ -378,7 +405,8 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
             prog(f"  {label}: no compatdata path — skipped")
             continue
         prog(f"  {label}: checking dependencies...")
-        if ensure_prefix_deps(ge_version, compat_path, on_progress=on_progress):
+        if ensure_prefix_deps(ge_version, compat_path, on_progress=on_progress,
+                              proton_path=proton_path):
             success += 1
 
     return success
