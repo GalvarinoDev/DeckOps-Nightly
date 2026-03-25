@@ -721,6 +721,15 @@ class WelcomeScreen(QWidget):
     def _show_results(self):
         self.bar.setValue(100)
         if not self.installed:
+            # Advanced flow with own games already parked: no Steam games is OK,
+            # skip straight to SetupScreen which will route to OwnInstallScreen.
+            if self._steam_only and cfg.get_game_source() == "own":
+                own_screen = self.stack.widget(10)
+                if own_screen.own_selected:
+                    self.status.setText("No Steam games found — continuing with your own games.")
+                    self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
+                    self.cont.setVisible(True)
+                    return
             self.status.setText("No supported games found.")
             self.status.setStyleSheet(f"color:{C_TREY};background:transparent;"); return
         unique = len({g["name"].split(" - ")[0].split(" (")[0] for g in self.installed.values()})
