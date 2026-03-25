@@ -333,7 +333,7 @@ class _Sigs(QObject):
 # ── BootstrapScreen ────────────────────────────────────────────────────────────
 class BootstrapScreen(QWidget):
     def __init__(self, stack):
-        super().__init__(); self.stack = stack
+        super().__init__(); self.stack = stack; self.screen_name = "BootstrapScreen"
         lay = QVBoxLayout(self); lay.setContentsMargins(80,80,80,80); lay.setSpacing(14)
         lay.addStretch()
         _title_block(lay)
@@ -379,7 +379,7 @@ class BootstrapScreen(QWidget):
 # ── IntroScreen ────────────────────────────────────────────────────────────────
 class IntroScreen(QWidget):
     def __init__(self, stack):
-        super().__init__(); self.stack = stack
+        super().__init__(); self.stack = stack; self.screen_name = "IntroScreen"
         self._selected_model = ""
 
         main_lay = QVBoxLayout(self); main_lay.setContentsMargins(0,0,0,0)
@@ -657,7 +657,7 @@ class IntroScreen(QWidget):
 # ── WelcomeScreen ──────────────────────────────────────────────────────────────
 class WelcomeScreen(QWidget):
     def __init__(self, stack):
-        super().__init__(); self.stack=stack; self.installed={}
+        super().__init__(); self.stack=stack; self.installed={}; self.screen_name = "WelcomeScreen"
         self.steam_installed={}; self.own_installed={}; self.steam_root=""
         self._steam_only = False  # set by OwnScanScreen skip or advanced flow
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(14)
@@ -770,7 +770,7 @@ class SetupScreen(QWidget):
     so both Steam and own games are handled in one pass.
     """
     def __init__(self, stack):
-        super().__init__(); self.stack=stack
+        super().__init__(); self.stack=stack; self.screen_name = "SetupScreen"
         self.steam_installed={}; self.own_installed={}; self.steam_root=""
         self._checks={}
 
@@ -949,7 +949,7 @@ class SetupScreen(QWidget):
 # ── InstallScreen ──────────────────────────────────────────────────────────────
 class InstallScreen(QWidget):
     def __init__(self, stack):
-        super().__init__(); self.stack=stack; self.selected=[]; self.steam_root=""
+        super().__init__(); self.stack=stack; self.selected=[]; self.steam_root=""; self.screen_name = "InstallScreen"
         self._plut_event = threading.Event()
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
@@ -1538,7 +1538,7 @@ class ManagementCard(QFrame):
 # ── ManagementScreen ───────────────────────────────────────────────────────────
 class ManagementScreen(QWidget):
     def __init__(self, stack):
-        super().__init__(); self.stack=stack; self.installed={}
+        super().__init__(); self.stack=stack; self.installed={}; self.screen_name = "ManagementScreen"
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
         hdr = QWidget(); hdr.setFixedHeight(60)
@@ -1649,7 +1649,7 @@ class ManagementScreen(QWidget):
 # ── ControllerInfoScreen ───────────────────────────────────────────────────────
 class ControllerInfoScreen(QWidget):
     def __init__(self, stack):
-        super().__init__(); self.stack = stack
+        super().__init__(); self.stack = stack; self.screen_name = "ControllerInfoScreen"
         lay = QVBoxLayout(self); lay.setContentsMargins(60,30,60,30); lay.setSpacing(8)
 
         t = QLabel("SETUP COMPLETE"); t.setFont(font(32, True)); t.setAlignment(Qt.AlignCenter)
@@ -1796,7 +1796,7 @@ def _reopen_steam_bg(steam_root=None):
 # ── ConfigureScreen ────────────────────────────────────────────────────────────
 class ConfigureScreen(QWidget):
     def __init__(self, stack):
-        super().__init__(); self.stack=stack
+        super().__init__(); self.stack=stack; self.screen_name = "ConfigureScreen"
         lay = QVBoxLayout(self); lay.setContentsMargins(60,40,60,40); lay.setSpacing(18)
         t = QLabel("SETTINGS"); t.setFont(font(36,True)); t.setAlignment(Qt.AlignCenter)
         t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
@@ -2085,7 +2085,7 @@ class UpdateScreen(QWidget):
     """Handles both Update and Reinstall from ManagementScreen."""
 
     def __init__(self, stack):
-        super().__init__(); self.stack = stack
+        super().__init__(); self.stack = stack; self.screen_name = "UpdateScreen"
         self.selected   = []
         self.steam_root = ""
         self.mode       = "update"
@@ -2227,7 +2227,7 @@ class OwnInstallScreen(QWidget):
     """
 
     def __init__(self, stack):
-        super().__init__(); self.stack = stack
+        super().__init__(); self.stack = stack; self.screen_name = "OwnInstallScreen"
         self.own_selected    = {}   # dict of key -> game, set by OwnScanScreen
         self.steam_selected  = []   # list of (key, gd, game), set by SetupScreen
         self.steam_root = ""
@@ -2423,7 +2423,9 @@ class OwnInstallScreen(QWidget):
 
         # ── Set GE-Proton compat for MANAGED_APPIDS ──────────────────────
         # Must run AFTER kill_steam - Steam overwrites config.vdf on exit.
-        if ge_version:
+        # Only write for Steam appids if the user actually has Steam games
+        # selected - otherwise this may trigger Steam to re-download games.
+        if ge_version and self.steam_selected:
             try:
                 set_compat_tool(MANAGED_APPIDS, ge_version)
                 self._s.log.emit(f"✓  {ge_version} set for Steam game appids")
@@ -2672,7 +2674,7 @@ class OwnScanScreen(QWidget):
     folder if nothing was found, or skip to Steam-only setup.
     """
     def __init__(self, stack):
-        super().__init__(); self.stack = stack
+        super().__init__(); self.stack = stack; self.screen_name = "OwnScanScreen"
         self._own_found = {}       # full scan results
         self._checks = {}          # key -> QCheckBox
         self._extra_paths = []     # user-chosen folders
@@ -2879,7 +2881,7 @@ class SourceScreen(QWidget):
     both Steam games and games installed via CD, GOG, Microsoft Store, etc.
     """
     def __init__(self, stack):
-        super().__init__(); self.stack = stack
+        super().__init__(); self.stack = stack; self.screen_name = "SourceScreen"
         lay = QVBoxLayout(self)
         lay.setContentsMargins(80, 60, 80, 60); lay.setSpacing(20)
         lay.addStretch()
@@ -2950,6 +2952,29 @@ class DeckOpsWindow(QMainWindow):
         for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen,SourceScreen,OwnInstallScreen,OwnScanScreen]:
             self.stack.addWidget(cls(self.stack))
         self.stack.setCurrentIndex(0)
+
+        # Debug label - shows current screen name and index in bottom-left
+        self._dbg_label = QLabel(self)
+        self._dbg_label.setStyleSheet(
+            "color:#444455;background:transparent;padding:4px 8px;"
+        )
+        self._dbg_label.setFont(font(9))
+        self._dbg_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._dbg_label.raise_()
+        self.stack.currentChanged.connect(self._update_dbg_label)
+        self._update_dbg_label(0)
+
+    def _update_dbg_label(self, idx):
+        w = self.stack.widget(idx)
+        name = getattr(w, "screen_name", w.__class__.__name__)
+        self._dbg_label.setText(f"[{idx}] {name}")
+        self._dbg_label.adjustSize()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        # Keep debug label pinned to bottom-left
+        self._dbg_label.move(8, self.height() - self._dbg_label.height() - 8)
+        self._dbg_label.raise_()
 
     def closeEvent(self, e):
         _kill_audio()
