@@ -975,15 +975,11 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 wine_game_dir = f'Z:{install_dir.replace("/", chr(92))}'
                 if _cfg.is_oled():
                     actual_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
-                    launch_options = (
-                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                        f'%command% "plutonium://play/{key}"'
-                    )
+                    launch_options = f'plutonium://play/{key}'
                 else:
                     actual_exe = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
                     launch_options = (
-                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                        f'%command% {key} '
+                        f'{key} '
                         f'"{wine_game_dir}" '
                         f'+name "Player" -lan'
                     )
@@ -991,18 +987,18 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
             elif key == "iw4mp":
                 # iw4x -- point at iw4x.exe (dropped by installer, no rename)
                 actual_exe = os.path.join(install_dir, "iw4x.exe")
-                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                launch_options = ""
 
             elif key == "cod4sp":
                 # iw3sp-mod -- point at iw3sp_mod.exe (dropped by installer, no rename)
                 actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
-                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                launch_options = ""
 
             else:
                 # cod4mp (cod4x patches iw3mp.exe in place), iw4sp, iw5sp, t6sp
                 # -- these use the original game exe with no mod client
                 actual_exe = exe_path
-                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                launch_options = ""
 
             # For non-Plutonium keys, warn if the target exe is missing.
             # Plutonium exes won't exist yet -- they get created when the

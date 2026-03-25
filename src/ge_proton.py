@@ -320,6 +320,11 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
         try:
             os.makedirs(prefix_path, exist_ok=True)
             shutil.copytree(default_pfx, pfx_dir, symlinks=True)
+            # Write a version file so Proton recognizes this as an
+            # initialized prefix. Without this, Proton refuses to launch.
+            if ge_version:
+                with open(os.path.join(prefix_path, "version"), "w") as f:
+                    f.write(ge_version + "\n")
             prog("  ✓ Prefix created from default_pfx (all deps included)")
             return True
         except Exception as ex:
@@ -339,6 +344,11 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
     try:
         n32 = _copy_dlls(sys32_src, sys32_target)
         n64 = _copy_dlls(wow64_src, wow64_target)
+        # Ensure version file exists so Proton recognizes the prefix
+        version_path = os.path.join(prefix_path, "version")
+        if ge_version and not os.path.exists(version_path):
+            with open(version_path, "w") as f:
+                f.write(ge_version + "\n")
         prog(f"  ✓ Copied {n32 + n64} DLLs into prefix (system32: {n32}, syswow64: {n64})")
         return True
     except Exception as ex:
