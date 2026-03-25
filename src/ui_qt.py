@@ -912,6 +912,14 @@ class SetupScreen(QWidget):
             if appid and not _is_prefix_ready(self.steam_root, appid): continue
             selected.append((key, gd, self.steam_installed[key]))
         if not selected:
+            # Advanced flow: own games are already queued on OwnInstallScreen,
+            # so zero Steam games is valid. Route straight through.
+            if cfg.get_game_source() == "own":
+                own_screen = self.stack.widget(10)
+                own_screen.steam_selected = []
+                own_screen.steam_root = self.steam_root
+                self.stack.setCurrentIndex(10)
+                return
             self.warning.setText("Select at least one game to continue.")
             self.warning.setVisible(True); return
 
@@ -2214,6 +2222,7 @@ class OwnInstallScreen(QWidget):
         self.own_selected    = {}   # dict of key -> game, set by OwnScanScreen
         self.steam_selected  = []   # list of (key, gd, game), set by SetupScreen
         self.steam_root = ""
+        self._plut_event = threading.Event()
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
         t = QLabel("INSTALLING"); t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
@@ -2228,6 +2237,12 @@ class OwnInstallScreen(QWidget):
         self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
         lay.addWidget(self.log, stretch=1)
 
+        self.plut_btn = _btn("I've closed Plutonium  ✓", C_TREY, size=13, h=52)
+        self.plut_btn.setFixedWidth(460); self.plut_btn.setVisible(False)
+        self.plut_btn.clicked.connect(self._confirm_plut)
+        pw = QHBoxLayout(); pw.addStretch(); pw.addWidget(self.plut_btn); pw.addStretch()
+        lay.addLayout(pw)
+
         self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
         self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
         self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
@@ -2238,6 +2253,8 @@ class OwnInstallScreen(QWidget):
         self._s.progress.connect(lambda p, m: (self.bar.setValue(p), self.cur.setText(m)))
         self._s.log.connect(self._append_log)
         self._s.done.connect(self._on_done)
+        self._s.plut_wait.connect(lambda: self.plut_btn.setVisible(True))
+        self._s.plut_go.connect(lambda: self.plut_btn.setVisible(False))
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
 
@@ -2267,10 +2284,15 @@ class OwnInstallScreen(QWidget):
     def showEvent(self, e):
         super().showEvent(e)
         self.bar.setValue(0); self.log.clear()
+        self.plut_btn.setVisible(False)
         self.cont_btn.setVisible(False)
+        self._plut_event.clear()
         self._stop_pulse()
         _log_to_file("── Own Install started ──")
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
+
+    def _confirm_plut(self):
+        self._plut_event.set()
 
     def _on_done(self, _):
         self._stop_pulse()
@@ -2278,7 +2300,7 @@ class OwnInstallScreen(QWidget):
         self.cont_btn.setVisible(True)
 
     def _run(self):
-        from wrapper import get_proton_path, kill_steam, set_compat_tool
+        from wrapper import get_proton_path, find_compatdata, kill_steam, set_compat_tool
         from shortcut import create_own_shortcuts
         from cod4x import install_cod4x
         from iw4x import install_iw4x
@@ -2299,6 +2321,7 @@ class OwnInstallScreen(QWidget):
         selected_keys = [key for key, _, _ in self.selected]
         own_games     = {k: g for k, gd, g in self.selected if g}
         logged_bases  = set()
+        has_plut      = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
 
         # ── GE-Proton download (Steam still running) ─────────────────────
         ge_version = None
@@ -2306,7 +2329,7 @@ class OwnInstallScreen(QWidget):
             self._s.pulse_start.emit("Installing GE-Proton")
             self._s.log.emit("Installing GE-Proton...")
             ge_version = install_ge_proton(
-                on_progress=lambda pct, msg: self._s.progress.emit(2 + int(pct * 0.08), msg)
+                on_progress=lambda pct, msg: self._s.progress.emit(2 + int(pct * 0.06), msg)
             )
             self._s.pulse_stop.emit()
             self._s.log.emit(f"✓  {ge_version} downloaded")
@@ -2315,8 +2338,73 @@ class OwnInstallScreen(QWidget):
             self._s.pulse_stop.emit()
             self._s.log.emit(f"  GE-Proton setup skipped: {ex}")
 
+        proton = get_proton_path(self.steam_root)
+
+        # ── Plutonium bootstrapper (Steam still running) ─────────────────
+        # Downloads Plutonium into the dedicated DeckOps prefix and launches
+        # it so the user can log in. Runs before kill_steam because the
+        # bootstrapper uses Proton independently of Steam's state.
+        if has_plut:
+            from plutonium import (launch_bootstrapper, is_plutonium_ready,
+                                   install_plutonium, install_xact_once,
+                                   XACT_GAME_KEYS)
+            from plutonium import GAME_META as _PLUT_META
+            is_lcd = not cfg.is_oled()
+            plut_ready = is_plutonium_ready()
+            if is_lcd:
+                from plutonium import is_bootstrapper_ready
+                plut_ready = plut_ready or is_bootstrapper_ready()
+
+            if not plut_ready:
+                if is_lcd:
+                    self._s.progress.emit(10, "Launching Plutonium...")
+                    self._s.log.emit(
+                        "Plutonium is launching now.\n"
+                        "  1. Wait for it to finish downloading\n"
+                        "  2. Do NOT log in (LCD does not need an account)\n"
+                        "  3. Close the Plutonium window once downloading finishes\n"
+                        "  4. Click the button below to continue"
+                    )
+                else:
+                    self._s.progress.emit(10, "Launching Plutonium — please log in...")
+                    self._s.log.emit(
+                        "Plutonium is launching now.\n"
+                        "  1. Wait for it to finish downloading\n"
+                        "  2. Log in with your Plutonium account\n"
+                        "  3. Close the Plutonium window\n"
+                        "  4. Click the button below to continue"
+                    )
+                try:
+                    launch_bootstrapper(proton, on_progress=lambda p, m: self._s.progress.emit(p, m))
+                except Exception as ex:
+                    self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
+                    self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
+
+                self._s.plut_wait.emit()
+                self._plut_event.wait()
+                self._s.plut_go.emit()
+
+                if is_lcd:
+                    if not is_bootstrapper_ready():
+                        self._s.log.emit(
+                            "✗  Plutonium bootstrapper not found.\n"
+                            "   Make sure you let it finish downloading before closing."
+                        )
+                        self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
+                else:
+                    if not is_plutonium_ready():
+                        self._s.log.emit(
+                            "✗  Plutonium does not appear to be fully set up.\n"
+                            "   Make sure you logged in and let it finish downloading."
+                        )
+                        self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
+
+                self._s.log.emit("✓  Plutonium ready.")
+            else:
+                self._s.log.emit("✓  Plutonium already set up.")
+
         # ── Kill Steam ────────────────────────────────────────────────────
-        self._s.progress.emit(15, "Closing Steam...")
+        self._s.progress.emit(18, "Closing Steam...")
         self._s.log.emit("Closing Steam...")
         try:
             kill_steam()
@@ -2326,8 +2414,6 @@ class OwnInstallScreen(QWidget):
 
         # ── Set GE-Proton compat for MANAGED_APPIDS ──────────────────────
         # Must run AFTER kill_steam - Steam overwrites config.vdf on exit.
-        # This fixes the bug where Steam game appids never got GE-Proton
-        # written to CompatToolMapping in the advanced flow.
         if ge_version:
             try:
                 set_compat_tool(MANAGED_APPIDS, ge_version)
@@ -2336,7 +2422,7 @@ class OwnInstallScreen(QWidget):
                 self._s.log.emit(f"  CompatToolMapping for Steam appids skipped: {ex}")
 
         # ── Create shortcuts with artwork + controller configs ────────────
-        self._s.progress.emit(20, "Creating shortcuts and downloading artwork...")
+        self._s.progress.emit(22, "Creating shortcuts and downloading artwork...")
         self._s.log.emit("Creating non-Steam shortcuts...")
         gyro_mode = cfg.get_gyro_mode() or "hold"
         own_games_dict = {k: g for k, g in self.own_selected.items()}
@@ -2355,8 +2441,8 @@ class OwnInstallScreen(QWidget):
         own_games = {k: g for k, gd, g in self.selected if g}
 
         # ── Create prefixes + install deps from GE-Proton default_pfx ─────
-        # Only for own games - Steam games get prefixes from user launching them.
-        self._s.progress.emit(35, "Creating Proton prefixes...")
+        # Only for own games -- Steam games get prefixes from user launching them.
+        self._s.progress.emit(30, "Creating Proton prefixes...")
         self._s.log.emit("Creating Proton prefixes and installing dependencies...")
         from ge_proton import ensure_all_prefix_deps
         dep_targets = [
@@ -2371,15 +2457,74 @@ class OwnInstallScreen(QWidget):
             )
             self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
 
-        proton = get_proton_path(self.steam_root)
+        # ── Plutonium games ───────────────────────────────────────────────
+        if has_plut:
+            # XACT audio for WaW / Black Ops (shared install, once for all)
+            steam_xact_keys = [k for k in selected_keys
+                               if KEY_CLIENT.get(k) == "plutonium"
+                               and k in XACT_GAME_KEYS
+                               and k not in self.own_selected]
+            own_xact_targets = [
+                (g.get("shortcut_appid"), g.get("compatdata_path"))
+                for k, gd, g in self.selected
+                if KEY_CLIENT.get(k) == "plutonium"
+                and k in XACT_GAME_KEYS
+                and k in self.own_selected and g
+            ]
+            xact_ready = False
+            if steam_xact_keys or own_xact_targets:
+                self._s.progress.emit(35, "Installing XACT audio...")
+                self._s.log.emit("Installing XACT audio components (shared across WaW and Black Ops)...")
+                self._s.pulse_start.emit("Installing XACT audio")
+                xact_ready = install_xact_once(
+                    steam_xact_keys,
+                    steam_root=self.steam_root,
+                    proton_path=proton,
+                    on_progress=lambda msg: self._s.log.emit(f"  {msg}"),
+                    own_xact_targets=own_xact_targets,
+                )
+                self._s.pulse_stop.emit()
+
+            # Per-game Plutonium install: copy Plutonium into each prefix,
+            # write config.json with game paths. Own games skip the wrapper
+            # (shortcuts point at Plutonium directly). Steam games in the
+            # mixed flow get the full wrapper treatment.
+            plut_selected = [(k, gd, g) for k, gd, g in self.selected
+                             if KEY_CLIENT.get(k) == "plutonium"]
+            installed_for_plut = {k: g for k, gd, g in self.selected if g}
+            total_plut = len(plut_selected)
+            for idx, (key, gd, game) in enumerate(plut_selected):
+                bp = 40 + int(idx / max(total_plut, 1) * 12)
+                base_name = gd["base"]
+                if base_name not in logged_bases:
+                    self._s.progress.emit(bp, f"Setting up {base_name}...")
+                def op_plut(pct, msg, _b=bp): self._s.progress.emit(_b + int(pct / 100 * 6), msg)
+                try:
+                    source = "own" if key in self.own_selected else "steam"
+                    if source == "own":
+                        compat = game.get("compatdata_path", "")
+                    else:
+                        _plut_appid = _PLUT_META[key][0] if key in _PLUT_META else gd["appid"]
+                        compat = find_compatdata(self.steam_root, _plut_appid)
+                    install_plutonium(game, key, self.steam_root, proton, compat,
+                                     on_progress=op_plut,
+                                     installed_games=installed_for_plut,
+                                     protontricks_ready=xact_ready,
+                                     source=source)
+                    cfg.mark_game_setup(key, "plutonium", source=source)
+                    if base_name not in logged_bases:
+                        self._s.log.emit(f"✓  {base_name} done")
+                        logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
         # ── Install iw4x ─────────────────────────────────────────────────
         has_iw4x = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
         if has_iw4x:
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "iw4x"]:
                 base_name = gd["base"]
-                self._s.progress.emit(45, f"Setting up {base_name}...")
-                def op_iw4x(pct, msg): self._s.progress.emit(45 + int(pct / 100 * 12), msg)
+                self._s.progress.emit(55, f"Setting up {base_name}...")
+                def op_iw4x(pct, msg): self._s.progress.emit(55 + int(pct / 100 * 7), msg)
                 try:
                     compat = game.get("compatdata_path", "")
                     source = "own" if key in self.own_selected else "steam"
@@ -2396,8 +2541,8 @@ class OwnInstallScreen(QWidget):
             cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4x", "iw3sp")]
             for key, gd, game in cod4_selected:
                 base_name = gd["base"]
-                self._s.progress.emit(60, f"Setting up {base_name}...")
-                def op_cod4(pct, msg): self._s.progress.emit(60 + int(pct / 100 * 12), msg)
+                self._s.progress.emit(65, f"Setting up {base_name}...")
+                def op_cod4(pct, msg): self._s.progress.emit(65 + int(pct / 100 * 10), msg)
                 try:
                     compat = game.get("compatdata_path", "")
                     c = KEY_CLIENT.get(key, gd["client"])
@@ -2423,7 +2568,7 @@ class OwnInstallScreen(QWidget):
                 self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
 
         # ── Game display configs ──────────────────────────────────────────
-        self._s.progress.emit(75, "Applying game configs...")
+        self._s.progress.emit(78, "Applying game configs...")
         try:
             from game_config import apply_game_configs
             applied, skipped, failed = apply_game_configs(
@@ -2489,7 +2634,7 @@ class OwnInstallScreen(QWidget):
 
         # ── Steam artwork for Steam-sourced games ─────────────────────────
         if self.steam_selected:
-            self._s.progress.emit(93, "Applying Steam artwork...")
+            self._s.progress.emit(95, "Applying Steam artwork...")
             try:
                 from shortcut import apply_steam_artwork
                 steam_keys = [k for k, _, _ in self.steam_selected]
