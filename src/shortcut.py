@@ -966,23 +966,21 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
             # cod4x and vanilla keys still need the original game exe.
 
             if key in _PLUT_KEYS:
-                # Plutonium -- point at launcher (OLED) or bootstrapper (LCD)
+                # Plutonium -- point at launcher (OLED) or own wrapper (LCD)
                 plut_dir = os.path.join(
                     compatdata_path,
                     "pfx", "drive_c", "users", "steamuser",
                     "AppData", "Local", "Plutonium",
                 )
-                wine_game_dir = f'Z:{install_dir.replace("/", chr(92))}'
                 if _cfg.is_oled():
                     actual_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
                     launch_options = f'plutonium://play/{key}'
                 else:
-                    actual_exe = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
-                    launch_options = (
-                        f'{key} '
-                        f'"{wine_game_dir}" '
-                        f'+name "Player" -lan'
-                    )
+                    # LCD: point at the standalone wrapper exe written by
+                    # plutonium.py - it handles cd, env vars, and bootstrapper
+                    from plutonium import OWN_WRAPPER_EXES
+                    actual_exe = os.path.join(install_dir, OWN_WRAPPER_EXES[key])
+                    launch_options = ""
 
             elif key == "iw4mp":
                 # iw4x -- point at iw4x.exe (dropped by installer, no rename)
