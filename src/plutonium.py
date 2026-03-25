@@ -85,6 +85,19 @@ XACT_DLLS = [
     "xaudio2_0.dll",
 ]
 
+# Wrapper exe names for own LCD games. These are standalone bash scripts
+# written into the game directory - they don't replace any original exe.
+# The shortcut points at these instead of the bootstrapper directly.
+OWN_WRAPPER_EXES = {
+    "t4sp":  "t4plutsp.exe",
+    "t4mp":  "t4plutmp.exe",
+    "t5sp":  "t5plutsp.exe",
+    "t5mp":  "t5plutmp.exe",
+    "t6mp":  "t6plutmp.exe",
+    "t6zm":  "t6plutzm.exe",
+    "iw5mp": "iw5plutmp.exe",
+}
+
 
 # ── DirectX June 2010 redist ──────────────────────────────────────────────────
 # XACT DLLs are extracted from this single cabinet file by winetricks.
@@ -784,6 +797,38 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
              stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
+def _write_own_wrapper(game: dict, game_key: str, steam_root: str,
+                       proton_path: str, compatdata_path: str, plut_dir: str):
+    """
+    Write a standalone wrapper exe for own LCD games.
+
+    Same bash script as the Steam LCD wrapper but written as a new file
+    (e.g. t4plutmp.exe) instead of replacing the original game exe.
+    No backup, no padding - the original exe is left untouched.
+    """
+    install_dir = game["install_dir"]
+    wrapper_name = OWN_WRAPPER_EXES[game_key]
+    wrapper_path = os.path.join(install_dir, wrapper_name)
+
+    bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
+    game_dir_wine = _wine_path(install_dir)
+
+    script = (
+        "#!/bin/bash\n"
+        f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
+        f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
+        f"cd \"{plut_dir}\"\n"
+        f"exec \"{proton_path}\" run \"{bootstrapper}\" "
+        f"{game_key} \"{game_dir_wine}\" +name \"Player\" -lan\n"
+    )
+
+    with open(wrapper_path, "wb") as f:
+        f.write(script.encode("utf-8"))
+
+    os.chmod(wrapper_path, os.stat(wrapper_path).st_mode |
+             stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+
 # ── metadata ──────────────────────────────────────────────────────────────────
 
 def _write_metadata(install_dir: str, data: dict):
@@ -891,6 +936,24 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
             "wrapper_exe": os.path.join(game["install_dir"],
                                         GAME_META[game_key][2]),
         })
+    else:
+        # Own LCD games get a standalone wrapper exe (e.g. t4plutmp.exe)
+        # so the shortcut can launch the bootstrapper with the right env.
+        # OLED own games don't need a wrapper - shortcuts point at the
+        # launcher directly with plutonium://play/<key>.
+        import config as _cfg
+        if not _cfg.is_oled() and game_key in LCD_OFFLINE_KEYS:
+            prog(80, "Writing LCD launcher wrapper...")
+            _write_own_wrapper(game, game_key, steam_root, proton_path,
+                               compatdata_path, dest_plut_dir)
+
+            prog(95, "Saving metadata...")
+            _write_metadata(game["install_dir"], {
+                "game_key":    game_key,
+                "plut_dir":    dest_plut_dir,
+                "wrapper_exe": os.path.join(game["install_dir"],
+                                            OWN_WRAPPER_EXES[game_key]),
+            })
 
     prog(100, f"Plutonium ready for {game['name']}!")
 
