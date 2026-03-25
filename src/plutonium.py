@@ -805,7 +805,8 @@ def _read_metadata(install_dir: str) -> dict:
 def install_plutonium(game: dict, game_key: str, steam_root: str,
                       proton_path: str, compatdata_path: str,
                       on_progress=None, installed_games: dict = None,
-                      protontricks_ready: bool = False):
+                      protontricks_ready: bool = False,
+                      source: str = "steam"):
     """
     Full install flow for a single Plutonium game.
 
@@ -831,9 +832,18 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         installed_games = {game_key: game}
 
     src_plut_dir  = get_dedicated_plut_dir()
-    dest_plut_dir = _plut_dir_in_compatdata(
-        steam_root, GAME_META[game_key][0]
-    )
+
+    # Own games use the shortcut's compatdata prefix directly.
+    # Steam games use the Steam appid to find the prefix.
+    if source == "own":
+        dest_plut_dir = os.path.join(
+            compatdata_path, "pfx", "drive_c", "users", "steamuser",
+            "AppData", "Local", "Plutonium",
+        )
+    else:
+        dest_plut_dir = _plut_dir_in_compatdata(
+            steam_root, GAME_META[game_key][0]
+        )
 
     prog(10, f"Copying Plutonium into prefix for {game['name']}...")
     _copy_plut_to_prefix(
@@ -843,7 +853,9 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
 
     # Install XACT into this game's prefix if required.
     # Only runs for t4/t5 titles , skipped entirely for t6/iw5.
-    if game_key in XACT_GAME_KEYS:
+    # Own games handle XACT externally via install_xact_once with
+    # own_xact_targets so protontricks gets the correct shortcut appid.
+    if source != "own" and game_key in XACT_GAME_KEYS:
         prog(50, f"Installing XACT audio components for {game['name']}...")
         if protontricks_ready:
             _install_xact(
@@ -863,19 +875,22 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     keys_for_appid = [k for k, v in GAME_META.items() if v[0] == appid]
     _write_config(dest_plut_dir, keys_for_appid, installed_games)
 
-    prog(80, "Writing launcher wrapper...")
-    import config as _cfg
-    lan_mode = (not _cfg.is_oled()) and (game_key in LCD_OFFLINE_KEYS)
-    _write_wrapper(game, game_key, steam_root, proton_path,
-                   compatdata_path, dest_plut_dir, lan_mode=lan_mode)
+    # Own game shortcuts point at Plutonium directly -- no wrapper needed.
+    # Steam games replace the original exe with a bash wrapper.
+    if source != "own":
+        prog(80, "Writing launcher wrapper...")
+        import config as _cfg
+        lan_mode = (not _cfg.is_oled()) and (game_key in LCD_OFFLINE_KEYS)
+        _write_wrapper(game, game_key, steam_root, proton_path,
+                       compatdata_path, dest_plut_dir, lan_mode=lan_mode)
 
-    prog(95, "Saving metadata...")
-    _write_metadata(game["install_dir"], {
-        "game_key":    game_key,
-        "plut_dir":    dest_plut_dir,
-        "wrapper_exe": os.path.join(game["install_dir"],
-                                    GAME_META[game_key][2]),
-    })
+        prog(95, "Saving metadata...")
+        _write_metadata(game["install_dir"], {
+            "game_key":    game_key,
+            "plut_dir":    dest_plut_dir,
+            "wrapper_exe": os.path.join(game["install_dir"],
+                                        GAME_META[game_key][2]),
+        })
 
     prog(100, f"Plutonium ready for {game['name']}!")
 
