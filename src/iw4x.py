@@ -2,12 +2,16 @@
 iw4x.py - DeckOps installer for IW4x (Modern Warfare 2)
 
 Downloads iw4x.dll, iw4x.exe, release.zip and iwd files directly from
-the latest GitHub release into the MW2 install folder, then:
+the latest GitHub release into the MW2 install folder.
+
+For Steam games:
   - Renames iw4mp.exe -> iw4mp.exe.bak
   - Copies iw4x.exe -> iw4mp.exe
+  This lets Steam launch IW4x transparently via the existing shortcut.
 
-This lets Steam launch IW4x transparently via the existing shortcut
-with no launch options or localconfig.vdf writes required.
+For own games:
+  - Downloads all files but skips the exe rename
+  - The non-Steam shortcut already points at iw4x.exe directly
 
 Progress is reported via a callback:
     on_progress(percent: int, status: str)
@@ -74,19 +78,21 @@ def is_iw4x_installed(install_dir: str) -> bool:
 
 def install_iw4x(game: dict, steam_root: str,
                  proton_path: str, compatdata_path: str,
-                 on_progress=None):
+                 on_progress=None, source: str = "steam"):
     """
     Install or reinstall IW4x for Modern Warfare 2.
 
-    Downloads iw4x.dll, iw4x.exe, release.zip, and iwd files concurrently,
-    then renames iw4mp.exe -> iw4mp.exe.bak and copies iw4x.exe -> iw4mp.exe
-    so Steam launches IW4x transparently. No launch options are written.
+    Downloads iw4x.dll, iw4x.exe, release.zip, and iwd files concurrently.
+    For Steam games, renames iw4mp.exe -> iw4mp.exe.bak and copies
+    iw4x.exe -> iw4mp.exe so Steam launches IW4x transparently.
+    For own games, skips the rename -- the shortcut points at iw4x.exe directly.
 
-    game            — entry from detect_games.find_installed_games()
+    game            — entry from detect_games
     steam_root      — path to Steam root (kept for API consistency)
     proton_path     — path to the proton executable (kept for API consistency)
     compatdata_path — path to the MW2 compatdata prefix (kept for API consistency)
     on_progress     — optional callback(percent: int, status: str)
+    source          — "steam" or "own", controls whether exe rename happens
     """
     install_dir = game["install_dir"]
     iw4x_dir    = os.path.join(install_dir, "iw4x")
@@ -133,18 +139,21 @@ def install_iw4x(game: dict, steam_root: str,
     os.remove(zip_dest)
 
     # ── Rename iw4mp.exe -> iw4mp.exe.bak, copy iw4x.exe -> iw4mp.exe ───────
-    # Same strategy as iw3sp.py. Steam launches iw4mp.exe by name, so
-    # swapping in iw4x.exe lets it run transparently with no launch options
-    # or localconfig.vdf changes. Backup is kept for clean uninstall.
-    iw4mp     = os.path.join(install_dir, "iw4mp.exe")
-    iw4mp_bak = os.path.join(install_dir, "iw4mp.exe.bak")
-    iw4x_exe  = os.path.join(install_dir, "iw4x.exe")
+    # Steam games: swap in iw4x.exe so Steam launches it transparently.
+    # Own games: skip -- the shortcut points at iw4x.exe directly and the
+    # original exe may not even exist (MS Store copies, old installs, etc).
+    if source != "own":
+        iw4mp     = os.path.join(install_dir, "iw4mp.exe")
+        iw4mp_bak = os.path.join(install_dir, "iw4mp.exe.bak")
+        iw4x_exe  = os.path.join(install_dir, "iw4x.exe")
 
-    prog(57, "Replacing iw4mp.exe...")
-    if os.path.exists(iw4mp) and not os.path.exists(iw4mp_bak):
-        os.rename(iw4mp, iw4mp_bak)
-    if os.path.exists(iw4x_exe):
-        shutil.copy2(iw4x_exe, iw4mp)
+        prog(57, "Replacing iw4mp.exe...")
+        if os.path.exists(iw4mp) and not os.path.exists(iw4mp_bak):
+            os.rename(iw4mp, iw4mp_bak)
+        if os.path.exists(iw4x_exe):
+            shutil.copy2(iw4x_exe, iw4mp)
+    else:
+        prog(57, "Own game -- skipping exe rename")
 
     # ── iwd files -> iw4x/ subfolder concurrently ────────────────────────────
     prog(62, "Downloading iwd files...")

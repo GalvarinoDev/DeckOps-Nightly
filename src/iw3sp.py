@@ -2,12 +2,16 @@
 iw3sp.py - DeckOps installer for IW3SP-MOD (Call of Duty 4: Modern Warfare Singleplayer)
 
 Downloads the latest iw3sp_mod release zip from Gitea, extracts it into
-the CoD4 install directory, then:
+the CoD4 install directory.
+
+For Steam games:
   - Renames iw3sp.exe -> iw3sp.exe.bak
   - Renames iw3sp_mod.exe -> iw3sp.exe
+  This lets Steam launch IW3SP-MOD transparently via the existing SP shortcut.
 
-This lets Steam launch IW3SP-MOD transparently via the existing SP shortcut
-with no launch options or localconfig.vdf writes required.
+For own games:
+  - Extracts the zip but skips the exe rename
+  - The non-Steam shortcut already points at iw3sp_mod.exe directly
 
 Progress is reported via a callback:
     on_progress(percent: int, status: str)
@@ -64,19 +68,22 @@ def is_iw3sp_installed(install_dir: str) -> bool:
 
 def install_iw3sp(game: dict, steam_root: str,
                   proton_path: str, compatdata_path: str,
-                  on_progress=None):
+                  on_progress=None, source: str = "steam"):
     """
     Install IW3SP-MOD for Call of Duty 4 singleplayer.
 
-    Downloads and extracts the mod zip into the CoD4 install directory, then
-    renames iw3sp.exe -> iw3sp.exe.bak and iw3sp_mod.exe -> iw3sp.exe so
-    Steam launches the mod transparently. No launch options are written.
+    Downloads and extracts the mod zip into the CoD4 install directory.
+    For Steam games, renames iw3sp.exe -> iw3sp.exe.bak and
+    iw3sp_mod.exe -> iw3sp.exe so Steam launches the mod transparently.
+    For own games, skips the rename -- the shortcut points at
+    iw3sp_mod.exe directly.
 
-    game            — entry from detect_games.find_installed_games()
+    game            — entry from detect_games
     steam_root      — path to Steam root (kept for API consistency)
     proton_path     — path to the proton executable (kept for API consistency)
     compatdata_path — path to the CoD4 compatdata prefix (kept for API consistency)
     on_progress     — optional callback(percent: int, status: str)
+    source          — "steam" or "own", controls whether exe rename happens
     """
     install_dir = game["install_dir"]
     zip_dest    = os.path.join(install_dir, "iw3sp_mod.zip")
@@ -100,22 +107,23 @@ def install_iw3sp(game: dict, steam_root: str,
         zf.extractall(install_dir)
     os.remove(zip_dest)
 
-    iw3sp     = os.path.join(install_dir, "iw3sp.exe")
-    iw3sp_bak = os.path.join(install_dir, "iw3sp.exe.bak")
-    iw3sp_mod = os.path.join(install_dir, "iw3sp_mod.exe")
+    # Rename iw3sp.exe -> iw3sp.exe.bak and iw3sp_mod.exe -> iw3sp.exe
+    # Steam games: swap so Steam launches the mod transparently.
+    # Own games: skip -- the shortcut points at iw3sp_mod.exe directly
+    # and the original exe may not even exist.
+    if source != "own":
+        iw3sp     = os.path.join(install_dir, "iw3sp.exe")
+        iw3sp_bak = os.path.join(install_dir, "iw3sp.exe.bak")
+        iw3sp_mod = os.path.join(install_dir, "iw3sp_mod.exe")
 
-    # Rename iw3sp.exe -> iw3sp.exe.bak (only if not already done)
-    # This is how Steam launches IW3SP-MOD transparently. Steam always runs
-    # iw3sp.exe, so by putting the mod exe in its place we avoid needing
-    # launch options or localconfig.vdf writes. The backup lets us restore
-    # the original on uninstall.
-    prog(80, "Replacing iw3sp.exe...")
-    if os.path.exists(iw3sp) and not os.path.exists(iw3sp_bak):
-        os.rename(iw3sp, iw3sp_bak)
+        prog(80, "Replacing iw3sp.exe...")
+        if os.path.exists(iw3sp) and not os.path.exists(iw3sp_bak):
+            os.rename(iw3sp, iw3sp_bak)
 
-    # Rename iw3sp_mod.exe -> iw3sp.exe
-    if os.path.exists(iw3sp_mod):
-        os.rename(iw3sp_mod, iw3sp)
+        if os.path.exists(iw3sp_mod):
+            os.rename(iw3sp_mod, iw3sp)
+    else:
+        prog(80, "Own game -- skipping exe rename")
 
     # Write metadata
     prog(95, "Saving metadata...")
