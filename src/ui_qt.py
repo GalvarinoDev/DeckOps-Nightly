@@ -721,23 +721,6 @@ class WelcomeScreen(QWidget):
     def _show_results(self):
         self.bar.setValue(100)
         if not self.installed:
-            # If we came from the advanced flow and have pending own games,
-            # skip Steam setup and go directly to OwnInstallScreen.
-            pending_verify = getattr(self, '_pending_own_from_verify', None)
-            if pending_verify:
-                self.status.setText("No Steam games found. Continuing with your games...")
-                self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
-                from detect_games import GAMES as _G2
-                own_list = []
-                for k, g in pending_verify.items():
-                    for gd in ALL_GAMES:
-                        if k in _active_keys(gd):
-                            own_list.append((k, gd, g)); break
-                own_screen = self.stack.widget(10)
-                own_screen.selected = own_list
-                own_screen.steam_root = getattr(self, '_pending_own_steam_root', self.steam_root)
-                QTimer.singleShot(1500, lambda: self.stack.setCurrentIndex(10))
-                return
             self.status.setText("No supported games found.")
             self.status.setStyleSheet(f"color:{C_TREY};background:transparent;"); return
         unique = len({g["name"].split(" - ")[0].split(" (")[0] for g in self.installed.values()})
@@ -766,9 +749,6 @@ class WelcomeScreen(QWidget):
             s.steam_installed = self.steam_installed
             s.own_installed   = self.own_installed
             s.steam_root      = self.steam_root
-            # Pass pending own games from the advanced verify flow
-            s._pending_own_from_verify = getattr(self, '_pending_own_from_verify', None)
-            s._pending_own_steam_root = getattr(self, '_pending_own_steam_root', self.steam_root)
             self.stack.setCurrentIndex(3)
         else:
             self.stack.widget(5).set_installed(self.installed); self.stack.setCurrentIndex(5)
@@ -776,9 +756,9 @@ class WelcomeScreen(QWidget):
 # ── SetupScreen ────────────────────────────────────────────────────────────────
 class SetupScreen(QWidget):
     """
-    Steam-only game selection. Shows detected Steam games with checkboxes.
-    Advanced flow's own games are handled by OwnScanScreen/OwnAddScreen/OwnVerifyScreen
-    before reaching this screen.
+    Steam game selection. Shows detected Steam games with checkboxes.
+    In the advanced flow, routes to OwnInstallScreen instead of InstallScreen
+    so both Steam and own games are handled in one pass.
     """
     def __init__(self, stack):
         super().__init__(); self.stack=stack
@@ -935,29 +915,24 @@ class SetupScreen(QWidget):
             self.warning.setText("Select at least one game to continue.")
             self.warning.setVisible(True); return
 
+        # Advanced flow -- OwnInstallScreen handles both Steam + own games
+        if cfg.get_game_source() == "own":
+            own_screen = self.stack.widget(10)
+            own_screen.steam_selected = selected
+            own_screen.steam_root = self.steam_root
+            self.stack.setCurrentIndex(10)
+            return
+
+        # Standard flow -- InstallScreen handles Steam games only
         s = self.stack.widget(4)
         s.selected   = selected
         s.steam_root = self.steam_root
-
-        # If we came from the advanced verify flow, pass pending own games
-        # to InstallScreen so it can hand off to OwnInstallScreen after.
-        pending_verify = getattr(self, '_pending_own_from_verify', None)
-        if pending_verify:
-            pending_list = []
-            for k, g in pending_verify.items():
-                for gd in ALL_GAMES:
-                    if k in _active_keys(gd):
-                        pending_list.append((k, gd, g)); break
-            s.pending_own = pending_list
-        else:
-            s.pending_own = []
         self.stack.setCurrentIndex(4)
 
 # ── InstallScreen ──────────────────────────────────────────────────────────────
 class InstallScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.selected=[]; self.steam_root=""
-        self.pending_own  = []  # own-sourced games to hand off after Steam install
         self._plut_event = threading.Event()
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
@@ -1026,10 +1001,7 @@ class InstallScreen(QWidget):
         self._stop_pulse()
         self._plut_event.clear()
         # Reset cont_btn to its default target in case a previous run
-        # rewired it to OwnInstallScreen for the mixed install flow.
-        # NOTE: do NOT clear self.pending_own here -- SetupScreen sets it
-        # right before switching to this screen and showEvent fires
-        # immediately. Clearing it would wipe the handoff every time.
+        # changed it. showEvent fires immediately after SetupScreen switches.
         try:
             self.cont_btn.clicked.disconnect()
         except Exception:
@@ -1045,20 +1017,6 @@ class InstallScreen(QWidget):
     def _on_done(self, _):
         self._stop_pulse()
         self.cur.setText("Installation complete!")
-        if self.pending_own:
-            # Steam install done — hand off own games to OwnInstallScreen.
-            # cont_btn routes to OwnInstallScreen instead of ControllerInfoScreen.
-            own_screen = self.stack.widget(10)
-            own_screen.selected   = self.pending_own
-            own_screen.steam_root = self.steam_root
-            self.cont_btn.setText("Continue to Own Games  >>")
-            try:
-                self.cont_btn.clicked.disconnect()
-            except Exception:
-                pass
-            self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(10))
-            # Clear after handoff so stale data can't carry over
-            self.pending_own = []
         self.cont_btn.setVisible(True)
 
     def _go_management(self):
@@ -1423,10 +1381,9 @@ class InstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Steam artwork skipped: {ex}")
 
-        # Only mark first run complete if there are no own games queued.
-        # OwnInstallScreen will call complete_first_run when it finishes.
-        if not self.pending_own:
-            cfg.complete_first_run(self.steam_root)
+        # Standard flow always finishes here. Advanced flow uses
+        # OwnInstallScreen instead and never reaches this screen.
+        cfg.complete_first_run(self.steam_root)
         self._s.progress.emit(100, "All done!")
         self._s.done.emit(True)
 
@@ -2240,16 +2197,22 @@ class UpdateScreen(QWidget):
 # ── OwnInstallScreen ──────────────────────────────────────────────────────────
 class OwnInstallScreen(QWidget):
     """
-    Install flow for games detected via filesystem scan ("My Own" path).
+    Install flow for the advanced ("Steam or Other") path.
 
-    Creates non-Steam shortcuts, copies GE-Proton's default_pfx to build
-    each game's compatdata prefix automatically, then installs mod clients.
-    No manual game launch step required.
+    Handles both Steam-selected games (passed from SetupScreen as
+    steam_selected) and own-detected games (parked by OwnScanScreen as
+    own_selected) in a single pass.
+
+    Creates non-Steam shortcuts for own games, copies GE-Proton's
+    default_pfx to build each own game's compatdata prefix automatically,
+    sets GE-Proton compat for MANAGED_APPIDS and own shortcut appids,
+    then installs mod clients. No manual game launch step required.
     """
 
     def __init__(self, stack):
         super().__init__(); self.stack = stack
-        self.selected   = []
+        self.own_selected    = {}   # dict of key -> game, set by OwnScanScreen
+        self.steam_selected  = []   # list of (key, gd, game), set by SetupScreen
         self.steam_root = ""
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
@@ -2315,12 +2278,23 @@ class OwnInstallScreen(QWidget):
         self.cont_btn.setVisible(True)
 
     def _run(self):
-        from wrapper import get_proton_path, kill_steam
+        from wrapper import get_proton_path, kill_steam, set_compat_tool
         from shortcut import create_own_shortcuts
         from cod4x import install_cod4x
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
-        from ge_proton import install_ge_proton
+        from ge_proton import install_ge_proton, MANAGED_APPIDS
+
+        # Build the combined selected list from both Steam and own sources.
+        # own_selected is a dict {key: game_dict} from OwnScanScreen.
+        # steam_selected is a list [(key, gd, game)] from SetupScreen.
+        # We need to merge them into self.selected as [(key, gd, game)].
+        own_as_tuples = []
+        for k, g in self.own_selected.items():
+            for gd in ALL_GAMES:
+                if k in _active_keys(gd):
+                    own_as_tuples.append((k, gd, g)); break
+        self.selected = list(self.steam_selected) + own_as_tuples
 
         selected_keys = [key for key, _, _ in self.selected]
         own_games     = {k: g for k, gd, g in self.selected if g}
@@ -2350,31 +2324,45 @@ class OwnInstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Could not close Steam: {ex}")
 
+        # ── Set GE-Proton compat for MANAGED_APPIDS ──────────────────────
+        # Must run AFTER kill_steam - Steam overwrites config.vdf on exit.
+        # This fixes the bug where Steam game appids never got GE-Proton
+        # written to CompatToolMapping in the advanced flow.
+        if ge_version:
+            try:
+                set_compat_tool(MANAGED_APPIDS, ge_version)
+                self._s.log.emit(f"✓  {ge_version} set for Steam game appids")
+            except Exception as ex:
+                self._s.log.emit(f"  CompatToolMapping for Steam appids skipped: {ex}")
+
         # ── Create shortcuts with artwork + controller configs ────────────
         self._s.progress.emit(20, "Creating shortcuts and downloading artwork...")
         self._s.log.emit("Creating non-Steam shortcuts...")
         gyro_mode = cfg.get_gyro_mode() or "hold"
-        own_games = create_own_shortcuts(
-            own_games=own_games,
-            selected_keys=selected_keys,
+        own_games_dict = {k: g for k, g in self.own_selected.items()}
+        own_games_dict = create_own_shortcuts(
+            own_games=own_games_dict,
+            selected_keys=[k for k in self.own_selected],
             gyro_mode=gyro_mode,
             on_progress=lambda msg: self._s.log.emit(msg),
         )
 
-        # Update self.selected with enriched game dicts
-        self.selected = [(k, gd, own_games.get(k, g)) for k, gd, g in self.selected]
+        # Update self.selected with enriched own game dicts (shortcut_appid etc)
+        self.selected = [
+            (k, gd, own_games_dict.get(k, g)) for k, gd, g in self.selected
+        ]
+        # Rebuild own_games with enriched dicts for compat tool mapping later
+        own_games = {k: g for k, gd, g in self.selected if g}
 
         # ── Create prefixes + install deps from GE-Proton default_pfx ─────
-        # Copies GE-Proton's default_pfx into each game's compatdata folder.
-        # This gives every prefix the full dependency set (d3dx, vcrun, xinput,
-        # partial xact) so mod clients can be installed without launching first.
+        # Only for own games - Steam games get prefixes from user launching them.
         self._s.progress.emit(35, "Creating Proton prefixes...")
         self._s.log.emit("Creating Proton prefixes and installing dependencies...")
         from ge_proton import ensure_all_prefix_deps
         dep_targets = [
             (key, game.get("compatdata_path", ""))
             for key, gd, game in self.selected
-            if game and game.get("compatdata_path")
+            if game and game.get("compatdata_path") and key in self.own_selected
         ]
         if dep_targets:
             done = ensure_all_prefix_deps(
@@ -2395,7 +2383,8 @@ class OwnInstallScreen(QWidget):
                 try:
                     compat = game.get("compatdata_path", "")
                     install_iw4x(game, self.steam_root, proton, compat, op_iw4x)
-                    cfg.mark_game_setup(key, "iw4x", source="own")
+                    source = "own" if key in self.own_selected else "steam"
+                    cfg.mark_game_setup(key, "iw4x", source=source)
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)
                 except Exception as ex:
@@ -2417,7 +2406,8 @@ class OwnInstallScreen(QWidget):
                                       appid=game.get("shortcut_appid", 7940))
                     elif c == "iw3sp":
                         install_iw3sp(game, self.steam_root, proton, compat, op_cod4)
-                    cfg.mark_game_setup(key, c, source="own")
+                    source = "own" if key in self.own_selected else "steam"
+                    cfg.mark_game_setup(key, c, source=source)
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
@@ -2427,8 +2417,9 @@ class OwnInstallScreen(QWidget):
         # ── Mark vanilla games ────────────────────────────────────────────
         for key, gd, game in self.selected:
             c = KEY_CLIENT.get(key, "")
-            if c == "steam" and not cfg.is_game_setup_for_source(key, "own"):
-                cfg.mark_game_setup(key, "steam", source="own")
+            source = "own" if key in self.own_selected else "steam"
+            if c == "steam" and not cfg.is_game_setup_for_source(key, source):
+                cfg.mark_game_setup(key, "steam", source=source)
                 self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
 
         # ── Game display configs ──────────────────────────────────────────
@@ -2483,11 +2474,8 @@ class OwnInstallScreen(QWidget):
             self._s.log.emit(f"  Steam Input setup skipped: {ex}")
 
         # ── Ensure newest GE-Proton is set for own shortcut appids ─────────
-        # OwnAddScreen may have used an older GE-Proton or Proton 10 as a
-        # fallback. Make sure all shortcuts point to the newest GE-Proton.
         if ge_version:
             try:
-                from wrapper import set_compat_tool
                 shortcut_appids = [
                     str(g.get("shortcut_appid", ""))
                     for g in own_games.values()
@@ -2498,6 +2486,19 @@ class OwnInstallScreen(QWidget):
                     self._s.log.emit(f"✓  {ge_version} set for own game shortcuts")
             except Exception as ex:
                 self._s.log.emit(f"  GE-Proton compat mapping skipped: {ex}")
+
+        # ── Steam artwork for Steam-sourced games ─────────────────────────
+        if self.steam_selected:
+            self._s.progress.emit(93, "Applying Steam artwork...")
+            try:
+                from shortcut import apply_steam_artwork
+                steam_keys = [k for k, _, _ in self.steam_selected]
+                apply_steam_artwork(
+                    selected_keys=steam_keys,
+                    on_progress=lambda msg: self._s.log.emit(msg)
+                )
+            except Exception as ex:
+                self._s.log.emit(f"  Steam artwork skipped: {ex}")
 
         # ── Done ──────────────────────────────────────────────────────────
         cfg.complete_first_run(self.steam_root)
@@ -2698,242 +2699,18 @@ class OwnScanScreen(QWidget):
         self.stack.setCurrentIndex(2)
 
     def _continue(self):
-        """Pass selected own games to OwnAddScreen and advance."""
+        """Store selected own games on OwnInstallScreen and advance to WelcomeScreen."""
         selected = {}
         for key, cb in self._checks.items():
             if cb.isChecked() and key in self._own_found:
                 selected[key] = self._own_found[key]
-        # Store selected own games on OwnAddScreen (index 12)
-        add_screen = self.stack.widget(12)
-        add_screen.own_selected = selected
-        add_screen.steam_root = find_steam_root() or ""
-        self.stack.setCurrentIndex(12)
-
-
-# ── OwnAddScreen ──────────────────────────────────────────────────────────────
-class OwnAddScreen(QWidget):
-    """
-    Advanced flow step 2: close Steam, create non-Steam shortcuts for
-    the user's own games, set newest GE-Proton compat (falls back to
-    Proton 10 if GE-Proton isn't installed yet), relaunch Steam.
-    Auto-advances to OwnVerifyScreen when done.
-    """
-    def __init__(self, stack):
-        super().__init__(); self.stack = stack
-        self.own_selected = {}   # set by OwnScanScreen._continue
-        self.steam_root = ""
-
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(60, 40, 60, 40); lay.setSpacing(14)
-
-        # Back button (hidden once add starts)
-        self._back_btn = _btn("\u2190 Back", C_DARK_BTN, size=10, h=30)
-        self._back_btn.setFixedWidth(80)
-        self._back_btn.clicked.connect(lambda: self.stack.setCurrentIndex(11))
-        back_row = QHBoxLayout()
-        back_row.addWidget(self._back_btn); back_row.addStretch()
-        lay.addLayout(back_row)
-
-        t = QLabel("ADDING YOUR GAMES")
-        t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;")
-        lay.addWidget(t)
-
-        lay.addSpacing(8)
-        self._info = _lbl(
-            "Steam will be closed to add your games as non-Steam shortcuts.\n"
-            "This only takes a moment.", 13, C_DIM)
-        lay.addWidget(self._info)
-        lay.addSpacing(8)
-
-        # Game list (read-only display of what will be added)
-        self._game_list = _lbl("", 13, C_IW, align=Qt.AlignLeft)
-        lay.addWidget(self._game_list)
-
-        lay.addStretch()
-
-        # Status area
-        self._status = _lbl("", 13, C_DIM)
-        lay.addWidget(self._status)
-
-        self.bar = QProgressBar()
-        self.bar.setMaximum(100); self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(14); self.bar.setVisible(False)
-        bw = QHBoxLayout(); bw.addStretch(); bw.addWidget(self.bar, 6); bw.addStretch()
-        lay.addLayout(bw)
-
-        # Error label
-        self._error = _lbl("", 12, C_TREY, align=Qt.AlignLeft)
-        self._error.setVisible(False)
-        lay.addWidget(self._error)
-
-        # Add Games button
-        self._add_btn = _btn("Add Games", C_IW, h=52)
-        self._add_btn.clicked.connect(self._do_add)
-        brow = QHBoxLayout(); brow.addStretch()
-        brow.addWidget(self._add_btn, stretch=1); brow.addStretch()
-        lay.addLayout(brow)
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self._add_btn.setEnabled(True)
-        self._add_btn.setText("Add Games")
-        self._back_btn.setVisible(True)
-        self._error.setVisible(False)
-        self._status.setText("")
-        self.bar.setVisible(False)
-        self.bar.setValue(0)
-        # Build game list display
-        names = sorted(
-            set(g["name"].split(" - ")[0].split(" (")[0]
-                for g in self.own_selected.values()),
-            key=lambda n: min(
-                g.get("order", 99) for g in self.own_selected.values()
-                if g["name"].split(" - ")[0].split(" (")[0] == n
-            )
-        )
-        self._game_list.setText("\n".join(f"  \u2022 {n}" for n in names))
-
-    def _do_add(self):
-        self._add_btn.setEnabled(False)
-        self._add_btn.setText("Setting up...")
-        self._back_btn.setVisible(False)
-        self._error.setVisible(False)
-        self.bar.setVisible(True)
-        self.bar.setValue(10)
-        self._status.setText("Closing Steam...")
-
-        selected = self.own_selected
-
-        def _run():
-            import time
-            from wrapper import kill_steam, set_compat_tool
-            from shortcut import create_own_shortcuts
-
-            try:
-                kill_steam()
-                self._s.progress.emit(30, "Creating shortcuts...")
-
-                gyro_mode = cfg.get_gyro_mode() or "hold"
-                selected_keys = list(selected.keys())
-                create_own_shortcuts(selected, selected_keys, gyro_mode)
-
-                self._s.progress.emit(60, "Setting Proton compatibility...")
-
-                # Use newest GE-Proton if already installed, otherwise fall
-                # back to Proton 10 — OwnInstallScreen will swap to GE-Proton
-                # later if needed
-                compat_version = cfg.get_ge_proton_version() or "proton_10"
-                shortcut_appids = [
-                    str(g.get("shortcut_appid", ""))
-                    for g in selected.values()
-                    if g.get("shortcut_appid")
-                ]
-                if shortcut_appids:
-                    set_compat_tool(shortcut_appids, compat_version)
-
-                self._s.progress.emit(75, "Relaunching Steam...")
-                import subprocess
-                subprocess.Popen(
-                    ["bash", "-c",
-                     "nohup ~/.local/share/Steam/steam.sh > /dev/null 2>&1 &"]
-                )
-                time.sleep(6)
-
-                self._s.progress.emit(100, "Done!")
-                self._s.done.emit(True)
-
-            except Exception as ex:
-                self._s.progress.emit(0, f"Error: {ex}")
-                self._s.done.emit(False)
-
-        self._s = _Sigs()
-        self._s.progress.connect(lambda p, m: (self.bar.setValue(p), self._status.setText(m)))
-        self._s.done.connect(self._on_done)
-        threading.Thread(target=_run, daemon=True).start()
-
-    def _on_done(self, success):
-        if success:
-            # Pass selected games to OwnVerifyScreen
-            verify = self.stack.widget(13)
-            verify.own_selected = self.own_selected
-            verify.steam_root = self.steam_root
-            self.stack.setCurrentIndex(13)
-        else:
-            self._error.setText(self._status.text())
-            self._error.setVisible(True)
-            self._add_btn.setEnabled(True)
-            self._add_btn.setText("Retry")
-            self._back_btn.setVisible(True)
-
-
-# ── OwnVerifyScreen ───────────────────────────────────────────────────────────
-class OwnVerifyScreen(QWidget):
-    """
-    Advanced flow step 3: optional screen where the user can test-launch
-    their own games to verify they work. Dependencies are installed
-    automatically so launching is not required. Continue button is
-    always visible (not gated).
-    No back button since shortcuts are already written.
-    """
-    def __init__(self, stack):
-        super().__init__(); self.stack = stack
-        self.own_selected = {}   # set by OwnAddScreen._on_done
-        self.steam_root = ""
-
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(60, 40, 60, 40); lay.setSpacing(14)
-
-        t = QLabel("VERIFY YOUR GAMES")
-        t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;")
-        lay.addWidget(t)
-
-        lay.addSpacing(12)
-        lay.addWidget(_lbl(
-            "Your games have been added to Steam as shortcuts.\n\n"
-            "Launching each game is no longer required. DeckOps now sets up\n"
-            "all dependencies automatically. You can still test-launch your\n"
-            "games here if you'd like to verify they work before continuing.\n\n"
-            "Hold STEAM + B to force-close a game if needed.",
-            14, C_DIM, align=Qt.AlignCenter))
-
-        lay.addSpacing(12)
-
-        # Game list display
-        self._game_list = _lbl("", 14, C_IW, align=Qt.AlignCenter)
-        lay.addWidget(self._game_list)
-
-        lay.addStretch()
-
-        # Continue button
-        cont = _btn("Continue >>", C_IW, h=52)
-        cont.setFixedWidth(260)
-        cont.clicked.connect(self._continue)
-        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(cont); cw.addStretch()
-        lay.addLayout(cw)
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        names = sorted(
-            set(g["name"].split(" - ")[0].split(" (")[0]
-                for g in self.own_selected.values()),
-            key=lambda n: min(
-                g.get("order", 99) for g in self.own_selected.values()
-                if g["name"].split(" - ")[0].split(" (")[0] == n
-            )
-        )
-        self._game_list.setText("\n".join(f"\u2022 {n}" for n in names))
-
-    def _continue(self):
-        """Advance to WelcomeScreen for Steam game detection."""
-        # Tell WelcomeScreen to only scan Steam (own games already handled)
+        # Park own games on OwnInstallScreen - SetupScreen will route there
+        # after the user picks their Steam games
+        own_screen = self.stack.widget(10)
+        own_screen.own_selected = selected
+        # Advance to WelcomeScreen for Steam game detection
         ws = self.stack.widget(2)
         ws._steam_only = True
-        # Store own_selected so it can be passed to OwnInstallScreen later
-        # via InstallScreen's pending_own mechanism
-        ws._pending_own_from_verify = self.own_selected
-        ws._pending_own_steam_root = self.steam_root
         self.stack.setCurrentIndex(2)
 
 
@@ -3013,7 +2790,7 @@ class DeckOpsWindow(QMainWindow):
     def __init__(self):
         super().__init__(); self.setWindowTitle("DeckOps Nightly"); self.resize(1280,800); self.setMinimumSize(800,500)
         self.stack = QStackedWidget(); self.setCentralWidget(self.stack)
-        for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen,SourceScreen,OwnInstallScreen,OwnScanScreen,OwnAddScreen,OwnVerifyScreen]:
+        for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen,SourceScreen,OwnInstallScreen,OwnScanScreen]:
             self.stack.addWidget(cls(self.stack))
         self.stack.setCurrentIndex(0)
 
