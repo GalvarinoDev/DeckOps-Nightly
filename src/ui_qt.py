@@ -2442,6 +2442,8 @@ class OwnInstallScreen(QWidget):
 
         # ── Create prefixes + install deps from GE-Proton default_pfx ─────
         # Only for own games -- Steam games get prefixes from user launching them.
+        # We pass proton so Proton itself initializes the prefix (registry,
+        # version, tracked_files, etc.) rather than us copying default_pfx.
         self._s.progress.emit(30, "Creating Proton prefixes...")
         self._s.log.emit("Creating Proton prefixes and installing dependencies...")
         from ge_proton import ensure_all_prefix_deps
@@ -2454,6 +2456,7 @@ class OwnInstallScreen(QWidget):
             done = ensure_all_prefix_deps(
                 ge_version, dep_targets,
                 on_progress=lambda msg: self._s.log.emit(msg),
+                proton_path=proton,
             )
             self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
 
