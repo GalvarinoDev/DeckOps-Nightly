@@ -2382,8 +2382,8 @@ class OwnInstallScreen(QWidget):
                 def op_iw4x(pct, msg): self._s.progress.emit(45 + int(pct / 100 * 12), msg)
                 try:
                     compat = game.get("compatdata_path", "")
-                    install_iw4x(game, self.steam_root, proton, compat, op_iw4x)
                     source = "own" if key in self.own_selected else "steam"
+                    install_iw4x(game, self.steam_root, proton, compat, op_iw4x, source=source)
                     cfg.mark_game_setup(key, "iw4x", source=source)
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)
@@ -2401,12 +2401,12 @@ class OwnInstallScreen(QWidget):
                 try:
                     compat = game.get("compatdata_path", "")
                     c = KEY_CLIENT.get(key, gd["client"])
+                    source = "own" if key in self.own_selected else "steam"
                     if c == "cod4x":
                         install_cod4x(game, self.steam_root, proton, compat, op_cod4,
                                       appid=game.get("shortcut_appid", 7940))
                     elif c == "iw3sp":
-                        install_iw3sp(game, self.steam_root, proton, compat, op_cod4)
-                    source = "own" if key in self.own_selected else "steam"
+                        install_iw3sp(game, self.steam_root, proton, compat, op_cod4, source=source)
                     cfg.mark_game_setup(key, c, source=source)
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
