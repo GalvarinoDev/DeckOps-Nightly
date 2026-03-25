@@ -935,6 +935,11 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
 
         new_entries = []
 
+        # Keys where the shortcut points at Plutonium client exes
+        # instead of the original game exe
+        import config as _cfg
+        _PLUT_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6mp", "t6zm", "iw5mp"}
+
         for key, shortcut_def, game in to_create:
             name        = shortcut_def["name"]
             install_dir = game["install_dir"]
@@ -953,9 +958,63 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
             game["source"]          = "own"
             game["current_name"]    = name
 
-            launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+            # ── Resolve the actual exe and launch options per client type ──
+            # Own games may be missing original exes (e.g. MS Store copies,
+            # old installs where the user replaced exes with Plutonium).
+            # Plutonium games point at the Plutonium client directly.
+            # iw4x/iw3sp point at the client exe dropped by the installer.
+            # cod4x and vanilla keys still need the original game exe.
 
-            prog(f"  → {name}")
+            if key in _PLUT_KEYS:
+                # Plutonium -- point at launcher (OLED) or bootstrapper (LCD)
+                plut_dir = os.path.join(
+                    compatdata_path,
+                    "pfx", "drive_c", "users", "steamuser",
+                    "AppData", "Local", "Plutonium",
+                )
+                wine_game_dir = f'Z:{install_dir.replace("/", chr(92))}'
+                if _cfg.is_oled():
+                    actual_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
+                    launch_options = (
+                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                        f'%command% "plutonium://play/{key}"'
+                    )
+                else:
+                    actual_exe = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
+                    launch_options = (
+                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                        f'%command% {key} '
+                        f'"{wine_game_dir}" '
+                        f'+name "Player" -lan'
+                    )
+
+            elif key == "iw4mp":
+                # iw4x -- point at iw4x.exe (dropped by installer, no rename)
+                actual_exe = os.path.join(install_dir, "iw4x.exe")
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+
+            elif key == "cod4sp":
+                # iw3sp-mod -- point at iw3sp_mod.exe (dropped by installer, no rename)
+                actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+
+            else:
+                # cod4mp (cod4x patches iw3mp.exe in place), iw4sp, iw5sp, t6sp
+                # -- these use the original game exe with no mod client
+                actual_exe = exe_path
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+
+            # For non-Plutonium keys, warn if the target exe is missing.
+            # Plutonium exes won't exist yet -- they get created when the
+            # bootstrapper runs for the first time inside the prefix.
+            # We still create the shortcut either way so artwork, controller
+            # configs, and compat tools are in place. The user can drop the
+            # exe in later and it will just work.
+            if key not in _PLUT_KEYS and not os.path.exists(actual_exe):
+                prog(f"  → {name}")
+                prog(f"    ⚠ {os.path.basename(actual_exe)} not found -- shortcut will be created anyway")
+            else:
+                prog(f"  → {name}")
             prog(f"    appid: {shortcut_appid}")
 
             if name in existing_names:
@@ -964,7 +1023,7 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 entry = {
                     "appid":               _to_signed32(shortcut_appid),
                     "AppName":             name,
-                    "Exe":                 quoted_exe,
+                    "Exe":                 f'"{actual_exe}"',
                     "StartDir":            f'"{install_dir}"',
                     "icon":                icon_path,
                     "ShortcutPath":        "",
