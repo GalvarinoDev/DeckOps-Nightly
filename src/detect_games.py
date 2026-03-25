@@ -191,7 +191,7 @@ def _all_library_dirs(steam_root):
 def parse_library_folders(steam_root):
     """
     Returns all library root dirs (not steamapps subdirs).
-    Kept for backwards compatibility — callers pass this to find_installed_games.
+    Kept for backwards compatibility -- callers pass this to find_installed_games.
     """
     dirs = []
     if steam_root:
@@ -255,27 +255,46 @@ def find_installed_games(library_folders, steam_root=None):
 
 # ── "My Own" game detection ───────────────────────────────────────────────────
 # Scans common game install locations on Steam Deck for known Call of Duty
-# executables. Used when the user selects "My Own" on the source screen,
-# meaning they installed their games via CD, GOG, Microsoft Store, etc.
+# game folders. Used when the user selects "Steam or Other" on the source
+# screen, meaning they installed their games via CD, GOG, Microsoft Store, etc.
+#
+# Detection uses two passes:
+#   1. Exact match  -- folder name matches a known Steam install name exactly
+#                      (case-insensitive)
+#   2. Keyword match -- folder name contains known short codes or title words
+#                       checked with word boundaries so short codes like "t4"
+#                       don't match unrelated folder names like "startup4"
 
-# Map exe filename (lowercase) to game key(s).
-EXE_TO_KEYS = {
-    "iw3mp.exe":      ["cod4mp"],
-    "iw3sp.exe":      ["cod4sp"],
-    "iw4mp.exe":      ["iw4mp"],
-    "iw4sp.exe":      ["iw4sp"],
-    "iw5mp.exe":      ["iw5mp"],
-    "iw5sp.exe":      ["iw5sp"],
-    "codwaw.exe":     ["t4sp"],
-    "codwawmp.exe":   ["t4mp"],
-    "blackops.exe":   ["t5sp"],
-    "blackopsmp.exe": ["t5mp"],
-    "t6zm.exe":       ["t6zm"],
-    "t6mp.exe":       ["t6mp"],
-    "t6sp.exe":       ["t6sp"],
+# Exact folder name -> list of game keys.
+# Based on Steam's canonical install directory names.
+FOLDER_TO_KEYS = {
+    "call of duty 4":                  ["cod4mp", "cod4sp"],
+    "call of duty world at war":        ["t4sp",   "t4mp"],
+    "call of duty modern warfare 2":    ["iw4sp",  "iw4mp"],
+    "call of duty modern warfare 3":    ["iw5sp",  "iw5mp"],
+    "call of duty black ops":           ["t5sp",   "t5mp"],
+    "call of duty black ops ii":        ["t6sp",   "t6mp",  "t6zm"],
 }
 
-# Default scan locations — case-sensitive on Linux.
+# Keyword rules checked in order when exact match fails.
+# Each entry is (compiled_regex, keys_list).
+# Order matters - more specific rules go first (e.g. "black ops ii" before "black ops").
+_KEYWORD_RULES = [
+    # BO2 - check before BO1 so "black ops ii" doesn't fall through to BO1
+    (re.compile(r'\b(black\s*ops\s*(ii|2)|bo2|t6)\b', re.IGNORECASE), ["t6sp", "t6mp", "t6zm"]),
+    # BO1
+    (re.compile(r'\b(black\s*ops|bo1|t5)\b', re.IGNORECASE),          ["t5sp", "t5mp"]),
+    # MW3 - check before MW2 so "modern warfare 3" doesn't fall through to MW2
+    (re.compile(r'\b(modern\s*warfare\s*(3|iii)|mw3|iw5)\b', re.IGNORECASE), ["iw5sp", "iw5mp"]),
+    # MW2
+    (re.compile(r'\b(modern\s*warfare\s*(2|ii)|mw2|iw4)\b', re.IGNORECASE), ["iw4sp", "iw4mp"]),
+    # CoD4 / MW1 - "modern warfare" alone (no number) maps to MW1/CoD4
+    (re.compile(r'\b(modern\s*warfare|duty\s*4|duty4|cod4|mw1|iw3)\b', re.IGNORECASE), ["cod4mp", "cod4sp"]),
+    # WaW
+    (re.compile(r'\b(world\s*at\s*war|waw|t4)\b', re.IGNORECASE),     ["t4sp",  "t4mp"]),
+]
+
+# Default scan locations -- case-sensitive on Linux.
 OWN_SCAN_PATHS = [
     os.path.expanduser("~/Games"),
     os.path.expanduser("~/games"),
@@ -283,7 +302,8 @@ OWN_SCAN_PATHS = [
     "/run/media/deck/*/games",
 ]
 
-# Maximum directory depth to walk. CoD games are typically 1-3 levels deep.
+# Maximum directory depth to walk. CoD games are typically 1-3 levels deep
+# inside whatever folder the user put them in.
 _MAX_SCAN_DEPTH = 5
 
 
@@ -297,21 +317,46 @@ def _walk_limited(root, max_depth):
             dirnames.clear()
             continue
         dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in skip]
-        yield dirpath, filenames
+        yield dirpath, dirnames, filenames
+
+
+def _match_folder(name):
+    """
+    Try to match a folder name to a set of game keys.
+    Returns a list of keys or an empty list if no match.
+
+    Pass 1 - exact match (case-insensitive).
+    Pass 2 - keyword regex rules in priority order.
+    """
+    name_lower = name.lower()
+
+    # Pass 1 - exact
+    if name_lower in FOLDER_TO_KEYS:
+        return FOLDER_TO_KEYS[name_lower]
+
+    # Pass 2 - keyword
+    for pattern, keys in _KEYWORD_RULES:
+        if pattern.search(name):
+            return keys
+
+    return []
 
 
 def find_own_installed(extra_paths=None, on_progress=None):
     """
-    Scan the filesystem for known Call of Duty executables outside of Steam.
+    Scan the filesystem for known Call of Duty game folders outside of Steam.
 
     Searches ~/Games, ~/games, SD card game folders, plus any user-provided
     extra paths (e.g. from a folder picker in the UI).
 
-    Returns the same dict structure as find_installed_games() with an added
-    "source": "own" field, so the rest of the install flow works unchanged.
+    Matches on folder names using exact then keyword rules - no exe scanning.
+    Once a folder matches, we don't descend into it further.
 
-    extra_paths — optional list of additional directories to scan
-    on_progress — optional callback(msg: str)
+    Returns the same dict structure as find_installed_games() with an added
+    "source": "own" field so the rest of the install flow works unchanged.
+
+    extra_paths -- optional list of additional directories to scan
+    on_progress -- optional callback(msg: str)
     """
     def prog(msg):
         if on_progress:
@@ -338,36 +383,35 @@ def find_own_installed(extra_paths=None, on_progress=None):
         return {}
 
     found = {}
-    exe_lookup = {name.lower(): keys for name, keys in EXE_TO_KEYS.items()}
 
     for scan_dir in scan_dirs:
         prog(f"Scanning {scan_dir}...")
-        for dirpath, filenames in _walk_limited(scan_dir, _MAX_SCAN_DEPTH):
-            for fname in filenames:
-                fname_lower = fname.lower()
-                if fname_lower not in exe_lookup:
+        for dirpath, dirnames, _filenames in _walk_limited(scan_dir, _MAX_SCAN_DEPTH):
+            folder_name = os.path.basename(dirpath)
+            matched_keys = _match_folder(folder_name)
+
+            if not matched_keys:
+                continue
+
+            # Stop descending into this folder - it's a game install dir
+            dirnames.clear()
+
+            for key in matched_keys:
+                if key in found:
+                    continue
+                meta = GAMES.get(key)
+                if not meta:
                     continue
 
-                exe_path = os.path.join(dirpath, fname)
-                if not os.path.isfile(exe_path):
-                    continue
-
-                keys = exe_lookup[fname_lower]
-                for key in keys:
-                    if key in found:
-                        continue
-                    meta = GAMES.get(key)
-                    if not meta:
-                        continue
-
-                    found[key] = {
-                        **meta,
-                        "install_dir": dirpath,
-                        "exe_path":    exe_path,
-                        "exe_size":    get_exe_size(exe_path),
-                        "source":      "own",
-                    }
-                    prog(f"  ✓ {key}: {meta['name']}")
+                exe_path = os.path.join(dirpath, meta["exe"])
+                found[key] = {
+                    **meta,
+                    "install_dir": dirpath,
+                    "exe_path":    exe_path,
+                    "exe_size":    get_exe_size(exe_path),
+                    "source":      "own",
+                }
+                prog(f"  found {key}: {meta['name']} at {dirpath}")
 
     if not found:
         prog("No supported games found.")
@@ -391,4 +435,4 @@ if __name__ == "__main__":
         print(f"\nInstalled games ({len(installed)}):")
         for key, game in installed.items():
             print(f"  [{key}] {game['name']}")
-            print(f"        {game['exe_path']} ({game['exe_size']} bytes)")
+            print(f"        {game['install_dir']}")
