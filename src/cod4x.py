@@ -145,7 +145,8 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         "STEAM_COMPAT_CLIENT_INSTALL_PATH": steam_root,
     }
 
-    cmd = [proton_path, "run", setup_exe, "/VERYSILENT", "/SUPPRESSMSGBOXES"]
+    cmd = [proton_path, "run", setup_exe, "/VERYSILENT", "/SUPPRESSMSGBOXES",
+           f'/DIR=Z:{install_dir.replace("/", chr(92))}']
 
     try:
         subprocess.run(cmd, env=env, check=True)
