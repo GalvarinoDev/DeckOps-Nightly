@@ -395,12 +395,10 @@ class IntroScreen(QWidget):
             "and shader cache benefits.", 14, "#CCCCCC"))
         lay.addSpacing(6)
         for warn in [
-            "⚠   Before continuing, launch each game through Steam at least once — "
-            "exactly these modes: CoD4 (Multiplayer AND Singleplayer), MW2 (Multiplayer), MW3 (Multiplayer), "
-            "WaW (Campaign AND Multiplayer), BO1 (Campaign AND Multiplayer), "
-            "BO2 (Zombies AND Multiplayer). "
-            "This creates the Proton prefix and starts shader cache downloads. "
-            "Skipping this is the #1 cause of install failures.",
+            "⚠   DeckOps will automatically create Proton prefixes for your games. "
+            "You do NOT need to launch each game through Steam first. "
+            "If you have already launched your games, DeckOps will detect the existing prefixes "
+            "and skip this step.",
             "⚠   OLED users: if you plan to play Plutonium titles online (WaW, BO1, BO2, MW3), "
             "create a free Plutonium account at plutonium.pw before continuing. "
             "LCD users do not need a Plutonium account.",
@@ -1117,6 +1115,11 @@ class InstallScreen(QWidget):
         # GE-Proton's default_pfx ships with d3dx, vcrun, xinput, and partial
         # xact — everything these CoD games need. We copy them into each prefix
         # so users don't have to launch every game through Steam first.
+        # proton_path lets Proton create prefixes that don't exist yet via
+        # `proton run cmd /c exit` instead of requiring users to launch each
+        # game through Steam first.
+        proton = get_proton_path(self.steam_root)
+
         if ge_version:
             from ge_proton import ensure_all_prefix_deps
             self._s.log.emit("Installing prefix dependencies...")
@@ -1135,10 +1138,9 @@ class InstallScreen(QWidget):
                 done = ensure_all_prefix_deps(
                     ge_version, dep_targets,
                     on_progress=lambda msg: self._s.log.emit(msg),
+                    proton_path=proton,
                 )
                 self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
-
-        proton = get_proton_path(self.steam_root)
 
         # ── Plutonium bootstrapper (Steam still running) ──────────────────────
         if has_plut:
@@ -2452,17 +2454,30 @@ class OwnInstallScreen(QWidget):
         own_games = {k: g for k, gd, g in self.selected if g}
 
         # ── Create prefixes + install deps from GE-Proton default_pfx ─────
-        # Only for own games -- Steam games get prefixes from user launching them.
-        # We pass proton so Proton itself initializes the prefix (registry,
-        # version, tracked_files, etc.) rather than us copying default_pfx.
+        # Proton prefix init for ALL selected games (own + Steam).
+        # Own games get prefixes created from scratch via `proton run cmd /c exit`.
+        # Steam games that haven't been launched yet also get their prefixes
+        # initialized this way, removing the "launch each game once" requirement.
         self._s.progress.emit(30, "Creating Proton prefixes...")
         self._s.log.emit("Creating Proton prefixes and installing dependencies...")
         from ge_proton import ensure_all_prefix_deps
-        dep_targets = [
-            (key, game.get("compatdata_path", ""))
-            for key, gd, game in self.selected
-            if game and game.get("compatdata_path") and key in self.own_selected
-        ]
+        dep_targets = []
+        for key, gd, game in self.selected:
+            if not game:
+                continue
+            if key in self.own_selected:
+                # Own games use the shortcut's compatdata path
+                compat = game.get("compatdata_path", "")
+            else:
+                # Steam games use the appid-based compatdata path
+                from wrapper import find_compatdata
+                appid = gd["appid"]
+                compat = find_compatdata(self.steam_root, appid)
+                if not compat and game.get("install_dir"):
+                    steamapps = os.path.dirname(os.path.dirname(game["install_dir"]))
+                    compat = os.path.join(steamapps, "compatdata", str(appid))
+            if compat:
+                dep_targets.append((key, compat))
         if dep_targets:
             done = ensure_all_prefix_deps(
                 ge_version, dep_targets,
