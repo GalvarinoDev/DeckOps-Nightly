@@ -340,7 +340,7 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
                 import subprocess
                 subprocess.run(
                     [proton_path, "run", "cmd", "/c", "exit"],
-                    env=env, capture_output=True, timeout=60,
+                    env=env, capture_output=True, timeout=180,
                 )
                 prog("  ✓ Prefix initialized by Proton")
             except Exception as ex:

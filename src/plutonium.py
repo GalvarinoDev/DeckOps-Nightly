@@ -878,17 +878,14 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
 
     src_plut_dir  = get_dedicated_plut_dir()
 
-    # Own games use the shortcut's compatdata prefix directly.
-    # Steam games use the Steam appid to find the prefix.
-    if source == "own":
-        dest_plut_dir = os.path.join(
-            compatdata_path, "pfx", "drive_c", "users", "steamuser",
-            "AppData", "Local", "Plutonium",
-        )
-    else:
-        dest_plut_dir = _plut_dir_in_compatdata(
-            steam_root, GAME_META[game_key][0]
-        )
+    # Use the compatdata_path passed by the caller for both source modes.
+    # The caller resolves the correct path via find_compatdata() which
+    # searches all library dirs including SD card. Using steam_root directly
+    # (the old approach) always built the internal path, breaking SD card games.
+    dest_plut_dir = os.path.join(
+        compatdata_path, "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Local", "Plutonium",
+    )
 
     prog(10, f"Copying Plutonium into prefix for {game['name']}...")
     _copy_plut_to_prefix(

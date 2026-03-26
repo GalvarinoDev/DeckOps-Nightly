@@ -1085,10 +1085,14 @@ class InstallScreen(QWidget):
 
         if ge_version:
             from ge_proton import ensure_all_prefix_deps
+            from detect_games import GAMES as _GAMES_MAP
             self._s.log.emit("Installing prefix dependencies...")
             dep_targets = []
             for key, gd, game in self.selected:
-                appid = gd["appid"]
+                # Use per-key appid from GAMES, not card-level gd["appid"].
+                # Card-level appid is wrong for keys that have their own appid
+                # (e.g. t6zm=212910, t6sp=202970 vs card appid 202990).
+                appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
                 compat = find_compatdata(self.steam_root, appid)
                 if not compat and game and game.get("install_dir"):
                     # Prefix doesn't exist yet — build the path from the game's
@@ -2423,6 +2427,7 @@ class OwnInstallScreen(QWidget):
         self._s.progress.emit(30, "Creating Proton prefixes...")
         self._s.log.emit("Creating Proton prefixes and installing dependencies...")
         from ge_proton import ensure_all_prefix_deps
+        from detect_games import GAMES as _GAMES_MAP
         dep_targets = []
         for key, gd, game in self.selected:
             if not game:
@@ -2431,9 +2436,10 @@ class OwnInstallScreen(QWidget):
                 # Own games use the shortcut's compatdata path
                 compat = game.get("compatdata_path", "")
             else:
-                # Steam games use the appid-based compatdata path
+                # Steam games use the per-key appid, not card-level gd["appid"].
+                # Card-level appid is wrong for keys like t6zm (212910 vs 202990).
                 from wrapper import find_compatdata
-                appid = gd["appid"]
+                appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
                 compat = find_compatdata(self.steam_root, appid)
                 if not compat and game.get("install_dir"):
                     steamapps = os.path.dirname(os.path.dirname(game["install_dir"]))
@@ -2630,6 +2636,51 @@ class OwnInstallScreen(QWidget):
                     self._s.log.emit(f"✓  {ge_version} set for own game shortcuts")
             except Exception as ex:
                 self._s.log.emit(f"  GE-Proton compat mapping skipped: {ex}")
+
+        # ── Non-Steam shortcuts for Steam games (mixed flow) ─────────────
+        # OwnInstallScreen calls create_own_shortcuts() for own games above,
+        # but Steam games also need their non-Steam shortcuts (e.g. WaW MP,
+        # CoD4 MP) created via create_shortcuts(). Without this, Steam games
+        # in the mixed flow don't get their mod client shortcuts.
+        if self.steam_selected:
+            try:
+                from shortcut import create_shortcuts
+                steam_installed = {k: g for k, gd, g in self.steam_selected if g}
+                steam_keys = [k for k, _, _ in self.steam_selected]
+                create_shortcuts(
+                    installed_games=steam_installed,
+                    selected_keys=steam_keys,
+                    gyro_mode=gyro_mode,
+                    on_progress=lambda msg: self._s.log.emit(msg)
+                )
+            except Exception as ex:
+                self._s.log.emit(f"  Steam shortcuts skipped: {ex}")
+
+            # Clean up stale launch options from older DeckOps versions
+            try:
+                from wrapper import clear_launch_options
+                for stale_appid in ["7940", "10090"]:
+                    clear_launch_options(self.steam_root, stale_appid)
+            except Exception:
+                pass
+
+            # Set default launch option so Steam Deck skips the mode picker
+            has_cod4_steam = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp")
+                                for k, _, _ in self.steam_selected)
+            has_waw_steam = any(k in ("t4sp", "t4mp")
+                               for k, _, _ in self.steam_selected)
+            defaults = {}
+            if has_cod4_steam:
+                defaults["7940"] = ("7a722f97", "1")   # CoD4 -> Singleplayer
+            if has_waw_steam:
+                defaults["10090"] = ("9aa5e05f", "0")   # WaW -> Campaign
+            if defaults:
+                try:
+                    from wrapper import set_default_launch_option
+                    set_default_launch_option(self.steam_root, defaults)
+                    self._s.log.emit("✓  Default launch options set (SP mode)")
+                except Exception as ex:
+                    self._s.log.emit(f"  Launch options skipped: {ex}")
 
         # ── Steam artwork for Steam-sourced games ─────────────────────────
         if self.steam_selected:
