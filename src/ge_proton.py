@@ -210,25 +210,17 @@ def install_ge_proton(on_progress=None):
     with tempfile.TemporaryDirectory(prefix="deckops_ge_") as tmp:
         tarball_path = os.path.join(tmp, f"{version}.tar.gz")
 
-        # Download
-        prog(5, f"Downloading {version}...")
-        _download(
-            tarball_url,
-            tarball_path,
-            on_progress=lambda pct, msg: prog(5 + int(pct * 0.75), msg)
-        )
-        prog(80, "Download complete.")
+        prog(10, f"Downloading GE-Proton {version}...")
+        _download(tarball_url, tarball_path, on_progress=on_progress)
 
-        # Verify checksum if available
         if checksum_url:
-            prog(82, "Verifying checksum...")
+            prog(85, "Verifying checksum...")
             if not _verify_checksum(tarball_path, checksum_url):
-                raise RuntimeError("GE-Proton checksum verification failed — download may be corrupt.")
-            prog(85, "Checksum OK.")
-        else:
-            prog(85, "No checksum file available — skipping verification.")
+                raise RuntimeError("GE-Proton checksum mismatch — download may be corrupt")
+            prog(87, "Checksum OK.")
 
-        # Extract — shell out to tar which is significantly faster than
+        # Use system tar for speed and memory efficiency — Python's tarfile
+        # module is noticeably slower and more memory-hungry when extracting
         # Python's tarfile module for large archives like GE-Proton.
         prog(87, f"Extracting {version}...")
         import subprocess
@@ -287,21 +279,20 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
     the complete dependency set from GE-Proton's default_pfx.
 
     Logic:
-      1. If no pfx/ dir at all and proton_path provided, let Proton create
-         the prefix via `proton run cmd /c exit`.
-      2. If no pfx/ dir and no proton_path, copy entire default_pfx (legacy).
-      3. If pfx/ exists but no version file at compatdata root, run
-         `proton run cmd /c exit` to finalize the prefix. Steam sometimes
-         creates a partial prefix that Proton hasn't initialized yet.
-      4. Always copy DLLs from default_pfx into system32 + syswow64.
-         Overwrites are harmless and guarantee deps are present regardless
-         of what state Steam left the prefix in.
+      1. If no proton_path, fall back to copytree from default_pfx and return.
+      2. If no pfx/ dir, create prefix_path so Proton has a directory to work with.
+      3. Always copy DLLs from default_pfx into system32 + syswow64.
+      4. Always run `proton run cmd /c exit` after the copy to finalize the
+         prefix. This ensures Proton's management files (version, tracked_files,
+         etc.) reflect the current prefix state and prevents Steam from
+         triggering first-launch installers (VC Redist, DirectX, etc.).
 
     ge_version  -- GE-Proton version string (e.g. "GE-Proton10-33")
     prefix_path -- compatdata root (e.g. ~/.../compatdata/10090)
     on_progress -- optional callback(msg: str) for log messages
-    proton_path -- path to the proton binary. When provided, incomplete
-                   prefixes are initialized by Proton itself.
+    proton_path -- path to the proton binary. When provided, the prefix is
+                   finalized by Proton after DLL copy. Falls back to copytree
+                   if not provided.
     steam_root  -- path to Steam root. Used for STEAM_COMPAT_CLIENT_INSTALL_PATH.
                    Falls back to deriving from proton_path if not provided.
 
@@ -316,66 +307,40 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
         prog("⚠ No GE-Proton default_pfx found — cannot install dependencies")
         return False
 
-    pfx_dir = os.path.join(prefix_path, "pfx")
+    pfx_dir      = os.path.join(prefix_path, "pfx")
     sys32_target = os.path.join(pfx_dir, "drive_c", "windows", "system32")
     wow64_target = os.path.join(pfx_dir, "drive_c", "windows", "syswow64")
     version_file = os.path.join(prefix_path, "version")
 
+    # ── Fallback: no proton_path ───────────────────────────────────────
+    # Can't run Proton to finalize — copy entire default_pfx as a best effort.
+    if not proton_path:
+        try:
+            os.makedirs(prefix_path, exist_ok=True)
+            if not os.path.isdir(pfx_dir):
+                shutil.copytree(default_pfx, pfx_dir, symlinks=True)
+            if ge_version and not os.path.isfile(version_file):
+                with open(version_file, "w") as f:
+                    f.write(ge_version + "\n")
+            prog("  ✓ Prefix created from default_pfx (no Proton path — fallback)")
+            return True
+        except Exception as ex:
+            prog(f"  ⚠ Prefix creation failed: {ex}")
+            return False
+
     # STEAM_COMPAT_CLIENT_INSTALL_PATH should be the Steam root so Proton
     # can find steamclient.so. Fall back to dirname trick if not provided.
-    _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path or ""))
+    _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
 
-    # ── Step 1: Ensure the prefix exists and is Proton-initialized ────
+    # ── Step 1: Ensure the prefix directory exists ─────────────────────
+    # Proton needs the compatdata directory to exist before it can initialize.
+    # Don't create pfx/ itself — Proton does that in the finalize step.
     if not os.path.isdir(pfx_dir):
-        if proton_path:
-            try:
-                os.makedirs(prefix_path, exist_ok=True)
-                env = os.environ.copy()
-                env["STEAM_COMPAT_DATA_PATH"] = prefix_path
-                env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
-                import subprocess
-                subprocess.run(
-                    [proton_path, "run", "cmd", "/c", "exit"],
-                    env=env, capture_output=True, timeout=180,
-                )
-                prog("  ✓ Prefix created by Proton")
-            except Exception as ex:
-                prog(f"  ⚠ Proton prefix init failed: {ex}")
-                return False
-        else:
-            try:
-                os.makedirs(prefix_path, exist_ok=True)
-                shutil.copytree(default_pfx, pfx_dir, symlinks=True)
-                if ge_version:
-                    with open(version_file, "w") as f:
-                        f.write(ge_version + "\n")
-                prog("  ✓ Prefix created from default_pfx (all deps included)")
-                return True
-            except Exception as ex:
-                prog(f"  ⚠ Prefix creation failed: {ex}")
-                return False
-
-    elif proton_path and not os.path.isfile(version_file):
-        # Prefix dir exists but Proton hasn't finalized it (no version file).
-        # Steam can create a partial prefix during game install that lacks
-        # the management files Proton needs. Run proton to fix it.
-        try:
-            env = os.environ.copy()
-            env["STEAM_COMPAT_DATA_PATH"] = prefix_path
-            env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
-            import subprocess
-            subprocess.run(
-                [proton_path, "run", "cmd", "/c", "exit"],
-                env=env, capture_output=True, timeout=180,
-            )
-            prog("  ✓ Prefix finalized by Proton")
-        except Exception as ex:
-            prog(f"  ⚠ Proton prefix finalize failed: {ex}")
-            # Continue anyway — DLL copy may still help
+        os.makedirs(prefix_path, exist_ok=True)
 
     # ── Step 2: Always copy DLLs from default_pfx ─────────────────────
-    # Overwriting existing DLLs is harmless and guarantees the full
-    # dependency set is present regardless of prefix state.
+    # Copy before Proton finalizes so Proton sees the full dependency set
+    # when it writes its management files.
     sys32_src = os.path.join(default_pfx, "drive_c", "windows", "system32")
     wow64_src = os.path.join(default_pfx, "drive_c", "windows", "syswow64")
 
@@ -383,9 +348,28 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
         n32 = _copy_dlls(sys32_src, sys32_target)
         n64 = _copy_dlls(wow64_src, wow64_target)
         prog(f"  ✓ Copied {n32 + n64} DLLs into prefix (system32: {n32}, syswow64: {n64})")
-        return True
     except Exception as ex:
         prog(f"  ⚠ DLL copy failed: {ex}")
+        return False
+
+    # ── Step 3: Always finalize via Proton ────────────────────────────
+    # Run after DLL copy so Proton's management files reflect the final
+    # prefix state. This also creates pfx/ if it didn't exist yet, and
+    # prevents Steam from running first-launch installers (VC Redist,
+    # DirectX, etc.) when the user starts the game for the first time.
+    import subprocess
+    try:
+        env = os.environ.copy()
+        env["STEAM_COMPAT_DATA_PATH"]           = prefix_path
+        env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
+        subprocess.run(
+            [proton_path, "run", "cmd", "/c", "exit"],
+            env=env, capture_output=True, timeout=180,
+        )
+        prog("  ✓ Prefix finalized by Proton")
+        return True
+    except Exception as ex:
+        prog(f"  ⚠ Proton prefix finalize failed: {ex}")
         return False
 
 
