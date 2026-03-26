@@ -194,6 +194,8 @@ KNOWN_EXES = [
     "iw3mp.exe", "iw3sp.exe", "iw4mp.exe", "iw4sp.exe",
     "iw5mp.exe", "iw5sp.exe", "CoDWaW.exe", "CoDWaWmp.exe",
     "BlackOps.exe", "BlackOpsMP.exe", "t6zm.exe", "t6mp.exe", "t6sp.exe",
+    # Mod client exes (own shortcuts point at these, not original game exes)
+    "iw4x.exe", "iw3sp_mod.exe",
     # LCD own Plutonium wrapper exes (written by plutonium.py, not original game files)
     "t4plutsp.exe", "t4plutmp.exe", "t5plutsp.exe", "t5plutmp.exe",
     "t6plutmp.exe", "t6plutzm.exe", "iw5plutmp.exe",
@@ -324,12 +326,22 @@ OWN_CLEANUP = {
         "files": ["iw4x.dll", "iw4x.exe"],
         "dirs":  ["iw4x", "iw4x-updoot"],
     },
+    # Own shortcuts point at iw4x.exe, not iw4mp.exe
+    "iw4x.exe": {
+        "files": ["iw4x.dll", "iw4x.exe"],
+        "dirs":  ["iw4x", "iw4x-updoot"],
+    },
     "iw3mp.exe": {
         "files": ["cod4x_021.dll", "cod4x_loader.exe", "cod4x.exe",
                   "deckops_cod4x.json", "servercache.dat"],
         "dirs":  [],
     },
     "iw3sp.exe": {
+        "files": ["iw3sp_mod.exe", "iw3sp_mod.dll", "deckops_iw3sp.json"],
+        "dirs":  ["iw3sp_mod"],
+    },
+    # Own shortcuts point at iw3sp_mod.exe, not iw3sp.exe
+    "iw3sp_mod.exe": {
         "files": ["iw3sp_mod.exe", "iw3sp_mod.dll", "deckops_iw3sp.json"],
         "dirs":  ["iw3sp_mod"],
     },
@@ -502,9 +514,27 @@ PYEOF
 echo ""
 
 if [ -n "$STEAM_ROOT" ]; then
-    COMPATDATA="$STEAM_ROOT/steamapps/compatdata"
-    if [ -d "$COMPATDATA" ]; then
-        found_any=0
+    info "Removing Plutonium data from all Wine prefixes..."
+
+    # Build list of all compatdata dirs (internal + SD card + any extra libraries)
+    COMPAT_DIRS=()
+    [ -d "$STEAM_ROOT/steamapps/compatdata" ] && COMPAT_DIRS+=("$STEAM_ROOT/steamapps/compatdata")
+
+    # Parse libraryfolders.vdf for additional library paths
+    LF_VDF="$STEAM_ROOT/steamapps/libraryfolders.vdf"
+    if [ -f "$LF_VDF" ]; then
+        while IFS= read -r libpath; do
+            [ -d "$libpath/steamapps/compatdata" ] && COMPAT_DIRS+=("$libpath/steamapps/compatdata")
+        done < <(sed -n 's/.*"path"[[:space:]]*"\([^"]*\)".*/\1/p' "$LF_VDF")
+    fi
+
+    # Brute-force SD card mount points
+    for mount in /run/media/deck/*/steamapps/compatdata /run/media/deck/*/SteamLibrary/steamapps/compatdata; do
+        [ -d "$mount" ] && COMPAT_DIRS+=("$mount")
+    done
+
+    found_any=0
+    for COMPATDATA in "${COMPAT_DIRS[@]}"; do
         for prefix_dir in "$COMPATDATA"/*/; do
             plut_dir="$prefix_dir/pfx/drive_c/users/steamuser/AppData/Local/Plutonium"
             if [ -d "$plut_dir" ]; then
@@ -513,10 +543,8 @@ if [ -n "$STEAM_ROOT" ]; then
                 found_any=1
             fi
         done
-        [ "$found_any" -eq 0 ] && skip "No Plutonium folders found in any prefix"
-    else
-        skip "compatdata directory not found"
-    fi
+    done
+    [ "$found_any" -eq 0 ] && skip "No Plutonium folders found in any prefix"
 
     for appid in 42690 10090 42700 202990 212910; do
         game_dir=$(find_install_dir "$appid") || true
@@ -783,6 +811,9 @@ OWN_EXE_MAP = {
     "t6sp.exe":       "Call of Duty: Black Ops II - Singleplayer",
     "t6zm.exe":       "Call of Duty: Black Ops II - Zombies",
     "t6mp.exe":       "Call of Duty: Black Ops II - Multiplayer",
+    # Mod client exes (own shortcuts point at these, not original game exes)
+    "iw4x.exe":       "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
+    "iw3sp_mod.exe":  "Call of Duty 4: Modern Warfare - Singleplayer",
     # LCD own Plutonium wrapper exes
     "t4plutsp.exe":   "Call of Duty: World at War",
     "t4plutmp.exe":   "Call of Duty: World at War - Multiplayer",
@@ -1020,6 +1051,9 @@ OWN_EXE_MAP = {
     "t6sp.exe":       "Call of Duty: Black Ops II - Singleplayer",
     "t6zm.exe":       "Call of Duty: Black Ops II - Zombies",
     "t6mp.exe":       "Call of Duty: Black Ops II - Multiplayer",
+    # Mod client exes (own shortcuts point at these, not original game exes)
+    "iw4x.exe":       "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
+    "iw3sp_mod.exe":  "Call of Duty 4: Modern Warfare - Singleplayer",
     # LCD own Plutonium wrapper exes
     "t4plutsp.exe":   "Call of Duty: World at War",
     "t4plutmp.exe":   "Call of Duty: World at War - Multiplayer",
@@ -1194,6 +1228,9 @@ OWN_EXE_MAP = {
     "t6sp.exe":       "Call of Duty: Black Ops II - Singleplayer",
     "t6zm.exe":       "Call of Duty: Black Ops II - Zombies",
     "t6mp.exe":       "Call of Duty: Black Ops II - Multiplayer",
+    # Mod client exes (own shortcuts point at these, not original game exes)
+    "iw4x.exe":       "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
+    "iw3sp_mod.exe":  "Call of Duty 4: Modern Warfare - Singleplayer",
     # LCD own Plutonium wrapper exes
     "t4plutsp.exe":   "Call of Duty: World at War",
     "t4plutmp.exe":   "Call of Duty: World at War - Multiplayer",
