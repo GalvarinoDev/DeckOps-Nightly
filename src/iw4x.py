@@ -96,6 +96,8 @@ def install_iw4x(game: dict, steam_root: str,
     """
     install_dir = game["install_dir"]
     iw4x_dir    = os.path.join(install_dir, "iw4x")
+    if os.path.exists(iw4x_dir):
+        shutil.rmtree(iw4x_dir)
     os.makedirs(iw4x_dir, exist_ok=True)
 
     def prog(pct, msg):
@@ -163,8 +165,7 @@ def install_iw4x(game: dict, steam_root: str,
 
     def _download_iwd(iwd):
         dest = os.path.join(iw4x_dir, iwd)
-        if not os.path.exists(dest):
-            _download(f"{RAW_URL}/{iwd}", dest, None, f"Downloading {iwd}...")
+        _download(f"{RAW_URL}/{iwd}", dest, None, f"Downloading {iwd}...")
         with iwd_lock:
             completed[0] += 1
             pct = 62 + int(completed[0] / len(IWD_FILES) * 33)
