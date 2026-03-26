@@ -280,7 +280,8 @@ def _copy_dlls(src_dir: str, dest_dir: str) -> int:
 
 
 def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
-                       on_progress=None, proton_path: str | None = None) -> bool:
+                       on_progress=None, proton_path: str | None = None,
+                       steam_root: str | None = None) -> bool:
     """
     Make sure a game's compatdata prefix is fully initialized and has
     the complete dependency set from GE-Proton's default_pfx.
@@ -301,6 +302,8 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
     on_progress -- optional callback(msg: str) for log messages
     proton_path -- path to the proton binary. When provided, incomplete
                    prefixes are initialized by Proton itself.
+    steam_root  -- path to Steam root. Used for STEAM_COMPAT_CLIENT_INSTALL_PATH.
+                   Falls back to deriving from proton_path if not provided.
 
     Returns True if deps are now in place, False if we couldn't do it.
     """
@@ -318,6 +321,10 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
     wow64_target = os.path.join(pfx_dir, "drive_c", "windows", "syswow64")
     version_file = os.path.join(prefix_path, "version")
 
+    # STEAM_COMPAT_CLIENT_INSTALL_PATH should be the Steam root so Proton
+    # can find steamclient.so. Fall back to dirname trick if not provided.
+    _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path or ""))
+
     # ── Step 1: Ensure the prefix exists and is Proton-initialized ────
     if not os.path.isdir(pfx_dir):
         if proton_path:
@@ -325,9 +332,7 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
                 os.makedirs(prefix_path, exist_ok=True)
                 env = os.environ.copy()
                 env["STEAM_COMPAT_DATA_PATH"] = prefix_path
-                env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = os.path.dirname(
-                    os.path.dirname(proton_path)
-                )
+                env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
                 import subprocess
                 subprocess.run(
                     [proton_path, "run", "cmd", "/c", "exit"],
@@ -357,9 +362,7 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
         try:
             env = os.environ.copy()
             env["STEAM_COMPAT_DATA_PATH"] = prefix_path
-            env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = os.path.dirname(
-                os.path.dirname(proton_path)
-            )
+            env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
             import subprocess
             subprocess.run(
                 [proton_path, "run", "cmd", "/c", "exit"],
@@ -387,7 +390,8 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
 
 
 def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str, str]],
-                           on_progress=None, proton_path: str | None = None) -> int:
+                           on_progress=None, proton_path: str | None = None,
+                           steam_root: str | None = None) -> int:
     """
     Run ensure_prefix_deps for a list of games. Convenience wrapper for
     the install flow in ui_qt.py.
@@ -396,6 +400,7 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
                    label is for logging (e.g. game key or display name)
     on_progress  — optional callback(msg: str)
     proton_path  — passed through to ensure_prefix_deps for Proton init
+    steam_root   — passed through for STEAM_COMPAT_CLIENT_INSTALL_PATH
 
     Returns the number of prefixes that now have deps installed.
     """
@@ -410,7 +415,7 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
             continue
         prog(f"  {label}: checking dependencies...")
         if ensure_prefix_deps(ge_version, compat_path, on_progress=on_progress,
-                              proton_path=proton_path):
+                              proton_path=proton_path, steam_root=steam_root):
             success += 1
 
     return success

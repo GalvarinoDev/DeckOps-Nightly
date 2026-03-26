@@ -190,7 +190,7 @@ def is_bootstrapper_ready() -> bool:
 
 # ── bootstrapper ──────────────────────────────────────────────────────────────
 
-def launch_bootstrapper(proton_path: str, on_progress=None):
+def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = None):
     """
     Download plutonium.exe into the dedicated prefix and launch it through
     Proton. Blocks until the user closes the Plutonium window.
@@ -230,9 +230,14 @@ def launch_bootstrapper(proton_path: str, on_progress=None):
 
     env = os.environ.copy()
     env["STEAM_COMPAT_DATA_PATH"]           = DEDICATED_PREFIX
-    env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = os.path.dirname(
-        os.path.dirname(proton_path)
-    )
+    # STEAM_COMPAT_CLIENT_INSTALL_PATH should point to the Steam root,
+    # not the Proton install dir. Proton uses this to find steamclient.so.
+    if steam_root:
+        env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = steam_root
+    else:
+        env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = os.path.dirname(
+            os.path.dirname(proton_path)
+        )
 
     proc = subprocess.Popen(
         [proton_path, "run", bootstrapper],
@@ -642,6 +647,8 @@ def install_xact_once(
     # ── Steam games ───────────────────────────────────────────────────────────
     if has_steam_keys and steam_needs_install:
         # Build deduped list of (key, appid, compatdata_path) by appid.
+        # Search all library dirs so SD card installs are found.
+        from detect_games import _all_library_dirs
         seen_appids = {}
         targets = []
         for key in xact_game_keys:
@@ -649,9 +656,17 @@ def install_xact_once(
                 continue
             appid = GAME_META[key][0]
             if appid not in seen_appids:
-                compat = os.path.join(
-                    steam_root, "steamapps", "compatdata", str(appid)
-                )
+                compat = None
+                for lib_dir in _all_library_dirs(steam_root):
+                    candidate = os.path.join(lib_dir, "compatdata", str(appid))
+                    if os.path.isdir(candidate):
+                        compat = candidate
+                        break
+                if not compat:
+                    # Fallback to default location (may not exist yet)
+                    compat = os.path.join(
+                        steam_root, "steamapps", "compatdata", str(appid)
+                    )
                 seen_appids[appid] = compat
                 targets.append((key, appid, compat))
 
