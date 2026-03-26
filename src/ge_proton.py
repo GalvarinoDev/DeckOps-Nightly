@@ -200,7 +200,6 @@ def install_ge_proton(on_progress=None):
     else:
         prog(0, "Checking latest GE-Proton release...")
 
-    prog(0, "Checking latest GE-Proton release...")
     version, tarball_url, checksum_url = _get_latest_release()
     prog(5, f"Latest: {version}")
 

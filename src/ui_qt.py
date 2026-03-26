@@ -96,21 +96,21 @@ def font(size=13, bold=False, weight=None, display=False):
 
 ALL_GAMES = [
     {"base":"Call of Duty 4: Modern Warfare","keys":["cod4mp","cod4sp"],"appid":7940,"dev":"iw","client":"cod4x + iw3sp",
-     "launch_note":"Launch Multiplayer and Singleplayer at least once through Steam before continuing."},
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Modern Warfare 2","keys":["iw4mp","iw4sp"],"appid":10190,"dev":"iw","client":"iw4x",
-     "launch_note":"Launch Multiplayer through Steam at least once before continuing."},
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Modern Warfare 3","keys":["iw5mp","iw5sp"],"appid":42690,"dev":"iw","client":"plutonium",
      "lcd_keys":["iw5mp","iw5sp"],"lcd_client":"plutonium + steam","lcd_appid":42680,
-     "launch_note":"Launch Multiplayer through Steam at least once before continuing."},
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: World at War","keys":["t4sp","t4mp"],"appid":10090,"dev":"trey","client":"plutonium",
      "lcd_keys":["t4sp","t4mp"],"lcd_client":"plutonium",
-     "launch_note":"Launch Campaign through Steam at least once before continuing."},
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Black Ops","keys":["t5sp","t5mp"],"appid":42700,"dev":"trey","client":"plutonium",
      "lcd_keys":["t5sp","t5mp"],"lcd_client":"plutonium",
-     "launch_note":"Launch Campaign through Steam at least once before continuing."},
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Black Ops II","keys":["t6mp","t6zm","t6sp"],"appid":202990,"dev":"trey","client":"plutonium",
      "lcd_keys":["t6sp","t6zm","t6mp"],"lcd_client":"plutonium + steam","lcd_appid":202970,
-     "launch_note":"Launch Multiplayer and Zombies through Steam before continuing."},
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
 ]
 
 def _active_keys(gd):
@@ -165,34 +165,6 @@ KEY_MODE_LABEL = {
     "t5sp":   "S/Z",   "t5mp":   "MP",
     "t6sp":   "SP",    "t6zm":   "ZM",    "t6mp":   "MP",
 }
-
-def _is_prefix_ready(steam_root: str, appid: int) -> bool:
-    """
-    Check if a game has been launched through Steam at least once.
-    Returns True if the Proton prefix exists and is initialized.
-    Searches all library dirs (internal + SD card) so games installed
-    on removable storage are detected correctly.
-    """
-    from detect_games import _all_library_dirs
-
-    for steamapps_dir in _all_library_dirs(steam_root):
-        pfx = os.path.join(steamapps_dir, "compatdata", str(appid), "pfx")
-        if os.path.isdir(pfx):
-            return True
-    return False
-
-
-def _all_prefixes_ready(steam_root: str, gd: dict) -> bool:
-    """
-    Check that ALL required Proton prefixes exist for a game card.
-    Some games (BO1) have keys that map to different appids (42700 SP, 42710 MP)
-    and both prefixes must exist before setup is safe to proceed.
-    Only checks keys active for the current Deck model.
-    """
-    from detect_games import GAMES
-    keys = _active_keys(gd)
-    appids_needed = {GAMES[k]["appid"] for k in keys if k in GAMES}
-    return all(_is_prefix_ready(steam_root, aid) for aid in appids_needed)
 
 
 SP_IMAGE_URLS = {
@@ -777,7 +749,7 @@ class SetupScreen(QWidget):
         t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
         lay.addWidget(_lbl(
             "Choose which games to set up. "
-            "Games marked with \u26a0 must be launched through Steam first.", 13, C_DIM))
+            "DeckOps will create Proton prefixes automatically.", 13, C_DIM))
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._lw = QWidget(); self._ll = QVBoxLayout(self._lw)
@@ -804,7 +776,6 @@ class SetupScreen(QWidget):
             if item.widget(): item.widget().deleteLater()
         self._checks.clear()
 
-        from detect_games import GAMES
         _LCD_OFFLINE_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "iw5mp"}
         MAX_SLOTS  = 3
         SLOT_W     = 28
@@ -833,9 +804,7 @@ class SetupScreen(QWidget):
             checks_layout.setSpacing(SLOT_GAP)
 
             for key in keys:
-                appid       = GAMES[key]["appid"] if key in GAMES else None
                 installed   = key in self.steam_installed
-                pre_ready   = _is_prefix_ready(self.steam_root, appid) if appid else False
                 already_done = cfg.is_game_setup_for_source(key, "steam")
 
                 slot = QWidget()
@@ -846,7 +815,7 @@ class SetupScreen(QWidget):
                 slot_lay.setAlignment(Qt.AlignHCenter)
 
                 cb = QCheckBox()
-                if not installed or not pre_ready:
+                if not installed:
                     cb.setChecked(False)
                     cb.setEnabled(False)
                 elif already_done:
@@ -854,7 +823,7 @@ class SetupScreen(QWidget):
                 else:
                     cb.setChecked(True)
 
-                mode_color = C_TREY if (not installed or not pre_ready) else "#666677"
+                mode_color = C_TREY if not installed else "#666677"
                 mode_lbl = _lbl(KEY_MODE_LABEL.get(key, key), 9, mode_color,
                                  align=Qt.AlignHCenter, wrap=False)
 
@@ -879,11 +848,8 @@ class SetupScreen(QWidget):
             name_wrap_lay.setContentsMargins(0, 0, 0, 0)
             name_wrap_lay.setSpacing(2)
 
-            any_ready = any(
-                _is_prefix_ready(self.steam_root, GAMES[k]["appid"])
-                for k in ik if k in GAMES
-            )
-            name_color = "#FFF" if any_ready else "#555566"
+            any_installed = len(ik) > 0
+            name_color = "#FFF" if any_installed else "#555566"
             name_lbl = _lbl(gd["base"], 14, name_color, align=Qt.AlignLeft, wrap=False)
             name_wrap_lay.addWidget(name_lbl)
 
@@ -911,12 +877,9 @@ class SetupScreen(QWidget):
 
     def _go_install(self):
         selected = []
-        from detect_games import GAMES
         for key, (cb, gd) in self._checks.items():
             if not cb.isChecked(): continue
             if key not in self.steam_installed: continue
-            appid = GAMES[key]["appid"] if key in GAMES else None
-            if appid and not _is_prefix_ready(self.steam_root, appid): continue
             selected.append((key, gd, self.steam_installed[key]))
         if not selected:
             # Advanced flow: own games are already queued on OwnInstallScreen,
@@ -2330,7 +2293,6 @@ class OwnInstallScreen(QWidget):
         self.selected = list(self.steam_selected) + own_as_tuples
 
         selected_keys = [key for key, _, _ in self.selected]
-        own_games     = {k: g for k, gd, g in self.selected if g}
         logged_bases  = set()
         has_plut      = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
 
@@ -2555,8 +2517,11 @@ class OwnInstallScreen(QWidget):
                 self._s.progress.emit(55, f"Setting up {base_name}...")
                 def op_iw4x(pct, msg): self._s.progress.emit(55 + int(pct / 100 * 7), msg)
                 try:
-                    compat = game.get("compatdata_path", "")
                     source = "own" if key in self.own_selected else "steam"
+                    if source == "own":
+                        compat = game.get("compatdata_path", "")
+                    else:
+                        compat = find_compatdata(self.steam_root, gd["appid"])
                     install_iw4x(game, self.steam_root, proton, compat, op_iw4x, source=source)
                     cfg.mark_game_setup(key, "iw4x", source=source)
                     self._s.log.emit(f"✓  {base_name} done")
@@ -2573,12 +2538,17 @@ class OwnInstallScreen(QWidget):
                 self._s.progress.emit(65, f"Setting up {base_name}...")
                 def op_cod4(pct, msg): self._s.progress.emit(65 + int(pct / 100 * 10), msg)
                 try:
-                    compat = game.get("compatdata_path", "")
-                    c = KEY_CLIENT.get(key, gd["client"])
                     source = "own" if key in self.own_selected else "steam"
+                    c = KEY_CLIENT.get(key, gd["client"])
+                    if source == "own":
+                        compat = game.get("compatdata_path", "")
+                        cod4x_appid = game.get("shortcut_appid", 7940)
+                    else:
+                        compat = find_compatdata(self.steam_root, gd["appid"])
+                        cod4x_appid = gd["appid"]
                     if c == "cod4x":
                         install_cod4x(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=game.get("shortcut_appid", 7940))
+                                      appid=cod4x_appid)
                     elif c == "iw3sp":
                         install_iw3sp(game, self.steam_root, proton, compat, op_cod4, source=source)
                     cfg.mark_game_setup(key, c, source=source)
