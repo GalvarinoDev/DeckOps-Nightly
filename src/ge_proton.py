@@ -47,12 +47,6 @@ _BROWSER_UA = {
     "Accept": "*/*",
 }
 
-# Sentinel DLL used to check if the dependency set is already installed.
-# msvcp140.dll is part of the vcrun set and is always present when deps
-# have been copied from default_pfx. It's a good sentinel because it's
-# not something Wine provides on its own — it comes from the Proton prefix.
-_DEP_SENTINEL = "msvcp140.dll"
-
 
 # ── GitHub API ────────────────────────────────────────────────────────────────
 
@@ -288,26 +282,25 @@ def _copy_dlls(src_dir: str, dest_dir: str) -> int:
 def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
                        on_progress=None, proton_path: str | None = None) -> bool:
     """
-    Make sure a game's compatdata prefix has the full dependency set from
-    GE-Proton's default_pfx. Handles three cases:
+    Make sure a game's compatdata prefix is fully initialized and has
+    the complete dependency set from GE-Proton's default_pfx.
 
-      1. No prefix at all:
-         a. If proton_path is provided, let Proton initialize the prefix
-            properly via `proton run cmd /c exit`, then copy extra DLLs.
-            This is the preferred path for own games — Proton sets up
-            the registry, version file, tracked_files, and everything
-            else it needs to recognize the prefix.
-         b. If no proton_path, copy entire default_pfx (legacy fallback).
-      2. Prefix exists but missing deps → copy DLLs into system32 + syswow64
-      3. Deps already present → skip
+    Logic:
+      1. If no pfx/ dir at all and proton_path provided, let Proton create
+         the prefix via `proton run cmd /c exit`.
+      2. If no pfx/ dir and no proton_path, copy entire default_pfx (legacy).
+      3. If pfx/ exists but no version file at compatdata root, run
+         `proton run cmd /c exit` to finalize the prefix. Steam sometimes
+         creates a partial prefix that Proton hasn't initialized yet.
+      4. Always copy DLLs from default_pfx into system32 + syswow64.
+         Overwrites are harmless and guarantee deps are present regardless
+         of what state Steam left the prefix in.
 
-    ge_version  — GE-Proton version string (e.g. "GE-Proton10-33")
-    prefix_path — compatdata root (e.g. ~/.../compatdata/10090)
-    on_progress — optional callback(msg: str) for log messages
-    proton_path — path to the proton binary. When provided, new prefixes
-                  are initialized by Proton itself instead of copying
-                  default_pfx. This produces a fully valid prefix that
-                  Steam recognizes on first launch.
+    ge_version  -- GE-Proton version string (e.g. "GE-Proton10-33")
+    prefix_path -- compatdata root (e.g. ~/.../compatdata/10090)
+    on_progress -- optional callback(msg: str) for log messages
+    proton_path -- path to the proton binary. When provided, incomplete
+                   prefixes are initialized by Proton itself.
 
     Returns True if deps are now in place, False if we couldn't do it.
     """
@@ -323,13 +316,11 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
     pfx_dir = os.path.join(prefix_path, "pfx")
     sys32_target = os.path.join(pfx_dir, "drive_c", "windows", "system32")
     wow64_target = os.path.join(pfx_dir, "drive_c", "windows", "syswow64")
+    version_file = os.path.join(prefix_path, "version")
 
-    # Case 1: No prefix at all
+    # ── Step 1: Ensure the prefix exists and is Proton-initialized ────
     if not os.path.isdir(pfx_dir):
         if proton_path:
-            # Let Proton create and initialize the prefix properly.
-            # This sets up registry, version, tracked_files, and all
-            # the management files that Steam expects.
             try:
                 os.makedirs(prefix_path, exist_ok=True)
                 env = os.environ.copy()
@@ -342,18 +333,16 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
                     [proton_path, "run", "cmd", "/c", "exit"],
                     env=env, capture_output=True, timeout=180,
                 )
-                prog("  ✓ Prefix initialized by Proton")
+                prog("  ✓ Prefix created by Proton")
             except Exception as ex:
                 prog(f"  ⚠ Proton prefix init failed: {ex}")
                 return False
         else:
-            # Fallback: copy default_pfx directly (Steam flow where
-            # the prefix should already exist from user launching the game)
             try:
                 os.makedirs(prefix_path, exist_ok=True)
                 shutil.copytree(default_pfx, pfx_dir, symlinks=True)
                 if ge_version:
-                    with open(os.path.join(prefix_path, "version"), "w") as f:
+                    with open(version_file, "w") as f:
                         f.write(ge_version + "\n")
                 prog("  ✓ Prefix created from default_pfx (all deps included)")
                 return True
@@ -361,13 +350,29 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
                 prog(f"  ⚠ Prefix creation failed: {ex}")
                 return False
 
-    # Case 3: Deps already present — skip
-    sentinel = os.path.join(sys32_target, _DEP_SENTINEL)
-    if os.path.isfile(sentinel):
-        prog("  Dependencies already present — skipping")
-        return True
+    elif proton_path and not os.path.isfile(version_file):
+        # Prefix dir exists but Proton hasn't finalized it (no version file).
+        # Steam can create a partial prefix during game install that lacks
+        # the management files Proton needs. Run proton to fix it.
+        try:
+            env = os.environ.copy()
+            env["STEAM_COMPAT_DATA_PATH"] = prefix_path
+            env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = os.path.dirname(
+                os.path.dirname(proton_path)
+            )
+            import subprocess
+            subprocess.run(
+                [proton_path, "run", "cmd", "/c", "exit"],
+                env=env, capture_output=True, timeout=180,
+            )
+            prog("  ✓ Prefix finalized by Proton")
+        except Exception as ex:
+            prog(f"  ⚠ Proton prefix finalize failed: {ex}")
+            # Continue anyway — DLL copy may still help
 
-    # Case 2: Prefix exists but missing deps — copy DLLs from default_pfx
+    # ── Step 2: Always copy DLLs from default_pfx ─────────────────────
+    # Overwriting existing DLLs is harmless and guarantees the full
+    # dependency set is present regardless of prefix state.
     sys32_src = os.path.join(default_pfx, "drive_c", "windows", "system32")
     wow64_src = os.path.join(default_pfx, "drive_c", "windows", "syswow64")
 
