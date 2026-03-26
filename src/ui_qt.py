@@ -1106,6 +1106,7 @@ class InstallScreen(QWidget):
                     ge_version, dep_targets,
                     on_progress=lambda msg: self._s.log.emit(msg),
                     proton_path=proton,
+                    steam_root=self.steam_root,
                 )
                 self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
 
@@ -1139,7 +1140,7 @@ class InstallScreen(QWidget):
                         "  4. Click the button below to continue"
                     )
                 try:
-                    launch_bootstrapper(proton, on_progress=lambda p, m: self._s.progress.emit(p, m))
+                    launch_bootstrapper(proton, on_progress=lambda p, m: self._s.progress.emit(p, m), steam_root=self.steam_root)
                 except Exception as ex:
                     self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
                     self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
@@ -2352,7 +2353,7 @@ class OwnInstallScreen(QWidget):
                         "  4. Click the button below to continue"
                     )
                 try:
-                    launch_bootstrapper(proton, on_progress=lambda p, m: self._s.progress.emit(p, m))
+                    launch_bootstrapper(proton, on_progress=lambda p, m: self._s.progress.emit(p, m), steam_root=self.steam_root)
                 except Exception as ex:
                     self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
                     self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
@@ -2416,8 +2417,9 @@ class OwnInstallScreen(QWidget):
         self.selected = [
             (k, gd, own_games_dict.get(k, g)) for k, gd, g in self.selected
         ]
-        # Rebuild own_games with enriched dicts for compat tool mapping later
-        own_games = {k: g for k, gd, g in self.selected if g}
+        # Rebuild own_games with enriched dicts for compat tool mapping later.
+        # Only include own-selected keys - Steam games don't have shortcut_appid.
+        own_games = {k: g for k, gd, g in self.selected if g and k in self.own_selected}
 
         # ── Create prefixes + install deps from GE-Proton default_pfx ─────
         # Proton prefix init for ALL selected games (own + Steam).
@@ -2451,6 +2453,7 @@ class OwnInstallScreen(QWidget):
                 ge_version, dep_targets,
                 on_progress=lambda msg: self._s.log.emit(msg),
                 proton_path=proton,
+                steam_root=self.steam_root,
             )
             self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
 

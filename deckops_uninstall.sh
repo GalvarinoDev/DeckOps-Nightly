@@ -649,7 +649,9 @@ for uid in os.listdir(userdata):
     entries_start = pos + len(header)
     raw_entries   = data[entries_start:]
 
-    # Walk entries manually
+    # Walk entries manually using proper binary VDF type parsing.
+    # Type bytes: 0x00 = sub-dict, 0x01 = string, 0x02 = int32,
+    #             0x03 = float32, 0x07 = uint64, 0x08 = end-of-dict.
     kept   = []
     cursor = 0
     idx    = 0
@@ -666,33 +668,46 @@ for uid in os.listdir(userdata):
         # Read key (index string)
         key_end = raw_entries.index(b'\x00', cursor + 1)
         entry_body_start = key_end + 1
-        # Find end of entry: \x08 followed by next \x00 or outer \x08
-        # Scan forward for \x08 that ends this entry
+        # Walk through typed fields, tracking sub-dict depth.
+        # Entry body starts at depth 1 (the entry itself is a dict).
         depth = 1
         scan  = entry_body_start
         while scan < len(raw_entries) and depth > 0:
-            b = raw_entries[scan:scan+1]
-            if b == b'\x00':
-                # dict start: read key, skip to value
+            ftype = raw_entries[scan]
+            if ftype == 0x00:
+                # Sub-dict start: read key name, enter dict
                 k_end = raw_entries.index(b'\x00', scan + 1)
                 scan = k_end + 1
                 depth += 1
-            elif b == b'\x08':
+            elif ftype == 0x08:
+                # End-of-dict
                 depth -= 1
                 scan += 1
-            else:
-                # typed field
-                ftype = raw_entries[scan]
+            elif ftype == 0x01:
+                # String: type + key\x00 + value\x00
                 scan += 1
                 k_end = raw_entries.index(b'\x00', scan)
                 scan = k_end + 1
-                if ftype == 1:   # string
-                    v_end = raw_entries.index(b'\x00', scan)
-                    scan = v_end + 1
-                elif ftype == 2:  # int32
-                    scan += 4
-                else:
-                    scan += 1
+                v_end = raw_entries.index(b'\x00', scan)
+                scan = v_end + 1
+            elif ftype == 0x02:
+                # Int32: type + key\x00 + 4 bytes
+                scan += 1
+                k_end = raw_entries.index(b'\x00', scan)
+                scan = k_end + 1 + 4
+            elif ftype == 0x03:
+                # Float32: type + key\x00 + 4 bytes
+                scan += 1
+                k_end = raw_entries.index(b'\x00', scan)
+                scan = k_end + 1 + 4
+            elif ftype == 0x07:
+                # Uint64: type + key\x00 + 8 bytes
+                scan += 1
+                k_end = raw_entries.index(b'\x00', scan)
+                scan = k_end + 1 + 8
+            else:
+                # Unknown type - skip one byte and hope for the best
+                scan += 1
 
         entry_blob = raw_entries[cursor:scan]
 

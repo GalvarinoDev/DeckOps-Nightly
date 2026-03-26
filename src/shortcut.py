@@ -651,6 +651,9 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
             # LCD: point at the bootstrapper with -lan for offline LAN mode.
             # exe_path (CoDWaWmp.exe) is still used for appid calculation so any
             # existing shortcut entry in Steam is not invalidated.
+            # Steam handles STEAM_COMPAT_DATA_PATH automatically for non-Steam
+            # shortcuts, so we don't set it manually. %command% is also
+            # unnecessary for non-Steam shortcuts.
             if key == "t4mp":
                 import config as _cfg
                 plut_dir = os.path.join(
@@ -661,22 +664,18 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                 if _cfg.is_oled():
                     plut_launcher  = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
                     actual_exe     = plut_launcher
-                    launch_options = (
-                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                        f'%command% "plutonium://play/t4mp"'
-                    )
+                    launch_options = f'plutonium://play/t4mp'
                 else:
                     plut_bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
                     actual_exe        = plut_bootstrapper
                     launch_options    = (
-                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                        f'%command% t4mp '
+                        f't4mp '
                         f'"Z:{install_dir.replace("/", chr(92))}" '
                         f'+name "Player" -lan'
                     )
             else:
                 actual_exe     = exe_path
-                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                launch_options = ""
 
             shortcut_appid = _calc_shortcut_appid(exe_path, name)
 
