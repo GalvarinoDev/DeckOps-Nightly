@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
     QLabel, QPushButton, QCheckBox, QProgressBar,
     QFrame, QSizePolicy, QMessageBox, QPlainTextEdit,
-    QFileDialog,
+    QFileDialog, QLineEdit,
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QFont, QFontDatabase, QPixmap
@@ -423,6 +423,49 @@ class IntroScreen(QWidget):
         gl.addStretch()
         main_lay.addWidget(self._gyro_section)
 
+        # ── Player name section (after gyro, before play mode) ────────────────
+        self._name_section = QWidget(); self._name_section.setVisible(False)
+        nl = QVBoxLayout(self._name_section); nl.setContentsMargins(80,60,80,60); nl.setSpacing(16)
+
+        self._back_gyro_name_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
+        self._back_gyro_name_btn.setFixedWidth(80)
+        self._back_gyro_name_btn.clicked.connect(self._back_to_gyro_from_name)
+        back_row_name = QHBoxLayout()
+        back_row_name.addWidget(self._back_gyro_name_btn); back_row_name.addStretch()
+        nl.addLayout(back_row_name)
+
+        nl.addStretch()
+        _title_block(nl)
+        nl.addSpacing(16)
+        nl.addWidget(_lbl("What's your player name?", 15, "#CCC"))
+        nl.addSpacing(4)
+        nl.addWidget(_lbl(
+            "This name will be used in CoD4x, IW4x, and Plutonium (LCD offline mode). "
+            "Your Steam display name is filled in by default — change it to whatever you want.",
+            13, C_DIM, align=Qt.AlignLeft))
+        nl.addSpacing(12)
+
+        self._name_input = QLineEdit()
+        self._name_input.setPlaceholderText("Player")
+        self._name_input.setMaxLength(24)
+        self._name_input.setFixedHeight(48)
+        self._name_input.setFont(font(14))
+        self._name_input.setStyleSheet(
+            f"QLineEdit{{background:{C_CARD};color:#FFF;border:2px solid #33333F;"
+            f"border-radius:8px;padding:0 16px;}}"
+            f"QLineEdit:focus{{border-color:{C_IW};}}"
+        )
+        nl.addWidget(self._name_input)
+        nl.addSpacing(16)
+
+        name_continue = _btn("Continue >>", C_IW, h=52)
+        name_continue.setFixedWidth(260)
+        name_continue.clicked.connect(self._save_player_name)
+        nc_row = QHBoxLayout(); nc_row.addStretch(); nc_row.addWidget(name_continue); nc_row.addStretch()
+        nl.addLayout(nc_row)
+        nl.addStretch()
+        main_lay.addWidget(self._name_section)
+
         # ── Play mode section (third screen, replaces gyro section) ──────────
         self._play_section = QWidget(); self._play_section.setVisible(False)
         pl = QVBoxLayout(self._play_section); pl.setContentsMargins(80,60,80,60); pl.setSpacing(16)
@@ -553,7 +596,52 @@ class IntroScreen(QWidget):
 
     def _back_to_gyro(self):
         self._play_section.setVisible(False)
+        self._name_section.setVisible(True)
+
+    def _back_to_gyro_from_name(self):
+        self._name_section.setVisible(False)
         self._gyro_section.setVisible(True)
+
+    def _show_name_section(self):
+        """Show the player name input, pre-filled with Steam display name."""
+        # Pre-fill with Steam name if the field is empty and no name saved yet
+        if not self._name_input.text():
+            saved = cfg.get_player_name()
+            if saved:
+                self._name_input.setText(saved)
+            else:
+                steam_name = cfg.get_steam_display_name()
+                if steam_name:
+                    self._name_input.setText(steam_name)
+        self._gyro_section.setVisible(False)
+        self._name_section.setVisible(True)
+
+    def _save_player_name(self):
+        """Save the player name and proceed to the next step."""
+        name = self._name_input.text().strip()
+        if name:
+            cfg.set_player_name(name)
+        else:
+            cfg.set_player_name("Player")
+        # Continue to play mode (advanced) or next screen (standard)
+        self._name_section.setVisible(False)
+        source = cfg.get_game_source() or "steam"
+        if source == "steam":
+            self._next_screen()
+        else:
+            # Advanced flow: check if play mode already set
+            play_mode = cfg.get_play_mode()
+            if play_mode:
+                if play_mode == "handheld":
+                    self._next_screen()
+                elif cfg.get_docked_resolution() and cfg.get_external_controller():
+                    self._next_screen()
+                elif cfg.get_docked_resolution():
+                    self._controller_section.setVisible(True)
+                else:
+                    self._resolution_section.setVisible(True)
+            else:
+                self._play_section.setVisible(True)
 
     def _back_to_play_from_res(self):
         self._resolution_section.setVisible(False)
@@ -578,29 +666,7 @@ class IntroScreen(QWidget):
 
     def _pick_gyro(self, mode):
         cfg.set_gyro_mode(mode)
-        source = cfg.get_game_source() or "steam"
-        if source == "steam":
-            # Standard flow: no play mode questions, go straight to detection
-            self._next_screen()
-            return
-        # Advanced flow: check if play mode already set from a previous run.
-        play_mode = cfg.get_play_mode()
-        if play_mode:
-            if play_mode == "handheld":
-                self._next_screen()
-            elif cfg.get_docked_resolution() and cfg.get_external_controller():
-                self._next_screen()
-            elif cfg.get_docked_resolution():
-                # Resolution set but no controller type chosen yet
-                self._gyro_section.setVisible(False)
-                self._controller_section.setVisible(True)
-            else:
-                # Docked but no resolution chosen yet
-                self._gyro_section.setVisible(False)
-                self._resolution_section.setVisible(True)
-        else:
-            self._gyro_section.setVisible(False)
-            self._play_section.setVisible(True)
+        self._show_name_section()
 
     def _pick_play_mode(self, mode):
         cfg.set_play_mode(mode)
@@ -696,7 +762,7 @@ class WelcomeScreen(QWidget):
             if self._steam_only and cfg.get_game_source() == "own":
                 own_screen = self.stack.widget(10)
                 if own_screen.own_selected:
-                    self.status.setText("No Steam games found — continuing with your own games.")
+                    self.status.setText("No Steam games found — continuing with your non-Steam games.")
                     self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
                     self.cont.setVisible(True)
                     return
@@ -719,7 +785,7 @@ class WelcomeScreen(QWidget):
             base = g["name"].split(" - ")[0].split(" (")[0]
             if base not in seen_own:
                 seen_own.add(base)
-                lines.append(f'<span style="color:{C_TREY}">{base} (Other)</span>')
+                lines.append(f'<span style="color:{C_TREY}">{base} (Non-Steam)</span>')
         self.results.setText("\n".join(lines)); self.cont.setVisible(True)
 
     def _go_next(self):
@@ -2671,7 +2737,7 @@ class OwnInstallScreen(QWidget):
                 ]
                 if shortcut_appids:
                     set_compat_tool(shortcut_appids, ge_version)
-                    self._s.log.emit(f"✓  {ge_version} set for own game shortcuts")
+                    self._s.log.emit(f"✓  {ge_version} set for non-Steam game shortcuts")
             except Exception as ex:
                 self._s.log.emit(f"  GE-Proton compat mapping skipped: {ex}")
 
@@ -2765,12 +2831,12 @@ class OwnScanScreen(QWidget):
         back_row.addWidget(back); back_row.addStretch()
         lay.addLayout(back_row)
 
-        t = QLabel("YOUR GAMES")
+        t = QLabel("NON-STEAM GAMES")
         t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
         t.setStyleSheet("color:#FFF;background:transparent;")
         lay.addWidget(t)
 
-        self.status = _lbl("Scanning for your games...", 13, C_DIM)
+        self.status = _lbl("Scanning for non-Steam games...", 13, C_DIM)
         lay.addWidget(self.status)
 
         self.bar = QProgressBar()
@@ -2828,7 +2894,7 @@ class OwnScanScreen(QWidget):
         self._skip_btn.setVisible(False)
         self._cont_btn.setVisible(False)
         self.bar.setValue(0)
-        self.status.setText("Scanning for your games...")
+        self.status.setText("Scanning for non-Steam games...")
         # Clear previous game rows
         while self._list_layout.count() > 1:
             item = self._list_layout.takeAt(0)
@@ -2988,11 +3054,11 @@ class SourceScreen(QWidget):
         adv = QPushButton("ADVANCED"); adv.setFont(font(9, True)); adv.setFixedHeight(24); adv.setEnabled(False)
         adv.setStyleSheet(f"QPushButton{{background:{C_TREY};color:#FFF;border:none;border-radius:5px;padding:0 10px;}}QPushButton:disabled{{background:{C_TREY};color:#FFF;}}")
         oc.addWidget(adv, alignment=Qt.AlignLeft)
-        oc.addWidget(_lbl("Steam or Other", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
-        oc.addWidget(_lbl("You installed via the Microsoft Store, CD Install, GOG, or other storefronts. Steam games are also detected automatically.", 12, C_DIM, align=Qt.AlignLeft))
+        oc.addWidget(_lbl("Steam & Non-Steam", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
+        oc.addWidget(_lbl("You have games from the Microsoft Store, CD, GOG, or other storefronts. Steam games are also detected automatically.", 12, C_DIM, align=Qt.AlignLeft))
         oc.addWidget(_lbl("Make sure your non-Steam games are in /home/deck/games before continuing.", 11, "#555568", align=Qt.AlignLeft))
         oc.addStretch()
-        own_btn = _btn("Select Steam or Other >>", C_TREY, h=44)
+        own_btn = _btn("Select Steam & Non-Steam >>", C_TREY, h=44)
         own_btn.clicked.connect(lambda: self._pick("own"))
         oc.addWidget(own_btn)
         cards.addWidget(own_card)
