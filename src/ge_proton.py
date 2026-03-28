@@ -388,12 +388,14 @@ def _clone_prefix(source_pfx_dir: str, dest_prefix_path: str,
     """
     Clone an initialized prefix to a new appid's compatdata directory.
 
-    Copies the pfx/ directory tree from a fully initialized source prefix
-    and writes the version file. This produces an identical prefix in ~2s
-    instead of running `proton run cmd /c exit` (~60-180s).
+    Copies the pfx/ directory tree from a fully initialized source prefix,
+    writes the version file, and copies tracked_files. This produces an
+    identical prefix in ~2s instead of running `proton run cmd /c exit`
+    (~60-180s).
 
-    The cloned prefix gets DLLs topped up from default_pfx afterward by
-    the caller to ensure nothing is missing.
+    The donor prefix already contains all DLLs from default_pfx, so
+    clones do NOT need a DLL top-up — skipping it saves ~45s per prefix
+    on SD card.
 
     source_pfx_dir   -- the pfx/ directory inside the donor prefix
     dest_prefix_path -- the compatdata root for the target appid
@@ -415,6 +417,13 @@ def _clone_prefix(source_pfx_dir: str, dest_prefix_path: str,
             version_file = os.path.join(dest_prefix_path, "version")
             with open(version_file, "w") as f:
                 f.write(ge_version + "\n")
+        # Copy tracked_files from the donor's parent directory.
+        # Proton requires this file to exist — without it, prefix setup
+        # crashes with FileNotFoundError on update_builtin_libs().
+        donor_root = os.path.dirname(source_pfx_dir)
+        donor_tracked = os.path.join(donor_root, "tracked_files")
+        if os.path.isfile(donor_tracked):
+            shutil.copy2(donor_tracked, os.path.join(dest_prefix_path, "tracked_files"))
         prog(f"  ✓ Prefix cloned from donor")
         return True
     except Exception as ex:
@@ -528,15 +537,10 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
     prog(f"  {donor_label}: initializing donor prefix...")
     os.makedirs(donor_path, exist_ok=True)
 
-    # Copy DLLs before Proton finalize so tracked_files records them
-    sys32_target = os.path.join(donor_path, "pfx", "drive_c", "windows", "system32")
-    wow64_target = os.path.join(donor_path, "pfx", "drive_c", "windows", "syswow64")
-    try:
-        n32 = _copy_dlls(sys32_src, sys32_target)
-        n64 = _copy_dlls(wow64_src, wow64_target)
-        prog(f"  ✓ Copied {n32 + n64} DLLs into prefix (system32: {n32}, syswow64: {n64})")
-    except Exception as ex:
-        prog(f"  ⚠ {donor_label}: DLL copy failed: {ex}")
+    # Proton creates the full prefix from its own default_pfx during
+    # `proton run cmd /c exit` — no need to pre-copy DLLs. The donor
+    # ends up with the complete dependency set and tracked_files that
+    # record everything Proton installed.
 
     # Run Proton once with a generous 600s timeout
     try:
@@ -563,6 +567,9 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
         return success
 
     # ── Clone the donor to all remaining new prefixes ─────────────────────
+    # Clones already contain all DLLs from the donor (which Proton built
+    # from default_pfx). No DLL top-up needed — saves ~45s per prefix
+    # on SD card.
     for label, compat_path in new[1:]:
         prog(f"  {label}: cloning prefix...")
         ok = _clone_prefix(donor_pfx_dir, compat_path, ge_version,
@@ -572,16 +579,6 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
             prog(f"  {label}: clone failed, falling back to Proton init...")
             ok = ensure_prefix_deps(ge_version, compat_path, on_progress=on_progress,
                                     proton_path=proton_path, steam_root=steam_root)
-        else:
-            # Top up DLLs from default_pfx into the clone to ensure nothing's missing
-            sys32_target = os.path.join(compat_path, "pfx", "drive_c", "windows", "system32")
-            wow64_target = os.path.join(compat_path, "pfx", "drive_c", "windows", "syswow64")
-            try:
-                n32 = _copy_dlls(sys32_src, sys32_target)
-                n64 = _copy_dlls(wow64_src, wow64_target)
-                prog(f"  ✓ Copied {n32 + n64} DLLs into prefix (system32: {n32}, syswow64: {n64})")
-            except Exception as ex:
-                prog(f"  ⚠ {label}: DLL top-up failed: {ex}")
         if ok:
             success += 1
 
