@@ -1087,13 +1087,23 @@ class InstallScreen(QWidget):
             from ge_proton import ensure_all_prefix_deps
             from detect_games import GAMES as _GAMES_MAP
             self._s.log.emit("Installing prefix dependencies...")
+            self._s.pulse_start.emit("Installing prefix dependencies")
+            # Skip appid 7940 if cod4x is selected — install_cod4x handles
+            # its own prefix init via the setup.exe Proton run.
+            _skip_appids = set()
+            if has_cod4:
+                _skip_appids.add("7940")
             dep_targets = []
             for key, gd, game in self.selected:
                 # Use per-key appid from GAMES, not card-level gd["appid"].
                 # Card-level appid is wrong for keys that have their own appid
                 # (e.g. t6zm=212910, t6sp=202970 vs card appid 202990).
                 appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
-                compat = find_compatdata(self.steam_root, appid)
+                if str(appid) in _skip_appids:
+                    continue
+                _install_dir = game["install_dir"] if game else None
+                compat = find_compatdata(self.steam_root, appid,
+                                         game_install_dir=_install_dir)
                 if not compat and game and game.get("install_dir"):
                     # Prefix doesn't exist yet — build the path from the game's
                     # steamapps dir so ensure_prefix_deps can create it
@@ -1109,6 +1119,7 @@ class InstallScreen(QWidget):
                     steam_root=self.steam_root,
                 )
                 self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
+            self._s.pulse_stop.emit()
 
         # ── Plutonium bootstrapper (Steam still running) ──────────────────────
         if has_plut:
@@ -1225,7 +1236,8 @@ class InstallScreen(QWidget):
                 try:
                     from plutonium import GAME_META as _PLUT_META
                     _plut_appid = _PLUT_META[key][0] if key in _PLUT_META else gd["appid"]
-                    compat = find_compatdata(self.steam_root, _plut_appid)
+                    compat = find_compatdata(self.steam_root, _plut_appid,
+                                              game_install_dir=game["install_dir"] if game else None)
                     install_plutonium(game, key, self.steam_root, proton, compat, op_plut,
                                       protontricks_ready=xact_ready)
                     cfg.mark_game_setup(key, "plutonium", source="steam")
@@ -1242,7 +1254,8 @@ class InstallScreen(QWidget):
                 self._s.progress.emit(62, f"Setting up {base_name}...")
                 def op_iw4x(pct, msg): self._s.progress.emit(62 + int(pct / 100 * 8), msg)
                 try:
-                    compat = find_compatdata(self.steam_root, gd["appid"])
+                    compat = find_compatdata(self.steam_root, gd["appid"],
+                                              game_install_dir=game["install_dir"] if game else None)
                     install_iw4x(game, self.steam_root, proton, compat, op_iw4x)
                     cfg.mark_game_setup(key, "iw4x", source="steam")
                     self._s.log.emit(f"✓  {base_name} done")
@@ -1258,7 +1271,9 @@ class InstallScreen(QWidget):
                 self._s.progress.emit(75, f"Setting up {base_name}...")
                 def op_cod4(pct, msg): self._s.progress.emit(75 + int(pct / 100 * 10), msg)
                 try:
-                    compat = find_compatdata(self.steam_root, gd["appid"])
+                    _install_dir = game["install_dir"] if game else None
+                    compat = find_compatdata(self.steam_root, gd["appid"],
+                                             game_install_dir=_install_dir)
                     c = KEY_CLIENT.get(key, gd["client"])
                     if c == "cod4x":
                         install_cod4x(game, self.steam_root, proton, compat, op_cod4,
@@ -1269,11 +1284,6 @@ class InstallScreen(QWidget):
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
-                        self._s.log.emit(
-                            "⚠  CoD4 setup note:\n"
-                            "   • CoD4 Multiplayer requires TWO launches to finish setup.\n"
-                            "     Launch it once through Steam, let it close, then launch again."
-                        )
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
@@ -2163,7 +2173,8 @@ class UpdateScreen(QWidget):
             try:
                 from plutonium import GAME_META as _PLUT_META
                 _appid = _PLUT_META[key][0] if (c == "plutonium" and key in _PLUT_META) else gd["appid"]
-                compat = find_compatdata(self.steam_root, _appid)
+                compat = find_compatdata(self.steam_root, _appid,
+                                         game_install_dir=game.get("install_dir"))
                 if c == "cod4x":
                     install_cod4x(game, self.steam_root, proton, compat, op,
                                   appid=gd["appid"])
@@ -2300,6 +2311,7 @@ class OwnInstallScreen(QWidget):
         selected_keys = [key for key, _, _ in self.selected]
         logged_bases  = set()
         has_plut      = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
+        has_cod4      = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k in selected_keys)
 
         # ── GE-Proton download (Steam still running) ─────────────────────
         ge_version = None
@@ -2428,8 +2440,14 @@ class OwnInstallScreen(QWidget):
         # initialized this way, removing the "launch each game once" requirement.
         self._s.progress.emit(30, "Creating Proton prefixes...")
         self._s.log.emit("Creating Proton prefixes and installing dependencies...")
+        self._s.pulse_start.emit("Installing prefix dependencies")
         from ge_proton import ensure_all_prefix_deps
         from detect_games import GAMES as _GAMES_MAP
+        # Skip appid 7940 if cod4x is selected — install_cod4x handles
+        # its own prefix init via the setup.exe Proton run.
+        _skip_appids = set()
+        if has_cod4:
+            _skip_appids.add("7940")
         dep_targets = []
         for key, gd, game in self.selected:
             if not game:
@@ -2442,7 +2460,10 @@ class OwnInstallScreen(QWidget):
                 # Card-level appid is wrong for keys like t6zm (212910 vs 202990).
                 from wrapper import find_compatdata
                 appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
-                compat = find_compatdata(self.steam_root, appid)
+                if str(appid) in _skip_appids:
+                    continue
+                compat = find_compatdata(self.steam_root, appid,
+                                         game_install_dir=game.get("install_dir"))
                 if not compat and game.get("install_dir"):
                     steamapps = os.path.dirname(os.path.dirname(game["install_dir"]))
                     compat = os.path.join(steamapps, "compatdata", str(appid))
@@ -2456,6 +2477,7 @@ class OwnInstallScreen(QWidget):
                 steam_root=self.steam_root,
             )
             self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
+        self._s.pulse_stop.emit()
 
         # ── Plutonium games ───────────────────────────────────────────────
         if has_plut:
@@ -2505,7 +2527,8 @@ class OwnInstallScreen(QWidget):
                         compat = game.get("compatdata_path", "")
                     else:
                         _plut_appid = _PLUT_META[key][0] if key in _PLUT_META else gd["appid"]
-                        compat = find_compatdata(self.steam_root, _plut_appid)
+                        compat = find_compatdata(self.steam_root, _plut_appid,
+                                                  game_install_dir=game.get("install_dir"))
                     install_plutonium(game, key, self.steam_root, proton, compat,
                                      on_progress=op_plut,
                                      installed_games=installed_for_plut,
@@ -2530,7 +2553,8 @@ class OwnInstallScreen(QWidget):
                     if source == "own":
                         compat = game.get("compatdata_path", "")
                     else:
-                        compat = find_compatdata(self.steam_root, gd["appid"])
+                        compat = find_compatdata(self.steam_root, gd["appid"],
+                                                  game_install_dir=game.get("install_dir"))
                     install_iw4x(game, self.steam_root, proton, compat, op_iw4x, source=source)
                     cfg.mark_game_setup(key, "iw4x", source=source)
                     self._s.log.emit(f"✓  {base_name} done")
@@ -2539,7 +2563,6 @@ class OwnInstallScreen(QWidget):
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
         # ── Install CoD4 (iw3sp + cod4x) ─────────────────────────────────
-        has_cod4 = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k in selected_keys)
         if has_cod4:
             cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4x", "iw3sp")]
             for key, gd, game in cod4_selected:
@@ -2553,7 +2576,8 @@ class OwnInstallScreen(QWidget):
                         compat = game.get("compatdata_path", "")
                         cod4x_appid = game.get("shortcut_appid", 7940)
                     else:
-                        compat = find_compatdata(self.steam_root, gd["appid"])
+                        compat = find_compatdata(self.steam_root, gd["appid"],
+                                                  game_install_dir=game.get("install_dir"))
                         cod4x_appid = gd["appid"]
                     if c == "cod4x":
                         install_cod4x(game, self.steam_root, proton, compat, op_cod4,
