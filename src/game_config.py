@@ -29,29 +29,31 @@ CONFIGS_DIR  = os.path.join(PROJECT_ROOT, "assets", "configs")
 #
 # Files are copied with their original filename preserved.
 
-def _compatdata(steam_root, appid):
+def _compatdata(steam_root, appid, game_install_dir=None):
     """
     Return the compatdata path for a given appid.
 
-    Searches all Steam library folders (internal + SD card) so configs are
-    written to the correct prefix regardless of where the game is installed.
-    Falls back to steam_root if the prefix isn't found elsewhere.
+    Uses wrapper.find_compatdata which searches all Steam library folders
+    (internal + SD card) and picks the prefix in the same library as the
+    game install directory. Falls back to steam_root if not found.
     """
-    from detect_games import _all_library_dirs
-
-    for steamapps_dir in _all_library_dirs(steam_root):
-        candidate = os.path.join(steamapps_dir, "compatdata", str(appid))
-        if os.path.isdir(candidate):
-            return candidate
+    try:
+        from wrapper import find_compatdata
+        result = find_compatdata(steam_root, str(appid),
+                                  game_install_dir=game_install_dir)
+        if result:
+            return result
+    except Exception:
+        pass
 
     # Fallback — prefix may not exist yet (os.makedirs will create it later)
     return os.path.join(steam_root, "steamapps", "compatdata", str(appid))
 
 
-def _pfx_local(steam_root, appid, *parts):
+def _pfx_local(steam_root, appid, *parts, game_install_dir=None):
     """Return a path inside pfx/drive_c/users/steamuser/AppData/Local/ for an appid."""
     return os.path.join(
-        _compatdata(steam_root, appid),
+        _compatdata(steam_root, appid, game_install_dir=game_install_dir),
         "pfx", "drive_c", "users", "steamuser", "AppData", "Local",
         *parts
     )
@@ -64,12 +66,21 @@ _LCD_KEYS  = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "iw5sp", "iw5mp", "t4sp", "t
 _OLED_KEYS = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "t4sp", "t4mp", "t5sp", "t5mp", "iw5sp", "iw5mp", "t6zm", "t6mp"}
 
 
-def _build_config_map(steam_root):
+def _build_config_map(steam_root, installed_games=None):
     """
     Returns a dict mapping game_key -> list of (asset_subpath, dest_dir) pairs.
     dest_dir will be created if it does not exist.
+
+    installed_games is used to resolve the correct compatdata for SD card
+    installs (pass game_install_dir so find_compatdata picks the right library).
     """
-    return {
+    # Helper to get install_dir for a game key
+    def _game_dir(key):
+        if installed_games and key in installed_games:
+            return installed_games[key].get("install_dir")
+        return None
+
+    config_map = {
         # ── MW1 SP (IW3SP-MOD) ────────────────────────────────────────────────
         # Config lands in players/profiles/Player/ inside the game install dir.
         # Resolved at call time via install_dir — see apply_game_configs().
@@ -79,12 +90,15 @@ def _build_config_map(steam_root):
 
         # ── MW1 MP (CoD4x) ────────────────────────────────────────────────────
         # Lives inside the CoD4 compatdata prefix.
+        # Written to BOTH the game prefix (7940) and the non-Steam shortcut
+        # prefix so configs work regardless of how the user launches.
         "cod4mp": [
             (
                 "MW1/config_mp.cfg",
                 _pfx_local(
                     steam_root, 7940,
-                    "CallofDuty4MW", "players", "profiles", "Player"
+                    "CallofDuty4MW", "players", "profiles", "Player",
+                    game_install_dir=_game_dir("cod4mp"),
                 ),
             ),
         ],
@@ -110,7 +124,8 @@ def _build_config_map(steam_root):
                 "WaW/config.cfg",
                 _pfx_local(
                     steam_root, 10090,
-                    "Plutonium", "storage", "t4", "players", "profiles", "$$$"
+                    "Plutonium", "storage", "t4", "players", "profiles", "$$$",
+                    game_install_dir=_game_dir("t4sp"),
                 ),
             ),
         ],
@@ -119,7 +134,8 @@ def _build_config_map(steam_root):
                 "WaW/config_mp.cfg",
                 _pfx_local(
                     steam_root, 10090,
-                    "Plutonium", "storage", "t4", "players", "profiles", "$$$"
+                    "Plutonium", "storage", "t4", "players", "profiles", "$$$",
+                    game_install_dir=_game_dir("t4mp"),
                 ),
             ),
         ],
@@ -130,7 +146,8 @@ def _build_config_map(steam_root):
                 "BO1/config.cfg",
                 _pfx_local(
                     steam_root, 42700,
-                    "Plutonium", "storage", "t5", "players"
+                    "Plutonium", "storage", "t5", "players",
+                    game_install_dir=_game_dir("t5sp"),
                 ),
             ),
         ],
@@ -141,7 +158,8 @@ def _build_config_map(steam_root):
                 "BO1/config_mp.cfg",
                 _pfx_local(
                     steam_root, 42710,
-                    "Plutonium", "storage", "t5", "players"
+                    "Plutonium", "storage", "t5", "players",
+                    game_install_dir=_game_dir("t5mp"),
                 ),
             ),
         ],
@@ -160,7 +178,8 @@ def _build_config_map(steam_root):
                 "MW3/config_mp.cfg",
                 _pfx_local(
                     steam_root, 42690,
-                    "Plutonium", "storage", "iw5", "players"
+                    "Plutonium", "storage", "iw5", "players",
+                    game_install_dir=_game_dir("iw5mp"),
                 ),
             ),
         ],
@@ -173,7 +192,8 @@ def _build_config_map(steam_root):
                 "BO2/plutonium_zm.cfg",
                 _pfx_local(
                     steam_root, 212910,
-                    "Plutonium", "storage", "t6", "players"
+                    "Plutonium", "storage", "t6", "players",
+                    game_install_dir=_game_dir("t6zm"),
                 ),
             ),
         ],
@@ -185,11 +205,34 @@ def _build_config_map(steam_root):
                 "BO2/plutonium_mp.cfg",
                 _pfx_local(
                     steam_root, 202990,
-                    "Plutonium", "storage", "t6", "players"
+                    "Plutonium", "storage", "t6", "players",
+                    game_install_dir=_game_dir("t6mp"),
                 ),
             ),
         ],
     }
+
+    # ── Add shortcut prefix target for cod4mp ─────────────────────────────
+    # The cod4mp non-Steam shortcut runs in its own prefix (calculated from
+    # exe path + name). Configs need to be in BOTH the game prefix (7940)
+    # and the shortcut prefix for the shortcut to work properly.
+    try:
+        from shortcut import get_shortcut_appid, COMPAT_ROOT
+        shortcut_appid = get_shortcut_appid(
+            "Call of Duty 4: Modern Warfare - Multiplayer"
+        )
+        if shortcut_appid:
+            shortcut_dest = os.path.join(
+                COMPAT_ROOT, str(shortcut_appid),
+                "pfx", "drive_c", "users", "steamuser",
+                "AppData", "Local",
+                "CallofDuty4MW", "players", "profiles", "Player",
+            )
+            config_map["cod4mp"].append(("MW1/config_mp.cfg", shortcut_dest))
+    except Exception:
+        pass  # Shortcut doesn't exist yet — will get config on next run
+
+    return config_map
 
 
 # ── Install-dir based dest resolvers ──────────────────────────────────────────
@@ -252,7 +295,7 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
 
     model_dir   = "OLED" if deck_model == "oled" else "LCD"
     allowed_keys = _OLED_KEYS if deck_model == "oled" else _LCD_KEYS
-    config_map  = _build_config_map(steam_root)
+    config_map  = _build_config_map(steam_root, installed_games)
 
     for key in expanded_keys:
         if key not in allowed_keys:
