@@ -1362,7 +1362,8 @@ class InstallScreen(QWidget):
                 installed_games=installed_for_shortcuts,
                 selected_keys=selected_keys,
                 gyro_mode=cfg.get_gyro_mode() or "hold",
-                on_progress=lambda msg: self._s.log.emit(msg)
+                on_progress=lambda msg: self._s.log.emit(msg),
+                steam_root=self.steam_root,
             )
         except Exception as ex:
             self._s.log.emit(f"  Shortcuts skipped: {ex}")
@@ -2008,7 +2009,8 @@ class ConfigureScreen(QWidget):
                     installed_games=installed,
                     selected_keys=shortcut_keys,
                     gyro_mode=gyro_mode,
-                    on_progress=lambda msg: s.log.emit(msg)
+                    on_progress=lambda msg: s.log.emit(msg),
+                    steam_root=steam_root,
                 )
                 set_steam_input_enabled(steam_root)
                 s.done.emit(True)
@@ -2423,6 +2425,7 @@ class OwnInstallScreen(QWidget):
             selected_keys=[k for k in self.own_selected],
             gyro_mode=gyro_mode,
             on_progress=lambda msg: self._s.log.emit(msg),
+            steam_root=self.steam_root,
         )
 
         # Update self.selected with enriched own game dicts (shortcut_appid etc)
@@ -2449,10 +2452,18 @@ class OwnInstallScreen(QWidget):
         if has_cod4:
             _skip_appids.add("7940")
         dep_targets = []
+        # Keys whose shortcuts reuse an existing Steam game prefix.
+        # These don't need their own prefix init -- the game prefix is
+        # either already initialized or handled by the game's installer
+        # (e.g. install_cod4x for cod4mp).
+        _SHARED_PREFIX_OWN_KEYS = {"cod4mp", "t4mp"}
         for key, gd, game in self.selected:
             if not game:
                 continue
             if key in self.own_selected:
+                if key in _SHARED_PREFIX_OWN_KEYS:
+                    # Shortcut reuses the game's Steam prefix -- skip
+                    continue
                 # Own games use the shortcut's compatdata path
                 compat = game.get("compatdata_path", "")
             else:
@@ -2678,7 +2689,8 @@ class OwnInstallScreen(QWidget):
                     installed_games=steam_installed,
                     selected_keys=steam_keys,
                     gyro_mode=gyro_mode,
-                    on_progress=lambda msg: self._s.log.emit(msg)
+                    on_progress=lambda msg: self._s.log.emit(msg),
+                    steam_root=self.steam_root,
                 )
             except Exception as ex:
                 self._s.log.emit(f"  Steam shortcuts skipped: {ex}")
