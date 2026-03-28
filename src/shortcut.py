@@ -750,11 +750,12 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                 else:
                     plut_bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
                     actual_exe        = plut_bootstrapper
+                    player = _cfg.get_player_name() or "Player"
                     launch_options = (
                         f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
                         f'%command% t4mp '
                         f'"Z:{install_dir.replace("/", chr(92))}" '
-                        f'+name "Player" -lan'
+                        f'+name "{player}" -lan'
                     )
             else:
                 actual_exe     = exe_path
@@ -954,7 +955,7 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
         to_create[key] = (OWN_SHORTCUTS[key], game)
 
     if not to_create:
-        prog("No own game shortcuts to create.")
+        prog("No non-Steam game shortcuts to create.")
         return own_games
 
     uids = _find_all_steam_uids()
