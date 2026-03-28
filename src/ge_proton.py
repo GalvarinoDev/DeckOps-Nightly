@@ -280,12 +280,13 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
 
     Logic:
       1. If no proton_path, fall back to copytree from default_pfx and return.
-      2. If no pfx/ dir, create prefix_path so Proton has a directory to work with.
-      3. Always copy DLLs from default_pfx into system32 + syswow64.
-      4. Always run `proton run cmd /c exit` after the copy to finalize the
-         prefix. This ensures Proton's management files (version, tracked_files,
-         etc.) reflect the current prefix state and prevents Steam from
-         triggering first-launch installers (VC Redist, DirectX, etc.).
+      2. If pfx/drive_c already exists (prefix previously initialized):
+         - Copy any missing DLLs from default_pfx (fast, no Proton run)
+         - Skip the slow `proton run cmd /c exit` step entirely
+      3. If pfx/drive_c does NOT exist (fresh prefix):
+         - Create prefix_path so Proton has a directory to work with
+         - Copy DLLs from default_pfx into system32 + syswow64
+         - Run `proton run cmd /c exit` to finalize the prefix
 
     ge_version  -- GE-Proton version string (e.g. "GE-Proton10-33")
     prefix_path -- compatdata root (e.g. ~/.../compatdata/10090)
@@ -312,6 +313,11 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
     wow64_target = os.path.join(pfx_dir, "drive_c", "windows", "syswow64")
     version_file = os.path.join(prefix_path, "version")
 
+    # Check if the prefix has already been initialized by Proton.
+    # If drive_c exists, the prefix structure is in place — we only need
+    # to copy any missing DLLs and can skip the slow Proton run.
+    prefix_exists = os.path.isdir(os.path.join(pfx_dir, "drive_c"))
+
     # ── Fallback: no proton_path ───────────────────────────────────────
     # Can't run Proton to finalize — copy entire default_pfx as a best effort.
     if not proton_path:
@@ -335,7 +341,7 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
     # ── Step 1: Ensure the prefix directory exists ─────────────────────
     # Proton needs the compatdata directory to exist before it can initialize.
     # Don't create pfx/ itself — Proton does that in the finalize step.
-    if not os.path.isdir(pfx_dir):
+    if not prefix_exists:
         os.makedirs(prefix_path, exist_ok=True)
 
     # ── Step 2: Always copy DLLs from default_pfx ─────────────────────
@@ -352,11 +358,15 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
         prog(f"  ⚠ DLL copy failed: {ex}")
         return False
 
-    # ── Step 3: Always finalize via Proton ────────────────────────────
-    # Run after DLL copy so Proton's management files reflect the final
-    # prefix state. This also creates pfx/ if it didn't exist yet, and
-    # prevents Steam from running first-launch installers (VC Redist,
-    # DirectX, etc.) when the user starts the game for the first time.
+    # ── Step 3: Finalize via Proton (only if prefix is new) ───────────
+    # Only run `proton run cmd /c exit` when the prefix hasn't been
+    # initialized yet. This is the slow step (~60s per prefix) that
+    # creates the Wine prefix structure, wineserver, registry, etc.
+    # For existing prefixes, the DLL copy above is sufficient.
+    if prefix_exists:
+        prog("  ✓ Prefix already initialized — skipped Proton run")
+        return True
+
     import subprocess
     try:
         env = os.environ.copy()
