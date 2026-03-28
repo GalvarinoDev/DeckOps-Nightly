@@ -335,7 +335,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
             ],
             env=env,
             capture_output=True,
-            timeout=300,
+            timeout=600,
             cwd=install_dir,
         )
         # The setup.exe may return non-zero even on success (Inno Setup quirk)
@@ -343,7 +343,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         log("  ✓ CoD4x installer completed")
     except subprocess.TimeoutExpired:
         shutil.rmtree(setup_dir, ignore_errors=True)
-        raise RuntimeError("CoD4x installer timed out after 5 minutes")
+        raise RuntimeError("CoD4x installer timed out after 10 minutes")
     except Exception as e:
         shutil.rmtree(setup_dir, ignore_errors=True)
         raise RuntimeError(f"CoD4x installer failed: {e}")
