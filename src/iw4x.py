@@ -94,6 +94,8 @@ def install_iw4x(game: dict, steam_root: str,
     if os.path.exists(iw4x_dir):
         shutil.rmtree(iw4x_dir)
 
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     def prog(pct, msg):
         if on_progress:
             on_progress(pct, msg)

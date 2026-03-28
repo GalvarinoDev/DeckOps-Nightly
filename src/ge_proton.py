@@ -377,8 +377,11 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
                            on_progress=None, proton_path: str | None = None,
                            steam_root: str | None = None) -> int:
     """
-    Run ensure_prefix_deps for a list of games. Convenience wrapper for
-    the install flow in ui_qt.py.
+    Run ensure_prefix_deps for a list of games concurrently.
+
+    Runs up to 3 prefixes in parallel to speed up the install flow.
+    Each prefix gets its own Proton wineserver (keyed by
+    STEAM_COMPAT_DATA_PATH) so concurrent init is safe.
 
     prefix_paths — list of (label, compatdata_path) tuples
                    label is for logging (e.g. game key or display name)
@@ -388,19 +391,39 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
 
     Returns the number of prefixes that now have deps installed.
     """
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    log_lock = threading.Lock()
+
     def prog(msg):
         if on_progress:
-            on_progress(msg)
+            with log_lock:
+                on_progress(msg)
 
-    success = 0
-    for label, compat_path in prefix_paths:
+    def _do_one(label, compat_path):
         if not compat_path:
             prog(f"  {label}: no compatdata path — skipped")
-            continue
+            return False
         prog(f"  {label}: checking dependencies...")
-        if ensure_prefix_deps(ge_version, compat_path, on_progress=on_progress,
-                              proton_path=proton_path, steam_root=steam_root):
-            success += 1
+        # Thread-safe progress: each worker wraps on_progress with the lock
+        def _thread_prog(msg):
+            prog(msg)
+        return ensure_prefix_deps(ge_version, compat_path, on_progress=_thread_prog,
+                                  proton_path=proton_path, steam_root=steam_root)
+
+    success = 0
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        futs = {
+            ex.submit(_do_one, label, compat_path): label
+            for label, compat_path in prefix_paths
+        }
+        for fut in as_completed(futs):
+            try:
+                if fut.result():
+                    success += 1
+            except Exception as e:
+                prog(f"  {futs[fut]}: ⚠ failed: {e}")
 
     return success
 

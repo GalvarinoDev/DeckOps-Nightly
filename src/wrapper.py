@@ -82,17 +82,44 @@ def get_proton_path(steam_root):
     return os.path.join(common, proton_dirs[0], "proton")
 
 
-def find_compatdata(steam_root, appid):
+def find_compatdata(steam_root, appid, game_install_dir=None):
     """
     Find the Wine prefix folder for a given Steam appid.
 
     Searches all Steam library folders (internal + SD card) so the correct
     prefix is found regardless of where the game is installed.
+
+    When game_install_dir is provided, the prefix from the same library
+    folder as the game install is preferred. This fixes the bug where
+    both internal and SD card have compatdata for the same appid —
+    without this hint, the internal drive's prefix is always returned
+    first because _all_library_dirs lists it first.
+
     Returns the path or None if not found.
     """
     from detect_games import _all_library_dirs
 
-    for steamapps_dir in _all_library_dirs(steam_root):
+    all_dirs = _all_library_dirs(steam_root)
+
+    # If we know where the game is installed, prefer the prefix from
+    # the same library folder. This ensures SD card games use the
+    # SD card prefix, not the internal drive's.
+    if game_install_dir:
+        game_norm = os.path.normpath(game_install_dir)
+        for steamapps_dir in all_dirs:
+            sa_norm = os.path.normpath(steamapps_dir)
+            # Check if the game's install_dir lives under this steamapps/
+            # e.g. /run/media/deck/SD1/steamapps/common/Call of Duty 4
+            #       starts with /run/media/deck/SD1/steamapps
+            if game_norm.startswith(sa_norm + os.sep) or game_norm.startswith(sa_norm + "/"):
+                candidate = os.path.join(steamapps_dir, "compatdata", str(appid))
+                if os.path.isdir(candidate):
+                    return candidate
+                # Game is here but no compatdata yet — break and fall
+                # through to the general scan (prefix may not exist yet)
+                break
+
+    for steamapps_dir in all_dirs:
         candidate = os.path.join(steamapps_dir, "compatdata", str(appid))
         if os.path.isdir(candidate):
             return candidate
