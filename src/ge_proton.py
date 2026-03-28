@@ -462,14 +462,27 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
     sys32_src = os.path.join(default_pfx, "drive_c", "windows", "system32")
     wow64_src = os.path.join(default_pfx, "drive_c", "windows", "syswow64")
 
-    # ── Categorize prefixes ───────────────────────────────────────────────
-    existing = []  # (label, path) — already have pfx/drive_c
-    new      = []  # (label, path) — need initialization
-
+    # ── Deduplicate by compatdata path ───────────────────────────────────
+    # Multiple keys can share the same appid/prefix (e.g. t4sp and t4mp
+    # both use 10090). Only process each path once to avoid clone errors.
+    seen_paths = {}
+    unique_paths = []
     for label, compat_path in prefix_paths:
         if not compat_path:
             prog(f"  {label}: no compatdata path — skipped")
             continue
+        norm = os.path.normpath(compat_path)
+        if norm in seen_paths:
+            prog(f"  {label}: shares prefix with {seen_paths[norm]} — skipped")
+            continue
+        seen_paths[norm] = label
+        unique_paths.append((label, compat_path))
+
+    # ── Categorize prefixes ───────────────────────────────────────────────
+    existing = []  # (label, path) — already have pfx/drive_c
+    new      = []  # (label, path) — need initialization
+
+    for label, compat_path in unique_paths:
         pfx_drive_c = os.path.join(compat_path, "pfx", "drive_c")
         if os.path.isdir(pfx_drive_c):
             existing.append((label, compat_path))
