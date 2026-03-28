@@ -13,6 +13,7 @@ The config file tracks:
 
 import os
 import json
+import re
 from datetime import datetime
 
 CONFIG_PATH = os.path.expanduser("~/DeckOps-Nightly/deckops.json")
@@ -31,6 +32,7 @@ DEFAULTS = {
     "game_source": None,         # "steam" or "own"
     "music_enabled": True,       # background music on/off
     "music_volume":  0.4,        # 0.0 to 1.0
+    "player_name": None,         # in-game player name for configs and LCD Plutonium
 }
 
 
@@ -179,6 +181,58 @@ def set_ge_proton_version(version: str):
     config = load()
     config["ge_proton_version"] = version
     save(config)
+
+
+def get_player_name() -> str | None:
+    """Returns the player's chosen in-game name, or None if not yet set."""
+    return load().get("player_name")
+
+
+def set_player_name(name: str):
+    """Save the player's chosen in-game name."""
+    config = load()
+    config["player_name"] = name.strip() if name else None
+    save(config)
+
+
+def get_steam_display_name(steam_root: str | None = None) -> str | None:
+    """
+    Read the active Steam user's display name from loginusers.vdf.
+
+    Looks for the account with MostRecent=1 and returns its PersonaName.
+    Falls back to the first account if MostRecent is not set.
+    Returns None if the file can't be read or parsed.
+
+    steam_root -- path to Steam root. Defaults to ~/.local/share/Steam
+    """
+    if not steam_root:
+        steam_root = os.path.expanduser("~/.local/share/Steam")
+    vdf_path = os.path.join(steam_root, "config", "loginusers.vdf")
+    if not os.path.exists(vdf_path):
+        return None
+    try:
+        with open(vdf_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    except (IOError, OSError):
+        return None
+
+    # Parse all accounts: find PersonaName and MostRecent per block
+    # VDF is simple enough here to use regex instead of a full parser
+    first_name = None
+    most_recent_name = None
+    # Split into per-account blocks by finding Steam ID headers
+    blocks = re.split(r'"\d{17}"\s*\{', content)
+    for block in blocks[1:]:  # skip the "users" { header
+        persona = re.search(r'"PersonaName"\s+"([^"]*)"', block)
+        recent = re.search(r'"MostRecent"\s+"1"', block)
+        if persona:
+            name = persona.group(1)
+            if first_name is None:
+                first_name = name
+            if recent:
+                most_recent_name = name
+
+    return most_recent_name or first_name
 
 
 def mark_game_setup(game_key: str, client: str, source: str = "steam"):

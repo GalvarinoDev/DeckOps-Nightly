@@ -5,6 +5,9 @@ Copies pre-built config files from assets/configs/LCD or assets/configs/OLED
 into the correct destination paths for each game. Overwrites whatever is
 currently there.
 
+After copying, replaces the default player name ("Player") with the user's
+chosen name from deckops.json in any config that has `seta name "Player"`.
+
 LCD users receive MW1, MW2, and MW3 SP configs.
 OLED users receive MW1, MW2, WaW, BO1, MW3, and BO2 configs.
 """
@@ -217,6 +220,40 @@ def _dest_from_install(game_key, install_dir):
     return None
 
 
+# ── Player name replacement ───────────────────────────────────────────────────
+
+def _replace_player_name(filepath, player_name):
+    """
+    Replace 'seta name "Player"' with the user's chosen name in a config file.
+
+    Only modifies the exact line `seta name "Player"` to avoid touching
+    other cvars that happen to contain "Player" in their name (e.g.
+    cg_hudMapPlayerHeight, compassPlayerWidth).
+
+    Does nothing if player_name is None, empty, or "Player" (no change needed).
+    """
+    if not player_name or player_name == "Player":
+        return
+
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+
+        old = 'seta name "Player"'
+        if old not in content:
+            return
+
+        # Escape quotes in player name for the config format
+        safe_name = player_name.replace('"', '')
+        new = f'seta name "{safe_name}"'
+        content = content.replace(old, new)
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(content)
+    except (IOError, OSError):
+        pass  # Non-fatal — config still works with "Player"
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def apply_game_configs(selected_keys, installed_games, steam_root,
@@ -224,6 +261,9 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
     """
     Copy pre-built config files into the correct destination for each
     selected game key, based on the user's deck model.
+
+    After copying, replaces `seta name "Player"` with the user's chosen
+    player name from deckops.json (if set).
 
     selected_keys   — list of game keys the user selected to install
     installed_games — dict from detect_games.find_installed_games()
@@ -240,6 +280,10 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
     applied  = 0
     skipped  = 0
     failed   = 0
+
+    # Read the player name once for the whole batch
+    import config as cfg
+    player_name = cfg.get_player_name()
 
     # ── Sibling key expansion ─────────────────────────────────────────────
     # MW2 SP (iw4sp) and MW3 SP (iw5sp) have config entries but aren't
@@ -309,6 +353,8 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
 
             try:
                 shutil.copy2(src, dest)
+                # Replace default player name with user's chosen name
+                _replace_player_name(dest, player_name)
                 prog(f"  + {key}: {os.path.basename(src)} -> {dest_dir}")
                 applied += 1
             except Exception as ex:
