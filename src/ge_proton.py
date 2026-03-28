@@ -383,57 +383,194 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
         return False
 
 
+def _clone_prefix(source_pfx_dir: str, dest_prefix_path: str,
+                  ge_version: str | None, on_progress=None) -> bool:
+    """
+    Clone an initialized prefix to a new appid's compatdata directory.
+
+    Copies the pfx/ directory tree from a fully initialized source prefix
+    and writes the version file. This produces an identical prefix in ~2s
+    instead of running `proton run cmd /c exit` (~60-180s).
+
+    The cloned prefix gets DLLs topped up from default_pfx afterward by
+    the caller to ensure nothing is missing.
+
+    source_pfx_dir   -- the pfx/ directory inside the donor prefix
+    dest_prefix_path -- the compatdata root for the target appid
+    ge_version       -- GE-Proton version string for the version file
+    on_progress      -- optional callback(msg: str)
+
+    Returns True on success, False on failure.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    dest_pfx_dir = os.path.join(dest_prefix_path, "pfx")
+    try:
+        os.makedirs(dest_prefix_path, exist_ok=True)
+        shutil.copytree(source_pfx_dir, dest_pfx_dir, symlinks=True)
+        # Write version file so Proton knows which version initialized this prefix
+        if ge_version:
+            version_file = os.path.join(dest_prefix_path, "version")
+            with open(version_file, "w") as f:
+                f.write(ge_version + "\n")
+        prog(f"  ✓ Prefix cloned from donor")
+        return True
+    except Exception as ex:
+        prog(f"  ⚠ Prefix clone failed: {ex}")
+        return False
+
+
 def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str, str]],
                            on_progress=None, proton_path: str | None = None,
                            steam_root: str | None = None) -> int:
     """
-    Run ensure_prefix_deps for a list of games concurrently.
+    Initialize and install dependencies for a list of game prefixes.
 
-    Runs up to 3 prefixes in parallel to speed up the install flow.
-    Each prefix gets its own Proton wineserver (keyed by
-    STEAM_COMPAT_DATA_PATH) so concurrent init is safe.
+    Uses a clone-based approach to avoid running `proton run cmd /c exit`
+    for every prefix individually (which risks 180s timeouts per prefix):
+
+      1. Separate prefixes into "existing" (pfx/drive_c present) and "new"
+      2. Existing prefixes: copy DLLs from default_pfx (fast, ~1s each)
+      3. New prefixes: run Proton ONCE on the first prefix (with 600s timeout),
+         then clone that prefix's pfx/ directory to all remaining new prefixes
+      4. Top up DLLs from default_pfx into each cloned prefix
+
+    This reduces 11 separate Proton runs (~20+ min with timeouts) to 1 Proton
+    run + 10 file copies (~2 min total).
 
     prefix_paths — list of (label, compatdata_path) tuples
                    label is for logging (e.g. game key or display name)
     on_progress  — optional callback(msg: str)
-    proton_path  — passed through to ensure_prefix_deps for Proton init
-    steam_root   — passed through for STEAM_COMPAT_CLIENT_INSTALL_PATH
+    proton_path  — path to the Proton binary for prefix initialization
+    steam_root   — path to Steam root for STEAM_COMPAT_CLIENT_INSTALL_PATH
 
     Returns the number of prefixes that now have deps installed.
     """
-    import threading
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    log_lock = threading.Lock()
+    import subprocess
 
     def prog(msg):
         if on_progress:
-            with log_lock:
-                on_progress(msg)
+            on_progress(msg)
 
-    def _do_one(label, compat_path):
+    default_pfx = _find_default_pfx(ge_version)
+    if not default_pfx:
+        prog("⚠ No GE-Proton default_pfx found — cannot install dependencies")
+        return 0
+
+    sys32_src = os.path.join(default_pfx, "drive_c", "windows", "system32")
+    wow64_src = os.path.join(default_pfx, "drive_c", "windows", "syswow64")
+
+    # ── Categorize prefixes ───────────────────────────────────────────────
+    existing = []  # (label, path) — already have pfx/drive_c
+    new      = []  # (label, path) — need initialization
+
+    for label, compat_path in prefix_paths:
         if not compat_path:
             prog(f"  {label}: no compatdata path — skipped")
-            return False
-        prog(f"  {label}: checking dependencies...")
-        # Thread-safe progress: each worker wraps on_progress with the lock
-        def _thread_prog(msg):
-            prog(msg)
-        return ensure_prefix_deps(ge_version, compat_path, on_progress=_thread_prog,
-                                  proton_path=proton_path, steam_root=steam_root)
+            continue
+        pfx_drive_c = os.path.join(compat_path, "pfx", "drive_c")
+        if os.path.isdir(pfx_drive_c):
+            existing.append((label, compat_path))
+        else:
+            new.append((label, compat_path))
 
     success = 0
-    with ThreadPoolExecutor(max_workers=3) as ex:
-        futs = {
-            ex.submit(_do_one, label, compat_path): label
-            for label, compat_path in prefix_paths
-        }
-        for fut in as_completed(futs):
+
+    # ── Handle existing prefixes: DLL copy only (fast) ────────────────────
+    for label, compat_path in existing:
+        prog(f"  {label}: checking dependencies...")
+        sys32_target = os.path.join(compat_path, "pfx", "drive_c", "windows", "system32")
+        wow64_target = os.path.join(compat_path, "pfx", "drive_c", "windows", "syswow64")
+        try:
+            n32 = _copy_dlls(sys32_src, sys32_target)
+            n64 = _copy_dlls(wow64_src, wow64_target)
+            prog(f"  ✓ Copied {n32 + n64} DLLs into prefix (system32: {n32}, syswow64: {n64})")
+            prog("  ✓ Prefix already initialized — skipped Proton run")
+            success += 1
+        except Exception as ex:
+            prog(f"  ⚠ {label}: DLL copy failed: {ex}")
+
+    # ── Handle new prefixes: init one, clone the rest ─────────────────────
+    if not new:
+        return success
+
+    donor_pfx_dir = None  # Will hold the pfx/ path of the first successfully initialized prefix
+
+    # If no proton_path, fall back to copytree from default_pfx for all new prefixes
+    if not proton_path:
+        for label, compat_path in new:
+            prog(f"  {label}: checking dependencies...")
+            ok = ensure_prefix_deps(ge_version, compat_path, on_progress=on_progress,
+                                    proton_path=None, steam_root=steam_root)
+            if ok:
+                success += 1
+        return success
+
+    _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
+
+    # ── Initialize the first new prefix via Proton ────────────────────────
+    donor_label, donor_path = new[0]
+    prog(f"  {donor_label}: initializing donor prefix...")
+    os.makedirs(donor_path, exist_ok=True)
+
+    # Copy DLLs before Proton finalize so tracked_files records them
+    sys32_target = os.path.join(donor_path, "pfx", "drive_c", "windows", "system32")
+    wow64_target = os.path.join(donor_path, "pfx", "drive_c", "windows", "syswow64")
+    try:
+        n32 = _copy_dlls(sys32_src, sys32_target)
+        n64 = _copy_dlls(wow64_src, wow64_target)
+        prog(f"  ✓ Copied {n32 + n64} DLLs into prefix (system32: {n32}, syswow64: {n64})")
+    except Exception as ex:
+        prog(f"  ⚠ {donor_label}: DLL copy failed: {ex}")
+
+    # Run Proton once with a generous 600s timeout
+    try:
+        env = os.environ.copy()
+        env["STEAM_COMPAT_DATA_PATH"]           = donor_path
+        env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
+        subprocess.run(
+            [proton_path, "run", "cmd", "/c", "exit"],
+            env=env, capture_output=True, timeout=600,
+        )
+        prog(f"  ✓ Prefix finalized by Proton")
+        donor_pfx_dir = os.path.join(donor_path, "pfx")
+        success += 1
+    except Exception as ex:
+        prog(f"  ⚠ Donor prefix finalize failed: {ex}")
+        # If even the donor fails, try each remaining prefix individually
+        # with the single-prefix function as a last resort
+        for label, compat_path in new[1:]:
+            prog(f"  {label}: checking dependencies (individual fallback)...")
+            ok = ensure_prefix_deps(ge_version, compat_path, on_progress=on_progress,
+                                    proton_path=proton_path, steam_root=steam_root)
+            if ok:
+                success += 1
+        return success
+
+    # ── Clone the donor to all remaining new prefixes ─────────────────────
+    for label, compat_path in new[1:]:
+        prog(f"  {label}: cloning prefix...")
+        ok = _clone_prefix(donor_pfx_dir, compat_path, ge_version,
+                           on_progress=on_progress)
+        if not ok:
+            # Clone failed — fall back to individual Proton init
+            prog(f"  {label}: clone failed, falling back to Proton init...")
+            ok = ensure_prefix_deps(ge_version, compat_path, on_progress=on_progress,
+                                    proton_path=proton_path, steam_root=steam_root)
+        else:
+            # Top up DLLs from default_pfx into the clone to ensure nothing's missing
+            sys32_target = os.path.join(compat_path, "pfx", "drive_c", "windows", "system32")
+            wow64_target = os.path.join(compat_path, "pfx", "drive_c", "windows", "syswow64")
             try:
-                if fut.result():
-                    success += 1
-            except Exception as e:
-                prog(f"  {futs[fut]}: ⚠ failed: {e}")
+                n32 = _copy_dlls(sys32_src, sys32_target)
+                n64 = _copy_dlls(wow64_src, wow64_target)
+                prog(f"  ✓ Copied {n32 + n64} DLLs into prefix (system32: {n32}, syswow64: {n64})")
+            except Exception as ex:
+                prog(f"  ⚠ {label}: DLL top-up failed: {ex}")
+        if ok:
+            success += 1
 
     return success
 
