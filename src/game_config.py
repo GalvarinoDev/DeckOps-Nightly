@@ -28,6 +28,14 @@ CONFIGS_DIR  = os.path.join(PROJECT_ROOT, "assets", "configs")
 # dest_resolver  — callable(install_dir, steam_root) -> absolute destination directory
 #
 # Files are copied with their original filename preserved.
+#
+# Dest convention:
+#   None  → resolved at runtime from install_dir via _dest_from_install()
+#   str   → fixed path (used for Plutonium games whose configs live in prefix AppData)
+#
+# Only Plutonium games store configs inside the Wine prefix AppData.
+# All other games (CoD4x, IW4x, vanilla Steam) store configs in the
+# game install directory.
 
 def _compatdata(steam_root, appid, game_install_dir=None):
     """
@@ -80,45 +88,30 @@ def _build_config_map(steam_root, installed_games=None):
             return installed_games[key].get("install_dir")
         return None
 
-    config_map = {
+    return {
         # ── MW1 SP (IW3SP-MOD) ────────────────────────────────────────────────
-        # Config lands in players/profiles/Player/ inside the game install dir.
-        # Resolved at call time via install_dir — see apply_game_configs().
         "cod4sp": [
-            ("MW1/iw3sp_mod_config.cfg", None),  # dest resolved from install_dir
+            ("MW1/iw3sp_mod_config.cfg", None),
         ],
 
         # ── MW1 MP (CoD4x) ────────────────────────────────────────────────────
-        # Lives inside the CoD4 compatdata prefix.
-        # Written to BOTH the game prefix (7940) and the non-Steam shortcut
-        # prefix so configs work regardless of how the user launches.
+        # Config lives in install_dir/players/profiles/Player/ (same as SP).
+        # NOT in prefix AppData — only Plutonium uses prefix paths.
         "cod4mp": [
-            (
-                "MW1/config_mp.cfg",
-                _pfx_local(
-                    steam_root, 7940,
-                    "CallofDuty4MW", "players", "profiles", "Player",
-                    game_install_dir=_game_dir("cod4mp"),
-                ),
-            ),
+            ("MW1/config_mp.cfg", None),
         ],
 
         # ── MW2 SP ────────────────────────────────────────────────────────────
-        # Lives in players/ inside the game install dir.
-        # Resolved at call time via install_dir — see apply_game_configs().
         "iw4sp": [
             ("MW2/config.cfg", None),
         ],
 
         # ── MW2 MP (iw4x) ─────────────────────────────────────────────────────
-        # Lives in players/ inside the game install dir.
-        # Resolved at call time via install_dir — see apply_game_configs().
         "iw4mp": [
             ("MW2/iw4x_config.cfg", None),
         ],
 
         # ── WaW SP + MP (Plutonium t4) ────────────────────────────────────────
-        # Both configs live in the same Plutonium storage path.
         "t4sp": [
             (
                 "WaW/config.cfg",
@@ -165,14 +158,11 @@ def _build_config_map(steam_root, installed_games=None):
         ],
 
         # ── MW3 SP (via Steam, appid 42690) ───────────────────────────────────
-        # Config lands in players2/ inside the game install dir.
-        # Resolved at call time via install_dir — see apply_game_configs().
         "iw5sp": [
             ("MW3/config.cfg", None),
         ],
 
         # ── MW3 MP (Plutonium iw5, appid 42690) ───────────────────────────────
-        # Lives inside the Plutonium storage path for iw5.
         "iw5mp": [
             (
                 "MW3/config_mp.cfg",
@@ -185,8 +175,6 @@ def _build_config_map(steam_root, installed_games=None):
         ],
 
         # ── BO2 ZM (Plutonium t6, appid 212910) ───────────────────────────────
-        # BO2 uses separate appids for ZM and MP — each has its own compatdata
-        # prefix. ZM lives under appid 212910.
         "t6zm": [
             (
                 "BO2/plutonium_zm.cfg",
@@ -199,7 +187,6 @@ def _build_config_map(steam_root, installed_games=None):
         ],
 
         # ── BO2 MP (Plutonium t6, appid 202990) ───────────────────────────────
-        # MP lives under its own separate appid 202990.
         "t6mp": [
             (
                 "BO2/plutonium_mp.cfg",
@@ -212,28 +199,6 @@ def _build_config_map(steam_root, installed_games=None):
         ],
     }
 
-    # ── Add shortcut prefix target for cod4mp ─────────────────────────────
-    # The cod4mp non-Steam shortcut runs in its own prefix (calculated from
-    # exe path + name). Configs need to be in BOTH the game prefix (7940)
-    # and the shortcut prefix for the shortcut to work properly.
-    try:
-        from shortcut import get_shortcut_appid, COMPAT_ROOT
-        shortcut_appid = get_shortcut_appid(
-            "Call of Duty 4: Modern Warfare - Multiplayer"
-        )
-        if shortcut_appid:
-            shortcut_dest = os.path.join(
-                COMPAT_ROOT, str(shortcut_appid),
-                "pfx", "drive_c", "users", "steamuser",
-                "AppData", "Local",
-                "CallofDuty4MW", "players", "profiles", "Player",
-            )
-            config_map["cod4mp"].append(("MW1/config_mp.cfg", shortcut_dest))
-    except Exception:
-        pass  # Shortcut doesn't exist yet — will get config on next run
-
-    return config_map
-
 
 # ── Install-dir based dest resolvers ──────────────────────────────────────────
 
@@ -243,7 +208,7 @@ def _dest_from_install(game_key, install_dir):
     return the correct absolute destination directory.
     Returns None for keys that use a fixed compatdata path instead.
     """
-    if game_key == "cod4sp":
+    if game_key in ("cod4sp", "cod4mp"):
         return os.path.join(install_dir, "players", "profiles", "Player")
     if game_key in ("iw4sp", "iw4mp"):
         return os.path.join(install_dir, "players")

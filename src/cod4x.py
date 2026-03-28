@@ -17,13 +17,13 @@ The CoD4x chain-loader mechanism:
   4. cod4x_021.dll patches the game in memory to become CoD4x 21.3.
 
 Install flow:
-  1. Copy DLLs from GE-Proton's default_pfx into the 7940 prefix
+  1. Copy DLLs from GE-Proton's default_pfx into the prefix
      (same thing ensure_prefix_deps does — system32 + syswow64)
   2. Write registry keys into user.reg so Steam skips DirectX/Punkbuster
      first-launch prompts and never re-validates game files
   3. Download the official CoD4x setup.exe
-  4. Detect Wine drive letter mapping for the game's install path
-  5. Run setup.exe through Proton with /VERYSILENT /SUPPRESSMSGBOXES /DIR=
+  4. Run setup.exe through Proton with /VERYSILENT /SUPPRESSMSGBOXES
+  5. Write registry keys again (in case Proton created a fresh user.reg)
   6. Clean up and write metadata
 
 Because install_cod4x runs Proton itself (via the setup.exe), callers
@@ -232,9 +232,6 @@ def _write_registry_keys(compatdata_path: str, on_progress=None):
             content = content[:match.start()] + header + new_body + content[match.end():]
     else:
         # Key block doesn't exist — append it at the end
-        import time as _time
-        # Wine uses a hex timestamp based on Windows FILETIME (100-ns intervals since 1601)
-        # We use a dummy timestamp that's close enough — Wine doesn't validate it strictly
         block = (
             f"\n{key_path}\n"
             f"{values_text}\n"
@@ -248,63 +245,6 @@ def _write_registry_keys(compatdata_path: str, on_progress=None):
     return True
 
 
-def _find_wine_game_path(compatdata_path: str, install_dir: str) -> str:
-    """
-    Build the Windows-style path for /DIR= by reading Wine's dosdevices.
-
-    Wine maps Linux paths to drive letters via symlinks in the prefix's
-    dosdevices/ directory. We find which drive letter symlink is a parent
-    of install_dir and build the Windows path from there.
-
-    Example:
-      dosdevices/d: -> /run/media/deck/SD1
-      install_dir = /run/media/deck/SD1/steamapps/common/Call of Duty 4
-      result = D:\\steamapps\\common\\Call of Duty 4
-
-    Falls back to Z: (which maps to /) if no better match is found.
-    """
-    dosdevices = os.path.join(compatdata_path, "pfx", "dosdevices")
-
-    if not os.path.isdir(dosdevices):
-        # No dosdevices yet — prefix hasn't been initialized.
-        # Fall back to Z: which always maps to /
-        return "Z:" + install_dir.replace("/", "\\")
-
-    # Collect drive letter → Linux path mappings
-    # Skip device symlinks (those ending with ::, like d:: -> /dev/mmcblk0p1)
-    drives = {}
-    for entry in os.listdir(dosdevices):
-        if entry.endswith("::") or entry == "c:":
-            # Skip device entries and c: (always drive_c, not useful for game paths)
-            continue
-        link = os.path.join(dosdevices, entry)
-        if os.path.islink(link):
-            target = os.path.realpath(link)
-            drives[entry] = target
-
-    # Find the most specific drive letter that's a parent of install_dir
-    install_dir_norm = os.path.normpath(install_dir)
-    best_letter = None
-    best_target = ""
-
-    for letter, target in drives.items():
-        target_norm = os.path.normpath(target)
-        if install_dir_norm.startswith(target_norm + "/") or install_dir_norm == target_norm:
-            # This drive is a parent of install_dir — pick the most specific one
-            if len(target_norm) > len(best_target):
-                best_letter = letter
-                best_target = target_norm
-
-    if best_letter:
-        # Build Windows path: strip the Linux prefix, convert slashes
-        relative = install_dir_norm[len(best_target):]
-        win_path = best_letter.upper().rstrip(":") + ":" + relative.replace("/", "\\")
-        return win_path
-
-    # Fallback: Z: maps to / in Wine
-    return "Z:" + install_dir.replace("/", "\\")
-
-
 # ── public API ───────────────────────────────────────────────────────────────
 
 def install_cod4x(game: dict, steam_root: str, proton_path: str,
@@ -316,9 +256,9 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     skip ensure_prefix_deps for appid 7940 when cod4x is being installed.
 
     Flow:
-      1. Copy DLLs from GE-Proton default_pfx into the 7940 prefix
+      1. Copy DLLs from GE-Proton default_pfx into the prefix
       2. Write registry keys so Steam skips first-launch installers
-      3. Download and run CoD4x_Setup.exe with /VERYSILENT /DIR=
+      3. Download and run CoD4x_Setup.exe with /VERYSILENT
       4. The setup.exe initializes the prefix AND installs all CoD4x files
       5. Write registry keys again (in case Proton created a fresh user.reg)
       6. Clean up and write metadata
@@ -327,7 +267,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
       game            — dict from detect_games with install_dir, exe_path, etc.
       steam_root      — path to the Steam root directory
       proton_path     — path to the Proton executable
-      compatdata_path — path to the game's compatdata prefix
+      compatdata_path — path to the game's compatdata prefix (can be None/empty)
       on_progress     — optional callback(percent: int, status: str)
       appid           — Steam appid (default 7940)
     """
@@ -340,6 +280,17 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     def log(msg):
         if on_progress:
             on_progress(0, msg)
+
+    # ── Guard: construct compatdata_path if missing ───────────────────────
+    # find_compatdata returns None when no prefix exists yet (e.g. fresh
+    # install after deleting all prefixes). Construct the path in the same
+    # library folder as the game and create the directory so subsequent
+    # steps (DLL copy, registry writes, Proton run) have a valid target.
+    if not compatdata_path:
+        steamapps = os.path.dirname(os.path.dirname(install_dir))
+        compatdata_path = os.path.join(steamapps, "compatdata", str(appid))
+        log(f"  Prefix not found — creating {compatdata_path}")
+    os.makedirs(compatdata_path, exist_ok=True)
 
     # ── Step 1: Copy prefix DLLs ──────────────────────────────────────────
     prog(2, "Copying prefix dependencies...")
@@ -365,12 +316,10 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         shutil.rmtree(setup_dir, ignore_errors=True)
         raise RuntimeError(f"Failed to download CoD4x installer: {e}")
 
-    # ── Step 4: Detect Wine drive letter for /DIR= ───────────────────────
-    prog(52, "Detecting game path...")
-    win_path = _find_wine_game_path(compatdata_path, install_dir)
-    log(f"  Game path for installer: {win_path}")
-
-    # ── Step 5: Run setup.exe through Proton ─────────────────────────────
+    # ── Step 4: Run setup.exe through Proton ─────────────────────────────
+    # No /DIR= needed — setup.exe detects the game location from the
+    # working directory (cwd=install_dir). This matches the stable build
+    # approach and avoids needing dosdevices/ to exist beforehand.
     prog(55, "Running CoD4x installer...")
     _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
 
@@ -383,7 +332,6 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
             [
                 proton_path, "run", setup_exe,
                 "/VERYSILENT", "/SUPPRESSMSGBOXES",
-                f"/DIR={win_path}",
             ],
             env=env,
             capture_output=True,
@@ -403,13 +351,13 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         # Clean up the setup exe regardless of outcome
         shutil.rmtree(setup_dir, ignore_errors=True)
 
-    # ── Step 6: Write registry keys (post-setup) ─────────────────────────
+    # ── Step 5: Write registry keys (post-setup) ─────────────────────────
     # The Proton run may have created a fresh user.reg, so write keys again
     # to make sure they're in place for the next Steam launch.
     prog(80, "Finalizing registry...")
     _write_registry_keys(compatdata_path, on_progress=log)
 
-    # ── Step 7: Verify the chain-loader was placed correctly ─────────────
+    # ── Step 6: Verify the chain-loader was placed correctly ─────────────
     mss_path = os.path.join(install_dir, "mss32.dll")
     miles_path = os.path.join(install_dir, "miles32.dll")
 
@@ -425,7 +373,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     elif not os.path.exists(miles_path):
         log("  ⚠ miles32.dll backup not found — setup.exe may not have run correctly")
 
-    # ── Step 8: Delete servercache.dat ────────────────────────────────────
+    # ── Step 7: Delete servercache.dat ────────────────────────────────────
     # Force CoD4x to download a fresh server list on first launch.
     appdata_dir = _get_appdata_dir(compatdata_path)
     for cache_path in [
@@ -437,7 +385,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
 
     prog(90, "Cleared server cache.")
 
-    # ── Step 9: Write metadata ────────────────────────────────────────────
+    # ── Step 8: Write metadata ────────────────────────────────────────────
     prog(95, "Saving metadata...")
     _write_metadata(install_dir, {
         "version": "21.3",
