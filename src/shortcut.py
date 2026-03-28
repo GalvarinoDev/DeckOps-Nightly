@@ -657,52 +657,17 @@ def get_shortcut_appid(name: str) -> int | None:
     return None
 
 
-# ── CoD4x AppData duplication for shortcut prefix ─────────────────────────────
-
-def _copy_cod4x_appdata_to_shortcut(game_compatdata: str, shortcut_appid: int,
-                                      prog):
-    """
-    Copy the CoD4x AppData folder from the game's prefix (7940) into the
-    non-Steam shortcut's prefix so the chain-loader can find launcher.dll
-    and cod4x_021.dll when launched via the shortcut.
-
-    The shortcut runs in its own prefix (on the internal drive), while
-    install_cod4x only sets up the game prefix. Without this copy, the
-    shortcut launches stock CoD4 instead of CoD4x.
-    """
-    src = os.path.join(
-        game_compatdata,
-        "pfx", "drive_c", "users", "steamuser",
-        "AppData", "Local", "CallofDuty4MW",
-    )
-    if not os.path.isdir(src):
-        prog(f"    ⚠ CoD4x AppData not found in game prefix — skipping copy")
-        return
-
-    shortcut_compatdata = os.path.join(COMPAT_ROOT, str(shortcut_appid))
-    dest = os.path.join(
-        shortcut_compatdata,
-        "pfx", "drive_c", "users", "steamuser",
-        "AppData", "Local", "CallofDuty4MW",
-    )
-
-    try:
-        if os.path.isdir(dest):
-            shutil.rmtree(dest)
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        shutil.copytree(src, dest)
-        prog(f"    ✓ CoD4x AppData copied to shortcut prefix")
-    except Exception as ex:
-        prog(f"    ⚠ CoD4x AppData copy failed: {ex}")
-
-
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def create_shortcuts(installed_games: dict, selected_keys: list,
-                     gyro_mode: str, on_progress=None):
+                     gyro_mode: str, on_progress=None, steam_root: str = None):
     """
     Create non-Steam shortcuts for CoD4 MP and WaW MP if they were selected
     and installed. Creates shortcuts for ALL Steam user accounts.
+
+    steam_root -- path to Steam root, used to dynamically resolve the game's
+                  compatdata prefix (internal or SD card). Falls back to
+                  STEAM_ROOT if not provided.
     """
     def prog(msg):
         if on_progress:
@@ -745,7 +710,22 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
             name = shortcut_def["name"]
             exe_path = os.path.join(install_dir, shortcut_def["exe_name"])
             game_appid = shortcut_def["game_appid"]
-            compatdata_path = os.path.join(COMPAT_ROOT, game_appid)
+
+            # ── Resolve the game's actual compatdata prefix ───────────────
+            # Dynamically find the prefix so it works whether the game is
+            # on the internal NVME or an SD card. The shortcut reuses the
+            # game's prefix (no separate prefix needed).
+            from wrapper import find_compatdata
+            _sr = steam_root or STEAM_ROOT
+            game_data = installed_games.get(key, {})
+            compatdata_path = find_compatdata(
+                _sr, game_appid,
+                game_install_dir=game_data.get("install_dir"),
+            )
+            if not compatdata_path:
+                # Prefix doesn't exist yet - fall back to same library as game
+                steamapps = os.path.dirname(os.path.dirname(install_dir))
+                compatdata_path = os.path.join(steamapps, "compatdata", game_appid)
 
             # For t4mp (WaW Multiplayer), plutonium.py has replaced CoDWaWmp.exe
             # with a bash wrapper -- Proton cannot run it as a Windows binary.
@@ -753,9 +733,6 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
             # LCD: point at the bootstrapper with -lan for offline LAN mode.
             # exe_path (CoDWaWmp.exe) is still used for appid calculation so any
             # existing shortcut entry in Steam is not invalidated.
-            # Steam handles STEAM_COMPAT_DATA_PATH automatically for non-Steam
-            # shortcuts, so we don't set it manually. %command% is also
-            # unnecessary for non-Steam shortcuts.
             if key == "t4mp":
                 import config as _cfg
                 plut_dir = os.path.join(
@@ -766,18 +743,22 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                 if _cfg.is_oled():
                     plut_launcher  = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
                     actual_exe     = plut_launcher
-                    launch_options = f'plutonium://play/t4mp'
+                    launch_options = (
+                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                        f'%command% "plutonium://play/t4mp"'
+                    )
                 else:
                     plut_bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
                     actual_exe        = plut_bootstrapper
-                    launch_options    = (
-                        f't4mp '
+                    launch_options = (
+                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                        f'%command% t4mp '
                         f'"Z:{install_dir.replace("/", chr(92))}" '
                         f'+name "Player" -lan'
                     )
             else:
                 actual_exe     = exe_path
-                launch_options = ""
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
 
             shortcut_appid = _calc_shortcut_appid(exe_path, name)
 
@@ -832,21 +813,6 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
 
             _download_artwork(grid_dir, shortcut_appid, shortcut_def, prog)
             _assign_controller_config(uid, shortcut_appid, shortcut_def, gyro_mode, prog)
-
-            # ── CoD4x: copy AppData into the shortcut prefix ──────────────
-            # The cod4mp shortcut runs in its own prefix, but install_cod4x
-            # only places CoD4x files into the game's prefix (7940). Copy
-            # the AppData folder so the chain-loader works from the shortcut.
-            if key == "cod4mp":
-                from wrapper import find_compatdata
-                game_data = installed_games.get(key, {})
-                game_compat = find_compatdata(
-                    os.path.expanduser("~/.local/share/Steam"),
-                    game_appid,
-                    game_install_dir=game_data.get("install_dir"),
-                )
-                if game_compat:
-                    _copy_cod4x_appdata_to_shortcut(game_compat, shortcut_appid, prog)
         
         if new_entries:
             try:
@@ -950,7 +916,7 @@ def apply_steam_artwork(selected_keys: list, on_progress=None):
 
 
 def create_own_shortcuts(own_games: dict, selected_keys: list,
-                        gyro_mode: str, on_progress=None):
+                        gyro_mode: str, on_progress=None, steam_root: str = None):
     """
     Create non-Steam shortcuts for games detected via find_own_installed().
 
@@ -1017,8 +983,32 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
             # We control both, so this is deterministic.
             quoted_exe     = f'"{exe_path}"'
             shortcut_appid = _calc_shortcut_appid(quoted_exe, name)
-            compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
             icon_path      = os.path.join(grid_dir, f"{shortcut_appid}_icon.{shortcut_def['icon_ext']}")
+
+            # ── Resolve compatdata path ───────────────────────────────────
+            # cod4mp and t4mp share a Steam game prefix (7940 and 10090).
+            # The shortcut should reuse that prefix instead of creating its
+            # own -- avoids duplicating shaders, AppData, and prefix init.
+            # All other keys get their own prefix keyed on the shortcut appid.
+            _SHARED_PREFIX_KEYS = {
+                "cod4mp": "7940",
+                "t4mp":   "10090",
+            }
+
+            if key in _SHARED_PREFIX_KEYS:
+                from wrapper import find_compatdata
+                _sr = steam_root or STEAM_ROOT
+                game_appid = _SHARED_PREFIX_KEYS[key]
+                compatdata_path = find_compatdata(
+                    _sr, game_appid,
+                    game_install_dir=install_dir,
+                )
+                if not compatdata_path:
+                    # Prefix doesn't exist yet - build from install_dir's library
+                    steamapps = os.path.dirname(os.path.dirname(install_dir))
+                    compatdata_path = os.path.join(steamapps, "compatdata", game_appid)
+            else:
+                compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
 
             # Enrich the game dict so downstream code has the appid and paths
             game["shortcut_appid"]  = shortcut_appid
@@ -1034,6 +1024,7 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
             # cod4x and vanilla keys still need the original game exe.
 
             if key in _PLUT_KEYS:
+                import config as _cfg
                 # Plutonium -- point at launcher (OLED) or own wrapper (LCD)
                 plut_dir = os.path.join(
                     compatdata_path,
@@ -1042,7 +1033,13 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 )
                 if _cfg.is_oled():
                     actual_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
-                    launch_options = f'plutonium://play/{key}'
+                    if key in _SHARED_PREFIX_KEYS:
+                        launch_options = (
+                            f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                            f'%command% "plutonium://play/{key}"'
+                        )
+                    else:
+                        launch_options = f'plutonium://play/{key}'
                 else:
                     # LCD: point at the standalone wrapper exe written by
                     # plutonium.py - it handles cd, env vars, and bootstrapper
@@ -1064,7 +1061,10 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 # cod4mp (cod4x patches iw3mp.exe in place), iw4sp, iw5sp, t6sp
                 # -- these use the original game exe with no mod client
                 actual_exe = exe_path
-                launch_options = ""
+                if key in _SHARED_PREFIX_KEYS:
+                    launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                else:
+                    launch_options = ""
 
             # For non-Plutonium keys, warn if the target exe is missing.
             # Plutonium exes won't exist yet -- they get created when the
