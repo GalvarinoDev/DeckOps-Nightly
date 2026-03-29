@@ -53,6 +53,12 @@ const detectDisplay = callable<[], {
   needs_testing: boolean;
 }>("detect_display");
 
+const enableFileEditing = callable<[], {
+  unlocked: number;
+  failed: number;
+  total: number;
+}>("enable_file_editing");
+
 // ── Main UI Component ───────────────────────────────────────────────────────
 
 function Content() {
@@ -66,6 +72,7 @@ function Content() {
   const [externalRatio, setExternalRatio] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [configCount, setConfigCount] = useState(0);
+  const [editingEnabled, setEditingEnabled] = useState(false);
 
   // Load current status on mount
   useEffect(() => {
@@ -112,6 +119,7 @@ function Content() {
       setCurrentRes(result.resolution);
       setRefreshRate(result.refresh_rate);
       setConfigCount(result.patched);
+      setEditingEnabled(false);
 
       toaster.toast({
         title: "DeckOps Display",
@@ -139,6 +147,19 @@ function Content() {
       setExternalRatio(info.aspect_ratio);
     } catch (e) {
       console.error("DeckOps: Failed to detect display", e);
+    }
+  };
+
+  const handleEnableEditing = async () => {
+    try {
+      const result = await enableFileEditing();
+      setEditingEnabled(true);
+      toaster.toast({
+        title: "DeckOps Display",
+        body: `Game configs unlocked for editing (${result.unlocked} files). Will re-lock on next mode switch.`,
+      });
+    } catch (e) {
+      console.error("DeckOps: Failed to enable file editing", e);
     }
   };
 
@@ -184,6 +205,16 @@ function Content() {
           </div>
         </PanelSectionRow>
       )}
+
+      <PanelSectionRow>
+        <ButtonItem
+          layout="below"
+          onClick={handleEnableEditing}
+          disabled={loading || editingEnabled}
+        >
+          {editingEnabled ? "Game Config Editing Enabled" : "Allow Game Config Editing"}
+        </ButtonItem>
+      </PanelSectionRow>
 
       <PanelSectionRow>
         <ButtonItem

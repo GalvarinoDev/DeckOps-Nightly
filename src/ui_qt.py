@@ -767,34 +767,15 @@ class IntroScreen(QWidget):
 
         def _run():
             import urllib.request
-            BASE = "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main/decky"
-            FILES = [
-                ("main.py",          "main.py"),
-                ("plugin.json",      "plugin.json"),
-                ("package.json",     "package.json"),
-                ("dist/index.js",    "dist/index.js"),
-                ("dist/index.js.map","dist/index.js.map"),
-            ]
-            plugin_dir = os.path.expanduser("~/homebrew/plugins/DeckOps")
-            dist_dir   = os.path.join(plugin_dir, "dist")
+            ZIP_URL  = "https://github.com/GalvarinoDev/DeckOps-Nightly/raw/main/DeckOps.zip"
+            dl_dir   = os.path.expanduser("~/Downloads")
+            zip_path = os.path.join(dl_dir, "DeckOps.zip")
             try:
-                os.makedirs(dist_dir, exist_ok=True)
-                s.log.emit(f"→  Plugin directory: {plugin_dir}")
-                for src, dest in FILES:
-                    url      = f"{BASE}/{src}"
-                    out_path = os.path.join(plugin_dir, dest)
-                    s.log.emit(f"   Downloading {src}...")
-                    urllib.request.urlretrieve(url, out_path)
-                    s.log.emit(f"   ✓  {dest}")
-                s.log.emit("→  Restarting plugin_loader service...")
-                result = subprocess.run(
-                    ["sudo", "systemctl", "restart", "plugin_loader"],
-                    capture_output=True, timeout=15
-                )
-                if result.returncode == 0:
-                    s.log.emit("   ✓  plugin_loader restarted.")
-                else:
-                    s.log.emit("   ⚠  plugin_loader restart failed (Decky may not be installed yet).")
+                os.makedirs(dl_dir, exist_ok=True)
+                s.log.emit("→  Downloading DeckOps.zip...")
+                urllib.request.urlretrieve(ZIP_URL, zip_path)
+                s.log.emit(f"   ✓  Saved to {zip_path}")
+                s.log.emit("   Install via Decky → Install from zip.")
                 s.done.emit(True)
             except Exception as ex:
                 s.log.emit(f"✗  {ex}")
