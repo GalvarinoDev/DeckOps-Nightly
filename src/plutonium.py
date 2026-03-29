@@ -901,6 +901,8 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
         # LCD offline mode: call the bootstrapper directly with -lan.
         # cd into the Plutonium directory first so the bootstrapper can
         # find its files relative to cwd, same as LanLauncher does.
+        import config as _cfg
+        player_name = _cfg.get_player_name() or "Player"
         bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
         game_dir_wine = _wine_path(install_dir)
         script = (
@@ -909,7 +911,7 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
             f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
             f"cd \"{plut_dir}\"\n"
             f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-            f"{game_key} \"{game_dir_wine}\" +name \"Player\" -lan\n"
+            f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
         )
     else:
         # OLED online mode: call the launcher with a protocol URL
@@ -946,6 +948,8 @@ def _write_own_wrapper(game: dict, game_key: str, steam_root: str,
     wrapper_name = OWN_WRAPPER_EXES[game_key]
     wrapper_path = os.path.join(install_dir, wrapper_name)
 
+    import config as _cfg
+    player_name = _cfg.get_player_name() or "Player"
     bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
     game_dir_wine = _wine_path(install_dir)
 
@@ -955,7 +959,7 @@ def _write_own_wrapper(game: dict, game_key: str, steam_root: str,
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
         f"cd \"{plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-        f"{game_key} \"{game_dir_wine}\" +name \"Player\" -lan\n"
+        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
     )
 
     with open(wrapper_path, "wb") as f:
