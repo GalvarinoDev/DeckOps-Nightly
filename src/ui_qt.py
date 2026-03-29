@@ -1276,20 +1276,11 @@ class InstallScreen(QWidget):
 
         # ── Plutonium games ───────────────────────────────────────────────────
         if has_plut:
-            from plutonium import install_xact_once, XACT_GAME_KEYS
-            has_xact = any(k in XACT_GAME_KEYS for k in selected_keys)
+            # XACT disabled (Session 25) -- GE-Proton's default_pfx ships all
+            # required XACT DLLs. Verified: BO1 SP/MP and WaW audio works
+            # without protontricks xact install. Saves ~95MB download + time.
+            # Functions kept in plutonium.py in case a future GE-Proton drops them.
             xact_ready = False
-            if has_xact:
-                self._s.progress.emit(29, "Installing XACT audio (once for all games)...")
-                self._s.log.emit("Installing XACT audio components (shared across WaW and Black Ops)...")
-                self._s.pulse_start.emit("Installing XACT audio")
-                xact_ready = install_xact_once(
-                    [k for k in selected_keys if k in XACT_GAME_KEYS],
-                    steam_root=self.steam_root,
-                    proton_path=proton,
-                    on_progress=lambda msg: self._s.log.emit(f"  {msg}"),
-                )
-                self._s.pulse_stop.emit()
 
             plut_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "plutonium"]
             total_plut = len(plut_selected)
@@ -2404,8 +2395,7 @@ class OwnInstallScreen(QWidget):
         # bootstrapper uses Proton independently of Steam's state.
         if has_plut:
             from plutonium import (launch_bootstrapper, is_plutonium_ready,
-                                   install_plutonium, install_xact_once,
-                                   XACT_GAME_KEYS)
+                                   install_plutonium)
             from plutonium import GAME_META as _PLUT_META
             is_lcd = not cfg.is_oled()
             plut_ready = is_plutonium_ready()
@@ -2558,31 +2548,11 @@ class OwnInstallScreen(QWidget):
 
         # ── Plutonium games ───────────────────────────────────────────────
         if has_plut:
-            # XACT audio for WaW / Black Ops (shared install, once for all)
-            steam_xact_keys = [k for k in selected_keys
-                               if KEY_CLIENT.get(k) == "plutonium"
-                               and k in XACT_GAME_KEYS
-                               and k not in self.own_selected]
-            own_xact_targets = [
-                (g.get("shortcut_appid"), g.get("compatdata_path"))
-                for k, gd, g in self.selected
-                if KEY_CLIENT.get(k) == "plutonium"
-                and k in XACT_GAME_KEYS
-                and k in self.own_selected and g
-            ]
+            # XACT disabled (Session 25) -- GE-Proton's default_pfx ships all
+            # required XACT DLLs. Verified: BO1 SP/MP and WaW audio works
+            # without protontricks xact install. Saves ~95MB download + time.
+            # Functions kept in plutonium.py in case a future GE-Proton drops them.
             xact_ready = False
-            if steam_xact_keys or own_xact_targets:
-                self._s.progress.emit(35, "Installing XACT audio...")
-                self._s.log.emit("Installing XACT audio components (shared across WaW and Black Ops)...")
-                self._s.pulse_start.emit("Installing XACT audio")
-                xact_ready = install_xact_once(
-                    steam_xact_keys,
-                    steam_root=self.steam_root,
-                    proton_path=proton,
-                    on_progress=lambda msg: self._s.log.emit(f"  {msg}"),
-                    own_xact_targets=own_xact_targets,
-                )
-                self._s.pulse_stop.emit()
 
             # Per-game Plutonium install: copy Plutonium into each prefix,
             # write config.json with game paths. Own games skip the wrapper
