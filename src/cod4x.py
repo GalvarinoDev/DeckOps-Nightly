@@ -155,9 +155,14 @@ def _ensure_prefix_dlls(compatdata_path: str, on_progress=None):
     wow64_dst = os.path.join(pfx_dir, "drive_c", "windows", "syswow64")
 
     try:
-        n32 = _copy_dlls(sys32_src, sys32_dst)
-        n64 = _copy_dlls(wow64_src, wow64_dst)
-        prog(f"  ✓ Copied {n32 + n64} DLLs into prefix (system32: {n32}, syswow64: {n64})")
+        c32, s32 = _copy_dlls(sys32_src, sys32_dst)
+        c64, s64 = _copy_dlls(wow64_src, wow64_dst)
+        total_copied = c32 + c64
+        total_skipped = s32 + s64
+        if total_copied > 0:
+            prog(f"  ✓ Copied {total_copied} DLLs, skipped {total_skipped} (already present)")
+        else:
+            prog(f"  ✓ All {total_skipped} DLLs already present")
         return True
     except Exception as ex:
         prog(f"  ⚠ DLL copy failed: {ex}")
