@@ -349,7 +349,7 @@ def _find_deployed_configs():
 
     # Get installed games for path resolution
     try:
-        library_folders = [steam_root]
+        library_folders = detect_games.parse_library_folders(steam_root)
         installed = detect_games.find_installed_games(library_folders, steam_root)
     except Exception as e:
         decky.logger.error(f"Failed to detect installed games: {e}")
