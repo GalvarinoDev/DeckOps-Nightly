@@ -255,20 +255,33 @@ from wrapper import set_compat_tool  # noqa: F401
 # t4/t5 (WaW, Black Ops). Those are still handled by the protontricks
 # xact verb in plutonium.py.
 
-def _copy_dlls(src_dir: str, dest_dir: str) -> int:
+def _copy_dlls(src_dir: str, dest_dir: str) -> tuple[int, int]:
     """
-    Copy all .dll files from src_dir into dest_dir, overwriting existing.
-    Returns the number of files copied.
+    Copy .dll files from src_dir into dest_dir, skipping files that
+    already exist with a matching file size.
+
+    Returns (copied, skipped) counts.
     """
     if not os.path.isdir(src_dir):
-        return 0
+        return (0, 0)
     os.makedirs(dest_dir, exist_ok=True)
-    count = 0
+    copied = 0
+    skipped = 0
     for fname in os.listdir(src_dir):
         if fname.lower().endswith(".dll"):
-            shutil.copy2(os.path.join(src_dir, fname), os.path.join(dest_dir, fname))
-            count += 1
-    return count
+            src_path = os.path.join(src_dir, fname)
+            dest_path = os.path.join(dest_dir, fname)
+            # Skip if dest exists and matches source file size
+            if os.path.isfile(dest_path):
+                try:
+                    if os.path.getsize(dest_path) == os.path.getsize(src_path):
+                        skipped += 1
+                        continue
+                except OSError:
+                    pass  # can't stat -- copy it
+            shutil.copy2(src_path, dest_path)
+            copied += 1
+    return (copied, skipped)
 
 
 def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
@@ -351,9 +364,14 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
     wow64_src = os.path.join(default_pfx, "drive_c", "windows", "syswow64")
 
     try:
-        n32 = _copy_dlls(sys32_src, sys32_target)
-        n64 = _copy_dlls(wow64_src, wow64_target)
-        prog(f"  ✓ Copied {n32 + n64} DLLs into prefix (system32: {n32}, syswow64: {n64})")
+        c32, s32 = _copy_dlls(sys32_src, sys32_target)
+        c64, s64 = _copy_dlls(wow64_src, wow64_target)
+        total_copied = c32 + c64
+        total_skipped = s32 + s64
+        if total_copied > 0:
+            prog(f"  ✓ Copied {total_copied} DLLs, skipped {total_skipped} (already present)")
+        else:
+            prog(f"  ✓ All {total_skipped} DLLs already present")
     except Exception as ex:
         prog(f"  ⚠ DLL copy failed: {ex}")
         return False
@@ -435,33 +453,142 @@ def _clone_prefix(source_pfx_dir: str, dest_prefix_path: str,
         return False
 
 
+def _overlay_prefix(source_pfx_dir: str, dest_prefix_path: str,
+                    ge_version: str | None, on_progress=None) -> bool:
+    """
+    Overlay a finalized donor prefix onto an existing prefix, copying
+    only files that are missing or differ in size.
+
+    For new prefixes (no pfx/ dir yet), this is equivalent to a full clone.
+    For existing prefixes, this fills in any missing files without
+    re-copying the ~1200 DLLs that are already there.
+
+    Also copies tracked_files and writes the version file.
+
+    source_pfx_dir   -- the pfx/ directory inside the donor prefix
+    dest_prefix_path -- the compatdata root for the target appid
+    on_progress      -- optional callback(msg: str)
+
+    Returns True on success, False on failure.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    import time
+
+    dest_pfx_dir = os.path.join(dest_prefix_path, "pfx")
+    is_new = not os.path.isdir(dest_pfx_dir)
+
+    try:
+        os.makedirs(dest_prefix_path, exist_ok=True)
+
+        if is_new:
+            # Fresh prefix -- full clone (fastest path)
+            prog(f"  Cloning: {source_pfx_dir} -> {dest_pfx_dir}")
+            start = time.time()
+            shutil.copytree(source_pfx_dir, dest_pfx_dir, symlinks=True)
+            elapsed = time.time() - start
+            prog(f"  ✓ Prefix cloned from donor ({elapsed:.1f}s)")
+        else:
+            # Existing prefix -- overlay missing files only
+            start = time.time()
+            copied = 0
+            skipped = 0
+            for src_dirpath, dirnames, filenames in os.walk(source_pfx_dir):
+                # Build the corresponding destination path
+                rel = os.path.relpath(src_dirpath, source_pfx_dir)
+                dst_dirpath = os.path.join(dest_pfx_dir, rel)
+                os.makedirs(dst_dirpath, exist_ok=True)
+
+                for fname in filenames:
+                    src_file = os.path.join(src_dirpath, fname)
+                    dst_file = os.path.join(dst_dirpath, fname)
+                    # Skip if dest exists and matches source file size
+                    if os.path.exists(dst_file):
+                        try:
+                            if os.path.getsize(dst_file) == os.path.getsize(src_file):
+                                skipped += 1
+                                continue
+                        except OSError:
+                            pass
+                    shutil.copy2(src_file, dst_file)
+                    copied += 1
+
+            elapsed = time.time() - start
+            if copied > 0:
+                prog(f"  ✓ Overlaid {copied} files, skipped {skipped} ({elapsed:.1f}s)")
+            else:
+                prog(f"  ✓ All {skipped} files already present ({elapsed:.1f}s)")
+
+        # Write version file
+        if ge_version:
+            version_file = os.path.join(dest_prefix_path, "version")
+            with open(version_file, "w") as f:
+                f.write(ge_version + "\n")
+
+        # Copy tracked_files from the donor's parent directory.
+        # Proton requires this file -- without it, prefix setup
+        # crashes with FileNotFoundError on update_builtin_libs().
+        donor_root = os.path.dirname(source_pfx_dir)
+        donor_tracked = os.path.join(donor_root, "tracked_files")
+        if os.path.isfile(donor_tracked):
+            shutil.copy2(donor_tracked, os.path.join(dest_prefix_path, "tracked_files"))
+
+        return True
+    except Exception as ex:
+        prog(f"  ⚠ Prefix overlay failed: {ex}")
+        return False
+
+
+def _get_storage_location(compat_path: str) -> str:
+    """
+    Return a storage group key for a compatdata path.
+
+    Prefixes on the same physical storage share a group so we only
+    need one donor per storage location. SD card prefixes are grouped
+    by mount point, NVMe prefixes all share one group.
+    """
+    norm = os.path.normpath(compat_path)
+    # SD card paths: /run/media/deck/<label>/steamapps/compatdata/...
+    if norm.startswith("/run/media/"):
+        parts = norm.split(os.sep)
+        # /run/media/deck/<label> = first 5 parts
+        if len(parts) >= 5:
+            return os.sep.join(parts[:5])
+    # Everything else is NVMe/internal
+    return "internal"
+
+
 def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str, str]],
                            on_progress=None, proton_path: str | None = None,
                            steam_root: str | None = None) -> int:
     """
     Initialize and install dependencies for a list of game prefixes.
 
-    Uses a clone-based approach to avoid running `proton run cmd /c exit`
-    for every prefix individually (which risks 180s timeouts per prefix):
+    Groups prefixes by storage location (NVMe vs SD card), then for each
+    group picks one prefix as the donor:
 
-      1. Separate prefixes into "existing" (pfx/drive_c present) and "new"
-      2. Existing prefixes: copy DLLs from default_pfx (fast, ~1s each)
-      3. New prefixes: run Proton ONCE on the first prefix (with 600s timeout),
-         then clone that prefix's pfx/ directory to all remaining new prefixes
-      4. Top up DLLs from default_pfx into each cloned prefix
+      1. If donor is new (no pfx/drive_c): run Proton once to initialize it
+      2. If donor is existing: check/fix missing DLLs from default_pfx (fast)
+      3. Overlay the finalized donor onto all remaining prefixes in the group,
+         skipping files that already exist with matching size
 
-    This reduces 11 separate Proton runs (~20+ min with timeouts) to 1 Proton
-    run + 10 file copies (~2 min total).
+    This means DLL verification happens once per storage location (on the
+    donor), and all other prefixes inherit the donor's state via overlay.
 
-    prefix_paths — list of (label, compatdata_path) tuples
-                   label is for logging (e.g. game key or display name)
-    on_progress  — optional callback(msg: str)
-    proton_path  — path to the Proton binary for prefix initialization
-    steam_root   — path to Steam root for STEAM_COMPAT_CLIENT_INSTALL_PATH
+    Fresh install: 1 Proton run + fast clones (~2s each)
+    Reinstall: ~1s total (all files already present, nothing to copy)
+
+    prefix_paths -- list of (label, compatdata_path) tuples
+    on_progress  -- optional callback(msg: str)
+    proton_path  -- path to the Proton binary for prefix initialization
+    steam_root   -- path to Steam root for STEAM_COMPAT_CLIENT_INSTALL_PATH
 
     Returns the number of prefixes that now have deps installed.
     """
     import subprocess
+    import time
 
     def prog(msg):
         if on_progress:
@@ -469,7 +596,7 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
 
     default_pfx = _find_default_pfx(ge_version)
     if not default_pfx:
-        prog("⚠ No GE-Proton default_pfx found — cannot install dependencies")
+        prog("⚠ No GE-Proton default_pfx found -- cannot install dependencies")
         return 0
 
     sys32_src = os.path.join(default_pfx, "drive_c", "windows", "system32")
@@ -482,113 +609,122 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
     unique_paths = []
     for label, compat_path in prefix_paths:
         if not compat_path:
-            prog(f"  {label}: no compatdata path — skipped")
+            prog(f"  {label}: no compatdata path -- skipped")
             continue
         norm = os.path.normpath(compat_path)
         if norm in seen_paths:
-            prog(f"  {label}: shares prefix with {seen_paths[norm]} — skipped")
+            prog(f"  {label}: shares prefix with {seen_paths[norm]} -- skipped")
             continue
         seen_paths[norm] = label
         unique_paths.append((label, compat_path))
 
-    # ── Categorize prefixes ───────────────────────────────────────────────
-    existing = []  # (label, path) — already have pfx/drive_c
-    new      = []  # (label, path) — need initialization
+    if not unique_paths:
+        return 0
 
+    # ── Group prefixes by storage location ────────────────────────────────
+    # One donor per physical storage location (NVMe vs SD card).
+    # This avoids cross-device copies and keeps things fast.
+    from collections import OrderedDict
+    groups = OrderedDict()
     for label, compat_path in unique_paths:
-        pfx_drive_c = os.path.join(compat_path, "pfx", "drive_c")
-        if os.path.isdir(pfx_drive_c):
-            existing.append((label, compat_path))
-        else:
-            new.append((label, compat_path))
+        loc = _get_storage_location(compat_path)
+        if loc not in groups:
+            groups[loc] = []
+        groups[loc].append((label, compat_path))
 
     success = 0
 
-    # ── Handle existing prefixes: DLL copy only (fast) ────────────────────
-    for label, compat_path in existing:
-        prog(f"  {label}: checking dependencies...")
-        sys32_target = os.path.join(compat_path, "pfx", "drive_c", "windows", "system32")
-        wow64_target = os.path.join(compat_path, "pfx", "drive_c", "windows", "syswow64")
-        try:
-            n32 = _copy_dlls(sys32_src, sys32_target)
-            n64 = _copy_dlls(wow64_src, wow64_target)
-            prog(f"  ✓ Copied {n32 + n64} DLLs into prefix (system32: {n32}, syswow64: {n64})")
-            prog("  ✓ Prefix already initialized — skipped Proton run")
-            success += 1
-        except Exception as ex:
-            prog(f"  ⚠ {label}: DLL copy failed: {ex}")
+    for location, group in groups.items():
+        loc_label = "SD card" if location != "internal" else "NVMe"
+        prog(f"  Processing {len(group)} prefix(es) on {loc_label}...")
 
-    # ── Handle new prefixes: init one, clone the rest ─────────────────────
-    if not new:
-        return success
-
-    donor_pfx_dir = None  # Will hold the pfx/ path of the first successfully initialized prefix
-
-    # If no proton_path, fall back to copytree from default_pfx for all new prefixes
-    if not proton_path:
-        for label, compat_path in new:
-            prog(f"  {label}: checking dependencies...")
-            ok = ensure_prefix_deps(ge_version, compat_path, on_progress=on_progress,
-                                    proton_path=None, steam_root=steam_root)
-            if ok:
-                success += 1
-        return success
-
-    _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
-
-    # ── Initialize the first new prefix via Proton ────────────────────────
-    donor_label, donor_path = new[0]
-    prog(f"  {donor_label}: initializing donor prefix...")
-    os.makedirs(donor_path, exist_ok=True)
-
-    # Proton creates the full prefix from its own default_pfx during
-    # `proton run cmd /c exit` — no need to pre-copy DLLs. The donor
-    # ends up with the complete dependency set and tracked_files that
-    # record everything Proton installed.
-
-    # Run Proton once with a generous 600s timeout
-    try:
-        import time
-        env = os.environ.copy()
-        env["STEAM_COMPAT_DATA_PATH"]           = donor_path
-        env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
-        prog(f"  {donor_label}: running proton run cmd /c exit at {donor_path}...")
-        start = time.time()
-        subprocess.run(
-            [proton_path, "run", "cmd", "/c", "exit"],
-            env=env, capture_output=True, timeout=600,
-        )
-        elapsed = time.time() - start
-        prog(f"  ✓ Prefix finalized by Proton ({elapsed:.1f}s)")
+        # ── Pick the first prefix as donor ────────────────────────────────
+        donor_label, donor_path = group[0]
         donor_pfx_dir = os.path.join(donor_path, "pfx")
-        success += 1
-    except Exception as ex:
-        prog(f"  ⚠ Donor prefix finalize failed: {ex}")
-        # If even the donor fails, try each remaining prefix individually
-        # with the single-prefix function as a last resort
-        for label, compat_path in new[1:]:
-            prog(f"  {label}: checking dependencies (individual fallback)...")
-            ok = ensure_prefix_deps(ge_version, compat_path, on_progress=on_progress,
-                                    proton_path=proton_path, steam_root=steam_root)
+        donor_exists = os.path.isdir(os.path.join(donor_pfx_dir, "drive_c"))
+
+        if donor_exists:
+            # Donor already initialized -- check/fix missing DLLs only
+            prog(f"  {donor_label}: verifying donor DLLs...")
+            sys32_target = os.path.join(donor_pfx_dir, "drive_c", "windows", "system32")
+            wow64_target = os.path.join(donor_pfx_dir, "drive_c", "windows", "syswow64")
+            try:
+                c32, s32 = _copy_dlls(sys32_src, sys32_target)
+                c64, s64 = _copy_dlls(wow64_src, wow64_target)
+                total_copied = c32 + c64
+                total_skipped = s32 + s64
+                if total_copied > 0:
+                    prog(f"  ✓ Donor: copied {total_copied} missing DLLs, {total_skipped} already present")
+                else:
+                    prog(f"  ✓ Donor: all {total_skipped} DLLs verified")
+                success += 1
+            except Exception as ex:
+                prog(f"  ⚠ {donor_label}: donor DLL check failed: {ex}")
+                # Try remaining prefixes individually as fallback
+                for label, compat_path in group[1:]:
+                    ok = ensure_prefix_deps(ge_version, compat_path,
+                                            on_progress=on_progress,
+                                            proton_path=proton_path,
+                                            steam_root=steam_root)
+                    if ok:
+                        success += 1
+                continue
+        else:
+            # Donor is new -- needs Proton initialization
+            if not proton_path:
+                # No proton_path -- fall back to copytree for all in group
+                for label, compat_path in group:
+                    prog(f"  {label}: checking dependencies...")
+                    ok = ensure_prefix_deps(ge_version, compat_path,
+                                            on_progress=on_progress,
+                                            proton_path=None,
+                                            steam_root=steam_root)
+                    if ok:
+                        success += 1
+                continue
+
+            _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
+            prog(f"  {donor_label}: initializing donor prefix...")
+            os.makedirs(donor_path, exist_ok=True)
+
+            try:
+                env = os.environ.copy()
+                env["STEAM_COMPAT_DATA_PATH"]           = donor_path
+                env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
+                prog(f"  {donor_label}: running proton run cmd /c exit at {donor_path}...")
+                start = time.time()
+                subprocess.run(
+                    [proton_path, "run", "cmd", "/c", "exit"],
+                    env=env, capture_output=True, timeout=600,
+                )
+                elapsed = time.time() - start
+                prog(f"  ✓ Donor prefix finalized by Proton ({elapsed:.1f}s)")
+                success += 1
+            except Exception as ex:
+                prog(f"  ⚠ Donor prefix finalize failed: {ex}")
+                for label, compat_path in group[1:]:
+                    prog(f"  {label}: checking dependencies (individual fallback)...")
+                    ok = ensure_prefix_deps(ge_version, compat_path,
+                                            on_progress=on_progress,
+                                            proton_path=proton_path,
+                                            steam_root=steam_root)
+                    if ok:
+                        success += 1
+                continue
+
+        # ── Overlay donor onto all remaining prefixes in this group ────────
+        for label, compat_path in group[1:]:
+            prog(f"  {label}: overlaying from donor...")
+            ok = _overlay_prefix(donor_pfx_dir, compat_path, ge_version,
+                                 on_progress=on_progress)
+            if not ok:
+                prog(f"  {label}: overlay failed, falling back to individual init...")
+                ok = ensure_prefix_deps(ge_version, compat_path,
+                                        on_progress=on_progress,
+                                        proton_path=proton_path,
+                                        steam_root=steam_root)
             if ok:
                 success += 1
-        return success
-
-    # ── Clone the donor to all remaining new prefixes ─────────────────────
-    # Clones already contain all DLLs from the donor (which Proton built
-    # from default_pfx). No DLL top-up needed — saves ~45s per prefix
-    # on SD card.
-    for label, compat_path in new[1:]:
-        prog(f"  {label}: cloning prefix...")
-        ok = _clone_prefix(donor_pfx_dir, compat_path, ge_version,
-                           on_progress=on_progress)
-        if not ok:
-            # Clone failed — fall back to individual Proton init
-            prog(f"  {label}: clone failed, falling back to Proton init...")
-            ok = ensure_prefix_deps(ge_version, compat_path, on_progress=on_progress,
-                                    proton_path=proton_path, steam_root=steam_root)
-        if ok:
-            success += 1
 
     return success
 
