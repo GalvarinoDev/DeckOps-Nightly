@@ -410,8 +410,12 @@ def _clone_prefix(source_pfx_dir: str, dest_prefix_path: str,
 
     dest_pfx_dir = os.path.join(dest_prefix_path, "pfx")
     try:
+        import time
         os.makedirs(dest_prefix_path, exist_ok=True)
+        prog(f"  Cloning: {source_pfx_dir} → {dest_pfx_dir}")
+        start = time.time()
         shutil.copytree(source_pfx_dir, dest_pfx_dir, symlinks=True)
+        elapsed = time.time() - start
         # Write version file so Proton knows which version initialized this prefix
         if ge_version:
             version_file = os.path.join(dest_prefix_path, "version")
@@ -424,7 +428,7 @@ def _clone_prefix(source_pfx_dir: str, dest_prefix_path: str,
         donor_tracked = os.path.join(donor_root, "tracked_files")
         if os.path.isfile(donor_tracked):
             shutil.copy2(donor_tracked, os.path.join(dest_prefix_path, "tracked_files"))
-        prog(f"  ✓ Prefix cloned from donor")
+        prog(f"  ✓ Prefix cloned from donor ({elapsed:.1f}s)")
         return True
     except Exception as ex:
         prog(f"  ⚠ Prefix clone failed: {ex}")
@@ -544,14 +548,18 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
 
     # Run Proton once with a generous 600s timeout
     try:
+        import time
         env = os.environ.copy()
         env["STEAM_COMPAT_DATA_PATH"]           = donor_path
         env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
+        prog(f"  {donor_label}: running proton run cmd /c exit at {donor_path}...")
+        start = time.time()
         subprocess.run(
             [proton_path, "run", "cmd", "/c", "exit"],
             env=env, capture_output=True, timeout=600,
         )
-        prog(f"  ✓ Prefix finalized by Proton")
+        elapsed = time.time() - start
+        prog(f"  ✓ Prefix finalized by Proton ({elapsed:.1f}s)")
         donor_pfx_dir = os.path.join(donor_path, "pfx")
         success += 1
     except Exception as ex:
