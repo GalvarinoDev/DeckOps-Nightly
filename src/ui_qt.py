@@ -484,7 +484,9 @@ class IntroScreen(QWidget):
         pl.addSpacing(4)
         pl.addWidget(_lbl(
             "Handheld Only  --  you play exclusively on the Steam Deck screen.\n"
-            "Also Docked  --  you also connect to a TV or monitor with an external controller.",
+            "Also Docked  --  you also connect to a TV or monitor with an external controller.\n"
+            "Choosing Docked will install the DeckOps Decky plugin. "
+            "Decky Loader is required — you can install it after setup from decky.xyz.",
             13, C_DIM, align=Qt.AlignLeft))
         pl.addSpacing(12)
         prow = QHBoxLayout(); prow.setSpacing(20)
@@ -496,6 +498,54 @@ class IntroScreen(QWidget):
         pl.addLayout(prow)
         pl.addStretch()
         main_lay.addWidget(self._play_section)
+
+        # ── Decky install section (docked users only, shown while plugin downloads) ──
+        self._decky_section = QWidget(); self._decky_section.setVisible(False)
+        dl = QVBoxLayout(self._decky_section); dl.setContentsMargins(80,60,80,60); dl.setSpacing(16)
+
+        self._back_decky_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
+        self._back_decky_btn.setFixedWidth(80)
+        self._back_decky_btn.clicked.connect(self._back_to_play_from_decky)
+        back_row_decky = QHBoxLayout()
+        back_row_decky.addWidget(self._back_decky_btn); back_row_decky.addStretch()
+        dl.addLayout(back_row_decky)
+
+        dl.addStretch()
+        _title_block(dl)
+        dl.addSpacing(8)
+        self._decky_status_lbl = _lbl("Installing DeckOps Decky plugin...", 15, "#CCC")
+        dl.addWidget(self._decky_status_lbl)
+        dl.addSpacing(4)
+
+        self._decky_log = QPlainTextEdit()
+        self._decky_log.setReadOnly(True)
+        self._decky_log.setFont(font(11))
+        self._decky_log.setStyleSheet(
+            "QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}"
+        )
+        self._decky_log.setFixedHeight(180)
+        dl.addWidget(self._decky_log)
+
+        self._decky_cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
+        self._decky_cont_btn.setFixedWidth(320)
+        self._decky_cont_btn.setVisible(False)
+        self._decky_cont_btn.clicked.connect(self._decky_continue)
+        dcw = QHBoxLayout(); dcw.addStretch(); dcw.addWidget(self._decky_cont_btn); dcw.addStretch()
+        dl.addLayout(dcw)
+
+        self._decky_retry_btn = _btn("Retry", C_TREY, size=13, h=52)
+        self._decky_retry_btn.setFixedWidth(320)
+        self._decky_retry_btn.setVisible(False)
+        self._decky_retry_btn.clicked.connect(self._start_decky_install)
+        drw = QHBoxLayout(); drw.addStretch(); drw.addWidget(self._decky_retry_btn); drw.addStretch()
+        dl.addLayout(drw)
+
+        dl.addStretch()
+        main_lay.addWidget(self._decky_section)
+
+        self._decky_sigs = _Sigs()
+        self._decky_sigs.log.connect(self._decky_append_log)
+        self._decky_sigs.done.connect(self._decky_on_done)
 
         # ── Resolution section (docked users only, between play mode and controller) ──
         # NOTE: this will also be used for future Bazzite, Steam Box, and
@@ -671,11 +721,86 @@ class IntroScreen(QWidget):
     def _pick_play_mode(self, mode):
         cfg.set_play_mode(mode)
         if mode == "docked":
-            # Docked users pick resolution next, then controller
             self._play_section.setVisible(False)
-            self._resolution_section.setVisible(True)
+            self._decky_section.setVisible(True)
+            self._decky_log.clear()
+            self._decky_cont_btn.setVisible(False)
+            self._decky_retry_btn.setVisible(False)
+            self._decky_status_lbl.setText("Installing DeckOps Decky plugin...")
+            self._decky_back_btn_set_enabled(False)
+            self._start_decky_install()
         else:
             self._next_screen()
+
+    def _decky_back_btn_set_enabled(self, enabled):
+        self._back_decky_btn.setEnabled(enabled)
+
+    def _back_to_play_from_decky(self):
+        self._decky_section.setVisible(False)
+        self._play_section.setVisible(True)
+
+    def _decky_append_log(self, text):
+        self._decky_log.appendPlainText(text)
+        self._decky_log.verticalScrollBar().setValue(
+            self._decky_log.verticalScrollBar().maximum()
+        )
+
+    def _decky_on_done(self, ok):
+        self._decky_back_btn_set_enabled(True)
+        if ok:
+            self._decky_status_lbl.setText("✓  Decky plugin installed.")
+            self._decky_cont_btn.setVisible(True)
+        else:
+            self._decky_status_lbl.setText("✗  Install failed. Check your connection and retry.")
+            self._decky_retry_btn.setVisible(True)
+
+    def _decky_continue(self):
+        self._decky_section.setVisible(False)
+        self._resolution_section.setVisible(True)
+
+    def _start_decky_install(self):
+        self._decky_cont_btn.setVisible(False)
+        self._decky_retry_btn.setVisible(False)
+        self._decky_back_btn_set_enabled(False)
+        self._decky_status_lbl.setText("Installing DeckOps Decky plugin...")
+        s = self._decky_sigs
+
+        def _run():
+            import urllib.request
+            BASE = "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main/decky"
+            FILES = [
+                ("main.py",          "main.py"),
+                ("plugin.json",      "plugin.json"),
+                ("package.json",     "package.json"),
+                ("dist/index.js",    "dist/index.js"),
+                ("dist/index.js.map","dist/index.js.map"),
+            ]
+            plugin_dir = os.path.expanduser("~/homebrew/plugins/DeckOps")
+            dist_dir   = os.path.join(plugin_dir, "dist")
+            try:
+                os.makedirs(dist_dir, exist_ok=True)
+                s.log.emit(f"→  Plugin directory: {plugin_dir}")
+                for src, dest in FILES:
+                    url      = f"{BASE}/{src}"
+                    out_path = os.path.join(plugin_dir, dest)
+                    s.log.emit(f"   Downloading {src}...")
+                    urllib.request.urlretrieve(url, out_path)
+                    s.log.emit(f"   ✓  {dest}")
+                s.log.emit("→  Restarting plugin_loader service...")
+                result = subprocess.run(
+                    ["sudo", "systemctl", "restart", "plugin_loader"],
+                    capture_output=True, timeout=15
+                )
+                if result.returncode == 0:
+                    s.log.emit("   ✓  plugin_loader restarted.")
+                else:
+                    s.log.emit("   ⚠  plugin_loader restart failed (Decky may not be installed yet).")
+                s.done.emit(True)
+            except Exception as ex:
+                s.log.emit(f"✗  {ex}")
+                s.done.emit(False)
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _pick_resolution(self, resolution):
         cfg.set_docked_resolution(resolution)
@@ -1765,11 +1890,25 @@ class ControllerInfoScreen(QWidget):
             "Change Hold, ADS, or Toggle anytime in Settings — Re-apply Controller Profiles.",
             11, "#666", align=Qt.AlignLeft))
 
-        lay.addStretch()
+        # ── Decky Loader note (docked users only) ─────────────────────────────
+        self._decky_div  = _hdiv()
+        self._decky_hdr  = _lbl("🖥  Enable Docked Display Switching", 13, C_IW, bold=True, align=Qt.AlignLeft)
+        self._decky_body = _lbl(
+            "The DeckOps Decky plugin automatically switches your display settings when you "
+            "connect or disconnect a monitor. Decky Loader is required to use it.",
+            11, C_DIM, align=Qt.AlignLeft)
+        self._decky_btn  = _btn("Get Decky Loader  →  decky.xyz", C_BLUE_BTN, size=12, h=40)
+        self._decky_btn.setFixedWidth(320)
+        self._decky_btn.clicked.connect(lambda: __import__("subprocess").Popen(
+            ["xdg-open", "https://decky.xyz/"], start_new_session=True
+        ))
+        dbw = QHBoxLayout(); dbw.addWidget(self._decky_btn); dbw.addStretch()
+        lay.addWidget(self._decky_div)
+        lay.addWidget(self._decky_hdr)
+        lay.addWidget(self._decky_body)
+        lay.addLayout(dbw)
 
-        lay.addWidget(_lbl(
-            "Launch each modded game at least once before going online — Steam Cloud may overwrite your setup if you launch Desktop Mode first.",
-            11, C_TREY, align=Qt.AlignCenter))
+        lay.addStretch()
         lay.addSpacing(4)
 
         cont = _btn("Continue  >>", C_IW, h=52)
@@ -1794,6 +1933,12 @@ class ControllerInfoScreen(QWidget):
         self._lcd_plut_warn_div.setVisible(is_lcd)
         self._lcd_plut_warn_hdr.setVisible(is_lcd)
         self._lcd_plut_warn_body.setVisible(is_lcd)
+        # Only show the Decky section for docked users
+        is_docked = cfg.is_docked()
+        self._decky_div.setVisible(is_docked)
+        self._decky_hdr.setVisible(is_docked)
+        self._decky_body.setVisible(is_docked)
+        self._decky_btn.setVisible(is_docked)
 
     def _go_management(self):
         root = find_steam_root()
