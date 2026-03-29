@@ -2,11 +2,12 @@
 cod4x.py - DeckOps installer for CoD4x (Call of Duty 4: Modern Warfare)
 
 Runs the official CoD4x 21.3 setup.exe through Proton in silent mode.
-Before running the installer, we pre-install prefix dependencies (DLLs
-from GE-Proton's default_pfx) and write registry keys that tell Steam
-the first-launch installers (Punkbuster, DirectX) have already run.
-This prevents Steam from re-validating game files and overwriting the
-CoD4x chain-loader mss32.dll.
+Before running the installer, we ensure the prefix exists on NVMe by
+cloning from the donor prefix (created by ge_proton.ensure_all_prefix_deps
+earlier in the install flow). The clone includes symlinked system32/syswow64
+pointing to the shared DLL directory -- so the prefix is fully initialized
+with all DLLs before Proton ever touches it. Registry keys are pre-written
+into user.reg so Steam's first-launch installers never fire.
 
 The CoD4x chain-loader mechanism:
   1. mss32.dll in the game directory is replaced with the CoD4x version.
@@ -16,19 +17,17 @@ The CoD4x chain-loader mechanism:
   3. launcher.dll loads cod4x_021.dll from AppData/Local/CallofDuty4MW/bin/cod4x_021/.
   4. cod4x_021.dll patches the game in memory to become CoD4x 21.3.
 
-Install flow:
-  1. Copy DLLs from GE-Proton's default_pfx into the prefix
-     (same thing ensure_prefix_deps does — system32 + syswow64)
-  2. Write registry keys into user.reg so Steam skips DirectX/Punkbuster
-     first-launch prompts and never re-validates game files
-  3. Download the official CoD4x setup.exe
-  4. Run setup.exe through Proton with /VERYSILENT /SUPPRESSMSGBOXES
-  5. Write registry keys again (in case Proton created a fresh user.reg)
-  6. Clean up and write metadata
+Install flow (Session 25):
+  1. Force prefix to NVMe, clean up any SD card prefix for 7940
+  2. Clone prefix from donor if it doesn't exist (symlinked DLLs, fast)
+  3. Write registry keys into user.reg so Steam skips DirectX/Punkbuster
+  4. Download the official CoD4x setup.exe
+  5. Run setup.exe through Proton (prefix already initialized, no popups)
+  6. Write registry keys again (safety net)
+  7. Clean up and write metadata
 
-Because install_cod4x runs Proton itself (via the setup.exe), callers
-should skip ensure_prefix_deps for appid 7940 — the setup.exe run
-initializes the prefix in the same step.
+Because the prefix is pre-built via clone, callers should still skip
+ensure_prefix_deps for appid 7940 -- we handle it here instead.
 """
 
 import os
@@ -128,8 +127,10 @@ def _ensure_prefix_dlls(compatdata_path: str, on_progress=None):
     This is the same thing ge_proton.ensure_prefix_deps does in steps 1-2
     (create prefix dir if needed, copy system32 + syswow64 DLLs). We do
     it here instead of relying on the main flow because install_cod4x
-    handles its own Proton execution via the setup.exe — callers skip
+    handles its own Proton execution via the setup.exe -- callers skip
     ensure_prefix_deps for appid 7940.
+
+    Kept as fallback if the donor clone approach fails.
     """
     from ge_proton import _find_default_pfx, _get_local_version, _copy_dlls
 
@@ -140,7 +141,7 @@ def _ensure_prefix_dlls(compatdata_path: str, on_progress=None):
     ge_version = _get_local_version()
     default_pfx = _find_default_pfx(ge_version)
     if not default_pfx:
-        prog("⚠ No GE-Proton default_pfx found — cannot copy DLLs")
+        prog("⚠ No GE-Proton default_pfx found -- cannot copy DLLs")
         return False
 
     pfx_dir = os.path.join(compatdata_path, "pfx")
@@ -167,6 +168,122 @@ def _ensure_prefix_dlls(compatdata_path: str, on_progress=None):
     except Exception as ex:
         prog(f"  ⚠ DLL copy failed: {ex}")
         return False
+
+
+def _nvme_compatdata(appid: str) -> str:
+    """Return the NVMe compatdata path for a given appid."""
+    return os.path.join(
+        os.path.expanduser("~/.local/share/Steam"),
+        "steamapps", "compatdata", str(appid),
+    )
+
+
+def _cleanup_sd_card_prefix(appid: str, on_progress=None):
+    """Delete any SD card compatdata prefix for the given appid."""
+    import glob
+
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    sd_patterns = [
+        "/run/media/deck/*/steamapps/compatdata",
+        "/run/media/deck/*/SteamLibrary/steamapps/compatdata",
+        "/run/media/mmcblk0p1/steamapps/compatdata",
+        "/run/media/mmcblk0p1/SteamLibrary/steamapps/compatdata",
+    ]
+
+    for pattern in sd_patterns:
+        for compat_dir in glob.glob(pattern):
+            prefix_dir = os.path.join(compat_dir, str(appid))
+            if os.path.isdir(prefix_dir):
+                try:
+                    shutil.rmtree(prefix_dir)
+                    prog(f"  ✓ Removed SD card prefix for {appid}")
+                except Exception as ex:
+                    prog(f"  ⚠ Failed to remove SD card prefix {appid}: {ex}")
+
+
+def _find_donor_prefix():
+    """
+    Find an existing NVMe prefix to clone from. Looks for any managed
+    prefix that has a fully initialized pfx/drive_c. Prefers 10190 (MW2 MP)
+    since that's the standard donor from ensure_all_prefix_deps.
+    """
+    from ge_proton import MANAGED_APPIDS
+
+    nvme_base = os.path.join(
+        os.path.expanduser("~/.local/share/Steam"),
+        "steamapps", "compatdata",
+    )
+
+    # Prefer 10190 (the standard donor)
+    preferred = os.path.join(nvme_base, "10190", "pfx", "drive_c")
+    if os.path.isdir(preferred):
+        return os.path.join(nvme_base, "10190")
+
+    # Fall back to any managed prefix that exists
+    for appid in MANAGED_APPIDS:
+        if str(appid) == "7940":
+            continue
+        candidate = os.path.join(nvme_base, str(appid), "pfx", "drive_c")
+        if os.path.isdir(candidate):
+            return os.path.join(nvme_base, str(appid))
+
+    return None
+
+
+def _ensure_7940_prefix(compatdata_path: str, on_progress=None) -> bool:
+    """
+    Ensure the 7940 prefix exists on NVMe with symlinked DLLs.
+
+    If the prefix already exists and has drive_c, it's ready.
+    Otherwise, clone from the donor prefix (same approach as
+    ge_proton._clone_with_symlinks).
+
+    Returns True if the prefix is ready, False on failure.
+    """
+    from ge_proton import (_get_local_version, _clone_with_symlinks,
+                           SHARED_DLL_DIR, _ensure_shared_dlls)
+
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    pfx_dir = os.path.join(compatdata_path, "pfx")
+
+    # Already initialized -- nothing to do
+    if os.path.isdir(os.path.join(pfx_dir, "drive_c")):
+        prog("  ✓ 7940 prefix already exists on NVMe")
+        return True
+
+    # Find a donor prefix to clone from
+    donor_path = _find_donor_prefix()
+    if not donor_path:
+        prog("  ⚠ No donor prefix found -- falling back to DLL copy")
+        return False
+
+    donor_pfx = os.path.join(donor_path, "pfx")
+    if not os.path.isdir(donor_pfx):
+        prog("  ⚠ Donor prefix has no pfx/ dir -- falling back to DLL copy")
+        return False
+
+    # Make sure shared DLLs exist (should already be set up by ensure_all_prefix_deps)
+    ge_version = _get_local_version()
+    shared_ready = os.path.isdir(os.path.join(SHARED_DLL_DIR, "system32"))
+    if not shared_ready:
+        prog("  Setting up shared DLLs for 7940...")
+        shared_ready = _ensure_shared_dlls(ge_version, on_progress=on_progress)
+
+    if shared_ready:
+        prog("  Cloning donor prefix to 7940 with symlinked DLLs...")
+        ok = _clone_with_symlinks(donor_pfx, compatdata_path, ge_version,
+                                  on_progress=on_progress)
+        if ok:
+            return True
+        prog("  ⚠ Symlinked clone failed -- falling back to DLL copy")
+
+    return False
 
 
 def _write_registry_keys(compatdata_path: str, on_progress=None):
@@ -257,24 +374,24 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     """
     Install CoD4x 21.3 using the official setup.exe through Proton.
 
-    This function handles its own prefix initialization — callers should
+    This function handles its own prefix initialization -- callers should
     skip ensure_prefix_deps for appid 7940 when cod4x is being installed.
 
-    Flow:
-      1. Copy DLLs from GE-Proton default_pfx into the prefix
-      2. Write registry keys so Steam skips first-launch installers
-      3. Download and run CoD4x_Setup.exe with /VERYSILENT
-      4. The setup.exe initializes the prefix AND installs all CoD4x files
-      5. Write registry keys again (in case Proton created a fresh user.reg)
+    Flow (Session 25):
+      1. Force prefix to NVMe, clean up SD card prefix
+      2. Clone from donor prefix if needed (symlinked DLLs)
+      3. Write registry keys so Steam skips first-launch installers
+      4. Download and run CoD4x_Setup.exe with /VERYSILENT
+      5. Write registry keys again (safety net)
       6. Clean up and write metadata
 
     Parameters:
-      game            — dict from detect_games with install_dir, exe_path, etc.
-      steam_root      — path to the Steam root directory
-      proton_path     — path to the Proton executable
-      compatdata_path — path to the game's compatdata prefix (can be None/empty)
-      on_progress     — optional callback(percent: int, status: str)
-      appid           — Steam appid (default 7940)
+      game            -- dict from detect_games with install_dir, exe_path, etc.
+      steam_root      -- path to the Steam root directory
+      proton_path     -- path to the Proton executable
+      compatdata_path -- path to the game's compatdata prefix (can be None/empty)
+      on_progress     -- optional callback(percent: int, status: str)
+      appid           -- Steam appid (default 7940)
     """
     install_dir = game["install_dir"]
 
@@ -286,28 +403,33 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         if on_progress:
             on_progress(0, msg)
 
-    # ── Guard: construct compatdata_path if missing ───────────────────────
-    # find_compatdata returns None when no prefix exists yet (e.g. fresh
-    # install after deleting all prefixes). Construct the path in the same
-    # library folder as the game and create the directory so subsequent
-    # steps (DLL copy, registry writes, Proton run) have a valid target.
-    if not compatdata_path:
-        steamapps = os.path.dirname(os.path.dirname(install_dir))
-        compatdata_path = os.path.join(steamapps, "compatdata", str(appid))
-        log(f"  Prefix not found — creating {compatdata_path}")
+    # ── Step 1: Force prefix to NVMe ──────────────────────────────────────
+    # Always use NVMe for the prefix regardless of where the game is installed.
+    # Clean up any stale SD card prefix first.
+    import time
+    start = time.time()
+    compatdata_path = _nvme_compatdata(str(appid))
+    log(f"  Prefix path: {compatdata_path}")
+    _cleanup_sd_card_prefix(str(appid), on_progress=log)
+
+    # ── Step 2: Ensure prefix exists (clone from donor) ───────────────────
+    prog(2, "Preparing prefix...")
+    cloned = _ensure_7940_prefix(compatdata_path, on_progress=log)
+    if not cloned:
+        # Fallback: old-style DLL copy if no donor available
+        log("  Falling back to direct DLL copy...")
+        _ensure_prefix_dlls(compatdata_path, on_progress=log)
     os.makedirs(compatdata_path, exist_ok=True)
+    elapsed = time.time() - start
+    log(f"  Prefix ready ({elapsed:.1f}s)")
 
-    # ── Step 1: Copy prefix DLLs ──────────────────────────────────────────
-    prog(2, "Copying prefix dependencies...")
-    _ensure_prefix_dlls(compatdata_path, on_progress=log)
-
-    # ── Step 2: Write registry keys (pre-setup) ──────────────────────────
-    # Write before the setup.exe run. If user.reg doesn't exist yet
-    # (fresh prefix), we'll write again after setup.exe creates it.
+    # ── Step 3: Write registry keys (pre-setup) ─────────────────────────
+    # Write before the setup.exe run. The prefix was cloned with user.reg
+    # from the donor, so this should succeed on the first attempt.
     prog(8, "Writing registry keys...")
     pre_reg_ok = _write_registry_keys(compatdata_path, on_progress=log)
 
-    # ── Step 3: Download CoD4x setup.exe ─────────────────────────────────
+    # ── Step 4: Download CoD4x setup.exe ─────────────────────────────────
     prog(10, "Downloading CoD4x installer...")
     setup_dir = tempfile.mkdtemp(prefix="deckops_cod4x_")
     setup_exe = os.path.join(setup_dir, "CoD4x_Setup.exe")
@@ -321,10 +443,10 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         shutil.rmtree(setup_dir, ignore_errors=True)
         raise RuntimeError(f"Failed to download CoD4x installer: {e}")
 
-    # ── Step 4: Run setup.exe through Proton ─────────────────────────────
-    # No /DIR= needed — setup.exe detects the game location from the
-    # working directory (cwd=install_dir). This matches the stable build
-    # approach and avoids needing dosdevices/ to exist beforehand.
+    # ── Step 5: Run setup.exe through Proton ─────────────────────────────
+    # No /DIR= needed -- setup.exe detects the game location from the
+    # working directory (cwd=install_dir). Prefix is pre-built so Proton
+    # should not trigger any first-launch installers.
     prog(55, "Running CoD4x installer...")
     _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
 
@@ -356,13 +478,13 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         # Clean up the setup exe regardless of outcome
         shutil.rmtree(setup_dir, ignore_errors=True)
 
-    # ── Step 5: Write registry keys (post-setup) ─────────────────────────
+    # ── Step 6: Write registry keys (post-setup) ─────────────────────────
     # The Proton run may have created a fresh user.reg, so write keys again
     # to make sure they're in place for the next Steam launch.
     prog(80, "Finalizing registry...")
     _write_registry_keys(compatdata_path, on_progress=log)
 
-    # ── Step 6: Verify the chain-loader was placed correctly ─────────────
+    # ── Step 7: Verify the chain-loader was placed correctly ─────────────
     mss_path = os.path.join(install_dir, "mss32.dll")
     miles_path = os.path.join(install_dir, "miles32.dll")
 
@@ -378,7 +500,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     elif not os.path.exists(miles_path):
         log("  ⚠ miles32.dll backup not found — setup.exe may not have run correctly")
 
-    # ── Step 7: Delete servercache.dat ────────────────────────────────────
+    # ── Step 8: Delete servercache.dat ────────────────────────────────────
     # Force CoD4x to download a fresh server list on first launch.
     appdata_dir = _get_appdata_dir(compatdata_path)
     for cache_path in [
@@ -390,7 +512,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
 
     prog(90, "Cleared server cache.")
 
-    # ── Step 8: Write metadata ────────────────────────────────────────────
+    # ── Step 9: Write metadata ────────────────────────────────────────────
     prog(95, "Saving metadata...")
     _write_metadata(install_dir, {
         "version": "21.3",
