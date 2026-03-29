@@ -4,10 +4,10 @@ import {
   PanelSectionRow,
   ToggleField,
   staticClasses,
+  definePlugin,
 } from "@decky/ui";
 import {
   callable,
-  definePlugin,
   toaster,
 } from "@decky/api";
 import { useState, useEffect } from "react";
@@ -23,6 +23,7 @@ const getStatus = callable<[], {
   external_resolution: string | null;
   external_aspect_ratio: string | null;
   matched_resolution: string | null;
+  needs_testing: boolean;
   handheld_refresh: string;
 }>("get_status");
 
@@ -49,6 +50,7 @@ const detectDisplay = callable<[], {
   resolution: string | null;
   aspect_ratio: string | null;
   matched_res: string | null;
+  needs_testing: boolean;
 }>("detect_display");
 
 // ── Main UI Component ───────────────────────────────────────────────────────
@@ -56,11 +58,12 @@ const detectDisplay = callable<[], {
 function Content() {
   const [isDocked, setIsDocked] = useState(false);
   const [currentRes, setCurrentRes] = useState("1280x800");
-  const [refreshRate, setRefreshRate] = useState("60");
-  const [deckModel, setDeckModel] = useState("lcd");
+  const [refreshRate, setRefreshRate] = useState("60 Hz");
   const [externalConnected, setExternalConnected] = useState(false);
   const [externalRes, setExternalRes] = useState<string | null>(null);
   const [matchedRes, setMatchedRes] = useState<string | null>(null);
+  const [needsTesting, setNeedsTesting] = useState(false);
+  const [externalRatio, setExternalRatio] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [configCount, setConfigCount] = useState(0);
 
@@ -73,7 +76,6 @@ function Content() {
     try {
       const status = await getStatus();
       setIsDocked(status.mode === "docked");
-      setDeckModel(status.deck_model || "lcd");
       setRefreshRate(
         status.mode === "docked"
           ? "auto"
@@ -89,6 +91,8 @@ function Content() {
       setExternalConnected(status.external_connected);
       setExternalRes(status.external_resolution);
       setMatchedRes(status.matched_resolution);
+      setNeedsTesting(status.needs_testing);
+      setExternalRatio(status.external_aspect_ratio);
     } catch (e) {
       console.error("DeckOps: Failed to get status", e);
     }
@@ -131,6 +135,8 @@ function Content() {
       setExternalConnected(info.connected);
       setExternalRes(info.resolution);
       setMatchedRes(info.matched_res);
+      setNeedsTesting(info.needs_testing);
+      setExternalRatio(info.aspect_ratio);
     } catch (e) {
       console.error("DeckOps: Failed to detect display", e);
     }
@@ -143,8 +149,8 @@ function Content() {
           label="Docked Mode"
           description={
             isDocked
-              ? `${currentRes} @ ${refreshRate}Hz`
-              : `Handheld: 1280x800 @ ${refreshRate}Hz`
+              ? `${currentRes} @ ${refreshRate}`
+              : `Handheld: 1280x800 @ ${refreshRate}`
           }
           checked={isDocked}
           disabled={loading}
@@ -152,13 +158,21 @@ function Content() {
         />
       </PanelSectionRow>
 
-      {externalConnected && (
+      {externalConnected && !needsTesting && (
         <PanelSectionRow>
           <div style={{ fontSize: "12px", color: "#b8bcbf", padding: "0 16px" }}>
             External display: {externalRes}
             {matchedRes && matchedRes !== externalRes && (
               <span> → using {matchedRes}</span>
             )}
+          </div>
+        </PanelSectionRow>
+      )}
+
+      {externalConnected && needsTesting && (
+        <PanelSectionRow>
+          <div style={{ fontSize: "12px", color: "#dcb458", padding: "0 16px" }}>
+            {externalRatio} display detected ({externalRes}). Using {matchedRes} — this aspect ratio is experimental and may not work with all games.
           </div>
         </PanelSectionRow>
       )}
