@@ -257,15 +257,22 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
 def _copy_plut_to_prefix(src_plut_dir: str, dest_plut_dir: str,
                           on_progress=None):
     """Copy the entire Plutonium/ folder from src to dest."""
+    import time
+
     def prog(msg):
         if on_progress:
             on_progress(msg)
 
+    prog(f"  Copying Plutonium: {src_plut_dir} → {dest_plut_dir}")
+
     if os.path.exists(dest_plut_dir):
+        prog(f"  Removing existing Plutonium at {dest_plut_dir}...")
         shutil.rmtree(dest_plut_dir)
 
+    start = time.time()
     shutil.copytree(src_plut_dir, dest_plut_dir)
-    prog(f"Copied Plutonium to {dest_plut_dir}")
+    elapsed = time.time() - start
+    prog(f"  Copied Plutonium ({elapsed:.1f}s)")
 
 
 # ── xact ──────────────────────────────────────────────────────────────────────
