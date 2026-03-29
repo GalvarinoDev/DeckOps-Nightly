@@ -1296,6 +1296,22 @@ PYEOF
 
 echo ""
 
+# ── Decky plugin ──────────────────────────────────────────────────────────────
+info "Removing DeckOps Decky plugin..."
+
+DECKY_PLUGIN_DIR="$HOME/homebrew/plugins/DeckOps"
+
+if [ -d "$DECKY_PLUGIN_DIR" ]; then
+    sudo systemctl stop plugin_loader 2>/dev/null
+    rm -rf "$DECKY_PLUGIN_DIR"
+    success "Decky plugin removed."
+    sudo systemctl start plugin_loader 2>/dev/null
+else
+    skip "Decky plugin not installed."
+fi
+
+echo ""
+
 SHORTCUTS=(
     "$HOME/.local/share/applications/deckops-nightly.desktop"
     "$HOME/.local/share/applications/deckops.desktop"
