@@ -569,6 +569,44 @@ class Plugin:
         """
         return _apply_mode("docked", resolution)
 
+
+    async def enable_file_editing(self):
+        """
+        Temporarily unlock all deployed game configs so the game engine
+        can write to them (e.g. to save in-game settings changes).
+
+        Configs are re-locked read-only automatically on the next mode
+        switch (set_handheld / set_docked). This state is not persisted —
+        a plugin reload will not re-unlock files.
+
+        Intended to be surfaced in the UI as "Allow Game Config Editing",
+        sitting beneath the handheld/docked resolution toggle.
+        """
+        configs = _find_deployed_configs()
+        unlocked = 0
+        failed = 0
+
+        for config_entry in configs:
+            try:
+                os.chmod(config_entry["path"], 0o644)
+                unlocked += 1
+                decky.logger.info(f"Unlocked for editing: {config_entry['path']}")
+            except (IOError, OSError) as e:
+                decky.logger.warning(
+                    f"Could not unlock {config_entry['path']}: {e}"
+                )
+                failed += 1
+
+        decky.logger.info(
+            f"File editing enabled: {unlocked} unlocked, {failed} failed. "
+            "Configs will be re-locked on next mode switch."
+        )
+        return {
+            "unlocked": unlocked,
+            "failed": failed,
+            "total": len(configs),
+        }
+
     async def detect_display(self):
         """Run xrandr detection and return display info."""
         return _detect_external_display()
