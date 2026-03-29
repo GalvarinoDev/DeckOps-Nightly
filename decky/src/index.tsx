@@ -1,0 +1,209 @@
+import {
+  ButtonItem,
+  PanelSection,
+  PanelSectionRow,
+  ToggleField,
+  staticClasses,
+} from "@decky/ui";
+import {
+  callable,
+  definePlugin,
+  toaster,
+} from "@decky/api";
+import { useState, useEffect } from "react";
+import { FaTv } from "react-icons/fa";
+
+// ── Python backend calls ────────────────────────────────────────────────────
+
+const getStatus = callable<[], {
+  mode: string;
+  deck_model: string;
+  docked_resolution: string | null;
+  external_connected: boolean;
+  external_resolution: string | null;
+  external_aspect_ratio: string | null;
+  matched_resolution: string | null;
+  handheld_refresh: string;
+}>("get_status");
+
+const setHandheld = callable<[], {
+  mode: string;
+  resolution: string;
+  refresh_rate: string;
+  patched: number;
+  failed: number;
+  total: number;
+}>("set_handheld");
+
+const setDocked = callable<[resolution: string | null], {
+  mode: string;
+  resolution: string;
+  refresh_rate: string;
+  patched: number;
+  failed: number;
+  total: number;
+}>("set_docked");
+
+const detectDisplay = callable<[], {
+  connected: boolean;
+  resolution: string | null;
+  aspect_ratio: string | null;
+  matched_res: string | null;
+}>("detect_display");
+
+// ── Main UI Component ───────────────────────────────────────────────────────
+
+function Content() {
+  const [isDocked, setIsDocked] = useState(false);
+  const [currentRes, setCurrentRes] = useState("1280x800");
+  const [refreshRate, setRefreshRate] = useState("60");
+  const [deckModel, setDeckModel] = useState("lcd");
+  const [externalConnected, setExternalConnected] = useState(false);
+  const [externalRes, setExternalRes] = useState<string | null>(null);
+  const [matchedRes, setMatchedRes] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [configCount, setConfigCount] = useState(0);
+
+  // Load current status on mount
+  useEffect(() => {
+    loadStatus();
+  }, []);
+
+  const loadStatus = async () => {
+    try {
+      const status = await getStatus();
+      setIsDocked(status.mode === "docked");
+      setDeckModel(status.deck_model || "lcd");
+      setRefreshRate(
+        status.mode === "docked"
+          ? "auto"
+          : status.handheld_refresh
+      );
+
+      if (status.mode === "docked" && status.docked_resolution) {
+        setCurrentRes(status.docked_resolution);
+      } else {
+        setCurrentRes("1280x800");
+      }
+
+      setExternalConnected(status.external_connected);
+      setExternalRes(status.external_resolution);
+      setMatchedRes(status.matched_resolution);
+    } catch (e) {
+      console.error("DeckOps: Failed to get status", e);
+    }
+  };
+
+  const handleToggle = async (docked: boolean) => {
+    setLoading(true);
+    try {
+      let result;
+      if (docked) {
+        result = await setDocked(null);
+      } else {
+        result = await setHandheld();
+      }
+
+      setIsDocked(docked);
+      setCurrentRes(result.resolution);
+      setRefreshRate(result.refresh_rate);
+      setConfigCount(result.patched);
+
+      toaster.toast({
+        title: "DeckOps Display",
+        body: docked
+          ? `Docked: ${result.resolution} (${result.patched} configs updated)`
+          : `Handheld: 1280x800 (${result.patched} configs updated)`,
+      });
+    } catch (e) {
+      console.error("DeckOps: Failed to toggle mode", e);
+      toaster.toast({
+        title: "DeckOps Display",
+        body: "Failed to switch display mode",
+      });
+    }
+    setLoading(false);
+  };
+
+  const handleRefreshDisplay = async () => {
+    try {
+      const info = await detectDisplay();
+      setExternalConnected(info.connected);
+      setExternalRes(info.resolution);
+      setMatchedRes(info.matched_res);
+    } catch (e) {
+      console.error("DeckOps: Failed to detect display", e);
+    }
+  };
+
+  return (
+    <PanelSection title="Display Mode">
+      <PanelSectionRow>
+        <ToggleField
+          label="Docked Mode"
+          description={
+            isDocked
+              ? `${currentRes} @ ${refreshRate}Hz`
+              : `Handheld: 1280x800 @ ${refreshRate}Hz`
+          }
+          checked={isDocked}
+          disabled={loading}
+          onChange={handleToggle}
+        />
+      </PanelSectionRow>
+
+      {externalConnected && (
+        <PanelSectionRow>
+          <div style={{ fontSize: "12px", color: "#b8bcbf", padding: "0 16px" }}>
+            External display: {externalRes}
+            {matchedRes && matchedRes !== externalRes && (
+              <span> → using {matchedRes}</span>
+            )}
+          </div>
+        </PanelSectionRow>
+      )}
+
+      {!externalConnected && isDocked && (
+        <PanelSectionRow>
+          <div style={{ fontSize: "12px", color: "#dcb458", padding: "0 16px" }}>
+            No external display detected — using last known resolution
+          </div>
+        </PanelSectionRow>
+      )}
+
+      <PanelSectionRow>
+        <ButtonItem
+          layout="below"
+          onClick={handleRefreshDisplay}
+          disabled={loading}
+        >
+          Refresh Display Detection
+        </ButtonItem>
+      </PanelSectionRow>
+
+      {configCount > 0 && (
+        <PanelSectionRow>
+          <div style={{ fontSize: "11px", color: "#7c7e80", padding: "0 16px" }}>
+            Last update: {configCount} config{configCount !== 1 ? "s" : ""} patched
+          </div>
+        </PanelSectionRow>
+      )}
+    </PanelSection>
+  );
+}
+
+// ── Plugin Registration ─────────────────────────────────────────────────────
+
+export default definePlugin(() => {
+  console.log("DeckOps display plugin loaded");
+
+  return {
+    name: "DeckOps",
+    titleView: <div className={staticClasses.Title}>DeckOps Display</div>,
+    content: <Content />,
+    icon: <FaTv />,
+    onDismount() {
+      console.log("DeckOps display plugin unloaded");
+    },
+  };
+});
