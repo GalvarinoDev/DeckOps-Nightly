@@ -451,11 +451,24 @@ def _patch_config(filepath, resolution, refresh_rate, aspect_ratio_str,
 
     if content == original:
         decky.logger.info(f"No changes needed for {filepath}")
+        # Lock read-only even if nothing changed -- may have been
+        # left writable by enable_file_editing or a previous run
+        try:
+            os.chmod(filepath, 0o444)
+        except OSError:
+            pass
         return True
 
     try:
+        # Unlock before writing -- file may be read-only from a previous patch
+        try:
+            os.chmod(filepath, 0o644)
+        except OSError:
+            pass
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(content)
+        # Lock read-only so the game engine can't overwrite our settings
+        os.chmod(filepath, 0o444)
         decky.logger.info(
             f"Patched {filepath}: r_mode={resolution}, "
             f"refresh={refresh_rate}, aspect={aspect_ratio_str}"
