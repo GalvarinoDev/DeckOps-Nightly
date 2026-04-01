@@ -98,6 +98,14 @@ OWN_WRAPPER_EXES = {
     "iw5mp": "iw5plutmp.exe",
 }
 
+# DeckOps client-side menu mods. Downloaded from the repo and installed
+# into the Plutonium storage path so they override the default menus.
+# Currently only T6 MP has a custom mainlobby.lua. ZM version not built yet.
+MENU_MOD_BASE_URL = "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main/assets/mods/t6"
+MENU_MOD_FILES = {
+    "t6mp": ("t6mp/mainlobby.lua", "storage/t6/raw/ui/t6/mainlobby.lua"),
+}
+
 
 # ── DirectX June 2010 redist ──────────────────────────────────────────────────
 # XACT DLLs are extracted from this single cabinet file by winetricks.
@@ -861,6 +869,62 @@ def _write_config(plut_dir: str, game_keys: list, installed_games: dict):
         json.dump(data, f, indent=2)
 
 
+# ── client-side menu mods ────────────────────────────────────────────────────
+
+def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
+    """
+    Download and install the DeckOps menu mod for the given game key.
+
+    Downloads mainlobby.lua from the repo and writes it into the prefix's
+    Plutonium storage path at raw/ui/t6/. This overrides Plutonium's default
+    main menu with the DeckOps community version (server connect, unlock all,
+    reset stats buttons).
+
+    Installed into raw/ui/t6/ (not mods/) so it:
+    - Uses normal player stats (no separate mod stats)
+    - Persists across disconnects
+    - Loads automatically on every launch
+
+    Skips silently for game keys without a menu mod defined.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    if game_key not in MENU_MOD_FILES:
+        return
+
+    remote_path, local_path = MENU_MOD_FILES[game_key]
+    url = f"{MENU_MOD_BASE_URL}/{remote_path}"
+    dest_file = os.path.join(dest_plut_dir, local_path)
+
+    prog(f"  Installing DeckOps menu mod for {game_key}...")
+
+    os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+
+    import time
+    _headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+    }
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, headers=_headers)
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = r.read()
+            with open(dest_file, "wb") as f:
+                f.write(data)
+            prog(f"  ✓ Menu mod installed ({len(data)} bytes)")
+            return
+        except Exception as ex:
+            if attempt == 2:
+                prog(f"  ⚠ Menu mod download failed: {ex}")
+                return  # Non-fatal -- game still works without the mod
+            time.sleep(2 ** attempt)
+
+
 # ── wrapper script ────────────────────────────────────────────────────────────
 
 def _write_wrapper(game: dict, game_key: str, steam_root: str,
@@ -1060,6 +1124,12 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     appid = GAME_META[game_key][0]
     keys_for_appid = [k for k, v in GAME_META.items() if v[0] == appid]
     _write_config(dest_plut_dir, keys_for_appid, installed_games)
+
+    # Install DeckOps client-side menu mod (e.g. mainlobby.lua for T6 MP).
+    # Runs for both Steam and own installs, both LCD and OLED.
+    prog(65, "Installing menu mod...")
+    _install_menu_mod(dest_plut_dir, game_key,
+                      on_progress=lambda msg: prog(67, msg))
 
     # Own game shortcuts point at Plutonium directly -- no wrapper needed.
     # Steam games replace the original exe with a bash wrapper.
