@@ -98,12 +98,13 @@ OWN_WRAPPER_EXES = {
     "iw5mp": "iw5plutmp.exe",
 }
 
-# DeckOps client-side menu mods. Downloaded from the repo and installed
-# into the Plutonium storage path so they override the default menus.
-# Currently only T6 MP has a custom mainlobby.lua. ZM version not built yet.
+# DeckOps client-side menu mods packaged as .iwd files (renamed .zip).
+# Downloaded from the repo and placed in Plutonium's storage/t6/raw/
+# directory where they are loaded automatically on game launch.
+# Currently only T6 MP has a custom menu. ZM version not built yet.
 MENU_MOD_BASE_URL = "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main/assets/mods/t6"
 MENU_MOD_FILES = {
-    "t6mp": ("t6mp/mainlobby.lua", "storage/t6/raw/ui/t6/mainlobby.lua"),
+    "t6mp": ("t6mp/deckops_menu.iwd", "storage/t6/raw/deckops_menu.iwd"),
 }
 
 
@@ -875,12 +876,13 @@ def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
     """
     Download and install the DeckOps menu mod for the given game key.
 
-    Downloads mainlobby.lua from the repo and writes it into the prefix's
-    Plutonium storage path at raw/ui/t6/. This overrides Plutonium's default
-    main menu with the DeckOps community version (server connect, unlock all,
-    reset stats buttons).
+    Downloads a pre-built .iwd file (renamed .zip) from the repo and
+    places it in the prefix's Plutonium storage path at raw/. Plutonium
+    loads .iwd files from raw/ automatically on game launch, overriding
+    the default main menu with the DeckOps community version (server
+    connect, unlock all, reset stats buttons).
 
-    Installed into raw/ui/t6/ (not mods/) so it:
+    Uses .iwd in raw/ (not mods/) so it:
     - Uses normal player stats (no separate mod stats)
     - Persists across disconnects
     - Loads automatically on every launch
