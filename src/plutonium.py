@@ -969,49 +969,6 @@ def _write_own_wrapper(game: dict, game_key: str, steam_root: str,
              stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
-# ── t6mp mainlobby.lua ────────────────────────────────────────────────────────
-# Downloads the latest mainlobby.lua for t6 MP from GitHub and writes it into
-# the correct mods/t6/ path inside the game's Plutonium storage directory.
-# Called for both LCD and OLED after the rest of the t6mp install is complete.
-
-MAINLOBBY_LUA_URL = (
-    "https://raw.githubusercontent.com/nicholasgasior/DeckOps-Nightly/"
-    "main/assets/mods/t6/mainlobby.lua"
-)
-
-
-def _install_t6mp_mainlobby(dest_plut_dir: str, on_progress=None):
-    """
-    Download mainlobby.lua from GitHub and place it at:
-        <dest_plut_dir>/storage/t6/mods/mp/mainlobby.lua
-
-    Overwrites any existing file. Silently skips if the download fails so
-    that a network hiccup does not abort an otherwise successful install.
-    """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    dest_dir  = os.path.join(dest_plut_dir, "storage", "t6", "mods", "mp")
-    dest_file = os.path.join(dest_dir, "mainlobby.lua")
-
-    os.makedirs(dest_dir, exist_ok=True)
-
-    prog("Downloading t6 MP mainlobby.lua...")
-    try:
-        req = urllib.request.Request(
-            MAINLOBBY_LUA_URL,
-            headers={"User-Agent": "DeckOps"},
-        )
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = r.read()
-        with open(dest_file, "wb") as f:
-            f.write(data)
-        prog("  ✓ mainlobby.lua installed")
-    except Exception as ex:
-        prog(f"  ⚠ mainlobby.lua download failed (skipping): {ex}")
-
-
 # ── metadata ──────────────────────────────────────────────────────────────────
 
 def _write_metadata(install_dir: str, data: dict):
@@ -1138,12 +1095,6 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
                 "wrapper_exe": os.path.join(game["install_dir"],
                                             OWN_WRAPPER_EXES[game_key]),
             })
-
-    if game_key == "t6mp":
-        _install_t6mp_mainlobby(
-            dest_plut_dir,
-            on_progress=lambda msg: prog(98, msg),
-        )
 
     prog(100, f"Plutonium ready for {game['name']}!")
 
