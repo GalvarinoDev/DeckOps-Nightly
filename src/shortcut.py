@@ -939,8 +939,8 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
 
     # Plutonium keys that use the Plutonium launcher/bootstrapper instead
     # of the original game exe. The shortcut points at the Plutonium binary.
-    _PLUT_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6sp", "t6zm", "t6mp",
-                  "iw5sp", "iw5mp"}
+    _PLUT_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp",
+                  "iw5mp"}
 
     to_create = {}
     for key in selected_keys:
