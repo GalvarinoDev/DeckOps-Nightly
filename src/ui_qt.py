@@ -2475,6 +2475,20 @@ class OwnInstallScreen(QWidget):
         self.cont_btn.setVisible(True)
 
     def _run(self):
+        import traceback as _tb
+        try:
+            self._run_inner()
+        except Exception:
+            err = _tb.format_exc()
+            _log_to_file(f"[FATAL] OwnInstallScreen._run crashed:\n{err}")
+            try:
+                self._s.log.emit(f"✗ Install failed with error:\n{err}")
+                self._s.progress.emit(100, "Install failed — see log.")
+                self._s.done.emit(True)
+            except Exception:
+                pass
+
+    def _run_inner(self):
         from wrapper import get_proton_path, find_compatdata, kill_steam, set_compat_tool
         from shortcut import create_own_shortcuts
         from cod4x import install_cod4x
@@ -2609,6 +2623,7 @@ class OwnInstallScreen(QWidget):
             on_progress=lambda msg: self._s.log.emit(msg),
             steam_root=self.steam_root,
         )
+        _log_to_file("[BREADCRUMB] create_own_shortcuts returned")
 
         # Update self.selected with enriched own game dicts (shortcut_appid etc)
         self.selected = [
@@ -2617,6 +2632,7 @@ class OwnInstallScreen(QWidget):
         # Rebuild own_games with enriched dicts for compat tool mapping later.
         # Only include own-selected keys - Steam games don't have shortcut_appid.
         own_games = {k: g for k, gd, g in self.selected if g and k in self.own_selected}
+        _log_to_file("[BREADCRUMB] own_games rebuilt, starting prefix init")
 
         # ── Create prefixes + install deps from GE-Proton default_pfx ─────
         # Proton prefix init for ALL selected games (own + Steam).
@@ -2663,6 +2679,7 @@ class OwnInstallScreen(QWidget):
             if compat:
                 dep_targets.append((key, compat))
         if dep_targets:
+            _log_to_file(f"[BREADCRUMB] calling ensure_all_prefix_deps with {len(dep_targets)} targets: {[k for k,_ in dep_targets]}")
             done = ensure_all_prefix_deps(
                 ge_version, dep_targets,
                 on_progress=lambda msg: self._s.log.emit(msg),
@@ -2671,6 +2688,7 @@ class OwnInstallScreen(QWidget):
             )
             self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
         self._s.pulse_stop.emit()
+        _log_to_file("[BREADCRUMB] prefix deps done")
 
         # ── Plutonium games ───────────────────────────────────────────────
         if has_plut:
@@ -2715,6 +2733,7 @@ class OwnInstallScreen(QWidget):
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
         # ── Install iw4x ─────────────────────────────────────────────────
+        _log_to_file("[BREADCRUMB] starting iw4x install phase")
         has_iw4x = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
         if has_iw4x:
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "iw4x"]:
@@ -2736,6 +2755,7 @@ class OwnInstallScreen(QWidget):
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
         # ── Install CoD4 (iw3sp + cod4x) ─────────────────────────────────
+        _log_to_file("[BREADCRUMB] starting cod4 install phase")
         if has_cod4:
             cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4x", "iw3sp")]
             for key, gd, game in cod4_selected:
@@ -2897,6 +2917,7 @@ class OwnInstallScreen(QWidget):
                 self._s.log.emit(f"  Steam artwork skipped: {ex}")
 
         # ── Done ──────────────────────────────────────────────────────────
+        _log_to_file("[BREADCRUMB] all phases complete, finishing up")
         cfg.complete_first_run(self.steam_root)
         self._s.progress.emit(100, "All done!")
         self._s.done.emit(True)
