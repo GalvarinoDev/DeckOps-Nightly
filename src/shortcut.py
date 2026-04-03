@@ -996,6 +996,7 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 "t4mp":   "10090",
             }
 
+            _use_shared_prefix = False
             if key in _SHARED_PREFIX_KEYS:
                 from wrapper import find_compatdata
                 _sr = steam_root or STEAM_ROOT
@@ -1004,10 +1005,14 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                     _sr, game_appid,
                     game_install_dir=install_dir,
                 )
-                if not compatdata_path:
-                    # Prefix doesn't exist yet - build from install_dir's library
-                    steamapps = os.path.dirname(os.path.dirname(install_dir))
-                    compatdata_path = os.path.join(steamapps, "compatdata", game_appid)
+                if compatdata_path:
+                    _use_shared_prefix = True
+                else:
+                    # No Steam install of this game -- can't reuse a Steam
+                    # prefix that doesn't exist. Fall back to the shortcut's
+                    # own CRC-based prefix, same as any other own game.
+                    # install_cod4x / install_plutonium will use this prefix.
+                    compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
             else:
                 compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
 
@@ -1034,7 +1039,7 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 )
                 if _cfg.is_oled():
                     actual_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
-                    if key in _SHARED_PREFIX_KEYS:
+                    if _use_shared_prefix:
                         launch_options = (
                             f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
                             f'%command% "plutonium://play/{key}"'
@@ -1062,7 +1067,7 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 # cod4mp (cod4x patches iw3mp.exe in place), iw4sp, iw5sp, t6sp
                 # -- these use the original game exe with no mod client
                 actual_exe = exe_path
-                if key in _SHARED_PREFIX_KEYS:
+                if _use_shared_prefix:
                     launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
                 else:
                     launch_options = ""
