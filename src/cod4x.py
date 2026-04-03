@@ -286,63 +286,6 @@ def _ensure_7940_prefix(compatdata_path: str, on_progress=None) -> bool:
     return False
 
 
-def _relocate_chainloader(install_dir: str, compatdata_path: str,
-                          on_progress=None):
-    """
-    Copy CoD4x chain-loader files from the prefix to the real game directory.
-
-    Setup.exe writes to its default Wine path
-    (C:\\Program Files (x86)\\Activision\\Call of Duty 4 - Modern Warfare\\)
-    instead of the Linux game directory because cwd doesn't map through Wine
-    the way we need.  We relocate the chain-loader ourselves after setup.exe
-    finishes.
-
-    Steps:
-      1. Find mss32.dll (chain-loader, ~86 KB) in the prefix install path.
-      2. Back up install_dir/mss32.dll -> install_dir/miles32.dll.
-      3. Copy the chain-loader mss32.dll into install_dir.
-
-    Returns True if the chain-loader was placed, False otherwise.
-    """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    prefix_game_dir = os.path.join(
-        compatdata_path, "pfx", "drive_c",
-        "Program Files (x86)", "Activision",
-        "Call of Duty 4 - Modern Warfare",
-    )
-    src_mss = os.path.join(prefix_game_dir, "mss32.dll")
-
-    if not os.path.isfile(src_mss):
-        prog("  ⚠ Chain-loader mss32.dll not found in prefix — setup.exe may have failed")
-        return False
-
-    # Sanity check: the chain-loader should be smaller than the stock mss32.dll
-    src_size = os.path.getsize(src_mss)
-    dst_mss = os.path.join(install_dir, "mss32.dll")
-    dst_miles = os.path.join(install_dir, "miles32.dll")
-
-    # Back up original mss32.dll as miles32.dll (only if backup doesn't exist)
-    if os.path.isfile(dst_mss) and not os.path.isfile(dst_miles):
-        shutil.copy2(dst_mss, dst_miles)
-        prog(f"  ✓ Backed up original mss32.dll → miles32.dll ({os.path.getsize(dst_miles)} bytes)")
-
-    # Copy chain-loader into game directory
-    shutil.copy2(src_mss, dst_mss)
-    prog(f"  ✓ Placed CoD4x chain-loader mss32.dll ({src_size} bytes)")
-
-    # Clean up the prefix-side copy — it's not needed at runtime
-    # (CoD4x loads from the game directory + AppData, not Program Files)
-    try:
-        shutil.rmtree(prefix_game_dir, ignore_errors=True)
-    except Exception:
-        pass  # Non-fatal, just leftover files
-
-    return True
-
-
 def _write_registry_keys(compatdata_path: str, on_progress=None):
     """
     Write registry keys into the Wine prefix's user.reg so Steam thinks
@@ -595,7 +538,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     # the prefix at Program Files (x86)/Activision/... — copy them to the
     # actual Linux game directory where CoD4 will load them from.
     prog(65, "Placing chain-loader...")
-    relocated = _relocate_chainloader(install_dir, compatdata_path, on_progress=log)
+    relocated = _relocate_chainloader(compatdata_path, install_dir, on_progress=log)
     if not relocated:
         log("  ⚠ Chain-loader relocation failed — CoD4x may not work")
 
