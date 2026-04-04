@@ -102,10 +102,11 @@ OWN_WRAPPER_EXES = {
 # Downloaded from the repo and placed in Plutonium's storage/t6/raw/
 # directory where they are loaded automatically on game launch.
 # Internal .iwd path is ui/t6/mainlobby.lua for both MP and ZM.
-MENU_MOD_BASE_URL = "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main/assets/mods/t6"
+MENU_MOD_BASE_URL = "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main/assets/mods"
 MENU_MOD_FILES = {
-    "t6mp": ("t6mp/deckops_menu.iwd", "storage/t6/raw/deckops_menu.iwd"),
-    "t6zm": ("t6zm/deckops_menu_zm.iwd", "storage/t6/raw/deckops_menu_zm.iwd"),
+    "t6mp": ("t6/t6mp/deckops_menu.iwd", "storage/t6/raw/deckops_menu.iwd"),
+    "t6zm": ("t6/t6zm/deckops_menu_zm.iwd", "storage/t6/raw/deckops_menu_zm.iwd"),
+    "iw5mp": ("iw5mp/main.lua", "storage/iw5/ui_mp/main.lua"),
 }
 
 
