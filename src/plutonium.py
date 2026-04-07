@@ -929,6 +929,46 @@ def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
             time.sleep(2 ** attempt)
 
 
+# ── LCD compatibility ─────────────────────────────────────────────────────────
+
+_LCD_ENV_CLEANUP = (
+    "unset SteamDeck\n"
+    "unset STEAM_DECK\n"
+    "unset LD_PRELOAD\n"
+    "unset SteamAppId\n"
+    "unset SteamGameId\n"
+    "unset SteamClientLaunch\n"
+    "unset SteamOverlayGameId\n"
+    "unset SteamEnv\n"
+    "unset ValvePlatformMutex\n"
+)
+
+
+def _sanitize_computer_name(name: str) -> str:
+    """Sanitize a string for use as a Windows ComputerName (max 15 chars)."""
+    import re as _re
+    name = name.replace(" ", "_")
+    name = _re.sub(r"[^A-Za-z0-9_]", "", name)
+    name = name[:15]
+    return name.upper() if name else "DECKOPS"
+
+
+def _patch_computer_name(compatdata_path: str, name: str):
+    """Patch ComputerName in the prefix system.reg."""
+    system_reg = os.path.join(compatdata_path, "pfx", "system.reg")
+    if not os.path.isfile(system_reg):
+        return
+    safe_name = _sanitize_computer_name(name)
+    with open(system_reg, "r", errors="replace") as f:
+        content = f.read()
+    content = content.replace(
+        '"ComputerName"="STEAMDECK"',
+        f'"ComputerName"="{safe_name}"',
+    )
+    with open(system_reg, "w") as f:
+        f.write(content)
+
+
 # ── wrapper script ────────────────────────────────────────────────────────────
 
 def _write_wrapper(game: dict, game_key: str, steam_root: str,
@@ -939,7 +979,7 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
     through Proton.
 
     Both LCD and OLED use the online launcher with a protocol URL.
-    LCD additionally unsets SteamDeck env vars.
+    LCD applies additional env cleanup for compatibility.
 
     The original exe is backed up as <exe>.bak.
     The wrapper is padded to the original file's size so Steam's
@@ -964,9 +1004,8 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
             "#!/bin/bash\n"
             f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
             f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-            "unset SteamDeck\n"
-            "unset STEAM_DECK\n"
-            f"exec \"{proton_path}\" run \"{launcher}\" \"{plut_url}\"\n"
+            + _LCD_ENV_CLEANUP
+            + f"exec \"{proton_path}\" run \"{launcher}\" \"{plut_url}\"\n"
         )
     else:
         script = (
@@ -993,8 +1032,9 @@ def _write_own_wrapper(game: dict, game_key: str, steam_root: str,
     Write a standalone wrapper exe for own LCD games.
 
     Uses the online launcher with a protocol URL, same as Steam wrappers.
-    Unsets SteamDeck env vars. Written as a new file (e.g. t4plutmp.exe)
-    — the original exe is left untouched. No backup, no padding.
+    Applies LCD env cleanup for compatibility. Written as a new file
+    (e.g. t4plutmp.exe) — the original exe is left untouched.
+    No backup, no padding.
     """
     install_dir = game["install_dir"]
     wrapper_name = OWN_WRAPPER_EXES[game_key]
@@ -1007,9 +1047,8 @@ def _write_own_wrapper(game: dict, game_key: str, steam_root: str,
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        "unset SteamDeck\n"
-        "unset STEAM_DECK\n"
-        f"exec \"{proton_path}\" run \"{launcher}\" \"{plut_url}\"\n"
+        + _LCD_ENV_CLEANUP
+        + f"exec \"{proton_path}\" run \"{launcher}\" \"{plut_url}\"\n"
     )
 
     with open(wrapper_path, "wb") as f:
@@ -1117,6 +1156,12 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     _install_menu_mod(dest_plut_dir, game_key,
                       on_progress=lambda msg: prog(67, msg))
 
+    # LCD prefix compatibility patch
+    import config as _cfg
+    if not _cfg.is_oled():
+        player_name = _cfg.get_player_name() or "DeckOps"
+        _patch_computer_name(compatdata_path, player_name)
+
     # Own game shortcuts point at Plutonium directly -- no wrapper needed.
     # Steam games replace the original exe with a bash wrapper.
     if source != "own":
@@ -1176,3 +1221,6 @@ def uninstall_plutonium(game: dict, game_key: str):
     meta_file = os.path.join(install_dir, METADATA_FILE)
     if os.path.exists(meta_file):
         os.remove(meta_file)
+
+    if os.path.isdir(DEDICATED_PREFIX):
+        shutil.rmtree(DEDICATED_PREFIX)
