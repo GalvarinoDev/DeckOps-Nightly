@@ -933,20 +933,13 @@ def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
 
 def _write_wrapper(game: dict, game_key: str, steam_root: str,
                    proton_path: str, compatdata_path: str, plut_dir: str,
-                   lan_mode: bool = False):
+                   is_lcd: bool = False):
     """
     Replace the game exe with a bash wrapper that launches Plutonium
     through Proton.
 
-    When lan_mode is False (OLED / online):
-        Calls plutonium-launcher-win32.exe with a protocol URL.
-        Requires the user to have logged in.
-
-    When lan_mode is True (LCD / offline):
-        Calls plutonium-bootstrapper-win32.exe directly with -lan.
-        No login required. Game starts in offline LAN mode.
-        cd's into the Plutonium directory first so the bootstrapper
-        can find its files relative to cwd.
+    Both LCD and OLED use the online launcher with a protocol URL.
+    LCD additionally unsets SteamDeck env vars.
 
     The original exe is backed up as <exe>.bak.
     The wrapper is padded to the original file's size so Steam's
@@ -957,34 +950,25 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
     exe_path       = os.path.join(install_dir, exe_name)
     backup_path    = exe_path + ".bak"
 
-    # Read original size before we overwrite
     original_size = os.path.getsize(exe_path) if os.path.exists(exe_path) else 0
 
-    # Back up original exe
     if not os.path.exists(backup_path) and os.path.exists(exe_path):
         shutil.copy2(exe_path, backup_path)
         original_size = os.path.getsize(backup_path)
 
-    if lan_mode:
-        # LCD offline mode: call the bootstrapper directly with -lan.
-        # cd into the Plutonium directory first so the bootstrapper can
-        # find its files relative to cwd, same as LanLauncher does.
-        import config as _cfg
-        player_name = _cfg.get_player_name() or "Player"
-        bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
-        game_dir_wine = _wine_path(install_dir)
+    launcher = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
+    plut_url = f"plutonium://play/{game_key}"
+
+    if is_lcd:
         script = (
             "#!/bin/bash\n"
             f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
             f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-            f"cd \"{plut_dir}\"\n"
-            f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-            f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+            "unset SteamDeck\n"
+            "unset STEAM_DECK\n"
+            f"exec \"{proton_path}\" run \"{launcher}\" \"{plut_url}\"\n"
         )
     else:
-        # OLED online mode: call the launcher with a protocol URL
-        launcher = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
-        plut_url = f"plutonium://play/{game_key}"
         script = (
             "#!/bin/bash\n"
             f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
@@ -1008,26 +992,24 @@ def _write_own_wrapper(game: dict, game_key: str, steam_root: str,
     """
     Write a standalone wrapper exe for own LCD games.
 
-    Same bash script as the Steam LCD wrapper but written as a new file
-    (e.g. t4plutmp.exe) instead of replacing the original game exe.
-    No backup, no padding - the original exe is left untouched.
+    Uses the online launcher with a protocol URL, same as Steam wrappers.
+    Unsets SteamDeck env vars. Written as a new file (e.g. t4plutmp.exe)
+    — the original exe is left untouched. No backup, no padding.
     """
     install_dir = game["install_dir"]
     wrapper_name = OWN_WRAPPER_EXES[game_key]
     wrapper_path = os.path.join(install_dir, wrapper_name)
 
-    import config as _cfg
-    player_name = _cfg.get_player_name() or "Player"
-    bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
-    game_dir_wine = _wine_path(install_dir)
+    launcher = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
+    plut_url = f"plutonium://play/{game_key}"
 
     script = (
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"cd \"{plut_dir}\"\n"
-        f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+        "unset SteamDeck\n"
+        "unset STEAM_DECK\n"
+        f"exec \"{proton_path}\" run \"{launcher}\" \"{plut_url}\"\n"
     )
 
     with open(wrapper_path, "wb") as f:
@@ -1140,9 +1122,9 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     if source != "own":
         prog(80, "Writing launcher wrapper...")
         import config as _cfg
-        lan_mode = (not _cfg.is_oled()) and (game_key in LCD_OFFLINE_KEYS)
+        is_lcd = not _cfg.is_oled()
         _write_wrapper(game, game_key, steam_root, proton_path,
-                       compatdata_path, dest_plut_dir, lan_mode=lan_mode)
+                       compatdata_path, dest_plut_dir, is_lcd=is_lcd)
 
         prog(95, "Saving metadata...")
         _write_metadata(game["install_dir"], {
@@ -1153,11 +1135,11 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         })
     else:
         # Own LCD games get a standalone wrapper exe (e.g. t4plutmp.exe)
-        # so the shortcut can launch the bootstrapper with the right env.
+        # so the shortcut can launch the online launcher with the right env.
         # OLED own games don't need a wrapper - shortcuts point at the
         # launcher directly with plutonium://play/<key>.
         import config as _cfg
-        if not _cfg.is_oled() and game_key in LCD_OFFLINE_KEYS:
+        if not _cfg.is_oled():
             prog(80, "Writing LCD launcher wrapper...")
             _write_own_wrapper(game, game_key, steam_root, proton_path,
                                compatdata_path, dest_plut_dir)
