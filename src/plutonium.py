@@ -51,10 +51,11 @@ GAME_META = {
 
 METADATA_FILE = "deckops_plutonium.json"
 
-# All Plutonium games run in offline LAN mode on LCD Decks. These use the
-# bootstrapper directly with -lan instead of the normal launcher.
-# LCD Decks cannot connect to Plutonium online servers.
-LCD_OFFLINE_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "iw5mp"}
+# ── OLD LCD offline path (replaced by Heroic launch path) ────────────────
+# LCD Decks now launch Plutonium through Heroic Games Launcher instead of
+# Steam's Proton runtime. This avoids Steam DLL injection that causes false
+# anti-cheat flags on LCD hardware. See heroic.py for the new LCD path.
+# LCD_OFFLINE_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "iw5mp"}
 
 # Games that require XACT for audio to work correctly under Proton.
 # Matches the xact=True flags in detect_games.py.
@@ -85,18 +86,18 @@ XACT_DLLS = [
     "xaudio2_0.dll",
 ]
 
-# Wrapper exe names for own LCD games. These are standalone bash scripts
-# written into the game directory - they don't replace any original exe.
-# The shortcut points at these instead of the bootstrapper directly.
-OWN_WRAPPER_EXES = {
-    "t4sp":  "t4plutsp.exe",
-    "t4mp":  "t4plutmp.exe",
-    "t5sp":  "t5plutsp.exe",
-    "t5mp":  "t5plutmp.exe",
-    "t6mp":  "t6plutmp.exe",
-    "t6zm":  "t6plutzm.exe",
-    "iw5mp": "iw5plutmp.exe",
-}
+# ── OLD LCD own wrapper exes (replaced by Heroic launch path) ────────────
+# LCD own games now launch through Heroic - no wrapper exes needed.
+# See heroic.py setup_heroic_game() for the new LCD path.
+# OWN_WRAPPER_EXES = {
+#     "t4sp":  "t4plutsp.exe",
+#     "t4mp":  "t4plutmp.exe",
+#     "t5sp":  "t5plutsp.exe",
+#     "t5mp":  "t5plutmp.exe",
+#     "t6mp":  "t6plutmp.exe",
+#     "t6zm":  "t6plutzm.exe",
+#     "iw5mp": "iw5plutmp.exe",
+# }
 
 # DeckOps client-side menu mods packaged as .iwd files (renamed .zip).
 # Downloaded from the repo and placed in Plutonium's storage/t6/raw/
@@ -938,15 +939,18 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
     Replace the game exe with a bash wrapper that launches Plutonium
     through Proton.
 
+    OLED only now - LCD uses Heroic instead (see heroic.py).
+
     When lan_mode is False (OLED / online):
         Calls plutonium-launcher-win32.exe with a protocol URL.
         Requires the user to have logged in.
 
-    When lan_mode is True (LCD / offline):
-        Calls plutonium-bootstrapper-win32.exe directly with -lan.
-        No login required. Game starts in offline LAN mode.
-        cd's into the Plutonium directory first so the bootstrapper
-        can find its files relative to cwd.
+    # ── OLD LCD offline mode (commented out - LCD now uses Heroic) ──
+    # When lan_mode is True (LCD / offline):
+    #     Calls plutonium-bootstrapper-win32.exe directly with -lan.
+    #     No login required. Game starts in offline LAN mode.
+    #     cd's into the Plutonium directory first so the bootstrapper
+    #     can find its files relative to cwd.
 
     The original exe is backed up as <exe>.bak.
     The wrapper is padded to the original file's size so Steam's
@@ -965,32 +969,31 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
         shutil.copy2(exe_path, backup_path)
         original_size = os.path.getsize(backup_path)
 
-    if lan_mode:
-        # LCD offline mode: call the bootstrapper directly with -lan.
-        # cd into the Plutonium directory first so the bootstrapper can
-        # find its files relative to cwd, same as LanLauncher does.
-        import config as _cfg
-        player_name = _cfg.get_player_name() or "Player"
-        bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
-        game_dir_wine = _wine_path(install_dir)
-        script = (
-            "#!/bin/bash\n"
-            f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
-            f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-            f"cd \"{plut_dir}\"\n"
-            f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-            f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
-        )
-    else:
-        # OLED online mode: call the launcher with a protocol URL
-        launcher = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
-        plut_url = f"plutonium://play/{game_key}"
-        script = (
-            "#!/bin/bash\n"
-            f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
-            f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-            f"exec \"{proton_path}\" run \"{launcher}\" \"{plut_url}\"\n"
-        )
+    # ── OLD LCD offline mode (replaced by Heroic - see heroic.py) ────
+    # if lan_mode:
+    #     import config as _cfg
+    #     player_name = _cfg.get_player_name() or "Player"
+    #     bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
+    #     game_dir_wine = _wine_path(install_dir)
+    #     script = (
+    #         "#!/bin/bash\n"
+    #         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
+    #         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
+    #         f"cd \"{plut_dir}\"\n"
+    #         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
+    #         f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+    #     )
+    # else:
+
+    # OLED online mode: call the launcher with a protocol URL
+    launcher = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
+    plut_url = f"plutonium://play/{game_key}"
+    script = (
+        "#!/bin/bash\n"
+        f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
+        f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
+        f"exec \"{proton_path}\" run \"{launcher}\" \"{plut_url}\"\n"
+    )
 
     script_bytes = script.encode("utf-8")
     if original_size > len(script_bytes):
@@ -1003,38 +1006,40 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
              stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def _write_own_wrapper(game: dict, game_key: str, steam_root: str,
-                       proton_path: str, compatdata_path: str, plut_dir: str):
-    """
-    Write a standalone wrapper exe for own LCD games.
-
-    Same bash script as the Steam LCD wrapper but written as a new file
-    (e.g. t4plutmp.exe) instead of replacing the original game exe.
-    No backup, no padding - the original exe is left untouched.
-    """
-    install_dir = game["install_dir"]
-    wrapper_name = OWN_WRAPPER_EXES[game_key]
-    wrapper_path = os.path.join(install_dir, wrapper_name)
-
-    import config as _cfg
-    player_name = _cfg.get_player_name() or "Player"
-    bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
-    game_dir_wine = _wine_path(install_dir)
-
-    script = (
-        "#!/bin/bash\n"
-        f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
-        f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"cd \"{plut_dir}\"\n"
-        f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
-    )
-
-    with open(wrapper_path, "wb") as f:
-        f.write(script.encode("utf-8"))
-
-    os.chmod(wrapper_path, os.stat(wrapper_path).st_mode |
-             stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+# ── OLD LCD own wrapper (replaced by Heroic launch path) ─────────────────
+# LCD own games now launch through Heroic - see heroic.py.
+# def _write_own_wrapper(game: dict, game_key: str, steam_root: str,
+#                        proton_path: str, compatdata_path: str, plut_dir: str):
+#     """
+#     Write a standalone wrapper exe for own LCD games.
+#
+#     Same bash script as the Steam LCD wrapper but written as a new file
+#     (e.g. t4plutmp.exe) instead of replacing the original game exe.
+#     No backup, no padding - the original exe is left untouched.
+#     """
+#     install_dir = game["install_dir"]
+#     wrapper_name = OWN_WRAPPER_EXES[game_key]
+#     wrapper_path = os.path.join(install_dir, wrapper_name)
+#
+#     import config as _cfg
+#     player_name = _cfg.get_player_name() or "Player"
+#     bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
+#     game_dir_wine = _wine_path(install_dir)
+#
+#     script = (
+#         "#!/bin/bash\n"
+#         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
+#         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
+#         f"cd \"{plut_dir}\"\n"
+#         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
+#         f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+#     )
+#
+#     with open(wrapper_path, "wb") as f:
+#         f.write(script.encode("utf-8"))
+#
+#     os.chmod(wrapper_path, os.stat(wrapper_path).st_mode |
+#              stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
 # ── metadata ──────────────────────────────────────────────────────────────────
@@ -1135,14 +1140,38 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     _install_menu_mod(dest_plut_dir, game_key,
                       on_progress=lambda msg: prog(67, msg))
 
-    # Own game shortcuts point at Plutonium directly -- no wrapper needed.
-    # Steam games replace the original exe with a bash wrapper.
-    if source != "own":
+    # ── LCD: route through Heroic instead of Steam wrappers ────────────
+    # LCD Decks use Heroic Games Launcher to avoid Steam DLL injection.
+    # OLED Decks continue to use the Steam wrapper path as before.
+    import config as _cfg
+    is_lcd = not _cfg.is_oled()
+
+    if is_lcd:
+        # LCD path: set up Heroic sideload entry, game config, and Steam shortcut.
+        # The game launches through Heroic's Proton runtime (no Steam DLLs).
+        prog(80, "Setting up Heroic launch path for LCD...")
+        try:
+            from heroic import setup_heroic_game, get_heroic_prefix_plut_dir
+            ge_version = _cfg.get_ge_proton_version() or "GE-Proton10-34"
+            setup_heroic_game(
+                game_key, game, ge_version, dest_plut_dir,
+                on_progress=lambda msg: prog(85, msg),
+            )
+        except Exception as ex:
+            prog(85, f"Heroic setup failed: {ex}")
+
+        prog(95, "Saving metadata...")
+        _write_metadata(game["install_dir"], {
+            "game_key":    game_key,
+            "plut_dir":    dest_plut_dir,
+            "lcd_heroic":  True,
+        })
+
+    elif source != "own":
+        # OLED Steam games: replace the original exe with a bash wrapper
         prog(80, "Writing launcher wrapper...")
-        import config as _cfg
-        lan_mode = (not _cfg.is_oled()) and (game_key in LCD_OFFLINE_KEYS)
         _write_wrapper(game, game_key, steam_root, proton_path,
-                       compatdata_path, dest_plut_dir, lan_mode=lan_mode)
+                       compatdata_path, dest_plut_dir, lan_mode=False)
 
         prog(95, "Saving metadata...")
         _write_metadata(game["install_dir"], {
@@ -1151,24 +1180,26 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
             "wrapper_exe": os.path.join(game["install_dir"],
                                         GAME_META[game_key][2]),
         })
-    else:
-        # Own LCD games get a standalone wrapper exe (e.g. t4plutmp.exe)
-        # so the shortcut can launch the bootstrapper with the right env.
-        # OLED own games don't need a wrapper - shortcuts point at the
-        # launcher directly with plutonium://play/<key>.
-        import config as _cfg
-        if not _cfg.is_oled() and game_key in LCD_OFFLINE_KEYS:
-            prog(80, "Writing LCD launcher wrapper...")
-            _write_own_wrapper(game, game_key, steam_root, proton_path,
-                               compatdata_path, dest_plut_dir)
 
-            prog(95, "Saving metadata...")
-            _write_metadata(game["install_dir"], {
-                "game_key":    game_key,
-                "plut_dir":    dest_plut_dir,
-                "wrapper_exe": os.path.join(game["install_dir"],
-                                            OWN_WRAPPER_EXES[game_key]),
-            })
+    # ── OLD LCD wrapper paths (commented out - replaced by Heroic above) ──
+    # else:
+    #     # Own LCD games got a standalone wrapper exe (e.g. t4plutmp.exe)
+    #     # so the shortcut could launch the bootstrapper with the right env.
+    #     # OLED own games don't need a wrapper - shortcuts point at the
+    #     # launcher directly with plutonium://play/<key>.
+    #     import config as _cfg
+    #     if not _cfg.is_oled() and game_key in LCD_OFFLINE_KEYS:
+    #         prog(80, "Writing LCD launcher wrapper...")
+    #         _write_own_wrapper(game, game_key, steam_root, proton_path,
+    #                            compatdata_path, dest_plut_dir)
+    #
+    #         prog(95, "Saving metadata...")
+    #         _write_metadata(game["install_dir"], {
+    #             "game_key":    game_key,
+    #             "plut_dir":    dest_plut_dir,
+    #             "wrapper_exe": os.path.join(game["install_dir"],
+    #                                         OWN_WRAPPER_EXES[game_key]),
+    #         })
 
     prog(100, f"Plutonium ready for {game['name']}!")
 
@@ -1177,6 +1208,7 @@ def uninstall_plutonium(game: dict, game_key: str):
     """
     Restore the original game exe from backup and remove the
     Plutonium folder from this game's prefix.
+    Also cleans up any Heroic entries if this was an LCD install.
     """
     install_dir    = game["install_dir"]
     _, _, exe_name = GAME_META[game_key]
@@ -1190,6 +1222,14 @@ def uninstall_plutonium(game: dict, game_key: str):
     plut_dir = meta.get("plut_dir", "")
     if plut_dir and os.path.isdir(plut_dir):
         shutil.rmtree(plut_dir)
+
+    # Clean up Heroic entries if this was an LCD Heroic install
+    if meta.get("lcd_heroic"):
+        try:
+            from heroic import cleanup_heroic_game
+            cleanup_heroic_game(game_key)
+        except Exception:
+            pass  # Non-fatal - Heroic may not be installed
 
     meta_file = os.path.join(install_dir, METADATA_FILE)
     if os.path.exists(meta_file):
