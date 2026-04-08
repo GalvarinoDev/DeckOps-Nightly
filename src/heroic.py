@@ -411,6 +411,12 @@ def _write_heroic_game_config(game_key: str, ge_proton_version: str,
             "language": "",
             "beforeLaunchScriptPath": "",
             "afterLaunchScriptPath": "",
+            # Pass the Plutonium protocol URL as an argument to the launcher
+            # exe. Without this, the launcher exe opens its own UI (game
+            # picker / login screen) instead of jumping straight into the
+            # requested game. Matches what the OLED bash wrapper does with
+            # `plutonium-launcher-win32.exe "plutonium://play/<key>"`.
+            "launcherArgs": f'"plutonium://play/{game_key}"',
             "verboseLogs": False,
             "advertiseAvxForRosetta": False,
             "enableQuickSavesMenu": False,
