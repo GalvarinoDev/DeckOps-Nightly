@@ -1031,27 +1031,33 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
 
             if key in _PLUT_KEYS:
                 import config as _cfg
-                # Plutonium -- point at launcher (OLED) or own wrapper (LCD)
+                # LCD Plutonium games are handled by the LCD launch path
+                # (heroic.py setup_heroic_game) during install_plutonium().
+                # That module creates the Steam shortcut, downloads artwork,
+                # assigns the controller profile, and sets the compat tool.
+                # Nothing to do here -- the game dict has already been
+                # enriched with shortcut_appid and compatdata_path above,
+                # which install_plutonium needs to copy Plutonium files
+                # into the prefix.
+                if not _cfg.is_oled():
+                    prog(f"  → {name}")
+                    prog(f"    LCD path - shortcut handled separately")
+                    continue
+
+                # OLED: point at the Plutonium launcher directly
                 plut_dir = os.path.join(
                     compatdata_path,
                     "pfx", "drive_c", "users", "steamuser",
                     "AppData", "Local", "Plutonium",
                 )
-                if _cfg.is_oled():
-                    actual_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
-                    if _use_shared_prefix:
-                        launch_options = (
-                            f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                            f'%command% "plutonium://play/{key}"'
-                        )
-                    else:
-                        launch_options = f'plutonium://play/{key}'
+                actual_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
+                if _use_shared_prefix:
+                    launch_options = (
+                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                        f'%command% "plutonium://play/{key}"'
+                    )
                 else:
-                    # LCD: point at the standalone wrapper exe written by
-                    # plutonium.py - it handles cd, env vars, and bootstrapper
-                    from plutonium import OWN_WRAPPER_EXES
-                    actual_exe = os.path.join(install_dir, OWN_WRAPPER_EXES[key])
-                    launch_options = ""
+                    launch_options = f'plutonium://play/{key}'
 
             elif key == "iw4mp":
                 # iw4x -- point at iw4x.exe (dropped by installer, no rename)
