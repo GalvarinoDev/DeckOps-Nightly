@@ -1095,14 +1095,26 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     _ensure_shared_plutonium(src_plut_dir,
                              on_progress=lambda msg: prog(5, msg))
 
-    # Use the compatdata_path passed by the caller for both source modes.
-    # The caller resolves the correct path via find_compatdata() which
-    # searches all library dirs including SD card. Using steam_root directly
-    # (the old approach) always built the internal path, breaking SD card games.
-    dest_plut_dir = os.path.join(
-        compatdata_path, "pfx", "drive_c", "users", "steamuser",
-        "AppData", "Local", "Plutonium",
-    )
+    # Resolve the destination Plutonium directory.
+    #
+    # OLED: Plutonium files go into Steam's compatdata prefix for the game,
+    # because OLED launches the game through a bash wrapper that Steam runs
+    # inside that same prefix.
+    #
+    # LCD: Plutonium files go into the Heroic-managed prefix instead, because
+    # the LCD path launches through Heroic with winePrefix pointed at
+    # HEROIC_PREFIX_BASE/<game_key>. Copying to Steam's compatdata on LCD
+    # would leave the donor prefix's config.json (with auth token) and
+    # storage/ in a prefix Heroic never reads, forcing login every launch.
+    import config as _cfg_dest
+    if _cfg_dest.is_oled():
+        dest_plut_dir = os.path.join(
+            compatdata_path, "pfx", "drive_c", "users", "steamuser",
+            "AppData", "Local", "Plutonium",
+        )
+    else:
+        from heroic import get_heroic_prefix_plut_dir
+        dest_plut_dir = get_heroic_prefix_plut_dir(game_key)
 
     prog(10, f"Copying Plutonium into prefix for {game['name']}...")
     _copy_plut_to_prefix(
