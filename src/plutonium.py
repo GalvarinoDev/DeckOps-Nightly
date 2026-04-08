@@ -1089,32 +1089,33 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     if installed_games is None:
         installed_games = {game_key: game}
 
+    # ── LCD dispatch ──────────────────────────────────────────────────────
+    # LCD Decks use Heroic Games Launcher with a single shared Wine prefix
+    # for all Plutonium games. Everything from downloading the bootstrapper
+    # to writing per-game shortcuts lives in heroic.py (eventually to be
+    # renamed plutonium_lcd.py). This function is OLED-only past this point.
+    import config as _cfg_lcd
+    if not _cfg_lcd.is_oled():
+        from heroic import install_plutonium_lcd
+        install_plutonium_lcd(game, game_key, installed_games,
+                              on_progress=on_progress)
+        return
+
     src_plut_dir  = get_dedicated_plut_dir()
 
     # Ensure shared Plutonium dirs are set up (one-time, shared across games)
     _ensure_shared_plutonium(src_plut_dir,
                              on_progress=lambda msg: prog(5, msg))
 
-    # Resolve the destination Plutonium directory.
-    #
-    # OLED: Plutonium files go into Steam's compatdata prefix for the game,
+    # OLED only past this point (LCD returns early above).
+    # Plutonium files go into Steam's compatdata prefix for the game,
     # because OLED launches the game through a bash wrapper that Steam runs
-    # inside that same prefix.
-    #
-    # LCD: Plutonium files go into the Heroic-managed prefix instead, because
-    # the LCD path launches through Heroic with winePrefix pointed at
-    # HEROIC_PREFIX_BASE/<game_key>. Copying to Steam's compatdata on LCD
-    # would leave the donor prefix's config.json (with auth token) and
-    # storage/ in a prefix Heroic never reads, forcing login every launch.
-    import config as _cfg_dest
-    if _cfg_dest.is_oled():
-        dest_plut_dir = os.path.join(
-            compatdata_path, "pfx", "drive_c", "users", "steamuser",
-            "AppData", "Local", "Plutonium",
-        )
-    else:
-        from heroic import get_heroic_prefix_plut_dir
-        dest_plut_dir = get_heroic_prefix_plut_dir(game_key)
+    # inside that same prefix. Use the compatdata_path passed by the caller
+    # for correct SD card handling via find_compatdata().
+    dest_plut_dir = os.path.join(
+        compatdata_path, "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Local", "Plutonium",
+    )
 
     prog(10, f"Copying Plutonium into prefix for {game['name']}...")
     _copy_plut_to_prefix(
@@ -1147,39 +1148,15 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     _write_config(dest_plut_dir, keys_for_appid, installed_games)
 
     # Install DeckOps client-side menu mod (e.g. mainlobby.lua for T6 MP).
-    # Runs for both Steam and own installs, both LCD and OLED.
+    # OLED only -- LCD handles its own setup in heroic.install_plutonium_lcd.
     prog(65, "Installing menu mod...")
     _install_menu_mod(dest_plut_dir, game_key,
                       on_progress=lambda msg: prog(67, msg))
 
-    # ── LCD: route through Heroic instead of Steam wrappers ────────────
-    # LCD Decks use Heroic Games Launcher to avoid Steam DLL injection.
-    # OLED Decks continue to use the Steam wrapper path as before.
-    import config as _cfg
-    is_lcd = not _cfg.is_oled()
-
-    if is_lcd:
-        # LCD path: set up Heroic sideload entry, game config, and Steam shortcut.
-        # The game launches through Heroic's Proton runtime (no Steam DLLs).
-        prog(80, "Setting up Heroic launch path for LCD...")
-        try:
-            from heroic import setup_heroic_game, get_heroic_prefix_plut_dir
-            ge_version = _cfg.get_ge_proton_version() or "GE-Proton10-34"
-            setup_heroic_game(
-                game_key, game, ge_version, dest_plut_dir,
-                on_progress=lambda msg: prog(85, msg),
-            )
-        except Exception as ex:
-            prog(85, f"Heroic setup failed: {ex}")
-
-        prog(95, "Saving metadata...")
-        _write_metadata(game["install_dir"], {
-            "game_key":    game_key,
-            "plut_dir":    dest_plut_dir,
-            "lcd_heroic":  True,
-        })
-
-    elif source != "own":
+    # ── OLED only past this point ────────────────────────────────────────
+    # LCD dispatched to heroic.install_plutonium_lcd at the top of this
+    # function. OLED games get a Steam-side bash wrapper + metadata.
+    if source != "own":
         # OLED Steam games: replace the original exe with a bash wrapper
         prog(80, "Writing launcher wrapper...")
         _write_wrapper(game, game_key, steam_root, proton_path,
@@ -1192,26 +1169,6 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
             "wrapper_exe": os.path.join(game["install_dir"],
                                         GAME_META[game_key][2]),
         })
-
-    # ── OLD LCD wrapper paths (commented out - replaced by Heroic above) ──
-    # else:
-    #     # Own LCD games got a standalone wrapper exe (e.g. t4plutmp.exe)
-    #     # so the shortcut could launch the bootstrapper with the right env.
-    #     # OLED own games don't need a wrapper - shortcuts point at the
-    #     # launcher directly with plutonium://play/<key>.
-    #     import config as _cfg
-    #     if not _cfg.is_oled() and game_key in LCD_OFFLINE_KEYS:
-    #         prog(80, "Writing LCD launcher wrapper...")
-    #         _write_own_wrapper(game, game_key, steam_root, proton_path,
-    #                            compatdata_path, dest_plut_dir)
-    #
-    #         prog(95, "Saving metadata...")
-    #         _write_metadata(game["install_dir"], {
-    #             "game_key":    game_key,
-    #             "plut_dir":    dest_plut_dir,
-    #             "wrapper_exe": os.path.join(game["install_dir"],
-    #                                         OWN_WRAPPER_EXES[game_key]),
-    #         })
 
     prog(100, f"Plutonium ready for {game['name']}!")
 
