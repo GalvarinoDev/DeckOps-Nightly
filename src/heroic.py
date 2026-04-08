@@ -1,22 +1,36 @@
 """
-heroic.py - Heroic Games Launcher integration for LCD Steam Deck
+heroic.py - LCD Plutonium install path (Heroic Games Launcher)
 
-Manages Plutonium game launches through Heroic instead of Steam's Proton
-runtime. LCD Steam Decks need this because Steam injects DLLs into Wine
-prefixes that cause false flags with Plutonium's anti-cheat system.
-Heroic's Flatpak version doesn't inject those DLLs.
+LCD Steam Decks can't launch Plutonium through Steam's Proton runtime
+because Steam injects DLLs into Wine prefixes that cause false flags with
+Plutonium's anti-cheat system. Heroic's Flatpak version doesn't inject
+those DLLs, so LCD users route their Plutonium games through Heroic.
 
-This module:
-  - Installs Heroic via Flatpak if not present
-  - Grants Heroic filesystem access to game dirs
-  - Writes sideload entries into Heroic's library.json
-  - Writes per-game config (GE-Proton, prefix path, esync/fsync)
-  - Creates Steam non-Steam shortcuts that launch via Heroic
-  - Downloads artwork and assigns controller profiles to shortcuts
-  - Provides cleanup for all Heroic-managed entries
+This module owns the full LCD install flow -- it is the LCD counterpart
+to plutonium.py (queued to be renamed plutonium_lcd.py in a later fix).
+plutonium.py's install_plutonium dispatches to install_plutonium_lcd at
+the top of the function when running on LCD.
 
-OLED Decks do not use this module at all - they continue to use
-Steam's Proton runtime directly via plutonium.py.
+Architecture (Shape A -- shared Heroic default prefix):
+  1. Install Heroic via Flatpak if not present.
+  2. Download plutonium.exe into ~/Games/Heroic/deckops_plutonium/.
+  3. Write a one-off "DeckOps Plutonium Setup" sideload entry into Heroic's
+     library.json pointing at that exe. Its winePrefix is Heroic's default
+     shared prefix at ~/Games/Heroic/Prefixes/default.
+  4. Launch that sideload entry through Heroic via
+     `flatpak run com.heroicgameslauncher.hgl --no-gui ... heroic://launch?...`.
+     Heroic creates the shared prefix using its own GE-Proton runtime and
+     runs Plutonium. The user logs in inside the exact prefix that will
+     later launch the games -- zero state drift.
+  5. After login, write Plutonium's config.json inside the shared prefix
+     with all selected games' install paths. All Plutonium games share one
+     config, one client, one login.
+  6. For each selected game, write a per-game sideload entry with
+     launcherArgs="plutonium://play/<key>" and winePrefix pointed at the
+     same shared prefix. Steam shortcuts launch via the heroic:// protocol.
+
+OLED Decks do not use this module at all -- plutonium.py handles OLED
+directly through Steam's Proton runtime and a bash wrapper per game.
 """
 
 import binascii
@@ -46,8 +60,49 @@ HEROIC_LIBRARY_JSON = os.path.join(
 HEROIC_GAMES_CONFIG_DIR = os.path.join(HEROIC_CONFIG_DIR, "GamesConfig")
 HEROIC_ICONS_DIR = os.path.join(HEROIC_CONFIG_DIR, "icons")
 
-# Where Heroic puts its managed Wine prefixes for sideloaded games.
-# DeckOps overrides this per-game so we control the prefix location.
+
+# ── Shape A: shared default Heroic prefix ───────────────────────────────────
+# Heroic Flatpak auto-creates ~/Games/Heroic/ on first launch and uses
+# ~/Games/Heroic/Prefixes/default as its shared default Wine prefix for
+# sideloaded games. We target that prefix directly so Heroic manages the
+# Wine state natively and our auth tokens don't drift between prefixes.
+#
+# If Heroic is ever configured to use a different default prefix path, this
+# constant would need to read `defaultWinePrefix` from
+# ~/.var/app/com.heroicgameslauncher.hgl/config/heroic/config.json. For now
+# we hardcode because every Steam Deck Heroic install uses this path by
+# default and DeckOps doesn't touch that setting.
+
+HEROIC_GAMES_DIR           = os.path.expanduser("~/Games/Heroic")
+HEROIC_DEFAULT_WINE_PREFIX = os.path.join(HEROIC_GAMES_DIR, "Prefixes", "default")
+DECKOPS_PLUT_DIR           = os.path.join(HEROIC_GAMES_DIR, "deckops_plutonium")
+
+PLUT_BOOTSTRAPPER_URL = "https://cdn.plutonium.pw/updater/plutonium.exe"
+
+# Deterministic sideload app_name for the one-off login entry. Not hashed
+# so it's easy to spot in Heroic's library if testers need to debug.
+BOOTSTRAP_APP_NAME = "do_plut_bootstrap"
+BOOTSTRAP_TITLE    = "DeckOps Plutonium Setup"
+
+# Map each Plutonium game key to the config.json path field Plutonium uses
+# for that game's install directory. Mirrors plutonium.GAME_META so heroic.py
+# doesn't have to import from plutonium.py.
+PLUT_CONFIG_KEYS = {
+    "t4sp":  "t4Path",
+    "t4mp":  "t4Path",
+    "t5sp":  "t5Path",
+    "t5mp":  "t5Path",
+    "t6zm":  "t6Path",
+    "t6mp":  "t6Path",
+    "iw5mp": "iw5Path",
+}
+PLUT_GAME_KEYS = set(PLUT_CONFIG_KEYS.keys())
+
+
+# Where Heroic puts its managed Wine prefixes for sideloaded games when
+# DeckOps overrides the per-game winePrefix. Kept as a legacy constant for
+# migration cleanup (old DeckOps installs created per-game prefixes here).
+# Shape A uses HEROIC_DEFAULT_WINE_PREFIX instead.
 HEROIC_PREFIX_BASE = os.path.expanduser(
     "~/.local/share/deckops/heroic_prefixes"
 )
@@ -68,13 +123,15 @@ _BROWSER_UA = {
 
 
 # ── Plutonium game definitions for Heroic ───────────────────────────────────
-# Each entry has the info needed to create a Heroic sideload entry and a
-# Steam shortcut. Artwork URLs are placeholders from shortcut.py - will be
-# replaced with Plutonium-branded art from SteamGridDB later.
+# Titles and artwork URLs mirror shortcut.py OWN_SHORTCUTS so LCD users see
+# the same game names as OLED users. The Steam shortcut appid (calculated
+# from quoted_exe + title) will differ between LCD and OLED because the
+# exe path differs (flatpak vs wrapper script), but the visible name is
+# identical.
 
 HEROIC_PLUT_GAMES = {
     "t4sp": {
-        "title":          "Plutonium: World at War",
+        "title":          "Call of Duty: World at War",
         "template_type":  "standard",
         "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10090/2bfb85222af4a01842baa5c3a16a080eb27ac6c3.jpg",
         "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/library_600x900_2x.jpg",
@@ -84,7 +141,7 @@ HEROIC_PLUT_GAMES = {
         "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
     },
     "t4mp": {
-        "title":          "Plutonium: World at War MP",
+        "title":          "Call of Duty: World at War - Multiplayer",
         "template_type":  "standard",
         "icon_url":       "https://cdn2.steamgriddb.com/icon/854d6fae5ee42911677c739ee1734486.png",
         "grid_url":       "https://cdn2.steamgriddb.com/grid/bb933c55afc6987ae406e48ff58786d6.png",
@@ -94,7 +151,7 @@ HEROIC_PLUT_GAMES = {
         "icon_ext": "png", "grid_ext": "png", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
     },
     "t5sp": {
-        "title":          "Plutonium: Black Ops",
+        "title":          "Call of Duty: Black Ops",
         "template_type":  "standard",
         "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42700/ea744d59efded3feaeebcafed224be9eadde90ac.jpg",
         "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_600x900_2x.jpg",
@@ -104,7 +161,7 @@ HEROIC_PLUT_GAMES = {
         "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
     },
     "t5mp": {
-        "title":          "Plutonium: Black Ops MP",
+        "title":          "Call of Duty: Black Ops - Multiplayer",
         "template_type":  "standard",
         "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42710/d595fb4b01201cade09e1232f2c41c0866840628.jpg",
         "grid_url":       "https://cdn2.steamgriddb.com/thumb/978f9d25644371a4c4b8df8c994cd880.png",
@@ -114,7 +171,7 @@ HEROIC_PLUT_GAMES = {
         "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
     },
     "t6mp": {
-        "title":          "Plutonium: Black Ops II MP",
+        "title":          "Call of Duty: Black Ops II - Multiplayer",
         "template_type":  "standard",
         "icon_url":       "https://cdn2.steamgriddb.com/icon_thumb/715eb56d3f3b71792e230102d1da496d.png",
         "grid_url":       "https://cdn2.steamgriddb.com/thumb/7d3695ac5fbf55fb65ea261dd3a8577c.jpg",
@@ -124,7 +181,7 @@ HEROIC_PLUT_GAMES = {
         "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
     },
     "t6zm": {
-        "title":          "Plutonium: Black Ops II Zombies",
+        "title":          "Call of Duty: Black Ops II - Zombies",
         "template_type":  "standard",
         "icon_url":       "https://cdn2.steamgriddb.com/icon_thumb/743c11a9f3cb65cda4994bbdfb66c398.png",
         "grid_url":       "https://cdn2.steamgriddb.com/thumb/3d9ffc992e48d2aeb4b06f05471f619d.jpg",
@@ -134,7 +191,7 @@ HEROIC_PLUT_GAMES = {
         "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
     },
     "iw5mp": {
-        "title":          "Plutonium: Modern Warfare 3 MP",
+        "title":          "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
         "template_type":  "standard",
         "icon_url":       "https://cdn2.steamgriddb.com/icon_thumb/67b48cc32ab9f04633bd50656a4a26fc.png",
         "grid_url":       "https://cdn2.steamgriddb.com/thumb/54726e7600c9c297610f6ed9d7d19ca7.jpg",
@@ -385,9 +442,11 @@ def _write_heroic_game_config(game_key: str, ge_proton_version: str,
     )
     proton_bin = os.path.join(proton_dir, "proton")
 
-    # Each game gets its own prefix under the DeckOps heroic prefix dir.
-    # This keeps Heroic prefixes completely separate from Steam's compatdata.
-    prefix_path = os.path.join(HEROIC_PREFIX_BASE, game_key)
+    # Shape A: every Plutonium game points at Heroic's shared default prefix.
+    # The user logs in once during the bootstrapper phase inside this exact
+    # prefix, and all Plutonium games share that login state, Plutonium
+    # install, and Wine environment. One prefix, one login, many games.
+    prefix_path = HEROIC_DEFAULT_WINE_PREFIX
 
     config = {
         app_name: {
@@ -450,11 +509,9 @@ def _remove_heroic_game_config(game_key: str, on_progress=None):
         os.remove(config_path)
         prog(f"  Removed Heroic game config for {game_key}")
 
-    # Also clean up the prefix if it exists
-    prefix_path = os.path.join(HEROIC_PREFIX_BASE, game_key)
-    if os.path.isdir(prefix_path):
-        shutil.rmtree(prefix_path)
-        prog(f"  Removed Heroic prefix for {game_key}")
+    # Shape A: the shared default Wine prefix is never removed on single-game
+    # uninstall because other Plutonium games may still need it. Full wipe
+    # happens in cleanup_all_heroic() when the user uninstalls DeckOps.
 
 
 # ── Steam shortcut helpers (mirrors shortcut.py patterns) ───────────────────
@@ -641,22 +698,269 @@ def _download_artwork(grid_dir: str, appid: int, game_def: dict, prog):
                 pass
 
 
-# ── Public API ──────────────────────────────────────────────────────────────
+# ── LCD Shape A helpers ─────────────────────────────────────────────────────
+# Everything below powers the LCD Plutonium install flow. plutonium.py's
+# install_plutonium dispatches to install_plutonium_lcd at the top of the
+# function on LCD, so these helpers are the actual entry points for LCD.
 
-def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
-                       plut_dir: str, on_progress=None):
+def get_shared_plut_dir() -> str:
+    """
+    Return the Plutonium/ folder path inside Heroic's shared default
+    prefix. This is where the Plutonium client files live after the
+    bootstrapper login, and where all LCD Plutonium games read their
+    config.json from.
+    """
+    return os.path.join(
+        HEROIC_DEFAULT_WINE_PREFIX,
+        "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Local", "Plutonium",
+    )
+
+
+def is_plutonium_ready_lcd() -> bool:
+    """
+    LCD counterpart to plutonium.is_plutonium_ready. Returns True if the
+    user has logged in inside the shared Heroic prefix and Plutonium has
+    finished downloading its client files. Checked by looking for the
+    storage/ subdir, which Plutonium only creates after a successful login.
+    """
+    storage = os.path.join(get_shared_plut_dir(), "storage")
+    if not os.path.isdir(storage):
+        return False
+    # Must have at least one game subfolder (t4, t5, t6, iw5, demonware)
+    try:
+        return any(
+            os.path.isdir(os.path.join(storage, d))
+            for d in os.listdir(storage)
+        )
+    except OSError:
+        return False
+
+
+def _wine_path_lcd(linux_path: str) -> str:
+    """Convert a Linux path to Wine Z: drive notation (same as plutonium.py)."""
+    return "Z:" + linux_path.replace("/", "\\")
+
+
+def _write_plutonium_config_lcd(plut_dir: str, selected_keys: list,
+                                  installed_games: dict,
+                                  on_progress=None):
+    """
+    Write Plutonium's config.json inside the shared Heroic prefix with
+    the install paths for every selected Plutonium game.
+
+    Shape A writes one config.json that lists all selected games' paths
+    (t4Path, t5Path, t6Path, iw5Path). Plutonium's Windows client is
+    designed to hold multiple games in one install, so this is the
+    intended usage not a hack.
+
+    Idempotent: writing the same config.json N times produces the same
+    result, so calling this once per game during the install loop is fine.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    config_path = os.path.join(plut_dir, "config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path) as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    else:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+
+    for key in selected_keys:
+        if key not in PLUT_CONFIG_KEYS:
+            continue
+        game = installed_games.get(key)
+        if not game:
+            continue
+        install_dir = game.get("install_dir", "")
+        if install_dir:
+            data[PLUT_CONFIG_KEYS[key]] = _wine_path_lcd(install_dir)
+
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    with open(config_path, "w") as f:
+        json.dump(data, f, indent=2)
+    prog(f"  Wrote Plutonium config.json with {len(selected_keys)} game path(s)")
+
+
+def _write_metadata_lcd(install_dir: str, data: dict):
+    """
+    Write the DeckOps metadata sentinel into a game's install directory.
+    Mirrors plutonium._write_metadata so heroic.py doesn't need to import
+    private helpers from plutonium.py.
+    """
+    if not install_dir:
+        return
+    path = os.path.join(install_dir, "deckops_plutonium.json")
+    try:
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+    except OSError:
+        pass
+
+
+def _download_plutonium_exe(dest_dir: str, on_progress=None) -> str:
+    """
+    Download plutonium.exe into dest_dir. Returns the full path to the
+    downloaded file. Retries up to 3 times on network failure.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, "plutonium.exe")
+
+    # If it's already there and non-empty, assume it's good
+    if os.path.exists(dest) and os.path.getsize(dest) > 0:
+        prog("  plutonium.exe already present, skipping download.")
+        return dest
+
+    prog("  Downloading Plutonium bootstrapper...")
+    import time
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(PLUT_BOOTSTRAPPER_URL,
+                                          headers=_BROWSER_UA)
+            with urllib.request.urlopen(req, timeout=60) as r, \
+                 open(dest, "wb") as f:
+                f.write(r.read())
+            prog(f"  Downloaded plutonium.exe ({os.path.getsize(dest)} bytes)")
+            return dest
+        except Exception as ex:
+            if attempt == 2:
+                raise
+            time.sleep(2 ** attempt)
+    return dest
+
+
+def _ensure_bootstrap_sideload_entry(plutonium_exe: str,
+                                      ge_proton_version: str,
+                                      on_progress=None):
+    """
+    Write the one-off "DeckOps Plutonium Setup" sideload entry into
+    Heroic's library.json and its matching GamesConfig JSON.
+
+    This is the entry Heroic launches via the heroic:// protocol during
+    the bootstrapper phase so the user can log in inside the shared
+    default Wine prefix. Kept around after login so testers can re-launch
+    it from Heroic if their token ever expires.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    # library.json entry
+    entry = {
+        "runner": "sideload",
+        "app_name": BOOTSTRAP_APP_NAME,
+        "title": BOOTSTRAP_TITLE,
+        "install": {
+            "executable": plutonium_exe,
+            "platform": "Windows",
+            "is_dlc": False,
+        },
+        "folder_name": os.path.dirname(plutonium_exe),
+        "art_cover": "",
+        "is_installed": True,
+        "art_square": "",
+        "canRunOffline": True,
+        "browserUrl": "",
+        "customUserAgent": "",
+        "launchFullScreen": False,
+    }
+
+    library = _read_heroic_library()
+    idx = next(
+        (i for i, g in enumerate(library["games"])
+         if g.get("app_name") == BOOTSTRAP_APP_NAME),
+        None,
+    )
+    if idx is not None:
+        library["games"][idx] = entry
+    else:
+        library["games"].append(entry)
+    _write_heroic_library(library)
+    prog("  Bootstrap sideload entry written.")
+
+    # GamesConfig JSON -- same shape as per-game configs but without
+    # launcherArgs (we want the raw plutonium.exe to open so the user
+    # can log in normally).
+    os.makedirs(HEROIC_GAMES_CONFIG_DIR, exist_ok=True)
+    config_path = os.path.join(HEROIC_GAMES_CONFIG_DIR,
+                                f"{BOOTSTRAP_APP_NAME}.json")
+
+    proton_dir = os.path.expanduser(
+        f"~/.local/share/Steam/compatibilitytools.d/{ge_proton_version}"
+    )
+    proton_bin = os.path.join(proton_dir, "proton")
+
+    config = {
+        BOOTSTRAP_APP_NAME: {
+            "autoInstallDxvk": True,
+            "autoInstallDxvkNvapi": True,
+            "autoInstallVkd3d": True,
+            "preferSystemLibs": False,
+            "enableEsync": True,
+            "enableMsync": False,
+            "enableFsync": True,
+            "enableWineWayland": False,
+            "enableHDR": False,
+            "enableWoW64": False,
+            "nvidiaPrime": False,
+            "enviromentOptions": [],
+            "wrapperOptions": [],
+            "showFps": False,
+            "useGameMode": True,
+            "battlEyeRuntime": True,
+            "eacRuntime": True,
+            "language": "",
+            "beforeLaunchScriptPath": "",
+            "afterLaunchScriptPath": "",
+            "launcherArgs": "",
+            "verboseLogs": False,
+            "advertiseAvxForRosetta": False,
+            "enableQuickSavesMenu": False,
+            "wineVersion": {
+                "bin": proton_bin,
+                "name": ge_proton_version,
+                "type": "proton",
+            },
+            "winePrefix": HEROIC_DEFAULT_WINE_PREFIX,
+            "wineCrossoverBottle": "",
+        },
+        "version": "v0",
+        "explicit": True,
+    }
+
+    with open(config_path, "w") as f:
+        json.dump(config, f, indent=2)
+    prog("  Bootstrap GamesConfig written.")
+
+
+
     """
     Set up a single Plutonium game to launch through Heroic on LCD.
 
-    This is the main entry point called from plutonium.py for LCD installs.
-    It does everything needed to make the game launchable from Steam Game Mode
-    via Heroic, without Steam's DLL injection.
+    This is called from install_plutonium_lcd once per selected game.
+    It writes the per-game Heroic sideload entry, per-game GamesConfig
+    (with winePrefix pointed at the shared default prefix and
+    launcherArgs set to plutonium://play/<game_key>), and the matching
+    Steam non-Steam shortcut that launches via the heroic:// protocol.
 
     game_key          - one of t4sp, t4mp, t5sp, t5mp, t6zm, t6mp, iw5mp
     game              - dict with at least install_dir and name
     ge_proton_version - e.g. "GE-Proton10-34"
-    plut_dir          - path to the Plutonium dir inside the Heroic prefix
-                        (not yet created - will be populated by plutonium.py)
+    plut_dir          - deprecated / ignored. Shape A always targets the
+                        shared default Heroic prefix, so the launcher exe
+                        path is computed from get_shared_plut_dir().
+                        Parameter kept so older call sites don't break.
     """
     def prog(msg):
         if on_progress:
@@ -669,10 +973,11 @@ def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
     install_dir = game.get("install_dir", "")
     game_def = HEROIC_PLUT_GAMES[game_key]
 
-    # The Plutonium launcher exe will live inside the Heroic-managed prefix.
-    # We point Heroic at it even though it won't exist until Plutonium files
-    # are copied in. Heroic doesn't validate the exe path at config time.
-    launcher_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
+    # Shape A: the launcher exe always lives inside the shared default
+    # Heroic prefix. plut_dir (if passed) is ignored for compatibility.
+    shared_plut_dir = get_shared_plut_dir()
+    launcher_exe = os.path.join(shared_plut_dir, "bin",
+                                "plutonium-launcher-win32.exe")
 
     prog(f"Setting up Heroic for {game_def['title']}...")
 
@@ -683,7 +988,7 @@ def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
     _add_heroic_sideload_entry(game_key, launcher_exe, install_dir,
                                 on_progress=on_progress)
 
-    # 3. Write per-game config (GE-Proton, prefix, etc.)
+    # 3. Write per-game config (GE-Proton, shared prefix, launcherArgs)
     _write_heroic_game_config(game_key, ge_proton_version,
                                on_progress=on_progress)
 
@@ -691,6 +996,183 @@ def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
     _create_heroic_steam_shortcut(game_key, on_progress=on_progress)
 
     prog(f"Heroic setup complete for {game_def['title']}")
+
+
+def launch_bootstrapper_lcd(on_progress=None):
+    """
+    LCD Plutonium bootstrapper. Called by ui_qt.py during the install flow
+    before any per-game setup happens. Does the following:
+
+      1. Ensures Heroic Flatpak is installed (no-op if already present).
+      2. Grants Heroic filesystem access to ~/Games/Heroic and DeckOps dirs.
+      3. Downloads plutonium.exe into ~/Games/Heroic/deckops_plutonium/.
+      4. Writes a one-off "DeckOps Plutonium Setup" sideload entry pointing
+         at that exe, with winePrefix set to Heroic's shared default prefix.
+      5. Launches that entry via the heroic:// protocol. Heroic creates the
+         shared prefix using its own GE-Proton runtime and runs Plutonium.
+
+    This function does NOT wait for Plutonium to exit. The UI calling layer
+    already has a manual continuation gate (_plut_event.wait()) that the
+    user clicks after they close the Plutonium window. Fire-and-forget is
+    deliberately more robust -- Heroic's Flatpak process may or may not
+    exit cleanly when the game does, and we don't want to hang on that.
+
+    Raises on download failure or if Heroic can't be installed.
+    """
+    def prog(pct, msg):
+        if on_progress:
+            on_progress(pct, msg)
+
+    # 1. Heroic available
+    prog(5, "Ensuring Heroic Games Launcher is installed...")
+    if not install_heroic(on_progress=lambda m: prog(5, m)):
+        raise RuntimeError("Heroic Games Launcher could not be installed.")
+
+    # 2. Filesystem access. ~/Games is normally already granted by Heroic
+    #    itself on first launch, but override is idempotent so a repeat call
+    #    is cheap insurance.
+    prog(10, "Granting Heroic filesystem access...")
+    _grant_heroic_filesystem_access(
+        [HEROIC_GAMES_DIR, DECKOPS_PLUT_DIR],
+        on_progress=lambda m: prog(10, m),
+    )
+
+    # Make sure ~/Games/Heroic exists (Heroic creates it on first launch,
+    # but DeckOps may run before the user has ever opened Heroic).
+    os.makedirs(HEROIC_GAMES_DIR, exist_ok=True)
+
+    # 3. Download plutonium.exe
+    prog(15, "Downloading Plutonium bootstrapper...")
+    try:
+        plutonium_exe = _download_plutonium_exe(
+            DECKOPS_PLUT_DIR,
+            on_progress=lambda m: prog(15, m),
+        )
+    except Exception as ex:
+        raise RuntimeError(f"Failed to download plutonium.exe: {ex}")
+
+    # 4. Resolve GE-Proton version. We need this for the bootstrap
+    #    GamesConfig wineVersion block so Heroic uses GE-Proton (not its
+    #    bundled UMU default) to run the login session. Same version will
+    #    be used later by the per-game entries.
+    try:
+        import config as _cfg
+        ge_version = _cfg.get_ge_proton_version()
+    except Exception:
+        ge_version = None
+    if not ge_version:
+        ge_version = "GE-Proton10-34"  # reasonable fallback
+
+    # 5. Write the bootstrap sideload entry + its GamesConfig
+    prog(20, "Registering bootstrap entry with HGL...")
+    _ensure_bootstrap_sideload_entry(
+        plutonium_exe, ge_version,
+        on_progress=lambda m: prog(20, m),
+    )
+
+    # 6. Launch via the heroic:// protocol. Fire and forget -- UI has a
+    #    manual continuation gate after this returns.
+    prog(25, "Launching Plutonium through HGL -- please log in...")
+    launch_uri = (
+        f"heroic://launch?appName={BOOTSTRAP_APP_NAME}&runner=sideload"
+    )
+    try:
+        subprocess.Popen(
+            [
+                "flatpak", "run", HEROIC_FLATPAK_ID,
+                "--no-gui", "--no-sandbox",
+                launch_uri,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("flatpak command not found -- cannot launch HGL.")
+    except Exception as ex:
+        raise RuntimeError(f"Failed to launch HGL bootstrapper: {ex}")
+
+    prog(30, "HGL is launching Plutonium. Log in and close when done.")
+
+
+def install_plutonium_lcd(game: dict, game_key: str,
+                           installed_games: dict,
+                           on_progress=None):
+    """
+    LCD per-game Plutonium install. Called from plutonium.install_plutonium
+    via the early LCD dispatch at the top of that function.
+
+    Flow:
+      1. Verify the shared Heroic prefix is ready (user logged in, storage
+         populated) -- raises if not.
+      2. Write Plutonium's config.json inside the shared prefix with all
+         selected Plutonium games' install paths. Idempotent across calls.
+      3. Call setup_heroic_game() to write this game's per-game sideload
+         entry, GamesConfig (winePrefix = shared), and Steam shortcut.
+      4. Write the DeckOps metadata sentinel into the game's install dir so
+         uninstall_plutonium can find it later.
+
+    game            - entry from detect_games.find_installed_games()
+    game_key        - one of: t4sp, t4mp, t5sp, t5mp, t6zm, t6mp, iw5mp
+    installed_games - full dict of currently-installed games (all clients,
+                      not just Plutonium). Used to resolve sibling paths.
+    on_progress     - optional callback(percent: int, status: str)
+    """
+    def prog(pct, msg):
+        if on_progress:
+            on_progress(pct, msg)
+
+    if game_key not in PLUT_GAME_KEYS:
+        prog(100, f"Skipping {game_key}: not a Plutonium game.")
+        return
+
+    prog(10, f"LCD install for {game.get('name', game_key)}...")
+
+    # 1. Sanity check: shared Plutonium install + login state
+    shared_plut_dir = get_shared_plut_dir()
+    if not is_plutonium_ready_lcd():
+        raise RuntimeError(
+            "Plutonium shared prefix is not ready. "
+            "Expected storage/ inside " + shared_plut_dir + ". "
+            "Did the bootstrapper login step complete successfully?"
+        )
+
+    # 2. Write config.json for all selected Plutonium games. Idempotent --
+    #    called once per game during the install loop, but writes the same
+    #    content every time so there's no harm.
+    prog(30, "Writing Plutonium config.json in shared prefix...")
+    selected_plut_keys = [
+        k for k in installed_games.keys() if k in PLUT_GAME_KEYS
+    ]
+    _write_plutonium_config_lcd(
+        shared_plut_dir, selected_plut_keys, installed_games,
+        on_progress=lambda m: prog(35, m),
+    )
+
+    # 3. Per-game Heroic sideload entry + GamesConfig + Steam shortcut
+    prog(50, "Registering game with HGL...")
+    try:
+        import config as _cfg
+        ge_version = _cfg.get_ge_proton_version()
+    except Exception:
+        ge_version = None
+    if not ge_version:
+        ge_version = "GE-Proton10-34"
+
+    setup_heroic_game(
+        game_key, game, ge_version,
+        plut_dir=shared_plut_dir,
+        on_progress=lambda m: prog(75, m),
+    )
+
+    # 4. Metadata sentinel
+    prog(95, "Saving metadata...")
+    _write_metadata_lcd(game.get("install_dir", ""), {
+        "game_key":   game_key,
+        "plut_dir":   shared_plut_dir,
+        "lcd_heroic": True,
+    })
+
+    prog(100, f"Plutonium ready for {game.get('name', game_key)}!")
 
 
 def _create_heroic_steam_shortcut(game_key: str, on_progress=None):
@@ -801,24 +1283,6 @@ def _create_heroic_steam_shortcut(game_key: str, on_progress=None):
     prog(f"  Shortcut appid: {shortcut_appid}")
 
 
-def get_heroic_prefix_plut_dir(game_key: str) -> str:
-    """
-    Return the Plutonium/ folder path that will exist inside the
-    Heroic-managed prefix for a given game key.
-
-    This is where plutonium.py should copy Plutonium files to for LCD.
-    The prefix won't exist until Heroic creates it on first launch,
-    but we pre-create the directory structure.
-    """
-    prefix_path = os.path.join(HEROIC_PREFIX_BASE, game_key)
-    plut_dir = os.path.join(
-        prefix_path, "pfx", "drive_c", "users", "steamuser",
-        "AppData", "Local", "Plutonium",
-    )
-    os.makedirs(plut_dir, exist_ok=True)
-    return plut_dir
-
-
 def cleanup_heroic_game(game_key: str, on_progress=None):
     """
     Remove all Heroic-related artifacts for a game key.
@@ -839,19 +1303,49 @@ def cleanup_heroic_game(game_key: str, on_progress=None):
 
 
 def cleanup_all_heroic(on_progress=None):
-    """Remove all DeckOps-managed Heroic entries and prefixes."""
+    """Remove all DeckOps-managed Heroic entries and state."""
     def prog(msg):
         if on_progress:
             on_progress(msg)
 
     prog("Cleaning up all DeckOps Heroic entries...")
 
+    # Per-game sideload entries + GamesConfig JSONs
     for game_key in HEROIC_PLUT_GAMES:
         cleanup_heroic_game(game_key, on_progress=on_progress)
 
-    # Remove the shared prefix base directory
+    # Bootstrap sideload entry + GamesConfig
+    library = _read_heroic_library()
+    before = len(library["games"])
+    library["games"] = [g for g in library["games"]
+                        if g.get("app_name") != BOOTSTRAP_APP_NAME]
+    if len(library["games"]) < before:
+        _write_heroic_library(library)
+        prog("  Removed bootstrap sideload entry")
+    bootstrap_cfg = os.path.join(HEROIC_GAMES_CONFIG_DIR,
+                                 f"{BOOTSTRAP_APP_NAME}.json")
+    if os.path.exists(bootstrap_cfg):
+        os.remove(bootstrap_cfg)
+        prog("  Removed bootstrap GamesConfig")
+
+    # Our copy of plutonium.exe under ~/Games/Heroic/deckops_plutonium/
+    if os.path.isdir(DECKOPS_PLUT_DIR):
+        shutil.rmtree(DECKOPS_PLUT_DIR)
+        prog("  Removed DeckOps Plutonium directory")
+
+    # Plutonium install inside the shared default prefix. The rest of the
+    # shared prefix is left alone -- it may contain other sideloaded games
+    # the user installed through Heroic themselves.
+    shared_plut = get_shared_plut_dir()
+    if os.path.isdir(shared_plut):
+        shutil.rmtree(shared_plut)
+        prog("  Removed Plutonium install from shared Heroic prefix")
+
+    # Legacy cleanup: old DeckOps versions (Fix #1.5) used per-game prefixes
+    # under ~/.local/share/deckops/heroic_prefixes/. Wipe that dir if it
+    # still exists so stale state doesn't confuse future installs.
     if os.path.isdir(HEROIC_PREFIX_BASE):
         shutil.rmtree(HEROIC_PREFIX_BASE)
-        prog("  Removed DeckOps Heroic prefix directory")
+        prog("  Removed legacy DeckOps Heroic prefix directory")
 
     prog("Heroic cleanup complete.")

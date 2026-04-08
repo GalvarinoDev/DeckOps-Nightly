@@ -948,7 +948,6 @@ class SetupScreen(QWidget):
             if item.widget(): item.widget().deleteLater()
         self._checks.clear()
 
-        _LCD_OFFLINE_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "iw5mp"}
         MAX_SLOTS  = 3
         SLOT_W     = 28
         SLOT_GAP   = 8
@@ -962,7 +961,6 @@ class SetupScreen(QWidget):
 
             color  = C_IW if gd["dev"] == "iw" else C_TREY
             client = _active_client(gd)
-            is_lcd_offline = not cfg.is_oled() and any(k in _LCD_OFFLINE_KEYS for k in keys)
 
             row = QHBoxLayout()
             row.setSpacing(12)
@@ -1024,11 +1022,6 @@ class SetupScreen(QWidget):
             name_color = "#FFF" if any_installed else "#555566"
             name_lbl = _lbl(gd["base"], 14, name_color, align=Qt.AlignLeft, wrap=False)
             name_wrap_lay.addWidget(name_lbl)
-
-            if is_lcd_offline:
-                offline_lbl = _lbl("\u26a0 offline only on LCD", 10, C_TREY,
-                                    align=Qt.AlignLeft, wrap=False)
-                name_wrap_lay.addWidget(offline_lbl)
 
             row.addWidget(name_wrap, stretch=1)
 
@@ -1267,6 +1260,11 @@ class InstallScreen(QWidget):
                 _skip_appids.add("7940")
             dep_targets = []
             for key, gd, game in self.selected:
+                # LCD Plutonium games launch via Heroic with a shared Wine
+                # prefix -- they never touch Steam's compatdata for the game
+                # appid, so initializing that prefix is wasted work. Skip.
+                if not cfg.is_oled() and KEY_CLIENT.get(key) == "plutonium":
+                    continue
                 # Use per-key appid from GAMES, not card-level gd["appid"].
                 # Card-level appid is wrong for keys that have their own appid
                 # (e.g. t6zm=212910, t6sp=202970 vs card appid 202990).
@@ -1296,34 +1294,39 @@ class InstallScreen(QWidget):
         # ── Plutonium bootstrapper (Steam still running) ──────────────────────
         if has_plut:
             is_lcd = not cfg.is_oled()
-            # LCD users only need the bootstrapper downloaded, no login required.
-            # OLED users need a full login so Plutonium creates the storage/ folder.
-            plut_ready = is_plutonium_ready()
+
+            # LCD and OLED both require the user to log in, just in different
+            # prefixes. LCD logs in inside Heroic's shared default prefix so
+            # the auth state is bound to the exact Wine prefix that will
+            # later launch the games. OLED logs in inside the dedicated
+            # DeckOps prefix at ~/.local/share/deckops/plutonium_prefix/.
             if is_lcd:
-                from plutonium import is_bootstrapper_ready
-                plut_ready = plut_ready or is_bootstrapper_ready()
+                from heroic import (launch_bootstrapper_lcd,
+                                    is_plutonium_ready_lcd)
+                plut_ready = is_plutonium_ready_lcd()
+            else:
+                plut_ready = is_plutonium_ready()
 
             if not plut_ready:
-                if is_lcd:
-                    self._s.progress.emit(12, "Launching Plutonium...")
-                    self._s.log.emit(
-                        "Plutonium is launching now.\n"
-                        "  1. Wait for it to finish downloading\n"
-                        "  2. Do NOT log in (LCD does not need an account)\n"
-                        "  3. Close the Plutonium window once downloading finishes\n"
-                        "  4. Click the button below to continue"
-                    )
-                else:
-                    self._s.progress.emit(12, "Launching Plutonium — please log in...")
-                    self._s.log.emit(
-                        "Plutonium is launching now.\n"
-                        "  1. Wait for it to finish downloading\n"
-                        "  2. Log in with your Plutonium account\n"
-                        "  3. Close the Plutonium window\n"
-                        "  4. Click the button below to continue"
-                    )
+                self._s.progress.emit(12, "Launching Plutonium — please log in...")
+                self._s.log.emit(
+                    "Plutonium is launching now.\n"
+                    "  1. Wait for it to finish downloading\n"
+                    "  2. Log in with your Plutonium account\n"
+                    "  3. Close the Plutonium window\n"
+                    "  4. Click the button below to continue"
+                )
                 try:
-                    launch_bootstrapper(proton, on_progress=lambda p, m: self._s.progress.emit(p, m), steam_root=self.steam_root)
+                    if is_lcd:
+                        launch_bootstrapper_lcd(
+                            on_progress=lambda p, m: self._s.progress.emit(p, m)
+                        )
+                    else:
+                        launch_bootstrapper(
+                            proton,
+                            on_progress=lambda p, m: self._s.progress.emit(p, m),
+                            steam_root=self.steam_root,
+                        )
                 except Exception as ex:
                     self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
                     self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
@@ -1333,33 +1336,20 @@ class InstallScreen(QWidget):
                 self._s.plut_go.emit()
 
                 # Verify Plutonium is ready after the user closed the window
-                if is_lcd:
-                    if not is_bootstrapper_ready():
-                        self._s.log.emit(
-                            "✗  Plutonium bootstrapper not found.\n"
-                            "   Make sure you let it finish downloading before closing."
-                        )
-                        self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
-                else:
-                    if not is_plutonium_ready():
-                        self._s.log.emit(
-                            "✗  Plutonium does not appear to be fully set up.\n"
-                            "   Make sure you logged in and let it finish downloading."
-                        )
-                        self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
+                ready_check = is_plutonium_ready_lcd() if is_lcd else is_plutonium_ready()
+                if not ready_check:
+                    self._s.log.emit(
+                        "✗  Plutonium does not appear to be fully set up.\n"
+                        "   Make sure you logged in and let it finish downloading."
+                    )
+                    self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
 
                 self._s.log.emit("✓  Plutonium ready.")
             else:
-                if is_lcd:
-                    self._s.progress.emit(12, "Waiting for Plutonium...")
-                    self._s.log.emit(
-                        "Wait for Plutonium to finish updating, then close Plutonium."
-                    )
-                else:
-                    self._s.progress.emit(12, "Waiting for Plutonium...")
-                    self._s.log.emit(
-                        "Wait for Plutonium to finish updating, sign in, then close Plutonium."
-                    )
+                self._s.progress.emit(12, "Waiting for Plutonium...")
+                self._s.log.emit(
+                    "Wait for Plutonium to finish updating, sign in, then close Plutonium."
+                )
                 self._s.plut_wait.emit()
                 self._plut_event.wait()
                 self._s.plut_go.emit()
@@ -1834,22 +1824,6 @@ class ControllerInfoScreen(QWidget):
 
         lay.addWidget(_hdiv())
 
-        # ── LCD-only Plutonium offline note ───────────────────────────────────
-        # Only shown to LCD users. WaW, BO1, and BO2 ZM run through
-        # Plutonium in offline LAN mode on LCD. No account needed.
-        self._lcd_plut_warn_div  = _hdiv()
-        self._lcd_plut_warn_hdr  = _lbl("⚠  Plutonium Games on LCD", 13, C_TREY, bold=True, align=Qt.AlignLeft)
-        self._lcd_plut_warn_body = _lbl(
-            "All Plutonium games run in offline LAN mode on your LCD Deck. "
-            "No Plutonium account is needed. Online play is not available on LCD. "
-            "Campaign, Zombies, and Multiplayer (with bots) all work offline.",
-            11, C_DIM, align=Qt.AlignLeft)
-        lay.addWidget(self._lcd_plut_warn_div)
-        lay.addWidget(self._lcd_plut_warn_hdr)
-        lay.addWidget(self._lcd_plut_warn_body)
-
-        lay.addWidget(_hdiv())
-
         # ── BO2 encrypted config note ──────────────────────────────────────────
         lay.addWidget(_lbl("⚠  Black Ops II - Manual Setup Required", 13, C_TREY, bold=True, align=Qt.AlignLeft))
         lay.addWidget(_lbl(
@@ -1909,11 +1883,6 @@ class ControllerInfoScreen(QWidget):
         self._gyro_lbl.setText(
             f"Standard gamepad layout with gyro aiming ({gyro_desc}) assigned to all games. "
         )
-        # Only show the online warning if the user is on LCD
-        is_lcd = not cfg.is_oled()
-        self._lcd_plut_warn_div.setVisible(is_lcd)
-        self._lcd_plut_warn_hdr.setVisible(is_lcd)
-        self._lcd_plut_warn_body.setVisible(is_lcd)
         # Only show the Decky section for docked users
         is_docked = cfg.is_docked()
         self._decky_div.setVisible(is_docked)
@@ -2530,40 +2499,42 @@ class OwnInstallScreen(QWidget):
         proton = get_proton_path(self.steam_root)
 
         # ── Plutonium bootstrapper (Steam still running) ─────────────────
-        # Downloads Plutonium into the dedicated DeckOps prefix and launches
-        # it so the user can log in. Runs before kill_steam because the
-        # bootstrapper uses Proton independently of Steam's state.
+        # Downloads Plutonium and launches it so the user can log in. LCD
+        # routes through Heroic (shared default prefix); OLED uses the
+        # dedicated DeckOps prefix via Proton directly.
         if has_plut:
             from plutonium import (launch_bootstrapper, is_plutonium_ready,
                                    install_plutonium)
             from plutonium import GAME_META as _PLUT_META
             is_lcd = not cfg.is_oled()
-            plut_ready = is_plutonium_ready()
+
             if is_lcd:
-                from plutonium import is_bootstrapper_ready
-                plut_ready = plut_ready or is_bootstrapper_ready()
+                from heroic import (launch_bootstrapper_lcd,
+                                    is_plutonium_ready_lcd)
+                plut_ready = is_plutonium_ready_lcd()
+            else:
+                plut_ready = is_plutonium_ready()
 
             if not plut_ready:
-                if is_lcd:
-                    self._s.progress.emit(10, "Launching Plutonium...")
-                    self._s.log.emit(
-                        "Plutonium is launching now.\n"
-                        "  1. Wait for it to finish downloading\n"
-                        "  2. Do NOT log in (LCD does not need an account)\n"
-                        "  3. Close the Plutonium window once downloading finishes\n"
-                        "  4. Click the button below to continue"
-                    )
-                else:
-                    self._s.progress.emit(10, "Launching Plutonium — please log in...")
-                    self._s.log.emit(
-                        "Plutonium is launching now.\n"
-                        "  1. Wait for it to finish downloading\n"
-                        "  2. Log in with your Plutonium account\n"
-                        "  3. Close the Plutonium window\n"
-                        "  4. Click the button below to continue"
-                    )
+                self._s.progress.emit(10, "Launching Plutonium — please log in...")
+                self._s.log.emit(
+                    "Plutonium is launching now.\n"
+                    "  1. Wait for it to finish downloading\n"
+                    "  2. Log in with your Plutonium account\n"
+                    "  3. Close the Plutonium window\n"
+                    "  4. Click the button below to continue"
+                )
                 try:
-                    launch_bootstrapper(proton, on_progress=lambda p, m: self._s.progress.emit(p, m), steam_root=self.steam_root)
+                    if is_lcd:
+                        launch_bootstrapper_lcd(
+                            on_progress=lambda p, m: self._s.progress.emit(p, m)
+                        )
+                    else:
+                        launch_bootstrapper(
+                            proton,
+                            on_progress=lambda p, m: self._s.progress.emit(p, m),
+                            steam_root=self.steam_root,
+                        )
                 except Exception as ex:
                     self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
                     self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
@@ -2572,20 +2543,13 @@ class OwnInstallScreen(QWidget):
                 self._plut_event.wait()
                 self._s.plut_go.emit()
 
-                if is_lcd:
-                    if not is_bootstrapper_ready():
-                        self._s.log.emit(
-                            "✗  Plutonium bootstrapper not found.\n"
-                            "   Make sure you let it finish downloading before closing."
-                        )
-                        self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
-                else:
-                    if not is_plutonium_ready():
-                        self._s.log.emit(
-                            "✗  Plutonium does not appear to be fully set up.\n"
-                            "   Make sure you logged in and let it finish downloading."
-                        )
-                        self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
+                ready_check = is_plutonium_ready_lcd() if is_lcd else is_plutonium_ready()
+                if not ready_check:
+                    self._s.log.emit(
+                        "✗  Plutonium does not appear to be fully set up.\n"
+                        "   Make sure you logged in and let it finish downloading."
+                    )
+                    self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
 
                 self._s.log.emit("✓  Plutonium ready.")
             else:
@@ -2657,6 +2621,11 @@ class OwnInstallScreen(QWidget):
         _SHARED_PREFIX_OWN_KEYS = {"cod4mp", "t4mp"}
         for key, gd, game in self.selected:
             if not game:
+                continue
+            # LCD Plutonium games launch via Heroic with a shared Wine
+            # prefix -- they never use Steam's compatdata or an own-shortcut
+            # prefix, so initializing those is wasted work. Skip.
+            if not cfg.is_oled() and KEY_CLIENT.get(key) == "plutonium":
                 continue
             if key in self.own_selected:
                 if key in _SHARED_PREFIX_OWN_KEYS:
