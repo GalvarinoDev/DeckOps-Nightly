@@ -952,6 +952,8 @@ def _ensure_bootstrap_sideload_entry(plutonium_exe: str,
 
 
 
+def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
+                      plut_dir=None, on_progress=None):
     """
     Set up a single Plutonium game to launch through Heroic on LCD.
 
