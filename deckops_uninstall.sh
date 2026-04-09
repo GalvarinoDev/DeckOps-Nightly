@@ -514,6 +514,18 @@ PYEOF
 echo ""
 
 if [ -n "$STEAM_ROOT" ]; then
+    # Close Heroic first if it's running, otherwise it may hold files in
+    # ~/Games/Heroic/Prefixes/default open and the rm below will fail.
+    info "Closing Heroic Games Launcher if running..."
+    if pgrep -f "com.heroicgameslauncher.hgl" > /dev/null 2>&1; then
+        flatpak kill com.heroicgameslauncher.hgl 2>/dev/null
+        sleep 1
+        success "Heroic closed"
+    else
+        skip "Heroic was not running"
+    fi
+    echo ""
+
     info "Removing Plutonium data from all Wine prefixes..."
 
     # Build list of all compatdata dirs (internal + SD card + any extra libraries)
@@ -532,6 +544,13 @@ if [ -n "$STEAM_ROOT" ]; then
     for mount in /run/media/deck/*/steamapps/compatdata /run/media/deck/*/SteamLibrary/steamapps/compatdata; do
         [ -d "$mount" ] && COMPAT_DIRS+=("$mount")
     done
+
+    # Heroic Games Launcher's shared prefix root (LCD Plutonium target).
+    # The LCD path puts Plutonium at:
+    #   ~/Games/Heroic/Prefixes/default/pfx/drive_c/users/steamuser/AppData/Local/Plutonium
+    # which has the same shape as a Steam compatdata prefix, so the loop
+    # below catches it without special-casing.
+    [ -d "$HOME/Games/Heroic/Prefixes" ] && COMPAT_DIRS+=("$HOME/Games/Heroic/Prefixes")
 
     found_any=0
     for COMPATDATA in "${COMPAT_DIRS[@]}"; do
@@ -552,6 +571,118 @@ if [ -n "$STEAM_ROOT" ]; then
             rm -f "$game_dir/deckops_plutonium.json" && success "Removed DeckOps metadata for appid $appid" || warn "Failed to remove metadata for appid $appid"
         fi
     done
+fi
+echo ""
+
+# ── Heroic Games Launcher state ───────────────────────────────────────────────
+# LCD Plutonium installs use Heroic for the bootstrap login flow and to host
+# Plutonium inside Heroic's shared default Wine prefix. The Wine-prefix walk
+# above (extended with ~/Games/Heroic/Prefixes) already handles the
+# AppData/Local/Plutonium dir inside that shared prefix. This block handles
+# the remaining Heroic-specific artifacts that live OUTSIDE any Wine prefix:
+#
+#   1. ~/Games/Heroic/deckops_plutonium/  -- DeckOps' downloaded plutonium.exe
+#                                            (a one-off, NOT a game install)
+#   2. Heroic library.json sideload entries with app_name starting do_*
+#      -- DeckOps-managed sideload registrations
+#   3. Heroic GamesConfig do_*.json files -- per-entry config JSONs
+#   4. ~/Games/Call of Duty * /deckops_plutonium.json metadata sentinels
+#      from own-game (non-Steam) install dirs
+#
+# IMPORTANT: This block ONLY removes things matching "do_*" prefix (DeckOps
+# naming convention) or files literally named deckops_plutonium.json. It
+# does NOT touch any Heroic game install dirs, any other sideloaded games
+# the user added themselves, or any non-DeckOps Heroic state. The user's
+# own Heroic library is preserved completely.
+
+info "Removing DeckOps artifacts from Heroic Games Launcher..."
+
+HGL_CONFIG="$HOME/.var/app/com.heroicgameslauncher.hgl/config/heroic"
+HGL_LIB="$HGL_CONFIG/sideload_apps/library.json"
+HGL_GAMESCONFIG="$HGL_CONFIG/GamesConfig"
+
+# 1. DeckOps' downloaded plutonium.exe directory.
+#    This is NOT a game install -- it's just where launch_bootstrapper_lcd
+#    drops a copy of plutonium.exe so Heroic can sideload it. Safe to delete.
+if [ -d "$HOME/Games/Heroic/deckops_plutonium" ]; then
+    rm -rf "$HOME/Games/Heroic/deckops_plutonium" && success "Removed DeckOps plutonium.exe download dir" || warn "Failed to remove deckops_plutonium dir"
+else
+    skip "DeckOps plutonium download dir not found"
+fi
+
+# 2. Strip do_* sideload entries from Heroic's library.json.
+#    Preserves any other sideloaded games the user added themselves --
+#    we ONLY remove entries whose app_name starts with "do_" (DeckOps prefix).
+if [ -f "$HGL_LIB" ]; then
+    python3 - "$HGL_LIB" << 'PYEOF'
+import json, sys
+p = sys.argv[1]
+try:
+    with open(p) as f:
+        data = json.load(f)
+    games_before = data.get("games", [])
+    games_after = [g for g in games_before
+                   if not g.get("app_name", "").startswith("do_")]
+    removed = len(games_before) - len(games_after)
+    data["games"] = games_after
+    with open(p, "w") as f:
+        json.dump(data, f, indent=2)
+    if removed > 0:
+        print(f"Removed {removed} DeckOps sideload entries from library.json")
+    else:
+        print("No DeckOps sideload entries found in library.json")
+except Exception as ex:
+    print(f"library.json edit failed: {ex}")
+    sys.exit(1)
+PYEOF
+    if [ $? -eq 0 ]; then
+        success "Heroic library.json cleaned"
+    else
+        warn "Heroic library.json edit failed"
+    fi
+else
+    skip "Heroic library.json not found (Heroic may not be installed)"
+fi
+
+# 3. Per-entry GamesConfig JSON files.
+#    Each DeckOps sideload entry has a matching <app_name>.json in
+#    GamesConfig/. We delete only files matching the do_* prefix.
+if [ -d "$HGL_GAMESCONFIG" ]; then
+    gc_count=0
+    # Use nullglob-safe iteration so an empty match doesn't trip the loop
+    shopt -s nullglob
+    for f in "$HGL_GAMESCONFIG"/do_*.json; do
+        if [ -f "$f" ]; then
+            rm -f "$f" && gc_count=$((gc_count + 1))
+        fi
+    done
+    shopt -u nullglob
+    if [ "$gc_count" -gt 0 ]; then
+        success "Removed $gc_count DeckOps GamesConfig file(s)"
+    else
+        skip "No DeckOps GamesConfig files found"
+    fi
+else
+    skip "Heroic GamesConfig dir not found"
+fi
+
+# 4. deckops_plutonium.json metadata sentinels in own-game install dirs.
+#    LCD installs put these in ~/Games/Call of Duty * (own-game source).
+#    The earlier per-appid loop only covers Steam-installed games -- this
+#    catches the own-game installs without touching the game files
+#    themselves. We ONLY remove files literally named deckops_plutonium.json.
+own_sentinel_count=0
+shopt -s nullglob
+for sentinel in "$HOME/Games/Call of Duty "*"/deckops_plutonium.json"; do
+    if [ -f "$sentinel" ]; then
+        rm -f "$sentinel" && own_sentinel_count=$((own_sentinel_count + 1))
+    fi
+done
+shopt -u nullglob
+if [ "$own_sentinel_count" -gt 0 ]; then
+    success "Removed $own_sentinel_count own-game DeckOps metadata sentinel(s)"
+else
+    skip "No own-game DeckOps metadata sentinels found"
 fi
 echo ""
 
