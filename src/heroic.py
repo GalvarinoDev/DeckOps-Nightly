@@ -1187,10 +1187,13 @@ def _write_lcd_launch_wrapper(game_key: str, ge_proton_version: str,
                                steam_root: str = None) -> str:
     """
     Write a per-game shell wrapper that launches Plutonium through Heroic
-    via the heroic:// protocol URL. Resolves the flatpak binary by absolute
-    path so it works inside Steam's Linux Runtime container, where PATH is
-    restricted. Heroic owns the Wine/Proton invocation so Plutonium runs in
-    the same environment as the bootstrap login.
+    via the heroic:// protocol URL. Heroic owns the Wine/Proton invocation
+    so Plutonium runs in the same environment as the bootstrap login.
+
+    The Steam shortcut MUST NOT have a compat tool assigned (cleared in
+    _create_heroic_steam_shortcut). With no compat tool, Steam runs this
+    wrapper natively on the host instead of inside Steam Linux Runtime,
+    which lets us reach the host's flatpak install.
 
     ge_proton_version and steam_root are unused (API compat); Heroic
     resolves the Proton binary from the per-game GamesConfig.
@@ -1223,51 +1226,51 @@ log() {{
 
 log "launch requested appName=$APP_NAME"
 
-# Steam Linux Runtime restricts PATH and injects LD_PRELOAD/LD_LIBRARY_PATH
-# that confuse host binaries. Strip them before calling flatpak.
+# Steam Linux Runtime injects LD_PRELOAD/LD_LIBRARY_PATH that confuse
+# host binaries. Strip them defensively even though we should be running
+# natively (no compat tool on the shortcut).
 unset LD_PRELOAD
 unset LD_LIBRARY_PATH
 
+# Resolve flatpak by absolute path. /usr/bin/flatpak is the host binary
+# and is what we want when running natively. The fallback list covers
+# unusual SteamOS layouts and PATH-only environments (e.g. Konsole).
 FLATPAK_BIN=""
 for candidate in \\
     /usr/bin/flatpak \\
-    /run/host/usr/bin/flatpak \\
     /var/lib/flatpak/exports/bin/flatpak \\
-    /run/host/var/lib/flatpak/exports/bin/flatpak \\
-    "$HOME/.local/share/flatpak/exports/bin/flatpak"; do
+    "$HOME/.local/share/flatpak/exports/bin/flatpak" \\
+    /run/host/usr/bin/flatpak; do
     if [ -x "$candidate" ]; then
         FLATPAK_BIN="$candidate"
         break
     fi
 done
 
-if [ -z "$FLATPAK_BIN" ]; then
-    if command -v flatpak >/dev/null 2>&1; then
-        FLATPAK_BIN="$(command -v flatpak)"
-    fi
+if [ -z "$FLATPAK_BIN" ] && command -v flatpak >/dev/null 2>&1; then
+    FLATPAK_BIN="$(command -v flatpak)"
 fi
 
 if [ -z "$FLATPAK_BIN" ]; then
-    log "FATAL flatpak binary not found at any known path"
-    log "  searched: /usr/bin /run/host/usr/bin /var/lib/flatpak/exports/bin"
-    log "  searched: /run/host/var/lib/flatpak/exports/bin ~/.local/share/flatpak/exports/bin"
-    log "  searched: PATH=$PATH"
+    log "FATAL flatpak binary not found"
+    log "  searched: /usr/bin /var/lib/flatpak/exports/bin"
+    log "  searched: ~/.local/share/flatpak/exports/bin /run/host/usr/bin"
+    log "  PATH=$PATH"
     exit 1
 fi
 
 log "using flatpak at $FLATPAK_BIN"
 
 if ! "$FLATPAK_BIN" info "$HEROIC_FLATPAK" >/dev/null 2>&1; then
-    log "Heroic not installed; installing from flathub (this may take several minutes)"
-    if ! "$FLATPAK_BIN" install -y --user --noninteractive flathub "$HEROIC_FLATPAK" >>"$LOG_FILE" 2>&1; then
-        log "FATAL failed to install Heroic from flathub"
-        exit 1
-    fi
-    log "Heroic installed"
+    log "FATAL Heroic Games Launcher not installed"
+    log "  expected flatpak: $HEROIC_FLATPAK"
+    log "  fix: re-run DeckOps installer to reinstall Heroic"
+    exit 1
 fi
 
 is_heroic_running() {{
-    "$FLATPAK_BIN" ps --columns=application 2>/dev/null | grep -qx "$HEROIC_FLATPAK"
+    "$FLATPAK_BIN" ps --columns=application 2>/dev/null \\
+        | grep -qx "$HEROIC_FLATPAK"
 }}
 
 if is_heroic_running; then
@@ -1281,7 +1284,7 @@ else
         sleep 0.3
         if is_heroic_running; then
             detected=1
-            log "Heroic detected"
+            log "Heroic detected after ${{i}} polls"
             break
         fi
     done
@@ -1400,18 +1403,39 @@ def _create_heroic_steam_shortcut(game_key: str, on_progress=None):
         except Exception as ex:
             prog(f"    Controller profile failed: {ex}")
 
-        # Set GE-Proton compat tool for the Steam shortcut
-        # This tells Steam to use GE-Proton for any prefix operations,
-        # though the actual game launch goes through Heroic's Proton.
+        # LCD Plutonium shortcuts must NOT have a Steam compat tool set.
+        # Steam wraps any non-Steam shortcut that has a compat tool inside
+        # Steam Linux Runtime (sniper). From inside that container the host's
+        # flatpak install is invisible to our wrapper, which means it can't
+        # reach Heroic. The wrapper invokes Heroic via heroic:// URL and
+        # Heroic owns the Proton invocation downstream, so the Steam-side
+        # compat tool is not just unnecessary -- it actively breaks the
+        # launch by sandboxing the wrapper away from the host.
+        #
+        # Clear any existing CompatToolMapping entry for this appid (one-time
+        # migration for installs that had GE-Proton set under Path A).
         try:
-            import config as _cfg
-            from wrapper import set_compat_tool
-            ge_version = _cfg.get_ge_proton_version()
-            if ge_version:
-                set_compat_tool([str(shortcut_appid)], ge_version)
-                prog(f"    GE-Proton {ge_version} set on shortcut")
+            import re as _re
+            steam_config = os.path.expanduser(
+                "~/.local/share/Steam/config/config.vdf"
+            )
+            if os.path.exists(steam_config):
+                with open(steam_config, "r", encoding="utf-8") as _f:
+                    _data = _f.read()
+                _appid_str = str(shortcut_appid)
+                _pattern = (
+                    rf'\t+"{_re.escape(_appid_str)}"\n\t+\{{[^}}]*\}}\n?'
+                )
+                if _re.search(_pattern, _data, _re.MULTILINE | _re.DOTALL):
+                    _data = _re.sub(
+                        _pattern, "", _data,
+                        flags=_re.MULTILINE | _re.DOTALL,
+                    )
+                    with open(steam_config, "w", encoding="utf-8") as _f:
+                        _f.write(_data)
+                    prog(f"    Cleared stale compat tool from shortcut")
         except Exception as ex:
-            prog(f"    Could not set GE-Proton on shortcut: {ex}")
+            prog(f"    Could not clear compat tool: {ex}")
 
     prog(f"  Shortcut appid: {shortcut_appid}")
 
