@@ -1308,14 +1308,24 @@ class InstallScreen(QWidget):
                 plut_ready = is_plutonium_ready()
 
             if not plut_ready:
-                self._s.progress.emit(12, "Launching Plutonium — please log in...")
-                self._s.log.emit(
-                    "Plutonium is launching now.\n"
-                    "  1. Wait for it to finish downloading\n"
-                    "  2. Log in with your Plutonium account\n"
-                    "  3. Close the Plutonium window\n"
-                    "  4. Click the button below to continue"
-                )
+                if is_lcd:
+                    self._s.progress.emit(12, "Setting up Plutonium through HGL...")
+                    self._s.log.emit(
+                        "Setting up Plutonium through HGL (Heroic Games Launcher)...\n"
+                        "  1. HGL will download and launch Plutonium (this may take a few minutes)\n"
+                        "  2. Log in with your Plutonium account\n"
+                        "  3. Close the Plutonium window\n"
+                        "  4. Click the button below to continue"
+                    )
+                else:
+                    self._s.progress.emit(12, "Launching Plutonium — please log in...")
+                    self._s.log.emit(
+                        "Plutonium is launching now.\n"
+                        "  1. Wait for it to finish downloading\n"
+                        "  2. Log in with your Plutonium account\n"
+                        "  3. Close the Plutonium window\n"
+                        "  4. Click the button below to continue"
+                    )
                 try:
                     if is_lcd:
                         launch_bootstrapper_lcd(
@@ -1331,9 +1341,19 @@ class InstallScreen(QWidget):
                     self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
                     self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
 
+                if is_lcd:
+                    self._s.log.emit(
+                        "⏳  HGL is launching Plutonium. This may take a minute on first run\n"
+                        "   while HGL sets up the Wine prefix."
+                    )
+                    self._s.pulse_start.emit("Waiting for Plutonium login")
+
                 self._s.plut_wait.emit()
                 self._plut_event.wait()
                 self._s.plut_go.emit()
+
+                if is_lcd:
+                    self._s.pulse_stop.emit()
 
                 # Verify Plutonium is ready after the user closed the window
                 ready_check = is_plutonium_ready_lcd() if is_lcd else is_plutonium_ready()
@@ -2516,14 +2536,24 @@ class OwnInstallScreen(QWidget):
                 plut_ready = is_plutonium_ready()
 
             if not plut_ready:
-                self._s.progress.emit(10, "Launching Plutonium — please log in...")
-                self._s.log.emit(
-                    "Plutonium is launching now.\n"
-                    "  1. Wait for it to finish downloading\n"
-                    "  2. Log in with your Plutonium account\n"
-                    "  3. Close the Plutonium window\n"
-                    "  4. Click the button below to continue"
-                )
+                if is_lcd:
+                    self._s.progress.emit(10, "Setting up Plutonium through HGL...")
+                    self._s.log.emit(
+                        "Setting up Plutonium through HGL (Heroic Games Launcher)...\n"
+                        "  1. HGL will download and launch Plutonium (this may take a few minutes)\n"
+                        "  2. Log in with your Plutonium account\n"
+                        "  3. Close the Plutonium window\n"
+                        "  4. Click the button below to continue"
+                    )
+                else:
+                    self._s.progress.emit(10, "Launching Plutonium — please log in...")
+                    self._s.log.emit(
+                        "Plutonium is launching now.\n"
+                        "  1. Wait for it to finish downloading\n"
+                        "  2. Log in with your Plutonium account\n"
+                        "  3. Close the Plutonium window\n"
+                        "  4. Click the button below to continue"
+                    )
                 try:
                     if is_lcd:
                         launch_bootstrapper_lcd(
@@ -2539,9 +2569,19 @@ class OwnInstallScreen(QWidget):
                     self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
                     self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
 
+                if is_lcd:
+                    self._s.log.emit(
+                        "⏳  HGL is launching Plutonium. This may take a minute on first run\n"
+                        "   while HGL sets up the Wine prefix."
+                    )
+                    self._s.pulse_start.emit("Waiting for Plutonium login")
+
                 self._s.plut_wait.emit()
                 self._plut_event.wait()
                 self._s.plut_go.emit()
+
+                if is_lcd:
+                    self._s.pulse_stop.emit()
 
                 ready_check = is_plutonium_ready_lcd() if is_lcd else is_plutonium_ready()
                 if not ready_check:
