@@ -1187,10 +1187,10 @@ def _write_lcd_launch_wrapper(game_key: str, ge_proton_version: str,
                                steam_root: str = None) -> str:
     """
     Write a per-game shell wrapper that launches Plutonium through Heroic
-    via the heroic:// protocol URL. The wrapper wakes Heroic (installing
-    it from flathub if missing), waits for its IPC layer, then fires the
-    launch URL. Heroic owns the Wine/Proton invocation so Plutonium runs
-    in the same environment as the bootstrap login.
+    via the heroic:// protocol URL. Resolves the flatpak binary by absolute
+    path so it works inside Steam's Linux Runtime container, where PATH is
+    restricted. Heroic owns the Wine/Proton invocation so Plutonium runs in
+    the same environment as the bootstrap login.
 
     ge_proton_version and steam_root are unused (API compat); Heroic
     resolves the Proton binary from the per-game GamesConfig.
@@ -1223,14 +1223,43 @@ log() {{
 
 log "launch requested appName=$APP_NAME"
 
-if ! command -v flatpak >/dev/null 2>&1; then
-    log "FATAL flatpak command not found"
+# Steam Linux Runtime restricts PATH and injects LD_PRELOAD/LD_LIBRARY_PATH
+# that confuse host binaries. Strip them before calling flatpak.
+unset LD_PRELOAD
+unset LD_LIBRARY_PATH
+
+FLATPAK_BIN=""
+for candidate in \\
+    /usr/bin/flatpak \\
+    /run/host/usr/bin/flatpak \\
+    /var/lib/flatpak/exports/bin/flatpak \\
+    /run/host/var/lib/flatpak/exports/bin/flatpak \\
+    "$HOME/.local/share/flatpak/exports/bin/flatpak"; do
+    if [ -x "$candidate" ]; then
+        FLATPAK_BIN="$candidate"
+        break
+    fi
+done
+
+if [ -z "$FLATPAK_BIN" ]; then
+    if command -v flatpak >/dev/null 2>&1; then
+        FLATPAK_BIN="$(command -v flatpak)"
+    fi
+fi
+
+if [ -z "$FLATPAK_BIN" ]; then
+    log "FATAL flatpak binary not found at any known path"
+    log "  searched: /usr/bin /run/host/usr/bin /var/lib/flatpak/exports/bin"
+    log "  searched: /run/host/var/lib/flatpak/exports/bin ~/.local/share/flatpak/exports/bin"
+    log "  searched: PATH=$PATH"
     exit 1
 fi
 
-if ! flatpak info "$HEROIC_FLATPAK" >/dev/null 2>&1; then
+log "using flatpak at $FLATPAK_BIN"
+
+if ! "$FLATPAK_BIN" info "$HEROIC_FLATPAK" >/dev/null 2>&1; then
     log "Heroic not installed; installing from flathub (this may take several minutes)"
-    if ! flatpak install -y --user --noninteractive flathub "$HEROIC_FLATPAK" >>"$LOG_FILE" 2>&1; then
+    if ! "$FLATPAK_BIN" install -y --user --noninteractive flathub "$HEROIC_FLATPAK" >>"$LOG_FILE" 2>&1; then
         log "FATAL failed to install Heroic from flathub"
         exit 1
     fi
@@ -1238,14 +1267,14 @@ if ! flatpak info "$HEROIC_FLATPAK" >/dev/null 2>&1; then
 fi
 
 is_heroic_running() {{
-    flatpak ps --columns=application 2>/dev/null | grep -qx "$HEROIC_FLATPAK"
+    "$FLATPAK_BIN" ps --columns=application 2>/dev/null | grep -qx "$HEROIC_FLATPAK"
 }}
 
 if is_heroic_running; then
     log "Heroic already running; skipping wake-up"
 else
     log "waking Heroic"
-    setsid flatpak run "$HEROIC_FLATPAK" >/dev/null 2>&1 </dev/null &
+    setsid "$FLATPAK_BIN" run "$HEROIC_FLATPAK" >/dev/null 2>&1 </dev/null &
 
     detected=0
     for i in $(seq 1 67); do
@@ -1265,7 +1294,7 @@ else
 fi
 
 log "firing launch URL"
-exec flatpak run "$HEROIC_FLATPAK" "$LAUNCH_URI"
+exec "$FLATPAK_BIN" run "$HEROIC_FLATPAK" "$LAUNCH_URI"
 '''
 
     with open(wrapper_path, "w") as f:
