@@ -1427,6 +1427,332 @@ PYEOF
 
 echo ""
 
+# ── LCD Plutonium / Heroic cleanup ───────────────────────────────────────────
+# Catches LCD-specific residue: wrapper scripts, Steam shortcuts pointing at
+# LCD wrappers or the Heroic native flatpak pattern, LCD-specific
+# CompatToolMapping entries, shadercache/artwork keyed on LCD appids, and
+# residual Plutonium data dirs. Heroic sideload entries, GamesConfig, staged
+# plutonium.exe, and Heroic prefix cleanup are handled earlier in this script.
+
+# ── Scan shortcuts.vdf for LCD shortcut appids (old wrapper + new flatpak) ───
+
+info "Scanning for DeckOps LCD shortcut appids..."
+
+LCD_APPIDS_FILE="$(mktemp)"
+
+if [ -n "$STEAM_ROOT" ] && [ -d "$STEAM_ROOT/userdata" ]; then
+python3 - "$STEAM_ROOT" "$LCD_APPIDS_FILE" <<'PYEOF'
+import os, re, sys, binascii
+
+steam_root = sys.argv[1]
+out_path   = sys.argv[2]
+userdata   = os.path.join(steam_root, "userdata")
+
+def calc_shortcut_appid(exe_path, name):
+    key = (exe_path + name).encode("utf-8")
+    crc = binascii.crc32(key) & 0xFFFFFFFF
+    return str((crc | 0x80000000) & 0xFFFFFFFF)
+
+found = set()
+if os.path.isdir(userdata):
+    for uid in os.listdir(userdata):
+        if not uid.isdigit() or int(uid) < 10000:
+            continue
+        vdf = os.path.join(userdata, uid, "config", "shortcuts.vdf")
+        if not os.path.exists(vdf):
+            continue
+        try:
+            with open(vdf, "rb") as f:
+                data = f.read()
+        except Exception:
+            continue
+
+        # Extract AppName + Exe + LaunchOptions by position
+        names = [(m.start(), m.group(1).decode("utf-8", "replace"))
+                 for m in re.finditer(rb'\x01AppName\x00([^\x00]*)\x00', data)]
+        exes = [(m.start(), m.group(1).decode("utf-8", "replace"))
+                for m in re.finditer(rb'\x01(?:exe|Exe)\x00([^\x00]*)\x00', data)]
+        launch_opts = [(m.start(), m.group(1).decode("utf-8", "replace"))
+                       for m in re.finditer(rb'\x01LaunchOptions\x00([^\x00]*)\x00', data)]
+
+        for name_pos, name in names:
+            # Find closest following Exe
+            best_exe = None
+            best_exe_pos = None
+            for exe_pos, exe in exes:
+                if exe_pos > name_pos:
+                    if best_exe_pos is None or exe_pos < best_exe_pos:
+                        best_exe_pos = exe_pos
+                        best_exe = exe
+                    break
+            if best_exe is None:
+                continue
+
+            exe_clean = best_exe.strip('"')
+
+            # Pattern 1: old wrapper scripts
+            if "/lcd_wrappers/plut_" in exe_clean and exe_clean.endswith(".sh"):
+                appid = calc_shortcut_appid(best_exe, name)
+                found.add(appid)
+                continue
+
+            # Pattern 2: new Heroic native (Exe="flatpak", LaunchOptions has heroic://)
+            if exe_clean == "flatpak":
+                # Find closest following LaunchOptions
+                best_lo = None
+                for lo_pos, lo in launch_opts:
+                    if lo_pos > name_pos:
+                        best_lo = lo
+                        break
+                if best_lo and "heroic://launch" in best_lo:
+                    appid = calc_shortcut_appid(best_exe, name)
+                    found.add(appid)
+
+with open(out_path, "w") as f:
+    for appid in sorted(found):
+        f.write(appid + "\n")
+
+print(f"  Found {len(found)} DeckOps LCD shortcut appid(s)")
+PYEOF
+fi
+
+LCD_APPID_COUNT=$(wc -l <"$LCD_APPIDS_FILE" 2>/dev/null || echo 0)
+if [ "$LCD_APPID_COUNT" -gt 0 ]; then
+    success "Found $LCD_APPID_COUNT DeckOps LCD shortcut appid(s)."
+else
+    skip "No DeckOps LCD shortcut appids found."
+fi
+echo ""
+
+# ── Clear stale CompatToolMapping for LCD appids ─────────────────────────────
+
+if [ -n "$STEAM_ROOT" ] && [ -s "$LCD_APPIDS_FILE" ]; then
+    info "Clearing LCD CompatToolMapping entries..."
+python3 - "$STEAM_ROOT" "$LCD_APPIDS_FILE" <<'PYEOF'
+import os, re, sys
+
+steam_root  = sys.argv[1]
+appids_file = sys.argv[2]
+config_vdf  = os.path.join(steam_root, "config", "config.vdf")
+
+if not os.path.exists(config_vdf):
+    print("  config.vdf not found, skipping")
+    sys.exit(0)
+
+with open(appids_file) as f:
+    appids = [line.strip() for line in f if line.strip()]
+
+with open(config_vdf, "r", encoding="utf-8") as f:
+    data = f.read()
+
+removed = 0
+for appid in appids:
+    pattern = rf'\t+"{re.escape(appid)}"\n\t+\{{[^}}]*\}}\n?'
+    new_data, n = re.subn(pattern, "", data, flags=re.MULTILINE | re.DOTALL)
+    if n > 0:
+        data = new_data
+        removed += n
+
+if removed > 0:
+    with open(config_vdf, "w", encoding="utf-8") as f:
+        f.write(data)
+    print(f"  Cleared {removed} LCD CompatToolMapping entries")
+else:
+    print("  No LCD CompatToolMapping entries found")
+PYEOF
+    success "LCD CompatToolMapping cleanup done."
+else
+    skip "No LCD appids to clean from CompatToolMapping."
+fi
+echo ""
+
+# ── Remove stale shadercache and grid artwork for LCD appids ─────────────────
+
+if [ -n "$STEAM_ROOT" ] && [ -s "$LCD_APPIDS_FILE" ]; then
+    info "Removing LCD shadercache and grid artwork..."
+    sc_count=0
+    grid_count=0
+    while IFS= read -r appid; do
+        [ -z "$appid" ] && continue
+        sc_dir="$STEAM_ROOT/steamapps/shadercache/$appid"
+        if [ -d "$sc_dir" ]; then
+            rm -rf "$sc_dir" 2>/dev/null && sc_count=$((sc_count + 1))
+        fi
+        for uid_dir in "$STEAM_ROOT/userdata"/*/config/grid; do
+            [ -d "$uid_dir" ] || continue
+            shopt -s nullglob
+            for f in "$uid_dir/${appid}"*.{png,jpg,jpeg,webp,ico}; do
+                if [ -f "$f" ]; then
+                    rm -f "$f" 2>/dev/null && grid_count=$((grid_count + 1))
+                fi
+            done
+            shopt -u nullglob
+        done
+    done <"$LCD_APPIDS_FILE"
+    if [ "$sc_count" -gt 0 ]; then
+        success "Removed $sc_count LCD shadercache dir(s)."
+    else
+        skip "No LCD shadercache dirs."
+    fi
+    if [ "$grid_count" -gt 0 ]; then
+        success "Removed $grid_count LCD grid artwork file(s)."
+    else
+        skip "No LCD grid artwork."
+    fi
+else
+    skip "No LCD appids for shadercache/grid cleanup."
+fi
+echo ""
+
+# ── Remove LCD Steam shortcuts from shortcuts.vdf ────────────────────────────
+
+if [ -n "$STEAM_ROOT" ] && [ -d "$STEAM_ROOT/userdata" ]; then
+    info "Removing DeckOps LCD shortcuts from Steam..."
+python3 - "$STEAM_ROOT" <<'PYEOF'
+import os, re, sys
+
+steam_root = sys.argv[1]
+userdata   = os.path.join(steam_root, "userdata")
+
+if not os.path.isdir(userdata):
+    sys.exit(0)
+
+removed_total = 0
+for uid in os.listdir(userdata):
+    if not uid.isdigit() or int(uid) < 10000:
+        continue
+    vdf = os.path.join(userdata, uid, "config", "shortcuts.vdf")
+    if not os.path.exists(vdf):
+        continue
+    try:
+        with open(vdf, "rb") as f:
+            data = f.read()
+    except Exception:
+        continue
+
+    if not data.startswith(b'\x00shortcuts\x00'):
+        continue
+
+    header = b'\x00shortcuts\x00'
+    body = data[len(header):]
+    parts = body.split(b'\x08\x08')
+
+    kept = []
+    removed_here = 0
+    for part in parts:
+        if not part:
+            kept.append(part)
+            continue
+        m_exe = re.search(rb'\x01(?:exe|Exe)\x00([^\x00]*)\x00', part)
+        if m_exe:
+            exe = m_exe.group(1).decode("utf-8", "replace").strip('"')
+
+            # Pattern 1: old wrapper scripts
+            if "/lcd_wrappers/plut_" in exe and exe.endswith(".sh"):
+                removed_here += 1
+                continue
+
+            # Pattern 2: new Heroic native (Exe=flatpak + heroic:// in LaunchOptions)
+            if exe == "flatpak":
+                m_lo = re.search(rb'\x01LaunchOptions\x00([^\x00]*)\x00', part)
+                if m_lo:
+                    lo = m_lo.group(1).decode("utf-8", "replace")
+                    if "heroic://launch" in lo:
+                        removed_here += 1
+                        continue
+
+        kept.append(part)
+
+    if removed_here == 0:
+        continue
+
+    # Reindex remaining entries
+    new_parts = []
+    idx = 0
+    for part in kept:
+        if not part:
+            new_parts.append(part)
+            continue
+        new_part = re.sub(rb'^\x00\d+\x00', f'\x00{idx}\x00'.encode(), part, count=1)
+        new_parts.append(new_part)
+        idx += 1
+
+    new_body = b'\x08\x08'.join(new_parts)
+    new_data = header + new_body
+
+    # Backup before writing
+    bak = vdf + ".deckops_uninstall.bak"
+    if not os.path.exists(bak):
+        with open(bak, "wb") as f:
+            f.write(data)
+
+    with open(vdf, "wb") as f:
+        f.write(new_data)
+    removed_total += removed_here
+    print(f"  uid {uid}: removed {removed_here} LCD shortcut(s)")
+
+if removed_total > 0:
+    print(f"  Total: {removed_total} LCD shortcut(s) removed")
+else:
+    print("  No DeckOps LCD shortcuts to remove")
+PYEOF
+    success "LCD shortcut cleanup done."
+fi
+echo ""
+
+# ── Remove LCD wrapper dir (safety catch) ────────────────────────────────────
+# The main DeckOps dir removal earlier (rm -rf ~/.local/share/deckops) should
+# already have caught this dir. This is a safety net in case that dir was
+# recreated or the earlier removal was skipped.
+
+info "Removing DeckOps LCD wrapper directory..."
+WRAPPER_DIR="$HOME/.local/share/deckops/lcd_wrappers"
+if [ -d "$WRAPPER_DIR" ]; then
+    rm -rf "$WRAPPER_DIR" && success "Removed $WRAPPER_DIR"
+else
+    skip "Wrapper dir not present."
+fi
+echo ""
+
+# ── Broad sweep: known Plutonium data dirs ───────────────────────────────────
+# Catches dirs outside Wine prefixes that the earlier compatdata walk misses.
+
+info "Sweeping residual Plutonium data dirs..."
+
+SWEEP_ROOTS=(
+    "$HOME/.local/share/Plutonium"
+    "$HOME/.local/share/plutonium"
+    "$HOME/.config/Plutonium"
+    "$HOME/.config/plutonium"
+    "$HOME/.cache/Plutonium"
+    "$HOME/.cache/plutonium"
+)
+
+sweep_hits=0
+for path in "${SWEEP_ROOTS[@]}"; do
+    if [ -e "$path" ]; then
+        rm -rf "$path" && success "Removed $path" && sweep_hits=$((sweep_hits + 1))
+    fi
+done
+
+# /tmp residue
+shopt -s nullglob
+for f in /tmp/plutonium* /tmp/Plutonium*; do
+    if [ -e "$f" ]; then
+        rm -rf "$f" 2>/dev/null && sweep_hits=$((sweep_hits + 1))
+    fi
+done
+shopt -u nullglob
+
+if [ "$sweep_hits" -eq 0 ]; then
+    skip "No residual Plutonium data dirs."
+fi
+
+# Clean up temp file
+rm -f "$LCD_APPIDS_FILE" 2>/dev/null
+
+echo ""
+
 # ── Decky plugin ──────────────────────────────────────────────────────────────
 info "Removing DeckOps Decky plugin..."
 
@@ -1464,6 +1790,7 @@ echo -e "${GREEN}${BOLD}  DeckOps fully uninstalled.${CLEAR}"
 echo ""
 echo "  Your Steam games are untouched."
 echo "  All Plutonium data removed from Wine prefixes."
+echo "  All LCD Heroic state and shortcuts removed."
 echo "  All IW3SP-MOD and IW4x client files removed."
 echo "  All DeckOps controller templates and profiles removed."
 echo ""
@@ -1476,7 +1803,7 @@ echo ""
 # Show summary dialog in background while countdown runs in terminal
 zenity --info \
     --title="DeckOps Nightly Uninstaller" \
-    --text="DeckOps fully uninstalled.\n\nYour Steam games are untouched.\nAll Plutonium data removed from Wine prefixes.\nAll IW3SP-MOD and IW4x client files removed.\nAll DeckOps controller templates and profiles removed." \
+    --text="DeckOps fully uninstalled.\n\nYour Steam games are untouched.\nAll Plutonium data removed from Wine prefixes.\nAll LCD Heroic state and shortcuts removed.\nAll IW3SP-MOD and IW4x client files removed.\nAll DeckOps controller templates and profiles removed." \
     --timeout=6 \
     2>/dev/null &
 
