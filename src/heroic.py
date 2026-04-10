@@ -1006,6 +1006,58 @@ def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
     prog(f"Heroic setup complete for {game_def['title']}")
 
 
+def _set_heroic_minimize_on_launch(on_progress=None):
+    """
+    Set Heroic's defaultSettings.minimizeOnLaunch to true in its config.json
+    so the Heroic main window minimizes itself the moment it starts a game.
+    This cuts the "Heroic visible for 10 seconds" cosmetic flash when a
+    DeckOps LCD shortcut fires the heroic:// URL.
+
+    Idempotent. Safe to call every install. Handles missing config file
+    gracefully. Does NOT touch any setting other than minimizeOnLaunch.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    config_path = os.path.expanduser(
+        "~/.var/app/com.heroicgameslauncher.hgl/config/heroic/config.json"
+    )
+
+    if not os.path.exists(config_path):
+        prog("  Heroic config.json not present yet; skipping minimize setting")
+        return
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError) as ex:
+        prog(f"  Could not read Heroic config.json: {ex}")
+        return
+
+    if not isinstance(data, dict):
+        prog("  Heroic config.json has unexpected shape; skipping")
+        return
+
+    default_settings = data.get("defaultSettings")
+    if not isinstance(default_settings, dict):
+        default_settings = {}
+        data["defaultSettings"] = default_settings
+
+    if default_settings.get("minimizeOnLaunch") is True:
+        prog("  Heroic minimizeOnLaunch already true")
+        return
+
+    default_settings["minimizeOnLaunch"] = True
+
+    try:
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        prog("  Heroic minimizeOnLaunch set to true")
+    except OSError as ex:
+        prog(f"  Could not write Heroic config.json: {ex}")
+
+
 def launch_bootstrapper_lcd(on_progress=None):
     """
     LCD Plutonium bootstrapper. Called by ui_qt.py during the install flow
@@ -1048,6 +1100,11 @@ def launch_bootstrapper_lcd(on_progress=None):
     # Make sure ~/Games/Heroic exists (Heroic creates it on first launch,
     # but DeckOps may run before the user has ever opened Heroic).
     os.makedirs(HEROIC_GAMES_DIR, exist_ok=True)
+
+    # 2b. Ensure Heroic minimizes its main window when launching games,
+    #     so the Heroic window doesn't flash for ~10s every time a
+    #     DeckOps LCD shortcut fires the heroic:// URL in Game Mode.
+    _set_heroic_minimize_on_launch(on_progress=lambda m: prog(12, m))
 
     # 3. Download plutonium.exe
     prog(15, "Downloading Plutonium bootstrapper...")
@@ -1276,8 +1333,8 @@ is_heroic_running() {{
 if is_heroic_running; then
     log "Heroic already running; skipping wake-up"
 else
-    log "waking Heroic"
-    setsid "$FLATPAK_BIN" run "$HEROIC_FLATPAK" >/dev/null 2>&1 </dev/null &
+    log "waking Heroic (hidden)"
+    setsid "$FLATPAK_BIN" run "$HEROIC_FLATPAK" --hide-window >/dev/null 2>&1 </dev/null &
 
     detected=0
     for i in $(seq 1 67); do
