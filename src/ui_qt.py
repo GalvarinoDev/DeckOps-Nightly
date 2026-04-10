@@ -371,9 +371,8 @@ class IntroScreen(QWidget):
             "You do NOT need to launch each game through Steam first. "
             "If you have already launched your games, DeckOps will detect the existing prefixes "
             "and skip this step.",
-            "⚠   OLED users: if you plan to play Plutonium titles online (WaW, BO1, BO2, MW3), "
-            "create a free Plutonium account at plutonium.pw before continuing. "
-            "LCD users do not need a Plutonium account.",
+            "⚠   If you plan to play Plutonium titles online (WaW, BO1, BO2, MW3), "
+            "create a free Plutonium account at plutonium.pw before continuing.",
         ]:
             lay.addWidget(_lbl(warn, 13, C_TREY, align=Qt.AlignLeft))
         lay.addSpacing(16)
