@@ -770,11 +770,17 @@ def install_xact_once(
         return False
 
     # ── Pre-download directx_Jun2010_redist.exe if not already cached ─────────
+    # This should be a no-op if download_directx_jun2010() was already called
+    # concurrently during the main download phase. If it wasn't (e.g. caller
+    # skipped the concurrent step), we download it here as a fallback.
     if not download_directx_jun2010(on_progress=on_progress):
         prog("DirectX Jun2010 download failed — XACT install may be slow or fail.")
+        # Don't abort — protontricks will try its own download as a last resort
 
     # ── Steam games ───────────────────────────────────────────────────────────
     if has_steam_keys and steam_needs_install:
+        # Build deduped list of (key, appid, compatdata_path) by appid.
+        # Search all library dirs so SD card installs are found.
         from detect_games import _all_library_dirs
         seen_appids = {}
         targets = []
@@ -790,6 +796,7 @@ def install_xact_once(
                         compat = candidate
                         break
                 if not compat:
+                    # Fallback to default location (may not exist yet)
                     compat = os.path.join(
                         steam_root, "steamapps", "compatdata", str(appid)
                     )
@@ -797,6 +804,7 @@ def install_xact_once(
                 targets.append((key, appid, compat))
 
         if targets:
+            # Install into the first prefix via protontricks.
             primary_key, primary_appid, primary_compat = targets[0]
             prog(f"Installing XACT into primary prefix (appid {primary_appid})...")
             success = _install_xact(
@@ -810,6 +818,7 @@ def install_xact_once(
                 prog("XACT install failed on primary prefix — skipping copy step.")
                 return False
 
+            # Copy DLLs to remaining Steam prefixes instead of re-running protontricks.
             for key, appid, compat in targets[1:]:
                 if _is_xact_installed(compat):
                     prog(f"XACT already present in prefix {appid}, skipping.")
@@ -818,6 +827,8 @@ def install_xact_once(
                 _copy_xact_dlls(primary_compat, compat, on_progress=on_progress)
 
     # ── Own games ─────────────────────────────────────────────────────────────
+    # Shortcut appids are DeckOps-generated so protontricks can resolve them.
+    # We run protontricks per-prefix since we can't safely dedupe by appid here.
     for shortcut_appid, compatdata_path in own_xact_targets:
         prog(f"Installing XACT for own game (appid {shortcut_appid})...")
         _install_xact(
@@ -841,12 +852,14 @@ def _write_config(plut_dir: str, game_keys: list, installed_games: dict):
     """
     config_path = os.path.join(plut_dir, "config.json")
 
+    # Read existing config (token etc.) from this prefix if present
     if os.path.exists(config_path):
         with open(config_path) as f:
             data = json.load(f)
     else:
         data = {}
 
+    # Write the path key for each game in this prefix
     for key in game_keys:
         if key not in GAME_META:
             continue
@@ -865,6 +878,18 @@ def _write_config(plut_dir: str, game_keys: list, installed_games: dict):
 def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
     """
     Download and install the DeckOps menu mod for the given game key.
+
+    Downloads a pre-built .iwd file (renamed .zip) from the repo and
+    places it in the prefix's Plutonium storage path at raw/. Plutonium
+    loads .iwd files from raw/ automatically on game launch, overriding
+    the default main menu with the DeckOps community version (server
+    connect, unlock all, reset stats buttons).
+
+    Uses .iwd in raw/ (not mods/) so it:
+    - Uses normal player stats (no separate mod stats)
+    - Persists across disconnects
+    - Loads automatically on every launch
+
     Skips silently for game keys without a menu mod defined.
     """
     def prog(msg):
@@ -901,7 +926,7 @@ def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
         except Exception as ex:
             if attempt == 2:
                 prog(f"  ⚠ Menu mod download failed: {ex}")
-                return
+                return  # Non-fatal -- game still works without the mod
             time.sleep(2 ** attempt)
 
 
@@ -914,19 +939,23 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
     Replace the game exe with a bash wrapper that launches Plutonium
     through Proton.
 
-    OLED only — LCD uses Heroic instead (see heroic.py).
+    OLED only now - LCD uses Heroic instead (see heroic.py).
 
-    Shows a zenity dialog at launch time asking the user whether they want
-    to play Online or Offline (LAN). Online calls plutonium-launcher-win32.exe
-    with a protocol URL. Offline calls plutonium-bootstrapper-win32.exe with
-    -lan, matching the old LCD offline path.
+    When lan_mode is False (OLED / online):
+        Calls plutonium-launcher-win32.exe with a protocol URL.
+        Requires the user to have logged in.
+
+    # ── OLD LCD offline mode (commented out - LCD now uses Heroic) ──
+    # When lan_mode is True (LCD / offline):
+    #     Calls plutonium-bootstrapper-win32.exe directly with -lan.
+    #     No login required. Game starts in offline LAN mode.
+    #     cd's into the Plutonium directory first so the bootstrapper
+    #     can find its files relative to cwd.
 
     The original exe is backed up as <exe>.bak.
     The wrapper is padded to the original file's size so Steam's
     file validation does not flag it as changed.
     """
-    import config as _cfg
-
     install_dir    = game["install_dir"]
     _, _, exe_name = GAME_META[game_key]
     exe_path       = os.path.join(install_dir, exe_name)
@@ -940,30 +969,30 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
         shutil.copy2(exe_path, backup_path)
         original_size = os.path.getsize(backup_path)
 
-    player_name   = _cfg.get_player_name() or "Player"
-    game_dir_wine = _wine_path(install_dir)
-    launcher      = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
-    bootstrapper  = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
-    plut_url      = f"plutonium://play/{game_key}"
+    # ── OLD LCD offline mode (replaced by Heroic - see heroic.py) ────
+    # if lan_mode:
+    #     import config as _cfg
+    #     player_name = _cfg.get_player_name() or "Player"
+    #     bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
+    #     game_dir_wine = _wine_path(install_dir)
+    #     script = (
+    #         "#!/bin/bash\n"
+    #         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
+    #         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
+    #         f"cd \"{plut_dir}\"\n"
+    #         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
+    #         f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+    #     )
+    # else:
 
+    # OLED online mode: call the launcher with a protocol URL
+    launcher = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
+    plut_url = f"plutonium://play/{game_key}"
     script = (
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        "\n"
-        "zenity --question \\\n"
-        f"    --title=\"{game['name']}\" \\\n"
-        "    --text=\"How do you want to play?\" \\\n"
-        "    --ok-label=\"Online\" \\\n"
-        "    --cancel-label=\"Offline (LAN)\" \\\n"
-        "    --width=300 2>/dev/null\n"
-        "\n"
-        "if [ $? -eq 0 ]; then\n"
-        f"    exec \"{proton_path}\" run \"{launcher}\" \"{plut_url}\"\n"
-        "else\n"
-        f"    exec \"{proton_path}\" run \"{bootstrapper}\" "
-        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
-        "fi\n"
+        f"exec \"{proton_path}\" run \"{launcher}\" \"{plut_url}\"\n"
     )
 
     script_bytes = script.encode("utf-8")
@@ -981,6 +1010,13 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
 # LCD own games now launch through Heroic - see heroic.py.
 # def _write_own_wrapper(game: dict, game_key: str, steam_root: str,
 #                        proton_path: str, compatdata_path: str, plut_dir: str):
+#     """
+#     Write a standalone wrapper exe for own LCD games.
+#
+#     Same bash script as the Steam LCD wrapper but written as a new file
+#     (e.g. t4plutmp.exe) instead of replacing the original game exe.
+#     No backup, no padding - the original exe is left untouched.
+#     """
 #     install_dir = game["install_dir"]
 #     wrapper_name = OWN_WRAPPER_EXES[game_key]
 #     wrapper_path = os.path.join(install_dir, wrapper_name)
@@ -1048,10 +1084,16 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         if on_progress:
             on_progress(pct, msg)
 
+    # Fall back to single-game dict if caller doesn't supply full installed_games.
+    # Supplying the full dict is preferred so sibling keys get correct paths.
     if installed_games is None:
         installed_games = {game_key: game}
 
     # ── LCD dispatch ──────────────────────────────────────────────────────
+    # LCD Decks use Heroic Games Launcher with a single shared Wine prefix
+    # for all Plutonium games. Everything from downloading the bootstrapper
+    # to writing per-game shortcuts lives in heroic.py (eventually to be
+    # renamed plutonium_lcd.py). This function is OLED-only past this point.
     import config as _cfg_lcd
     if not _cfg_lcd.is_oled():
         from heroic import install_plutonium_lcd
@@ -1061,9 +1103,15 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
 
     src_plut_dir  = get_dedicated_plut_dir()
 
+    # Ensure shared Plutonium dirs are set up (one-time, shared across games)
     _ensure_shared_plutonium(src_plut_dir,
                              on_progress=lambda msg: prog(5, msg))
 
+    # OLED only past this point (LCD returns early above).
+    # Plutonium files go into Steam's compatdata prefix for the game,
+    # because OLED launches the game through a bash wrapper that Steam runs
+    # inside that same prefix. Use the compatdata_path passed by the caller
+    # for correct SD card handling via find_compatdata().
     dest_plut_dir = os.path.join(
         compatdata_path, "pfx", "drive_c", "users", "steamuser",
         "AppData", "Local", "Plutonium",
@@ -1075,6 +1123,10 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         on_progress=lambda msg: prog(40, msg),
     )
 
+    # Install XACT into this game's prefix if required.
+    # Only runs for t4/t5 titles , skipped entirely for t6/iw5.
+    # Own games handle XACT externally via install_xact_once with
+    # own_xact_targets so protontricks gets the correct shortcut appid.
     if source != "own" and game_key in XACT_GAME_KEYS:
         prog(50, f"Installing XACT audio components for {game['name']}...")
         if protontricks_ready:
@@ -1088,18 +1140,27 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
             prog(55, "XACT skipped , Protontricks unavailable.")
 
     prog(60, "Writing game path to config.json...")
+    # Pass all keys that share this appid so config has all paths for this prefix.
+    # installed_games must contain ALL installed games, not just the current one,
+    # so sibling keys (e.g. t4sp + t4mp share appid 10090) get their paths written too.
     appid = GAME_META[game_key][0]
     keys_for_appid = [k for k, v in GAME_META.items() if v[0] == appid]
     _write_config(dest_plut_dir, keys_for_appid, installed_games)
 
+    # Install DeckOps client-side menu mod (e.g. mainlobby.lua for T6 MP).
+    # OLED only -- LCD handles its own setup in heroic.install_plutonium_lcd.
     prog(65, "Installing menu mod...")
     _install_menu_mod(dest_plut_dir, game_key,
                       on_progress=lambda msg: prog(67, msg))
 
+    # ── OLED only past this point ────────────────────────────────────────
+    # LCD dispatched to heroic.install_plutonium_lcd at the top of this
+    # function. OLED games get a Steam-side bash wrapper + metadata.
     if source != "own":
+        # OLED Steam games: replace the original exe with a bash wrapper
         prog(80, "Writing launcher wrapper...")
         _write_wrapper(game, game_key, steam_root, proton_path,
-                       compatdata_path, dest_plut_dir)
+                       compatdata_path, dest_plut_dir, lan_mode=False)
 
         prog(95, "Saving metadata...")
         _write_metadata(game["install_dir"], {
@@ -1131,12 +1192,13 @@ def uninstall_plutonium(game: dict, game_key: str):
     if plut_dir and os.path.isdir(plut_dir):
         shutil.rmtree(plut_dir)
 
+    # Clean up Heroic entries if this was an LCD Heroic install
     if meta.get("lcd_heroic"):
         try:
             from heroic import cleanup_heroic_game
             cleanup_heroic_game(game_key)
         except Exception:
-            pass
+            pass  # Non-fatal - Heroic may not be installed
 
     meta_file = os.path.join(install_dir, METADATA_FILE)
     if os.path.exists(meta_file):
