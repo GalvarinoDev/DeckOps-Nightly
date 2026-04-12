@@ -2,7 +2,7 @@
 """
 launcher_plut.py - Standalone Plutonium game launcher for LCD Steam Deck
 
-A lightweight PyQt6 app that shows installed Plutonium games and lets
+A lightweight PyQt5 app that shows installed Plutonium games and lets
 the user pick a mode (MP, S/Z, ZM) to launch via Heroic Games Launcher.
 Designed to run as a non-Steam shortcut in Game Mode at 1280x800.
 
@@ -20,12 +20,12 @@ import subprocess
 import threading
 import urllib.request
 
-from PyQt6.QtWidgets import (
+from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QSizePolicy,
 )
-from PyQt6.QtGui import QFont, QFontDatabase, QPixmap, QPainter, QColor
-from PyQt6.QtCore import Qt, QTimer, QRect
+from PyQt5.QtGui import QFont, QFontDatabase, QPixmap, QPainter, QColor
+from PyQt5.QtCore import Qt, QTimer, QRect
 
 # ── paths ────────────────────────────────────────────────────────────────────
 
@@ -194,7 +194,7 @@ class GameRow(QWidget):
         self._has_modes = len(self._available) > 0
 
         self.setFixedHeight(ROW_H)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         # Load cached hero or fetch in background
         cached = _hero_path(game_def["hero_file"])
@@ -221,7 +221,7 @@ class GameRow(QWidget):
         badge.setFont(_font(9, bold=True))
         badge.setFixedHeight(20)
         badge.setFixedWidth(90)
-        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        badge.setAlignment(Qt.AlignCenter)
         badge.setStyleSheet(
             f"background:{self._color};color:#FFF;border:none;"
             f"border-radius:4px;"
@@ -257,17 +257,17 @@ class GameRow(QWidget):
                         lambda checked=False, k=key: _launch_online(k)
                     )
 
-                lay.addWidget(btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+                lay.addWidget(btn, alignment=Qt.AlignVCenter)
         else:
             no_lbl = QLabel("Not installed")
             no_lbl.setFont(_font(13))
             no_lbl.setStyleSheet(f"color:{C_DIM};background:transparent;")
-            lay.addWidget(no_lbl, alignment=Qt.AlignmentFlag.AlignVCenter)
+            lay.addWidget(no_lbl, alignment=Qt.AlignVCenter)
 
     def paintEvent(self, event):
         """Draw hero background with dark overlay."""
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.setRenderHint(Qt.SmoothTransformation)
         rect = self.rect()
 
         # Background fallback
@@ -392,7 +392,7 @@ class LauncherWindow(QWidget):
                 "Run the DeckOps installer first."
             )
             empty.setFont(_font(14))
-            empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            empty.setAlignment(Qt.AlignCenter)
             empty.setStyleSheet(f"color:{C_DIM};background:transparent;")
             rows_lay.insertWidget(0, empty)
 
@@ -405,7 +405,7 @@ def main():
 
     win = LauncherWindow()
     win.showFullScreen()
-    sys.exit(app.exec())
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":
