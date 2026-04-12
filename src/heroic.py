@@ -1266,17 +1266,26 @@ def _create_heroic_steam_shortcut(game_key: str, on_progress=None):
     game_def = HEROIC_PLUT_GAMES[game_key]
     title    = game_def["title"]
 
-    # Heroic native shortcut pattern: Exe is the bare word "flatpak",
-    # the entire command lives in LaunchOptions.
+    # Heroic native shortcut pattern: Exe is the full path to flatpak,
+    # StartDir is /usr/bin/, the entire heroic:// invocation lives in
+    # LaunchOptions. This matches exactly what Heroic writes when the user
+    # clicks "Add to Steam" from its own UI, which is the pattern Steam
+    # reliably resolves. Using a bare "flatpak" word caused Steam to
+    # misidentify the shortcut appid in some cases, breaking artwork,
+    # controller configs, and launch.
     app_name = _heroic_app_name(game_key)
-    exe_path = '"flatpak"'
-    start_dir = f'"{os.path.expanduser("~")}"'
+    exe_path  = '"/usr/bin/flatpak"'
+    start_dir = '"/usr/bin/"'
     launch_options = (
         f'run {HEROIC_FLATPAK_ID} --no-gui --no-sandbox '
         f'"heroic://launch?appName={app_name}&runner=sideload"'
     )
 
-    # Calculate appid from the quoted exe + title (Steam's algorithm)
+    # Calculate appid from the full quoted exe path + title (Steam's algorithm).
+    # NOTE: this produces a different appid than the old bare "flatpak" pattern.
+    # Existing shortcuts written by older DeckOps installs will orphan on the
+    # old appid. Testers should fully uninstall and reinstall to get clean
+    # shortcuts with the correct appid.
     shortcut_appid = _calc_shortcut_appid(exe_path, title)
 
     uids = _find_all_steam_uids()
@@ -1377,6 +1386,117 @@ def _create_heroic_steam_shortcut(game_key: str, on_progress=None):
     prog(f"  Shortcut appid: {shortcut_appid}")
 
 
+
+def _remove_heroic_steam_shortcut(game_key: str, on_progress=None):
+    """
+    Remove the DeckOps Steam shortcut for a Heroic LCD game from
+    shortcuts.vdf for all discovered Steam UIDs.
+
+    Calculates the appid using the same exe_path and title that were
+    used during install so the lookup matches exactly. Also removes
+    associated artwork files from the grid/ directory.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    if game_key not in HEROIC_PLUT_GAMES:
+        return
+
+    game_def = HEROIC_PLUT_GAMES[game_key]
+    title    = game_def["title"]
+
+    # Must match _create_heroic_steam_shortcut exactly
+    exe_path       = '"/usr/bin/flatpak"'
+    shortcut_appid = _calc_shortcut_appid(exe_path, title)
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        prog("  No Steam user accounts found - shortcut removal skipped.")
+        return
+
+    for uid in uids:
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir       = os.path.join(USERDATA_DIR, uid, "config", "grid")
+
+        # ── Remove from shortcuts.vdf ────────────────────────────────────
+        if not os.path.exists(shortcuts_path):
+            continue
+
+        try:
+            with open(shortcuts_path, "rb") as f:
+                data = f.read()
+        except OSError as ex:
+            prog(f"  Could not read shortcuts.vdf for uid {uid}: {ex}")
+            continue
+
+        header = b'\x00shortcuts\x00'
+        footer = b'\x08\x08'
+
+        body = data
+        if body.startswith(header):
+            body = body[len(header):]
+        if body.endswith(footer):
+            body = body[:-2]
+        elif body.endswith(b'\x08'):
+            body = body[:-1]
+
+        # Split into individual entry blobs by locating entry start positions.
+        # Each entry starts with \x00<digits>\x00.
+        entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', body)]
+
+        if not entry_starts:
+            continue
+
+        entries = []
+        for i, start in enumerate(entry_starts):
+            end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(body)
+            entries.append(body[start:end])
+
+        # Filter out the entry whose AppName matches our title
+        title_bytes = title.encode("utf-8")
+        filtered = [
+            e for e in entries
+            if b'\x01AppName\x00' + title_bytes + b'\x00' not in e
+            and b'\x01appname\x00' + title_bytes + b'\x00' not in e
+        ]
+
+        if len(filtered) == len(entries):
+            prog(f"  No shortcut found for '{title}' in uid {uid}")
+        else:
+            # Reindex remaining entries sequentially from 0
+            reindexed = []
+            for new_idx, entry in enumerate(filtered):
+                entry = re.sub(rb'^\x00\d+\x00', f'\x00{new_idx}\x00'.encode(), entry)
+                reindexed.append(entry)
+
+            new_data = header + b''.join(reindexed) + footer
+            try:
+                with open(shortcuts_path, "wb") as f:
+                    f.write(new_data)
+                prog(f"  Removed Steam shortcut '{title}' for uid {uid}")
+            except OSError as ex:
+                prog(f"  Could not write shortcuts.vdf for uid {uid}: {ex}")
+
+        # ── Remove artwork from grid/ ────────────────────────────────────
+        artwork_suffixes = [
+            f"_icon.{game_def['icon_ext']}",
+            f"p.{game_def['grid_ext']}",
+            f".{game_def['wide_ext']}",
+            f"_hero.{game_def['hero_ext']}",
+            f"_logo.{game_def['logo_ext']}",
+        ]
+        for suffix in artwork_suffixes:
+            art_path = os.path.join(grid_dir, f"{shortcut_appid}{suffix}")
+            if os.path.exists(art_path):
+                try:
+                    os.remove(art_path)
+                except OSError:
+                    pass
+
+        prog(f"  Artwork cleaned for uid {uid}")
+
+
 def cleanup_heroic_game(game_key: str, on_progress=None):
     """
     Remove all Heroic-related artifacts for a game key.
@@ -1400,9 +1520,10 @@ def cleanup_heroic_game(game_key: str, on_progress=None):
         except OSError as ex:
             prog(f"  Failed to remove launcher wrapper: {ex}")
 
-    # TODO: remove the Steam shortcut from shortcuts.vdf
-    # For now just log it - manual removal may be needed
-    prog(f"  Note: Steam shortcut may need manual removal")
+    # Remove the Steam shortcut from shortcuts.vdf for all discovered UIDs.
+    # Uses the same exe_path/title the shortcut was written with so the
+    # appid calculation matches exactly what was written during install.
+    _remove_heroic_steam_shortcut(game_key, on_progress=on_progress)
 
 
 def cleanup_all_heroic(on_progress=None):
