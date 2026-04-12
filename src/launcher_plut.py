@@ -267,7 +267,7 @@ class GameRow(QWidget):
     def paintEvent(self, event):
         """Draw hero background with dark overlay."""
         painter = QPainter(self)
-        painter.setRenderHint(Qt.SmoothTransformation)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform)
         rect = self.rect()
 
         # Background fallback
