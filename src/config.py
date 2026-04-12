@@ -235,19 +235,25 @@ def get_steam_display_name(steam_root: str | None = None) -> str | None:
     return most_recent_name or first_name
 
 
-def mark_game_setup(game_key: str, client: str, source: str = "steam"):
+def mark_game_setup(game_key: str, client: str, source: str = "steam",
+                    wrapper_path: str = None):
     """
     Record that a game has been set up successfully.
-    game_key -- e.g. 'cod4mp', 'iw4mp', 't5sp'
-    client   -- e.g. 'cod4x', 'iw4x', 'plutonium'
-    source   -- 'steam' or 'own' (which install path was used)
+    game_key     -- e.g. 'cod4mp', 'iw4mp', 't5sp'
+    client       -- e.g. 'cod4x', 'iw4x', 'plutonium'
+    source       -- 'steam' or 'own' (which install path was used)
+    wrapper_path -- optional path to the offline launcher wrapper script
+                    (LCD own games only, used by launcher_plut.py)
     """
     config = load()
-    config["setup_games"][game_key] = {
+    entry = {
         "client": client,
         "source": source,
         "setup_at": datetime.now().isoformat(),
     }
+    if wrapper_path:
+        entry["wrapper_path"] = wrapper_path
+    config["setup_games"][game_key] = entry
     save(config)
 
 

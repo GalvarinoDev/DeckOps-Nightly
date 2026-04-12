@@ -1391,12 +1391,6 @@ class InstallScreen(QWidget):
 
         # ── Plutonium games ───────────────────────────────────────────────────
         if has_plut:
-            # XACT disabled (Session 25) -- GE-Proton's default_pfx ships all
-            # required XACT DLLs. Verified: BO1 SP/MP and WaW audio works
-            # without protontricks xact install. Saves ~95MB download + time.
-            # Functions kept in plutonium.py in case a future GE-Proton drops them.
-            xact_ready = False
-
             plut_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "plutonium"]
             total_plut = len(plut_selected)
             for idx, (key, gd, game) in enumerate(plut_selected):
@@ -1410,14 +1404,22 @@ class InstallScreen(QWidget):
                     _plut_appid = _PLUT_META[key][0] if key in _PLUT_META else gd["appid"]
                     compat = find_compatdata(self.steam_root, _plut_appid,
                                               game_install_dir=game["install_dir"] if game else None)
-                    install_plutonium(game, key, self.steam_root, proton, compat, op_plut,
-                                      protontricks_ready=xact_ready)
+                    install_plutonium(game, key, self.steam_root, proton, compat, op_plut)
                     cfg.mark_game_setup(key, "plutonium", source="steam")
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+            # Create the DeckOps Plutonium Launcher shortcut (both OLED and LCD, once)
+            try:
+                from shortcut import create_launcher_shortcut
+                create_launcher_shortcut(
+                    on_progress=lambda m: self._s.log.emit(m)
+                )
+            except Exception as ex:
+                self._s.log.emit(f"  Launcher shortcut failed: {ex}")
 
         # ── iw4x (Steam closed) ───────────────────────────────────────────────
         if has_iw4x:
@@ -2700,12 +2702,6 @@ class OwnInstallScreen(QWidget):
 
         # ── Plutonium games ───────────────────────────────────────────────
         if has_plut:
-            # XACT disabled (Session 25) -- GE-Proton's default_pfx ships all
-            # required XACT DLLs. Verified: BO1 SP/MP and WaW audio works
-            # without protontricks xact install. Saves ~95MB download + time.
-            # Functions kept in plutonium.py in case a future GE-Proton drops them.
-            xact_ready = False
-
             # Per-game Plutonium install: copy Plutonium into each prefix,
             # write config.json with game paths. Own games skip the wrapper
             # (shortcuts point at Plutonium directly). Steam games in the
@@ -2728,17 +2724,26 @@ class OwnInstallScreen(QWidget):
                         _plut_appid = _PLUT_META[key][0] if key in _PLUT_META else gd["appid"]
                         compat = find_compatdata(self.steam_root, _plut_appid,
                                                   game_install_dir=game.get("install_dir"))
-                    install_plutonium(game, key, self.steam_root, proton, compat,
+                    wp = install_plutonium(game, key, self.steam_root, proton, compat,
                                      on_progress=op_plut,
                                      installed_games=installed_for_plut,
-                                     protontricks_ready=xact_ready,
                                      source=source)
-                    cfg.mark_game_setup(key, "plutonium", source=source)
+                    cfg.mark_game_setup(key, "plutonium", source=source,
+                                        wrapper_path=wp)
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+            # Create the DeckOps Plutonium Launcher shortcut (both OLED and LCD, once)
+            try:
+                from shortcut import create_launcher_shortcut
+                create_launcher_shortcut(
+                    on_progress=lambda m: self._s.log.emit(m)
+                )
+            except Exception as ex:
+                self._s.log.emit(f"  Launcher shortcut failed: {ex}")
 
         # ── Install iw4x ─────────────────────────────────────────────────
         _log_to_file("[BREADCRUMB] starting iw4x install phase")

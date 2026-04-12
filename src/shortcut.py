@@ -1149,6 +1149,218 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
     return own_games
 
 
+# ── DeckOps Plutonium Launcher shortcut ───────────────────────────────────────
+# The launcher is a native Python app (launcher_plut.py) that shows installed
+# Plutonium games and lets users pick a mode to launch. Both OLED and LCD
+# Decks get this shortcut — it's the unified Plutonium entry point.
+
+LAUNCHER_TITLE = "DeckOps: Plutonium Launcher"
+
+# Placeholder artwork — uses BO2 SP imagery as a generic Plutonium look.
+# Replace with custom DeckOps launcher artwork when available.
+LAUNCHER_ART = {
+    "icon_url":  "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/202970/0a23d78ade8c8d7b4cfa15bf71c9dd535b2998ca.jpg",
+    "grid_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
+    "wide_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/header.jpg",
+    "hero_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_hero.jpg",
+    "logo_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/logo_2x.png",
+    "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+}
+
+
+def create_launcher_shortcut(on_progress=None):
+    """
+    Create a non-Steam shortcut for the DeckOps Plutonium Launcher.
+
+    The launcher is a native Python app (launcher_plut.py) that shows
+    installed Plutonium games and lets users pick a mode to launch.
+    Called once after Plutonium games are set up — both OLED and LCD.
+
+    The shortcut runs: python3 /path/to/launcher_plut.py
+    No Proton/Wine involved — it's a native Linux app.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    # Locate launcher_plut.py relative to this file (same directory)
+    launcher_script = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "launcher_plut.py"
+    )
+    if not os.path.exists(launcher_script):
+        prog(f"  Launcher script not found: {launcher_script}")
+        return
+
+    exe_path  = '"/usr/bin/python3"'
+    start_dir = f'"{os.path.dirname(launcher_script)}"'
+    launch_options = f'"{launcher_script}"'
+
+    shortcut_appid = _calc_shortcut_appid(exe_path, LAUNCHER_TITLE)
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        prog("  No Steam user accounts found - launcher shortcut skipped.")
+        return
+
+    for uid in uids:
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+
+        existing_names = _read_existing_shortcuts(shortcuts_path)
+        existing_raw = _read_shortcuts_raw(shortcuts_path)
+        next_idx = _get_next_index(existing_raw)
+
+        icon_path = os.path.join(
+            grid_dir, f"{shortcut_appid}_icon.{LAUNCHER_ART['icon_ext']}"
+        )
+
+        if LAUNCHER_TITLE in existing_names:
+            prog(f"  Launcher shortcut already exists")
+        else:
+            entry = {
+                "appid":               _to_signed32(shortcut_appid),
+                "AppName":             LAUNCHER_TITLE,
+                "Exe":                 exe_path,
+                "StartDir":            start_dir,
+                "icon":                icon_path,
+                "ShortcutPath":        "",
+                "LaunchOptions":       launch_options,
+                "IsHidden":            0,
+                "AllowDesktopConfig":  1,
+                "AllowOverlay":        1,
+                "OpenVR":              0,
+                "Devkit":              0,
+                "DevkitGameID":        "",
+                "DevkitOverrideAppID": 0,
+                "LastPlayTime":        0,
+                "FlatpakAppID":        "",
+                "tags":                {"0": "DeckOps"},
+            }
+
+            entry_bytes = _make_shortcut_entry(next_idx, entry)
+            try:
+                _write_shortcuts_vdf(shortcuts_path, existing_raw, [entry_bytes])
+                prog(f"  Launcher shortcut created: {LAUNCHER_TITLE}")
+            except Exception as e:
+                prog(f"  Failed to write launcher shortcut: {e}")
+
+        # Download placeholder artwork
+        _download_artwork(grid_dir, shortcut_appid, LAUNCHER_ART, prog)
+
+        # Launcher shortcut must NOT have a compat tool — it's a native app.
+        # Clear any stale CompatToolMapping entry (same pattern as game shortcuts).
+        try:
+            import re as _re
+            steam_config = os.path.expanduser(
+                "~/.local/share/Steam/config/config.vdf"
+            )
+            if os.path.exists(steam_config):
+                with open(steam_config, "r", encoding="utf-8") as _f:
+                    _data = _f.read()
+                _appid_str = str(shortcut_appid)
+                _pattern = (
+                    rf'\t+"{_re.escape(_appid_str)}"\n\t+\{{[^}}]*\}}\n?'
+                )
+                if _re.search(_pattern, _data, _re.MULTILINE | _re.DOTALL):
+                    _data = _re.sub(
+                        _pattern, "", _data,
+                        flags=_re.MULTILINE | _re.DOTALL,
+                    )
+                    with open(steam_config, "w", encoding="utf-8") as _f:
+                        _f.write(_data)
+                    prog(f"    Cleared stale compat tool from launcher shortcut")
+        except Exception as ex:
+            prog(f"    Could not clear compat tool: {ex}")
+
+    prog(f"  Launcher shortcut appid: {shortcut_appid}")
+
+
+def remove_launcher_shortcut(on_progress=None):
+    """
+    Remove the DeckOps Plutonium Launcher shortcut from shortcuts.vdf
+    for all discovered Steam UIDs. Also removes associated artwork.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    exe_path = '"/usr/bin/python3"'
+    shortcut_appid = _calc_shortcut_appid(exe_path, LAUNCHER_TITLE)
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        return
+
+    for uid in uids:
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+
+        if not os.path.exists(shortcuts_path):
+            continue
+
+        try:
+            with open(shortcuts_path, "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
+
+        header = b'\x00shortcuts\x00'
+        footer = b'\x08\x08'
+
+        body = data
+        if body.startswith(header):
+            body = body[len(header):]
+        if body.endswith(footer):
+            body = body[:-2]
+        elif body.endswith(b'\x08'):
+            body = body[:-1]
+
+        entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', body)]
+        if not entry_starts:
+            continue
+
+        entries = []
+        for i, start in enumerate(entry_starts):
+            end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(body)
+            entries.append(body[start:end])
+
+        title_bytes = LAUNCHER_TITLE.encode("utf-8")
+        filtered = [
+            e for e in entries
+            if b'\x01AppName\x00' + title_bytes + b'\x00' not in e
+            and b'\x01appname\x00' + title_bytes + b'\x00' not in e
+        ]
+
+        if len(filtered) < len(entries):
+            reindexed = []
+            for new_idx, entry in enumerate(filtered):
+                entry = re.sub(rb'^\x00\d+\x00', f'\x00{new_idx}\x00'.encode(), entry)
+                reindexed.append(entry)
+            new_data = header + b''.join(reindexed) + footer
+            try:
+                with open(shortcuts_path, "wb") as f:
+                    f.write(new_data)
+                prog(f"  Removed launcher shortcut for uid {uid}")
+            except OSError as ex:
+                prog(f"  Could not write shortcuts.vdf: {ex}")
+
+        # Remove artwork
+        artwork_suffixes = [
+            f"_icon.{LAUNCHER_ART['icon_ext']}",
+            f"p.{LAUNCHER_ART['grid_ext']}",
+            f".{LAUNCHER_ART['wide_ext']}",
+            f"_hero.{LAUNCHER_ART['hero_ext']}",
+            f"_logo.{LAUNCHER_ART['logo_ext']}",
+        ]
+        for suffix in artwork_suffixes:
+            art_path = os.path.join(grid_dir, f"{shortcut_appid}{suffix}")
+            if os.path.exists(art_path):
+                try:
+                    os.remove(art_path)
+                except OSError:
+                    pass
+
+
 # ── CLI for testing ───────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
