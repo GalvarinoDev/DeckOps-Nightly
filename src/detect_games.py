@@ -32,7 +32,6 @@ GAMES = {
         "appid": "10090",
         "exe": "CoDWaW.exe",
         "protocol": "plutonium://play/t4sp",
-        "xact": True
     },
     "t4mp":  {
         "name": "Call of Duty: World at War - Multiplayer",
@@ -40,7 +39,6 @@ GAMES = {
         "appid": "10090",
         "exe": "CoDWaWmp.exe",
         "protocol": "plutonium://play/t4mp",
-        "xact": True
     },
     "t5sp":  {
         "name": "Call of Duty: Black Ops",
@@ -48,7 +46,6 @@ GAMES = {
         "appid": "42700",
         "exe": "BlackOps.exe",
         "protocol": "plutonium://play/t5sp",
-        "xact": True
     },
     "t5mp":  {
         "name": "Call of Duty: Black Ops - Multiplayer",
@@ -56,7 +53,6 @@ GAMES = {
         "appid": "42710",
         "exe": "BlackOpsMP.exe",
         "protocol": "plutonium://play/t5mp",
-        "xact": True
     },
     "t6mp":  {
         "name": "Call of Duty: Black Ops II - Multiplayer",
@@ -64,7 +60,6 @@ GAMES = {
         "appid": "202990",
         "exe": "t6mp.exe",
         "protocol": "plutonium://play/t6mp",
-        "xact": False
     },
     "t6zm":  {
         "name": "Call of Duty: Black Ops II - Zombies",
@@ -72,7 +67,6 @@ GAMES = {
         "appid": "212910",
         "exe": "t6zm.exe",
         "protocol": "plutonium://play/t6zm",
-        "xact": False
     },
     "t6sp":  {
         "name": "Call of Duty: Black Ops II - Singleplayer",
@@ -80,7 +74,6 @@ GAMES = {
         "appid": "202970",
         "exe": "t6sp.exe",
         "protocol": "steam",
-        "xact": False
     },
     "iw5mp": {
         "name": "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
@@ -88,7 +81,6 @@ GAMES = {
         "appid": "42690",
         "exe": "iw5mp.exe",
         "protocol": "plutonium://play/iw5mp",
-        "xact": False
     },
     "iw5sp": {
         "name": "Call of Duty: Modern Warfare 3 (2011) - Singleplayer",
@@ -96,7 +88,6 @@ GAMES = {
         "appid": "42680",
         "exe": "iw5sp.exe",
         "protocol": "steam",
-        "xact": False
     },
     "iw4mp": {
         "name": "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
@@ -104,7 +95,6 @@ GAMES = {
         "appid": "10190",
         "exe": "iw4mp.exe",
         "protocol": "iw4x",
-        "xact": False
     },
     "iw4sp": {
         "name": "Call of Duty: Modern Warfare 2 (2009) - Singleplayer",
@@ -112,7 +102,6 @@ GAMES = {
         "appid": "10180",
         "exe": "iw4sp.exe",
         "protocol": "steam",
-        "xact": False
     },
     "cod4mp": {
         "name": "Call of Duty 4: Modern Warfare (2007) - Multiplayer",
@@ -120,7 +109,6 @@ GAMES = {
         "appid": "7940",
         "exe": "iw3mp.exe",
         "protocol": "cod4x",
-        "xact": False
     },
     "cod4sp": {
         "name": "Call of Duty 4: Modern Warfare (2007) - Singleplayer",
@@ -128,7 +116,6 @@ GAMES = {
         "appid": "7940",
         "exe": "iw3sp.exe",
         "protocol": "iw3sp",
-        "xact": False
     },
 }
 

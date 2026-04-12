@@ -246,14 +246,10 @@ from wrapper import set_compat_tool  # noqa: F401
 
 # ── Prefix dependency management ─────────────────────────────────────────────
 # GE-Proton's default_pfx ships with the full d3dx, vcrun, xinput, and
-# partial xact dependency set that these CoD games need. Instead of
-# running winetricks verbs or relying on Steam to install them on first
-# launch, we copy the DLLs directly from default_pfx into each game's
-# prefix. This works for both Steam and own games.
-#
-# The only DLLs NOT in default_pfx are the 9 extra XACT files needed by
-# t4/t5 (WaW, Black Ops). Those are still handled by the protontricks
-# xact verb in plutonium.py.
+# xact dependency set that these CoD games need. Instead of running
+# winetricks verbs or relying on Steam to install them on first launch,
+# we copy the DLLs directly from default_pfx into each game's prefix.
+# This works for both Steam and own games.
 
 def _copy_dlls(src_dir: str, dest_dir: str) -> tuple[int, int]:
     """
