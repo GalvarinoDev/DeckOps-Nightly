@@ -1176,7 +1176,7 @@ def create_launcher_shortcut(on_progress=None):
     installed Plutonium games and lets users pick a mode to launch.
     Called once after Plutonium games are set up — both OLED and LCD.
 
-    The shortcut runs: python3 /path/to/launcher_plut.py
+    The shortcut runs: DeckOps venv python3 /path/to/launcher_plut.py
     No Proton/Wine involved — it's a native Linux app.
     """
     def prog(msg):
@@ -1191,7 +1191,8 @@ def create_launcher_shortcut(on_progress=None):
         prog(f"  Launcher script not found: {launcher_script}")
         return
 
-    exe_path  = '"/usr/bin/python3"'
+    venv_python = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3")
+    exe_path  = f'"{venv_python}"'
     start_dir = f'"{os.path.dirname(launcher_script)}"'
     launch_options = f'"{launcher_script}"'
 
@@ -1284,7 +1285,7 @@ def remove_launcher_shortcut(on_progress=None):
         if on_progress:
             on_progress(msg)
 
-    exe_path = '"/usr/bin/python3"'
+    exe_path = f'"{os.path.join(os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3")}"'
     shortcut_appid = _calc_shortcut_appid(exe_path, LAUNCHER_TITLE)
 
     uids = _find_all_steam_uids()
