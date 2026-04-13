@@ -1159,11 +1159,11 @@ LAUNCHER_TITLE = "DeckOps: Plutonium Launcher"
 # Placeholder artwork — uses BO2 SP imagery as a generic Plutonium look.
 # Replace with custom DeckOps launcher artwork when available.
 LAUNCHER_ART = {
-    "icon_url":  "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/202970/0a23d78ade8c8d7b4cfa15bf71c9dd535b2998ca.jpg",
-    "grid_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
-    "wide_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/header.jpg",
-    "hero_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_hero.jpg",
-    "logo_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/logo_2x.png",
+    "icon_url":  "https://cdn2.steamgriddb.com/icon/ce3ecbaee3cc8014c4c2cba7b7106a38/32/256x256.png",
+    "grid_url":  "https://i.imgur.com/YsKM51I.png",
+    "wide_url":  "https://i.imgur.com/M0Fh2DY.png",
+    "hero_url":  "https://cdn2.steamgriddb.com/hero/aec3e4a8bf7a9a78686f7973d4c848b1.png",
+    "logo_url":  "https://cdn2.steamgriddb.com/logo/762dd577d6ff90976d1269075d4ebae5.png",
     "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
 }
 
