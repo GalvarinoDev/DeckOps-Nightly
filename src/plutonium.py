@@ -52,7 +52,7 @@ GAME_META = {
 
 METADATA_FILE = "deckops_plutonium.json"
 
-# Standalone wrapper exe names for OLED own games (offline LAN mode).
+# Standalone wrapper exe names for OLED own games.
 # These are new files dropped into the game folder — the original exe is
 # left untouched. shortcut.py points the non-Steam shortcut at these.
 # Same filenames as LCD's LCD_OWN_WRAPPER_EXES in heroic.py so the
@@ -435,12 +435,12 @@ def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
                              proton_path: str, compatdata_path: str,
                              plut_dir: str) -> str | None:
     """
-    Write a standalone wrapper exe for OLED own games (offline LAN mode).
+    Write a standalone wrapper exe for OLED own games.
 
     Creates a new file (e.g. t4plutmp.exe) in the game's install dir that
-    launches the Plutonium bootstrapper with -lan. The original game exe
-    is left untouched. shortcut.py points the non-Steam shortcut at this
-    wrapper, and the launcher uses the stored wrapper_path to launch it.
+    launches the Plutonium launcher with a protocol URL. The original game
+    exe is left untouched. shortcut.py points the non-Steam shortcut at
+    this wrapper, and the launcher uses the stored wrapper_path to launch it.
 
     Returns the full path to the written wrapper, or None if game_key
     is not in OLED_OWN_WRAPPER_EXES.
@@ -452,23 +452,15 @@ def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
     wrapper_name = OLED_OWN_WRAPPER_EXES[game_key]
     wrapper_path = os.path.join(install_dir, wrapper_name)
 
-    try:
-        import config as _cfg
-        player_name = _cfg.get_player_name() or "Player"
-    except Exception:
-        player_name = "Player"
-
-    bootstrapper  = os.path.join(plut_dir, "bin",
-                                 "plutonium-bootstrapper-win32.exe")
-    game_dir_wine = _wine_path(install_dir)
+    launcher = os.path.join(plut_dir, "bin",
+                            "plutonium-launcher-win32.exe")
+    plut_url = f"plutonium://play/{game_key}"
 
     script = (
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"cd \"{plut_dir}\"\n"
-        f"\"{proton_path}\" run \"{bootstrapper}\" "
-        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan &\n"
+        f"\"{proton_path}\" run \"{launcher}\" \"{plut_url}\" &\n"
         "PROTON_PID=$!\n"
         "sleep 8\n"
         "while kill -0 $PROTON_PID 2>/dev/null || "
@@ -645,8 +637,8 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     # function. OLED games get a Steam-side bash wrapper + metadata.
     wrapper_path = None
     if source == "own":
-        # OLED own games: standalone wrapper for offline LAN mode
-        prog(80, "Writing offline launcher wrapper...")
+        # OLED own games: standalone wrapper
+        prog(80, "Writing launcher wrapper...")
         wrapper_path = _write_oled_own_wrapper(
             game, game_key, steam_root, proton_path,
             compatdata_path, dest_plut_dir,
