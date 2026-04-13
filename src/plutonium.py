@@ -467,8 +467,14 @@ def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
         f"cd \"{plut_dir}\"\n"
-        f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+        f"\"{proton_path}\" run \"{bootstrapper}\" "
+        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan &\n"
+        "PROTON_PID=$!\n"
+        "sleep 8\n"
+        "while kill -0 $PROTON_PID 2>/dev/null || "
+        f"pgrep -fa wineserver | grep -q \"{compatdata_path}\"; do\n"
+        "  sleep 3\n"
+        "done\n"
     )
 
     with open(wrapper_path, "wb") as f:
@@ -513,7 +519,13 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"exec \"{proton_path}\" run \"{launcher}\" \"{plut_url}\"\n"
+        f"\"{proton_path}\" run \"{launcher}\" \"{plut_url}\" &\n"
+        "PROTON_PID=$!\n"
+        "sleep 8\n"
+        "while kill -0 $PROTON_PID 2>/dev/null || "
+        f"pgrep -fa wineserver | grep -q \"{compatdata_path}\"; do\n"
+        "  sleep 3\n"
+        "done\n"
     )
 
     script_bytes = script.encode("utf-8")
