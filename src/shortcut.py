@@ -987,34 +987,11 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
             icon_path      = os.path.join(grid_dir, f"{shortcut_appid}_icon.{shortcut_def['icon_ext']}")
 
             # ── Resolve compatdata path ───────────────────────────────────
-            # cod4mp and t4mp share a Steam game prefix (7940 and 10090).
-            # The shortcut should reuse that prefix instead of creating its
-            # own -- avoids duplicating shaders, AppData, and prefix init.
-            # All other keys get their own prefix keyed on the shortcut appid.
-            _SHARED_PREFIX_KEYS = {
-                "cod4mp": "7940",
-                "t4mp":   "10090",
-            }
-
-            _use_shared_prefix = False
-            if key in _SHARED_PREFIX_KEYS:
-                from wrapper import find_compatdata
-                _sr = steam_root or STEAM_ROOT
-                game_appid = _SHARED_PREFIX_KEYS[key]
-                compatdata_path = find_compatdata(
-                    _sr, game_appid,
-                    game_install_dir=install_dir,
-                )
-                if compatdata_path:
-                    _use_shared_prefix = True
-                else:
-                    # No Steam install of this game -- can't reuse a Steam
-                    # prefix that doesn't exist. Fall back to the shortcut's
-                    # own CRC-based prefix, same as any other own game.
-                    # install_cod4x / install_plutonium will use this prefix.
-                    compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
-            else:
-                compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
+            # Own games always get their own CRC-based prefix keyed on the
+            # shortcut appid. Never reuse a Steam game prefix — the user
+            # may not own the game on Steam, and each shortcut should have
+            # an independently preloaded prefix.
+            compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
 
             # Enrich the game dict so downstream code has the appid and paths
             game["shortcut_appid"]  = shortcut_appid
@@ -1051,32 +1028,26 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                     "AppData", "Local", "Plutonium",
                 )
                 actual_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
-                if _use_shared_prefix:
-                    launch_options = (
-                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                        f'%command% "plutonium://play/{key}"'
-                    )
-                else:
-                    launch_options = f'plutonium://play/{key}'
+                launch_options = (
+                    f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                    f'%command% "plutonium://play/{key}"'
+                )
 
             elif key == "iw4mp":
                 # iw4x -- point at iw4x.exe (dropped by installer, no rename)
                 actual_exe = os.path.join(install_dir, "iw4x.exe")
-                launch_options = ""
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
 
             elif key == "cod4sp":
                 # iw3sp-mod -- point at iw3sp_mod.exe (dropped by installer, no rename)
                 actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
-                launch_options = ""
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
 
             else:
                 # cod4mp (cod4x patches iw3mp.exe in place), iw4sp, iw5sp, t6sp
                 # -- these use the original game exe with no mod client
                 actual_exe = exe_path
-                if _use_shared_prefix:
-                    launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
-                else:
-                    launch_options = ""
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
 
             # For non-Plutonium keys, warn if the target exe is missing.
             # Plutonium exes won't exist yet -- they get created when the
@@ -1156,15 +1127,14 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
 
 LAUNCHER_TITLE = "DeckOps: Plutonium Launcher"
 
-# Placeholder artwork — uses BO2 SP imagery as a generic Plutonium look.
-# Replace with custom DeckOps launcher artwork when available.
+# Custom DeckOps Plutonium launcher artwork.
 LAUNCHER_ART = {
     "icon_url":  "https://cdn2.steamgriddb.com/icon/ce3ecbaee3cc8014c4c2cba7b7106a38/32/256x256.png",
     "grid_url":  "https://i.imgur.com/YsKM51I.png",
     "wide_url":  "https://i.imgur.com/M0Fh2DY.png",
     "hero_url":  "https://cdn2.steamgriddb.com/hero/aec3e4a8bf7a9a78686f7973d4c848b1.png",
     "logo_url":  "https://cdn2.steamgriddb.com/logo/762dd577d6ff90976d1269075d4ebae5.png",
-    "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    "icon_ext": "png", "grid_ext": "png", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
 }
 
 
