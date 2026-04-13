@@ -608,6 +608,25 @@ def _patch_configset(configset_path: str, key: str, template_name: str):
         f.write(content)
 
 
+def _clear_compat_tool(appid_str: str):
+    """
+    Remove any CompatToolMapping entry for the given appid from config.vdf.
+
+    Used for shortcuts that must NOT have a Steam compat tool — e.g. HGL
+    shortcuts where Steam's compat tool sandboxes flatpak away from the host.
+    """
+    steam_config = os.path.join(STEAM_ROOT, "config", "config.vdf")
+    if not os.path.exists(steam_config):
+        return
+    with open(steam_config, "r", encoding="utf-8") as f:
+        data = f.read()
+    pattern = rf'\t+"{re.escape(appid_str)}"\n\t+\{{[^}}]*\}}\n?'
+    if re.search(pattern, data, re.MULTILINE | re.DOTALL):
+        data = re.sub(pattern, "", data, flags=re.MULTILINE | re.DOTALL)
+        with open(steam_config, "w", encoding="utf-8") as f:
+            f.write(data)
+
+
 # ── Shortcut appid lookup ────────────────────────────────────────────────────
 
 def get_shortcut_appid(name: str) -> int | None:
@@ -659,6 +678,232 @@ def get_shortcut_appid(name: str) -> int | None:
         return unsigned
 
     return None
+
+
+# ── Generic shortcut API ─────────────────────────────────────────────────────
+#
+# add_shortcut / remove_shortcut are the single-shortcut building blocks.
+# Higher-level functions like create_shortcuts and create_own_shortcuts batch
+# multiple shortcuts per VDF write. These generic functions write one shortcut
+# at a time, which is appropriate for callers that create shortcuts one by one
+# (e.g. heroic.py's per-game HGL shortcut creation).
+
+def add_shortcut(
+    name: str,
+    exe_path: str,
+    start_dir: str,
+    launch_options: str,
+    artwork_def: dict,
+    template_type: str,
+    gyro_mode: str,
+    on_progress=None,
+    compat_tool: str = None,
+    clear_compat_tool: bool = False,
+    force_artwork: bool = False,
+    appid_exe_path: str = None,
+) -> int:
+    """
+    Create a single non-Steam shortcut across all Steam UIDs.
+
+    Returns the unsigned shortcut appid.
+
+    name             — display name (AppName in shortcuts.vdf)
+    exe_path         — quoted exe path for the shortcut entry
+    start_dir        — quoted StartDir for the shortcut entry
+    launch_options   — LaunchOptions string
+    artwork_def      — dict with icon_url, grid_url, wide_url, hero_url,
+                        logo_url and corresponding *_ext keys
+    template_type    — "standard" or "other" for controller config
+    gyro_mode        — "hold", "ads", or "toggle"
+    on_progress      — optional callback(msg: str)
+    compat_tool      — GE-Proton version to set, or None to skip
+    clear_compat_tool— if True, remove any existing compat tool entry
+                        (needed for HGL shortcuts where Steam's compat tool
+                        sandboxes flatpak away from the host)
+    force_artwork    — re-download even if cached
+    appid_exe_path   — if provided, use this instead of exe_path for the
+                        appid CRC calculation (for stable appids when the
+                        actual exe differs from the original shortcut exe)
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    appid_key = appid_exe_path if appid_exe_path else exe_path
+    shortcut_appid = _calc_shortcut_appid(appid_key, name)
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        prog("  No Steam user accounts found — shortcut skipped.")
+        return shortcut_appid
+
+    for uid in uids:
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+
+        existing_names = _read_existing_shortcuts(shortcuts_path)
+        existing_raw = _read_shortcuts_raw(shortcuts_path)
+        next_idx = _get_next_index(existing_raw)
+
+        icon_path = os.path.join(
+            grid_dir,
+            f"{shortcut_appid}_icon.{artwork_def.get('icon_ext', 'png')}",
+        )
+
+        if name in existing_names:
+            prog(f"    ✓ Shortcut exists: {name}")
+        else:
+            entry = {
+                "appid":               _to_signed32(shortcut_appid),
+                "AppName":             name,
+                "Exe":                 exe_path,
+                "StartDir":            start_dir,
+                "icon":                icon_path,
+                "ShortcutPath":        "",
+                "LaunchOptions":       launch_options,
+                "IsHidden":            0,
+                "AllowDesktopConfig":  1,
+                "AllowOverlay":        1,
+                "OpenVR":              0,
+                "Devkit":              0,
+                "DevkitGameID":        "",
+                "DevkitOverrideAppID": 0,
+                "LastPlayTime":        0,
+                "FlatpakAppID":        "",
+                "tags":                {"0": "DeckOps"},
+            }
+
+            entry_bytes = _make_shortcut_entry(next_idx, entry)
+            try:
+                _write_shortcuts_vdf(shortcuts_path, existing_raw, [entry_bytes])
+                prog(f"    ✓ Shortcut created: {name}")
+            except Exception as e:
+                prog(f"    ⚠ Failed to write shortcut: {e}")
+
+        # Artwork
+        _download_artwork(grid_dir, shortcut_appid, artwork_def, prog,
+                          force=force_artwork)
+
+        # Controller config
+        _assign_controller_config(uid, shortcut_appid,
+                                  {"template_type": template_type},
+                                  gyro_mode, prog)
+
+    # Compat tool handling (config.vdf is global, outside UID loop)
+    if clear_compat_tool:
+        try:
+            _clear_compat_tool(str(shortcut_appid))
+            prog(f"    Cleared compat tool for shortcut")
+        except Exception as ex:
+            prog(f"    Could not clear compat tool: {ex}")
+    elif compat_tool:
+        try:
+            from wrapper import set_compat_tool as _set_compat
+            _set_compat([str(shortcut_appid)], compat_tool)
+            prog(f"    ✓ GE-Proton {compat_tool} set")
+        except Exception as ex:
+            prog(f"    ⚠ Could not set compat tool: {ex}")
+
+    prog(f"  Shortcut appid: {shortcut_appid}")
+    return shortcut_appid
+
+
+def remove_shortcut(name: str, exe_path: str, artwork_def: dict = None,
+                    on_progress=None):
+    """
+    Remove a non-Steam shortcut by name from shortcuts.vdf for all UIDs.
+    Also removes associated artwork from the grid directory.
+
+    name        — AppName to match in shortcuts.vdf
+    exe_path    — quoted exe path used for appid CRC (needed for artwork
+                   file cleanup — artwork filenames are keyed on appid)
+    artwork_def — dict with *_ext keys for artwork file removal;
+                   if None, artwork files are left in place
+    on_progress — optional callback(msg: str)
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    shortcut_appid = _calc_shortcut_appid(exe_path, name)
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        return
+
+    for uid in uids:
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+
+        if not os.path.exists(shortcuts_path):
+            continue
+
+        try:
+            with open(shortcuts_path, "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
+
+        header = b'\x00shortcuts\x00'
+        footer = b'\x08\x08'
+
+        body = data
+        if body.startswith(header):
+            body = body[len(header):]
+        if body.endswith(footer):
+            body = body[:-2]
+        elif body.endswith(b'\x08'):
+            body = body[:-1]
+
+        entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', body)]
+        if not entry_starts:
+            continue
+
+        entries = []
+        for i, start in enumerate(entry_starts):
+            end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(body)
+            entries.append(body[start:end])
+
+        title_bytes = name.encode("utf-8")
+        filtered = [
+            e for e in entries
+            if b'\x01AppName\x00' + title_bytes + b'\x00' not in e
+            and b'\x01appname\x00' + title_bytes + b'\x00' not in e
+        ]
+
+        if len(filtered) < len(entries):
+            reindexed = []
+            for new_idx, entry in enumerate(filtered):
+                entry = re.sub(
+                    rb'^\x00\d+\x00',
+                    f'\x00{new_idx}\x00'.encode(),
+                    entry,
+                )
+                reindexed.append(entry)
+            new_data = header + b''.join(reindexed) + footer
+            try:
+                with open(shortcuts_path, "wb") as f:
+                    f.write(new_data)
+                prog(f"  Removed shortcut '{name}' for uid {uid}")
+            except OSError as ex:
+                prog(f"  Could not write shortcuts.vdf: {ex}")
+
+        # Remove artwork
+        if artwork_def:
+            artwork_suffixes = [
+                f"_icon.{artwork_def.get('icon_ext', 'png')}",
+                f"p.{artwork_def.get('grid_ext', 'jpg')}",
+                f".{artwork_def.get('wide_ext', 'jpg')}",
+                f"_hero.{artwork_def.get('hero_ext', 'jpg')}",
+                f"_logo.{artwork_def.get('logo_ext', 'png')}",
+            ]
+            for suffix in artwork_suffixes:
+                art_path = os.path.join(grid_dir, f"{shortcut_appid}{suffix}")
+                if os.path.exists(art_path):
+                    try:
+                        os.remove(art_path)
+                    except OSError:
+                        pass
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
