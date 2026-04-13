@@ -2640,47 +2640,30 @@ class OwnInstallScreen(QWidget):
         _log_to_file("[BREADCRUMB] own_games rebuilt, starting prefix init")
 
         # ── Create prefixes + install deps from GE-Proton default_pfx ─────
-        # Proton prefix init for ALL selected games (own + Steam).
-        # Own games get prefixes created from scratch via `proton run cmd /c exit`.
-        # Steam games that haven't been launched yet also get their prefixes
-        # initialized this way, removing the "launch each game once" requirement.
+        # Every selected game gets its prefix preloaded — no exceptions.
+        # Own games use their CRC-based prefix (set by create_own_shortcuts).
+        # Steam games use their Steam appid prefix.
+        # LCD Plutonium games still get a prefix for offline mode; Heroic
+        # manages its own prefix separately for online mode.
+        # ensure_all_prefix_deps handles deduplication and skips prefixes
+        # that are already initialized, so passing everything in is safe.
         self._s.progress.emit(30, "Creating Proton prefixes...")
         self._s.log.emit("Creating Proton prefixes and installing dependencies...")
         self._s.pulse_start.emit("Installing prefix dependencies")
         from ge_proton import ensure_all_prefix_deps
         from detect_games import GAMES as _GAMES_MAP
-        # Skip appid 7940 if cod4x is selected — install_cod4x handles
-        # its own prefix init via the setup.exe Proton run.
-        _skip_appids = set()
-        if has_cod4:
-            _skip_appids.add("7940")
+        from wrapper import find_compatdata
         dep_targets = []
-        # Keys whose shortcuts reuse an existing Steam game prefix.
-        # These don't need their own prefix init -- the game prefix is
-        # either already initialized or handled by the game's installer
-        # (e.g. install_cod4x for cod4mp).
-        _SHARED_PREFIX_OWN_KEYS = {"cod4mp", "t4mp"}
         for key, gd, game in self.selected:
             if not game:
                 continue
-            # LCD Plutonium games launch via Heroic with a shared Wine
-            # prefix -- they never use Steam's compatdata or an own-shortcut
-            # prefix, so initializing those is wasted work. Skip.
-            if not cfg.is_oled() and KEY_CLIENT.get(key) == "plutonium":
-                continue
             if key in self.own_selected:
-                if key in _SHARED_PREFIX_OWN_KEYS:
-                    # Shortcut reuses the game's Steam prefix -- skip
-                    continue
-                # Own games use the shortcut's compatdata path
+                # Own games always use their CRC-based prefix
                 compat = game.get("compatdata_path", "")
             else:
                 # Steam games use the per-key appid, not card-level gd["appid"].
                 # Card-level appid is wrong for keys like t6zm (212910 vs 202990).
-                from wrapper import find_compatdata
                 appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
-                if str(appid) in _skip_appids:
-                    continue
                 compat = find_compatdata(self.steam_root, appid,
                                          game_install_dir=game.get("install_dir"))
                 if not compat and game.get("install_dir"):
