@@ -1061,53 +1061,55 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
              stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def _write_lcd_own_wrapper(game: dict, game_key: str, steam_root: str,
-                            proton_path: str, compatdata_path: str,
-                            plut_dir: str) -> str | None:
-    """
-    Write a standalone wrapper exe for LCD own games.
-
-    Same -lan bash script as _write_lcd_wrapper but written as a new file
-    (e.g. t4plutmp.exe) instead of replacing the original game exe.
-    No backup, no padding -- the original exe is left untouched.
-    shortcut.py points the non-Steam shortcut at this wrapper.
-
-    Returns the full path to the written wrapper, or None if game_key
-    is not in LCD_OWN_WRAPPER_EXES.
-    """
-    if game_key not in LCD_OWN_WRAPPER_EXES:
-        return None
-
-    install_dir  = game["install_dir"]
-    wrapper_name = LCD_OWN_WRAPPER_EXES[game_key]
-    wrapper_path = os.path.join(install_dir, wrapper_name)
-
-    try:
-        import config as _cfg
-        player_name = _cfg.get_player_name() or "Player"
-    except Exception:
-        player_name = "Player"
-
-    bootstrapper  = os.path.join(plut_dir, "bin",
-                                 "plutonium-bootstrapper-win32.exe")
-    game_dir_wine = _wine_path_lcd(install_dir)
-
-    script = (
-        "#!/bin/bash\n"
-        f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
-        f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"cd \"{plut_dir}\"\n"
-        f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
-    )
-
-    with open(wrapper_path, "wb") as f:
-        f.write(script.encode("utf-8"))
-
-    os.chmod(wrapper_path, os.stat(wrapper_path).st_mode |
-             stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-    return wrapper_path
+# LCD own games launch via Heroic shortcuts created in
+# _create_heroic_steam_shortcut — no standalone wrapper needed.
+# def _write_lcd_own_wrapper(game: dict, game_key: str, steam_root: str,
+#                             proton_path: str, compatdata_path: str,
+#                             plut_dir: str) -> str | None:
+#     """
+#     Write a standalone wrapper exe for LCD own games.
+#
+#     Same -lan bash script as _write_lcd_wrapper but written as a new file
+#     (e.g. t4plutmp.exe) instead of replacing the original game exe.
+#     No backup, no padding -- the original exe is left untouched.
+#     shortcut.py points the non-Steam shortcut at this wrapper.
+#
+#     Returns the full path to the written wrapper, or None if game_key
+#     is not in LCD_OWN_WRAPPER_EXES.
+#     """
+#     if game_key not in LCD_OWN_WRAPPER_EXES:
+#         return None
+#
+#     install_dir  = game["install_dir"]
+#     wrapper_name = LCD_OWN_WRAPPER_EXES[game_key]
+#     wrapper_path = os.path.join(install_dir, wrapper_name)
+#
+#     try:
+#         import config as _cfg
+#         player_name = _cfg.get_player_name() or "Player"
+#     except Exception:
+#         player_name = "Player"
+#
+#     bootstrapper  = os.path.join(plut_dir, "bin",
+#                                  "plutonium-bootstrapper-win32.exe")
+#     game_dir_wine = _wine_path_lcd(install_dir)
+#
+#     script = (
+#         "#!/bin/bash\n"
+#         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
+#         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
+#         f"cd \"{plut_dir}\"\n"
+#         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
+#         f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+#     )
+#
+#     with open(wrapper_path, "wb") as f:
+#         f.write(script.encode("utf-8"))
+#
+#     os.chmod(wrapper_path, os.stat(wrapper_path).st_mode |
+#              stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+#
+#     return wrapper_path
 
 
 def _download_plutonium_exe(dest_dir: str, on_progress=None) -> str:
@@ -1484,8 +1486,8 @@ def install_plutonium_lcd(game: dict, game_key: str,
       4. Set up shared Plutonium directories for symlink-based copies.
       5. Copy Plutonium files into the game's Steam compatdata prefix.
       6. Write config.json in the game prefix with correct paths.
-      7. Write a -lan bash wrapper -- Steam games get exe replacement,
-         own games get a standalone wrapper exe dropped in the game folder.
+      7. Write a -lan bash wrapper for Steam games (exe replacement).
+         Own games launch via Heroic shortcuts created in step 3.
       8. Write the DeckOps metadata sentinel.
 
     game            - entry from detect_games.find_installed_games()
@@ -1572,18 +1574,14 @@ def install_plutonium_lcd(game: dict, game_key: str,
         prog(70, "Writing game path config...")
         _write_lcd_config(dest_plut_dir, game_key, installed_games)
 
-        # 7. Write the -lan bash wrapper for offline play.
-        #    Steam games: replace the original exe (backup + pad).
-        #    Own games: standalone wrapper exe in the game folder.
-        if source != "own" and proton_path and steam_root:
+        # 7. Write bash wrapper for Steam-owned games (exe replacement).
+        #    Own games launch via Heroic shortcuts created in step 3
+        #    (_create_heroic_steam_shortcut) — no wrapper needed.
+        if source == "own":
+            prog(80, "Own game — launches via Heroic shortcut")
+        elif proton_path and steam_root:
             prog(80, "Writing offline launcher wrapper...")
             _write_lcd_wrapper(
-                game, game_key, steam_root, proton_path,
-                compatdata_path, dest_plut_dir,
-            )
-        elif source == "own" and proton_path and steam_root:
-            prog(80, "Writing offline launcher wrapper (own game)...")
-            wrapper_path = _write_lcd_own_wrapper(
                 game, game_key, steam_root, proton_path,
                 compatdata_path, dest_plut_dir,
             )
