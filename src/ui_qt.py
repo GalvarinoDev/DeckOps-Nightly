@@ -1239,12 +1239,9 @@ class InstallScreen(QWidget):
             self._s.log.emit(f"  GE-Proton setup skipped: {ex}")
 
         # ── Copy deps from GE-Proton default_pfx into all game prefixes ──────
-        # GE-Proton's default_pfx ships with d3dx, vcrun, xinput, and partial
-        # xact — everything these CoD games need. We copy them into each prefix
-        # so users don't have to launch every game through Steam first.
-        # proton_path lets Proton create prefixes that don't exist yet via
-        # `proton run cmd /c exit` instead of requiring users to launch each
-        # game through Steam first.
+        # Every selected game gets its prefix preloaded — no exceptions.
+        # ensure_all_prefix_deps handles deduplication and skips prefixes
+        # that are already initialized.
         proton = get_proton_path(self.steam_root)
 
         if ge_version:
@@ -1252,24 +1249,12 @@ class InstallScreen(QWidget):
             from detect_games import GAMES as _GAMES_MAP
             self._s.log.emit("Installing prefix dependencies...")
             self._s.pulse_start.emit("Installing prefix dependencies")
-            # Skip appid 7940 if cod4x is selected — install_cod4x handles
-            # its own prefix init via the setup.exe Proton run.
-            _skip_appids = set()
-            if has_cod4:
-                _skip_appids.add("7940")
             dep_targets = []
             for key, gd, game in self.selected:
-                # LCD Plutonium games launch via Heroic with a shared Wine
-                # prefix -- they never touch Steam's compatdata for the game
-                # appid, so initializing that prefix is wasted work. Skip.
-                if not cfg.is_oled() and KEY_CLIENT.get(key) == "plutonium":
-                    continue
                 # Use per-key appid from GAMES, not card-level gd["appid"].
                 # Card-level appid is wrong for keys that have their own appid
                 # (e.g. t6zm=212910, t6sp=202970 vs card appid 202990).
                 appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
-                if str(appid) in _skip_appids:
-                    continue
                 _install_dir = game["install_dir"] if game else None
                 compat = find_compatdata(self.steam_root, appid,
                                          game_install_dir=_install_dir)
