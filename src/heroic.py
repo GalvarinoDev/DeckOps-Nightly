@@ -33,18 +33,17 @@ OLED Decks do not use this module at all -- plutonium.py handles OLED
 directly through Steam's Proton runtime and a bash wrapper per game.
 """
 
-import binascii
 import hashlib
 import json
 import os
 import re
 import shutil
 import stat
-import struct
 import subprocess
-import threading
 import time
 import urllib.request
+
+from shortcut import add_shortcut, remove_shortcut
 
 
 # ── Heroic Flatpak paths ────────────────────────────────────────────────────
@@ -149,10 +148,6 @@ HEROIC_PREFIX_BASE = os.path.expanduser(
 
 
 # ── Steam paths (same as shortcut.py) ───────────────────────────────────────
-
-STEAM_ROOT   = os.path.expanduser("~/.local/share/Steam")
-USERDATA_DIR = os.path.join(STEAM_ROOT, "userdata")
-MIN_UID      = 10000
 
 _BROWSER_UA = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -552,190 +547,6 @@ def _remove_heroic_game_config(game_key: str, on_progress=None):
     # Shape A: the shared default Wine prefix is never removed on single-game
     # uninstall because other Plutonium games may still need it. Full wipe
     # happens in cleanup_all_heroic() when the user uninstalls DeckOps.
-
-
-# ── Steam shortcut helpers (mirrors shortcut.py patterns) ───────────────────
-# These create non-Steam shortcuts that launch games via Heroic's protocol.
-# The exe is /usr/bin/flatpak and the launch options use heroic://launch.
-
-def _find_all_steam_uids():
-    """Return all valid Steam user ID folders from userdata/."""
-    if not os.path.isdir(USERDATA_DIR):
-        return []
-    seen, uids = set(), []
-    for entry in os.listdir(USERDATA_DIR):
-        if not entry.isdigit() or int(entry) < MIN_UID:
-            continue
-        real = os.path.realpath(os.path.join(USERDATA_DIR, entry))
-        if real in seen:
-            continue
-        seen.add(real)
-        uids.append(entry)
-    return uids
-
-
-def _calc_shortcut_appid(exe_path: str, name: str) -> int:
-    """Calculate Steam shortcut appid - must match Steam's internal algorithm."""
-    key = (exe_path + name).encode("utf-8")
-    crc = binascii.crc32(key) & 0xFFFFFFFF
-    return (crc | 0x80000000) & 0xFFFFFFFF
-
-
-def _to_signed32(n):
-    """Convert unsigned int32 to signed int32 for VDF binary format."""
-    return n if n <= 2147483647 else n - 2**32
-
-
-def _vdf_string(key: str, val: str) -> bytes:
-    return b'\x01' + key.encode('utf-8') + b'\x00' + val.encode('utf-8') + b'\x00'
-
-
-def _vdf_int32(key: str, val: int) -> bytes:
-    return b'\x02' + key.encode('utf-8') + b'\x00' + struct.pack('<i', val)
-
-
-def _make_shortcut_entry(idx: int, fields: dict) -> bytes:
-    data = b'\x00' + str(idx).encode('utf-8') + b'\x00'
-    for key, value in fields.items():
-        if key == "tags":
-            data += b'\x00' + b'tags' + b'\x00'
-            for tk, tv in value.items():
-                data += _vdf_string(tk, tv)
-            data += b'\x08'
-        elif isinstance(value, str):
-            data += _vdf_string(key, value)
-        elif isinstance(value, int):
-            data += _vdf_int32(key, value)
-    data += b'\x08'
-    return data
-
-
-def _read_existing_shortcuts(path: str) -> list:
-    if not os.path.exists(path):
-        return []
-    try:
-        with open(path, 'rb') as f:
-            data = f.read()
-    except Exception:
-        return []
-    existing = []
-    for match in re.finditer(b'\x01[Aa]pp[Nn]ame\x00([^\x00]+)\x00', data):
-        existing.append(match.group(1).decode('utf-8', errors='replace'))
-    return existing
-
-
-def _read_shortcuts_raw(path: str) -> bytes:
-    if not os.path.exists(path):
-        return b''
-    try:
-        with open(path, 'rb') as f:
-            data = f.read()
-    except Exception:
-        return b''
-    header = b'\x00shortcuts\x00'
-    if data.startswith(header):
-        data = data[len(header):]
-    if data.endswith(b'\x08\x08'):
-        data = data[:-2]
-    elif data.endswith(b'\x08'):
-        data = data[:-1]
-    return data
-
-
-def _get_next_index(raw_data: bytes) -> int:
-    if not raw_data:
-        return 0
-    indices = []
-    i = 0
-    while i < len(raw_data) - 2:
-        if raw_data[i] == 0x00:
-            end = raw_data.find(b'\x00', i + 1)
-            if end != -1 and end > i + 1:
-                if end + 1 < len(raw_data) and raw_data[end + 1] == 0x02:
-                    try:
-                        idx_str = raw_data[i + 1:end].decode('utf-8')
-                        if idx_str.isdigit():
-                            indices.append(int(idx_str))
-                    except (UnicodeDecodeError, ValueError):
-                        pass
-                i = end + 1
-            else:
-                i += 1
-        else:
-            i += 1
-    return max(indices, default=-1) + 1
-
-
-def _write_shortcuts_vdf(path: str, existing_raw: bytes, new_entries: list):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    data = b'\x00shortcuts\x00'
-    if existing_raw:
-        data += existing_raw
-    for entry_bytes in new_entries:
-        data += entry_bytes
-    data += b'\x08\x08'
-    with open(path, 'wb') as f:
-        f.write(data)
-
-
-def _download(url: str, dest: str) -> bool:
-    try:
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        req = urllib.request.Request(url, headers=_BROWSER_UA)
-        with urllib.request.urlopen(req, timeout=30) as r:
-            with open(dest, "wb") as f:
-                f.write(r.read())
-        return True
-    except Exception:
-        return False
-
-
-def _download_artwork(grid_dir: str, appid: int, game_def: dict, prog):
-    """Download all artwork for a shortcut to the grid directory."""
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    appid_str = str(appid)
-    os.makedirs(grid_dir, exist_ok=True)
-
-    artwork_map = [
-        ("icon_url",  f"{appid_str}_icon.{game_def['icon_ext']}",  "icon"),
-        ("grid_url",  f"{appid_str}p.{game_def['grid_ext']}",      "grid"),
-        ("wide_url",  f"{appid_str}.{game_def['wide_ext']}",       "wide"),
-        ("hero_url",  f"{appid_str}_hero.{game_def['hero_ext']}",  "hero"),
-        ("logo_url",  f"{appid_str}_logo.{game_def['logo_ext']}",  "logo"),
-    ]
-
-    to_download = []
-    for url_key, filename, label in artwork_map:
-        url = game_def.get(url_key)
-        if not url:
-            continue
-        dest = os.path.join(grid_dir, filename)
-        if os.path.exists(dest):
-            prog(f"    {label} (cached)")
-            continue
-        to_download.append((url, dest, label))
-
-    if not to_download:
-        return
-
-    results_lock = threading.Lock()
-
-    def _dl(url, dest, label):
-        ok = _download(url, dest)
-        with results_lock:
-            if ok:
-                prog(f"    {label} downloaded")
-            else:
-                prog(f"    {label} failed")
-
-    with ThreadPoolExecutor(max_workers=min(5, len(to_download))) as ex:
-        futs = [ex.submit(_dl, url, dest, label) for url, dest, label in to_download]
-        for fut in as_completed(futs):
-            try:
-                fut.result()
-            except Exception:
-                pass
 
 
 # ── LCD Shape A helpers ─────────────────────────────────────────────────────
@@ -1609,16 +1420,17 @@ def _create_heroic_steam_shortcut(game_key: str, on_progress=None,
                                    source: str = "steam"):
     """
     Create a non-Steam shortcut that launches an LCD Plutonium game using
-    Heroic's native shortcut pattern.
+    HGL's native shortcut pattern. Delegates to shortcut.add_shortcut for
+    all VDF, artwork, and controller config work.
 
     Only creates shortcuts for own games. LCD Steam game owners already have
-    their games in the Steam library with -lan wrappers replacing the exe,
-    so they don't need additional Heroic shortcuts cluttering their library.
+    their games in the Steam library with wrappers replacing the exe,
+    so they don't need additional HGL shortcuts cluttering their library.
     Online play for Steam owners will be handled through ManagementScreen
     in a future update.
     """
-    # Steam game owners don't need Heroic shortcuts -- their games launch
-    # from existing Steam library entries with -lan wrappers
+    # Steam game owners don't need HGL shortcuts -- their games launch
+    # from existing Steam library entries with wrappers
     if source != "own":
         return
 
@@ -1632,9 +1444,9 @@ def _create_heroic_steam_shortcut(game_key: str, on_progress=None,
     game_def = HEROIC_PLUT_GAMES[game_key]
     title    = game_def["title"]
 
-    # Heroic native shortcut pattern: Exe is the full path to flatpak,
+    # HGL native shortcut pattern: Exe is the full path to flatpak,
     # StartDir is /usr/bin/, the entire heroic:// invocation lives in
-    # LaunchOptions. This matches exactly what Heroic writes when the user
+    # LaunchOptions. This matches exactly what HGL writes when the user
     # clicks "Add to Steam" from its own UI, which is the pattern Steam
     # reliably resolves. Using a bare "flatpak" word caused Steam to
     # misidentify the shortcut appid in some cases, breaking artwork,
@@ -1647,124 +1459,45 @@ def _create_heroic_steam_shortcut(game_key: str, on_progress=None,
         f'"heroic://launch?appName={app_name}&runner=sideload"'
     )
 
-    # Calculate appid from the full quoted exe path + title (Steam's algorithm).
-    # NOTE: this produces a different appid than the old bare "flatpak" pattern.
-    # Existing shortcuts written by older DeckOps installs will orphan on the
-    # old appid. Testers should fully uninstall and reinstall to get clean
-    # shortcuts with the correct appid.
-    shortcut_appid = _calc_shortcut_appid(exe_path, title)
+    # Get gyro mode for controller config assignment
+    try:
+        import config as _cfg
+        gyro_mode = _cfg.get_gyro_mode() or "hold"
+    except Exception:
+        gyro_mode = "hold"
 
-    uids = _find_all_steam_uids()
-    if not uids:
-        prog("  No Steam user accounts found - shortcut skipped.")
-        return
-
-    for uid in uids:
-        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
-        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
-
-        existing_names = _read_existing_shortcuts(shortcuts_path)
-        existing_raw = _read_shortcuts_raw(shortcuts_path)
-        next_idx = _get_next_index(existing_raw)
-
-        icon_path = os.path.join(grid_dir, f"{shortcut_appid}_icon.{game_def['icon_ext']}")
-
-        if title in existing_names:
-            prog(f"  Shortcut already exists: {title} "
-                 f"(remove old shortcut via cleanup script to update)")
-        else:
-            entry = {
-                "appid":               _to_signed32(shortcut_appid),
-                "AppName":             title,
-                "Exe":                 exe_path,
-                "StartDir":            start_dir,
-                "icon":                icon_path,
-                "ShortcutPath":        "",
-                "LaunchOptions":       launch_options,
-                "IsHidden":            0,
-                "AllowDesktopConfig":  1,
-                "AllowOverlay":        1,
-                "OpenVR":              0,
-                "Devkit":              0,
-                "DevkitGameID":        "",
-                "DevkitOverrideAppID": 0,
-                "LastPlayTime":        0,
-                "FlatpakAppID":        "",
-                "tags":                {"0": "DeckOps"},
-            }
-
-            entry_bytes = _make_shortcut_entry(next_idx, entry)
-            try:
-                _write_shortcuts_vdf(shortcuts_path, existing_raw, [entry_bytes])
-                prog(f"  Steam shortcut created: {title}")
-            except Exception as e:
-                prog(f"  Failed to write shortcut: {e}")
-
-        # Download artwork
-        _download_artwork(grid_dir, shortcut_appid, game_def, prog)
-
-        # Assign controller config
-        try:
-            import config as _cfg
-            from controller_profiles import install_controller_config
-            gyro_mode = _cfg.get_gyro_mode() or "hold"
-            install_controller_config(
-                uid, str(shortcut_appid),
-                game_def["template_type"], gyro_mode,
-            )
-            prog(f"    Controller profile assigned")
-        except Exception as ex:
-            prog(f"    Controller profile failed: {ex}")
-
-        # LCD Plutonium shortcuts must NOT have a Steam compat tool set.
-        # Steam wraps any non-Steam shortcut that has a compat tool inside
-        # Steam Linux Runtime (sniper). From inside that container the host's
-        # flatpak binary is invisible, so the "flatpak run ..." invocation
-        # fails. Heroic owns the Proton invocation downstream, so the
-        # Steam-side compat tool is not just unnecessary -- it actively
-        # breaks the launch by sandboxing flatpak away from the host.
-        #
-        # Clear any existing CompatToolMapping entry for this appid (one-time
-        # migration for installs that had GE-Proton set under prior patterns).
-        try:
-            import re as _re
-            steam_config = os.path.expanduser(
-                "~/.local/share/Steam/config/config.vdf"
-            )
-            if os.path.exists(steam_config):
-                with open(steam_config, "r", encoding="utf-8") as _f:
-                    _data = _f.read()
-                _appid_str = str(shortcut_appid)
-                _pattern = (
-                    rf'\t+"{_re.escape(_appid_str)}"\n\t+\{{[^}}]*\}}\n?'
-                )
-                if _re.search(_pattern, _data, _re.MULTILINE | _re.DOTALL):
-                    _data = _re.sub(
-                        _pattern, "", _data,
-                        flags=_re.MULTILINE | _re.DOTALL,
-                    )
-                    with open(steam_config, "w", encoding="utf-8") as _f:
-                        _f.write(_data)
-                    prog(f"    Cleared stale compat tool from shortcut")
-        except Exception as ex:
-            prog(f"    Could not clear compat tool: {ex}")
-
-    prog(f"  Shortcut appid: {shortcut_appid}")
+    # NOTE: the quoted exe path produces a different appid than the old bare
+    # "flatpak" pattern. Existing shortcuts written by older DeckOps installs
+    # will orphan on the old appid. Testers should fully uninstall and
+    # reinstall to get clean shortcuts with the correct appid.
+    #
+    # LCD Plutonium shortcuts must NOT have a Steam compat tool set. Steam
+    # wraps any non-Steam shortcut that has a compat tool inside Steam Linux
+    # Runtime (sniper). From inside that container the host's flatpak binary
+    # is invisible, so the "flatpak run ..." invocation fails. HGL owns the
+    # Proton invocation downstream, so the Steam-side compat tool is not just
+    # unnecessary -- it actively breaks the launch.
+    add_shortcut(
+        name=title,
+        exe_path=exe_path,
+        start_dir=start_dir,
+        launch_options=launch_options,
+        artwork_def=game_def,
+        template_type=game_def["template_type"],
+        gyro_mode=gyro_mode,
+        on_progress=on_progress,
+        clear_compat_tool=True,
+    )
 
 
 def _remove_heroic_steam_shortcut(game_key: str, on_progress=None):
     """
-    Remove the DeckOps Steam shortcut for a Heroic LCD game from
-    shortcuts.vdf for all discovered Steam UIDs.
+    Remove the DeckOps Steam shortcut for an HGL LCD game.
+    Delegates to shortcut.remove_shortcut for all VDF and artwork cleanup.
 
-    Calculates the appid using the same exe_path and title that were
-    used during install so the lookup matches exactly. Also removes
-    associated artwork files from the grid/ directory.
+    Uses the same exe_path and title that were used during install so the
+    appid calculation matches exactly what was written.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
     if game_key not in HEROIC_PLUT_GAMES:
         return
 
@@ -1772,94 +1505,14 @@ def _remove_heroic_steam_shortcut(game_key: str, on_progress=None):
     title    = game_def["title"]
 
     # Must match _create_heroic_steam_shortcut exactly
-    exe_path       = '"/usr/bin/flatpak"'
-    shortcut_appid = _calc_shortcut_appid(exe_path, title)
+    exe_path = '"/usr/bin/flatpak"'
 
-    uids = _find_all_steam_uids()
-    if not uids:
-        prog("  No Steam user accounts found - shortcut removal skipped.")
-        return
-
-    for uid in uids:
-        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
-        grid_dir       = os.path.join(USERDATA_DIR, uid, "config", "grid")
-
-        # ── Remove from shortcuts.vdf ────────────────────────────────────
-        if not os.path.exists(shortcuts_path):
-            continue
-
-        try:
-            with open(shortcuts_path, "rb") as f:
-                data = f.read()
-        except OSError as ex:
-            prog(f"  Could not read shortcuts.vdf for uid {uid}: {ex}")
-            continue
-
-        header = b'\x00shortcuts\x00'
-        footer = b'\x08\x08'
-
-        body = data
-        if body.startswith(header):
-            body = body[len(header):]
-        if body.endswith(footer):
-            body = body[:-2]
-        elif body.endswith(b'\x08'):
-            body = body[:-1]
-
-        # Split into individual entry blobs by locating entry start positions.
-        # Each entry starts with \x00<digits>\x00.
-        entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', body)]
-
-        if not entry_starts:
-            continue
-
-        entries = []
-        for i, start in enumerate(entry_starts):
-            end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(body)
-            entries.append(body[start:end])
-
-        # Filter out the entry whose AppName matches our title
-        title_bytes = title.encode("utf-8")
-        filtered = [
-            e for e in entries
-            if b'\x01AppName\x00' + title_bytes + b'\x00' not in e
-            and b'\x01appname\x00' + title_bytes + b'\x00' not in e
-        ]
-
-        if len(filtered) == len(entries):
-            prog(f"  No shortcut found for '{title}' in uid {uid}")
-        else:
-            # Reindex remaining entries sequentially from 0
-            reindexed = []
-            for new_idx, entry in enumerate(filtered):
-                entry = re.sub(rb'^\x00\d+\x00', f'\x00{new_idx}\x00'.encode(), entry)
-                reindexed.append(entry)
-
-            new_data = header + b''.join(reindexed) + footer
-            try:
-                with open(shortcuts_path, "wb") as f:
-                    f.write(new_data)
-                prog(f"  Removed Steam shortcut '{title}' for uid {uid}")
-            except OSError as ex:
-                prog(f"  Could not write shortcuts.vdf for uid {uid}: {ex}")
-
-        # ── Remove artwork from grid/ ────────────────────────────────────
-        artwork_suffixes = [
-            f"_icon.{game_def['icon_ext']}",
-            f"p.{game_def['grid_ext']}",
-            f".{game_def['wide_ext']}",
-            f"_hero.{game_def['hero_ext']}",
-            f"_logo.{game_def['logo_ext']}",
-        ]
-        for suffix in artwork_suffixes:
-            art_path = os.path.join(grid_dir, f"{shortcut_appid}{suffix}")
-            if os.path.exists(art_path):
-                try:
-                    os.remove(art_path)
-                except OSError:
-                    pass
-
-        prog(f"  Artwork cleaned for uid {uid}")
+    remove_shortcut(
+        name=title,
+        exe_path=exe_path,
+        artwork_def=game_def,
+        on_progress=on_progress,
+    )
 
 
 def cleanup_heroic_game(game_key: str, on_progress=None):
