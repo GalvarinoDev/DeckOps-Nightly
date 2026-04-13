@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """
-launcher_plut.py - Standalone Plutonium game launcher for LCD Steam Deck
+launcher_plut.py - Standalone Plutonium game launcher for Steam Deck
 
 A lightweight PyQt5 app that shows installed Plutonium games and lets
-the user pick a mode (MP, S/Z, ZM) to launch via Heroic Games Launcher.
-Designed to run as a non-Steam shortcut in Game Mode at 1280x800.
+the user pick a mode (MP, S/Z, ZM) to launch. Designed to run as a
+non-Steam shortcut in Game Mode at 1280x800.
 
 Flow:
   1. Read DeckOps config to find which Plutonium keys are set up.
   2. Show compact game rows with hero background art and mode buttons.
-  3. User taps a mode → fire Heroic for that game key → exit.
+  3. User taps a mode → route to the correct launch path → exit.
 
-LCD only. OLED users launch directly from their Steam library entries.
+Launch routing:
+  - OLED + Steam source → steam://rungameid/<appid> (exe wrapper handles Plutonium)
+  - LCD + Steam source  → Heroic Games Launcher (LCD compatibility path)
+  - Own game + wrapper  → run wrapper script directly (offline LAN mode)
+  - Own game (no wrap)  → Heroic Games Launcher (fallback)
 """
 
 import os
@@ -109,7 +113,21 @@ PLUT_GAMES = [
 ]
 
 
-# ── Heroic launch (online) ────────────────────────────────────────────────
+# ── launch helpers ────────────────────────────────────────────────────────
+
+# Game key → Steam appid for OLED Steam launch path.
+# These games have their exe replaced with a Plutonium wrapper by plutonium.py,
+# so launching through Steam runs the wrapper automatically.
+_KEY_TO_STEAM_APPID = {
+    "t4mp":  "10090",
+    "t4sp":  "10090",
+    "t5mp":  "42710",
+    "t5sp":  "42700",
+    "t6mp":  "202990",
+    "t6zm":  "212910",
+    "iw5mp": "42690",
+}
+
 
 def _heroic_app_name(game_key: str) -> str:
     """Generate the Heroic app_name for a DeckOps game key (matches heroic.py)."""
@@ -122,8 +140,23 @@ def _heroic_app_name(game_key: str) -> str:
 HEROIC_FLATPAK_ID = "com.heroicgameslauncher.hgl"
 
 
-def _launch_online(game_key: str):
-    """Fire Heroic to launch the given game key online, then exit."""
+def _launch_steam(game_key: str):
+    """Launch a Steam-owned game via steam:// protocol (OLED path), then exit."""
+    appid = _KEY_TO_STEAM_APPID.get(game_key)
+    if not appid:
+        print(f"No Steam appid for {game_key}, falling back to Heroic",
+              file=sys.stderr)
+        _launch_heroic(game_key)
+        return
+    try:
+        subprocess.Popen(["steam", f"steam://rungameid/{appid}"])
+    except Exception as ex:
+        print(f"Failed to launch via Steam: {ex}", file=sys.stderr)
+    QTimer.singleShot(1500, lambda: QApplication.instance().quit())
+
+
+def _launch_heroic(game_key: str):
+    """Fire Heroic to launch the given game key (LCD path), then exit."""
     app_name = _heroic_app_name(game_key)
     cmd = [
         "flatpak", "run", HEROIC_FLATPAK_ID,
@@ -152,15 +185,20 @@ def _hero_path(hero_file: str) -> str:
     return os.path.join(HEROES_DIR, hero_file)
 
 
-def _get_setup_plut_keys() -> dict:
+def _get_setup_plut_keys() -> tuple:
     """
-    Return Plutonium game keys that have been set up, with their metadata.
-    Returns dict of {game_key: {"source": str, "wrapper_path": str|None}}.
+    Return Plutonium game keys that have been set up, with their metadata,
+    and whether this is an OLED Deck.
+
+    Returns (dict, bool):
+      dict — {game_key: {"source": str, "wrapper_path": str|None}}
+      bool — True if OLED, False otherwise
     """
     try:
         sys.path.insert(0, SCRIPT_DIR)
         import config as cfg
         setup = cfg.get_setup_games()
+        oled = cfg.is_oled()
         result = {}
         for k, v in setup.items():
             if v.get("client") == "plutonium":
@@ -168,9 +206,9 @@ def _get_setup_plut_keys() -> dict:
                     "source": v.get("source", "steam"),
                     "wrapper_path": v.get("wrapper_path"),
                 }
-        return result
+        return result, oled
     except Exception:
-        return {}
+        return {}, False
 
 
 # ── widgets ──────────────────────────────────────────────────────────────────
@@ -181,7 +219,8 @@ class GameRow(QWidget):
     game title, and mode launch buttons.
     """
 
-    def __init__(self, game_def: dict, setup_info: dict, parent=None):
+    def __init__(self, game_def: dict, setup_info: dict, is_oled: bool = False,
+                 parent=None):
         super().__init__(parent)
         self._game_def = game_def
         self._bg_pixmap = None
@@ -248,13 +287,22 @@ class GameRow(QWidget):
                     f"QPushButton:pressed{{background:{self._color}99;}}"
                 )
 
+                # Launch routing:
+                #   Own game with wrapper → offline LAN mode (any hardware)
+                #   OLED + Steam source   → steam:// protocol (exe wrapper)
+                #   LCD + Steam source    → Heroic (LCD compatibility path)
+                #   Fallback              → Heroic
                 if source == "own" and wrapper and os.path.exists(wrapper):
                     btn.clicked.connect(
                         lambda checked=False, w=wrapper: _launch_offline(w)
                     )
+                elif is_oled and source == "steam":
+                    btn.clicked.connect(
+                        lambda checked=False, k=key: _launch_steam(k)
+                    )
                 else:
                     btn.clicked.connect(
-                        lambda checked=False, k=key: _launch_online(k)
+                        lambda checked=False, k=key: _launch_heroic(k)
                     )
 
                 lay.addWidget(btn, alignment=Qt.AlignVCenter)
@@ -322,7 +370,7 @@ class LauncherWindow(QWidget):
         self.setWindowTitle("DeckOps Launcher")
         self.setStyleSheet(f"background:{C_BG};")
 
-        setup_info = _get_setup_plut_keys()
+        setup_info, is_oled = _get_setup_plut_keys()
 
         root_lay = QVBoxLayout(self)
         root_lay.setContentsMargins(0, 0, 0, 0)
@@ -371,7 +419,7 @@ class LauncherWindow(QWidget):
         uninstalled = []
         for game_def in PLUT_GAMES:
             has_any = any(k in setup_info for k, _ in game_def["modes"])
-            row = GameRow(game_def, setup_info)
+            row = GameRow(game_def, setup_info, is_oled=is_oled)
             if has_any:
                 installed.append(row)
             else:

@@ -472,8 +472,12 @@ def _write_shortcuts_vdf(path: str, existing_raw: bytes, new_entries: list):
 
 # ── Artwork download ──────────────────────────────────────────────────────────
 
-def _download_artwork(grid_dir: str, appid: int, shortcut_def: dict, prog):
-    """Download all artwork for a shortcut to the grid directory (concurrent)."""
+def _download_artwork(grid_dir: str, appid: int, shortcut_def: dict, prog,
+                      force: bool = False):
+    """Download all artwork for a shortcut to the grid directory (concurrent).
+
+    force — if True, re-download even if the file already exists on disk.
+    """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     appid_str = str(appid)
@@ -494,7 +498,7 @@ def _download_artwork(grid_dir: str, appid: int, shortcut_def: dict, prog):
         if not url:
             continue
         dest = os.path.join(grid_dir, filename)
-        if os.path.exists(dest):
+        if not force and os.path.exists(dest):
             prog(f"    ✓ {label} (cached)")
             continue
         to_download.append((url, dest, label))
@@ -1215,8 +1219,9 @@ def create_launcher_shortcut(on_progress=None):
             except Exception as e:
                 prog(f"  Failed to write launcher shortcut: {e}")
 
-        # Download placeholder artwork
-        _download_artwork(grid_dir, shortcut_appid, LAUNCHER_ART, prog)
+        # Always re-download launcher artwork (URLs may change between versions)
+        _download_artwork(grid_dir, shortcut_appid, LAUNCHER_ART, prog,
+                          force=True)
 
         # Launcher shortcut must NOT have a compat tool — it's a native app.
         # Clear any stale CompatToolMapping entry (same pattern as game shortcuts).
