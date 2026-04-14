@@ -906,6 +906,153 @@ def remove_shortcut(name: str, exe_path: str, artwork_def: dict = None,
                         pass
 
 
+# ── Orphan shortcut cleanup ──────────────────────────────────────────────────
+#
+# When DeckOps changes the exe_path in a shortcut pattern, the CRC-based
+# appid changes. The old shortcut entry, artwork, and shader cache become
+# orphaned. This cleanup removes known orphan patterns automatically.
+#
+# To add a new orphan pattern: append (old_exe_path, title) to the list.
+# The exe_path must include quotes if the original shortcut entry did.
+
+# Known orphan patterns: old "flatpak" exe_path (before we switched to
+# "/usr/bin/flatpak"). These are the 7 LCD Plutonium game titles.
+_ORPHAN_PATTERNS = [
+    ('"flatpak"', "Call of Duty: World at War"),
+    ('"flatpak"', "Call of Duty: World at War - Multiplayer"),
+    ('"flatpak"', "Call of Duty: Black Ops"),
+    ('"flatpak"', "Call of Duty: Black Ops - Multiplayer"),
+    ('"flatpak"', "Call of Duty: Black Ops II - Multiplayer"),
+    ('"flatpak"', "Call of Duty: Black Ops II - Zombies"),
+    ('"flatpak"', "Call of Duty: Modern Warfare 3 (2011) - Multiplayer"),
+]
+
+
+def cleanup_orphan_shortcuts(on_progress=None):
+    """
+    Remove orphaned DeckOps shortcuts left by older builds that used a
+    different exe_path pattern. Also cleans associated artwork and shader
+    caches. Safe to call multiple times -- no-ops if no orphans exist.
+
+    Called automatically at the top of create_own_shortcuts() before new
+    entries are written.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    # Build set of orphan appids from known stale (exe_path, name) pairs
+    orphan_appids = set()
+    orphan_names = {}  # appid -> name, for logging
+    for exe_path, name in _ORPHAN_PATTERNS:
+        appid = _calc_shortcut_appid(exe_path, name)
+        orphan_appids.add(appid)
+        orphan_names[appid] = name
+
+    if not orphan_appids:
+        return
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        return
+
+    total_removed = 0
+
+    for uid in uids:
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+
+        if not os.path.exists(shortcuts_path):
+            continue
+
+        try:
+            with open(shortcuts_path, "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
+
+        header = b'\x00shortcuts\x00'
+        footer = b'\x08\x08'
+
+        body = data
+        if body.startswith(header):
+            body = body[len(header):]
+        if body.endswith(footer):
+            body = body[:-2]
+        elif body.endswith(b'\x08'):
+            body = body[:-1]
+
+        # Split into entries
+        entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', body)]
+        if not entry_starts:
+            continue
+
+        entries = []
+        for i, start in enumerate(entry_starts):
+            end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(body)
+            entries.append(body[start:end])
+
+        # Filter out orphans by checking their stored appid against our set
+        keep = []
+        removed_here = 0
+        for entry in entries:
+            appid_match = re.search(rb'\x02appid\x00(.{4})', entry)
+            if appid_match:
+                stored_appid = struct.unpack('<I', appid_match.group(1))[0]
+                if stored_appid in orphan_appids:
+                    label = orphan_names.get(stored_appid, str(stored_appid))
+                    prog(f"  Removed orphan shortcut: {label} (uid {uid})")
+                    removed_here += 1
+                    continue
+            keep.append(entry)
+
+        if removed_here > 0:
+            # Reindex remaining entries
+            reindexed = []
+            for new_idx, entry in enumerate(keep):
+                entry = re.sub(
+                    rb'^\x00\d+\x00',
+                    f'\x00{new_idx}\x00'.encode(),
+                    entry,
+                )
+                reindexed.append(entry)
+            new_data = header + b''.join(reindexed) + footer
+            try:
+                with open(shortcuts_path, "wb") as f:
+                    f.write(new_data)
+            except OSError as ex:
+                prog(f"  Could not write shortcuts.vdf: {ex}")
+            total_removed += removed_here
+
+        # Remove artwork for orphan appids
+        if os.path.isdir(grid_dir):
+            for appid in orphan_appids:
+                appid_str = str(appid)
+                try:
+                    for f in os.listdir(grid_dir):
+                        if f.startswith(appid_str):
+                            os.remove(os.path.join(grid_dir, f))
+                except OSError:
+                    pass
+
+    # Remove shader caches for orphan appids
+    shadercache_dir = os.path.join(STEAM_ROOT, "steamapps", "shadercache")
+    if os.path.isdir(shadercache_dir):
+        for appid in orphan_appids:
+            cache_dir = os.path.join(shadercache_dir, str(appid))
+            if os.path.isdir(cache_dir):
+                try:
+                    shutil.rmtree(cache_dir)
+                    prog(f"  Removed shader cache for orphan appid {appid}")
+                except OSError:
+                    pass
+
+    if total_removed > 0:
+        prog(f"Cleaned {total_removed} orphan shortcut(s)")
+    else:
+        prog("No orphan shortcuts found")
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def create_shortcuts(installed_games: dict, selected_keys: list,
@@ -1202,6 +1349,10 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
     def prog(msg):
         if on_progress:
             on_progress(msg)
+
+    # Clean up orphaned shortcuts from older DeckOps builds before
+    # writing new entries. Safe to call every time -- no-ops if clean.
+    cleanup_orphan_shortcuts(on_progress=on_progress)
 
     # Plutonium keys that use the Plutonium launcher/bootstrapper instead
     # of the original game exe. The shortcut points at the Plutonium binary.

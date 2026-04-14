@@ -1496,9 +1496,21 @@ if os.path.isdir(userdata):
                 found.add(appid)
                 continue
 
-            # Pattern 2: new Heroic native (Exe="flatpak", LaunchOptions has heroic://)
+            # Pattern 2: old Heroic native (Exe="flatpak", LaunchOptions has heroic://)
             if exe_clean == "flatpak":
                 # Find closest following LaunchOptions
+                best_lo = None
+                for lo_pos, lo in launch_opts:
+                    if lo_pos > name_pos:
+                        best_lo = lo
+                        break
+                if best_lo and "heroic://launch" in best_lo:
+                    appid = calc_shortcut_appid(best_exe, name)
+                    found.add(appid)
+                    continue
+
+            # Pattern 3: current Heroic native (Exe="/usr/bin/flatpak", LaunchOptions has heroic://)
+            if exe_clean == "/usr/bin/flatpak":
                 best_lo = None
                 for lo_pos, lo in launch_opts:
                     if lo_pos > name_pos:
@@ -1652,8 +1664,17 @@ for uid in os.listdir(userdata):
                 removed_here += 1
                 continue
 
-            # Pattern 2: new Heroic native (Exe=flatpak + heroic:// in LaunchOptions)
+            # Pattern 2: old Heroic native (Exe=flatpak + heroic:// in LaunchOptions)
             if exe == "flatpak":
+                m_lo = re.search(rb'\x01LaunchOptions\x00([^\x00]*)\x00', part)
+                if m_lo:
+                    lo = m_lo.group(1).decode("utf-8", "replace")
+                    if "heroic://launch" in lo:
+                        removed_here += 1
+                        continue
+
+            # Pattern 3: current Heroic native (Exe=/usr/bin/flatpak + heroic:// in LaunchOptions)
+            if exe == "/usr/bin/flatpak":
                 m_lo = re.search(rb'\x01LaunchOptions\x00([^\x00]*)\x00', part)
                 if m_lo:
                     lo = m_lo.group(1).decode("utf-8", "replace")
