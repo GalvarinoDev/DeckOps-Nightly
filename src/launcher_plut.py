@@ -1,21 +1,20 @@
 #!/usr/bin/env python3
 """
-launcher_plut.py - Standalone Plutonium game launcher for Steam Deck
+launcher_plut.py - Offline LAN launcher for Plutonium on Steam Deck
 
 A lightweight PyQt5 app that shows installed Plutonium games and lets
-the user pick a mode (MP, S/Z, ZM) to launch. Designed to run as a
-non-Steam shortcut in Game Mode at 1280x800.
+the user pick a mode (MP, S/Z, ZM) to launch in offline LAN mode.
+Designed to run as a non-Steam shortcut in Game Mode at 1280x800.
 
 Flow:
   1. Read DeckOps config to find which Plutonium keys are set up.
   2. Show compact game rows with hero background art and mode buttons.
-  3. User taps a mode → route to the correct launch path → exit.
+  3. User taps a mode → launch via bash <lan_wrapper_path> → exit.
 
-Launch routing:
-  - OLED + Steam source → steam://rungameid/<appid> (exe wrapper handles Plutonium)
-  - LCD + Steam source  → Heroic Games Launcher (LCD compatibility path)
-  - Own game + wrapper  → run wrapper script directly (offline LAN mode)
-  - Own game (no wrap)  → Heroic Games Launcher (fallback)
+Every installed game stores a lan_wrapper_path at install time. The
+wrapper is a bash script that calls Proton directly with the Plutonium
+bootstrapper and -lan flag. No Steam protocol, no Heroic, no online
+account needed. Works identically on OLED and LCD hardware.
 """
 
 import os
@@ -81,101 +80,51 @@ def _font(size=13, bold=False):
 
 # ── Plutonium game data ──────────────────────────────────────────────────────
 
+_HERO_BASE = (
+    "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly"
+    "/nightly/assets/images/launcher"
+)
+
 PLUT_GAMES = [
     {
         "base": "Call of Duty: World at War",
         "dev": "trey",
         "modes": [("t4mp", "MP"), ("t4sp", "S/Z")],
-        "hero_url": "https://cdn2.steamgriddb.com/hero_thumb/e369853df766fa44e1ed0ff613f563bd.jpg",
-        "hero_file": "waw_hero.jpg",
+        "hero_url": f"{_HERO_BASE}/waw-banner.png",
+        "hero_file": "waw-banner.png",
     },
     {
         "base": "Call of Duty: Black Ops",
         "dev": "trey",
         "modes": [("t5mp", "MP"), ("t5sp", "S/Z")],
-        "hero_url": "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_hero.jpg",
-        "hero_file": "bo1_hero.jpg",
+        "hero_url": f"{_HERO_BASE}/bo1-banner.png",
+        "hero_file": "bo1-banner.png",
     },
     {
         "base": "Call of Duty: Black Ops II",
         "dev": "trey",
         "modes": [("t6mp", "MP"), ("t6zm", "ZM")],
-        "hero_url": "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_hero.jpg",
-        "hero_file": "bo2_hero.jpg",
+        "hero_url": f"{_HERO_BASE}/bo2-banner.png",
+        "hero_file": "bo2-banner.png",
     },
     {
         "base": "Call of Duty: Modern Warfare 3",
         "dev": "iw",
         "modes": [("iw5mp", "MP")],
-        "hero_url": "https://cdn2.steamgriddb.com/hero_thumb/51770b1e6f66ba5d45e58a76e6a73dc2.jpg",
-        "hero_file": "mw3_hero.jpg",
+        "hero_url": f"{_HERO_BASE}/mw3-banner.png",
+        "hero_file": "mw3-banner.png",
     },
 ]
 
 
-# ── launch helpers ────────────────────────────────────────────────────────
+# ── launch helper ────────────────────────────────────────────────────────
 
-# Game key → Steam appid for OLED Steam launch path.
-# These games have their exe replaced with a Plutonium wrapper by plutonium.py,
-# so launching through Steam runs the wrapper automatically.
-_KEY_TO_STEAM_APPID = {
-    "t4mp":  "10090",
-    "t4sp":  "10090",
-    "t5mp":  "42710",
-    "t5sp":  "42700",
-    "t6mp":  "202990",
-    "t6zm":  "212910",
-    "iw5mp": "42690",
-}
-
-
-def _heroic_app_name(game_key: str) -> str:
-    """Generate the Heroic app_name for a DeckOps game key (matches heroic.py)."""
-    import hashlib, base64
-    digest = hashlib.sha256(f"deckops_plut_{game_key}".encode()).digest()
-    b64 = base64.urlsafe_b64encode(digest)[:19].decode()
-    return f"do_{b64}"
-
-
-HEROIC_FLATPAK_ID = "com.heroicgameslauncher.hgl"
-
-
-def _launch_steam(game_key: str):
-    """Launch a Steam-owned game via steam:// protocol (OLED path), then exit."""
-    appid = _KEY_TO_STEAM_APPID.get(game_key)
-    if not appid:
-        print(f"No Steam appid for {game_key}, falling back to Heroic",
-              file=sys.stderr)
-        _launch_heroic(game_key)
-        return
-    try:
-        subprocess.Popen(["steam", f"steam://rungameid/{appid}"])
-    except Exception as ex:
-        print(f"Failed to launch via Steam: {ex}", file=sys.stderr)
-    QTimer.singleShot(1500, lambda: QApplication.instance().quit())
-
-
-def _launch_heroic(game_key: str):
-    """Fire Heroic to launch the given game key (LCD path), then exit."""
-    app_name = _heroic_app_name(game_key)
-    cmd = [
-        "flatpak", "run", HEROIC_FLATPAK_ID,
-        "--no-gui", "--no-sandbox",
-        f"heroic://launch?appName={app_name}&runner=sideload",
-    ]
-    try:
-        subprocess.Popen(cmd)
-    except Exception as ex:
-        print(f"Failed to launch Heroic: {ex}", file=sys.stderr)
-    QTimer.singleShot(1500, lambda: QApplication.instance().quit())
-
-
-def _launch_offline(wrapper_path: str):
-    """Run the -lan wrapper script directly, then exit."""
+def _launch_lan(wrapper_path: str):
+    """Run the LAN wrapper script directly, then exit."""
     try:
         subprocess.Popen(["bash", wrapper_path])
     except Exception as ex:
-        print(f"Failed to launch wrapper: {ex}", file=sys.stderr)
+        print(f"Failed to launch LAN wrapper: {ex}", file=sys.stderr)
     QTimer.singleShot(1500, lambda: QApplication.instance().quit())
 
 
@@ -185,30 +134,26 @@ def _hero_path(hero_file: str) -> str:
     return os.path.join(HEROES_DIR, hero_file)
 
 
-def _get_setup_plut_keys() -> tuple:
+def _get_setup_plut_keys() -> dict:
     """
-    Return Plutonium game keys that have been set up, with their metadata,
-    and whether this is an OLED Deck.
+    Return Plutonium game keys that have been set up, with their
+    lan_wrapper_path for offline launching.
 
-    Returns (dict, bool):
-      dict — {game_key: {"source": str, "wrapper_path": str|None}}
-      bool — True if OLED, False otherwise
+    Returns dict — {game_key: {"lan_wrapper_path": str|None}}
     """
     try:
         sys.path.insert(0, SCRIPT_DIR)
         import config as cfg
         setup = cfg.get_setup_games()
-        oled = cfg.is_oled()
         result = {}
         for k, v in setup.items():
             if v.get("client") == "plutonium":
                 result[k] = {
-                    "source": v.get("source", "steam"),
-                    "wrapper_path": v.get("wrapper_path"),
+                    "lan_wrapper_path": v.get("lan_wrapper_path"),
                 }
-        return result, oled
+        return result
     except Exception:
-        return {}, False
+        return {}
 
 
 # ── widgets ──────────────────────────────────────────────────────────────────
@@ -219,8 +164,7 @@ class GameRow(QWidget):
     game title, and mode launch buttons.
     """
 
-    def __init__(self, game_def: dict, setup_info: dict, is_oled: bool = False,
-                 parent=None):
+    def __init__(self, game_def: dict, setup_info: dict, parent=None):
         super().__init__(parent)
         self._game_def = game_def
         self._bg_pixmap = None
@@ -256,7 +200,7 @@ class GameRow(QWidget):
         title.setStyleSheet("color:#FFF;background:transparent;")
         left.addWidget(title)
 
-        badge = QLabel("PLUTONIUM")
+        badge = QLabel("LAN MODE")
         badge.setFont(_font(9, bold=True))
         badge.setFixedHeight(20)
         badge.setFixedWidth(90)
@@ -274,36 +218,31 @@ class GameRow(QWidget):
         if self._has_modes:
             for key, label in self._available:
                 info = setup_info[key]
-                source = info["source"]
-                wrapper = info.get("wrapper_path")
+                lan_path = info.get("lan_wrapper_path")
+                has_wrapper = lan_path and os.path.exists(lan_path)
 
                 btn = QPushButton(label)
                 btn.setFont(_font(14, bold=True))
                 btn.setFixedSize(120, 52)
-                btn.setStyleSheet(
-                    f"QPushButton{{background:{self._color};color:#FFF;"
-                    f"border:none;border-radius:8px;}}"
-                    f"QPushButton:hover{{background:{self._color}CC;}}"
-                    f"QPushButton:pressed{{background:{self._color}99;}}"
-                )
 
-                # Launch routing:
-                #   Own game with wrapper → offline LAN mode (any hardware)
-                #   OLED + Steam source   → steam:// protocol (exe wrapper)
-                #   LCD + Steam source    → Heroic (LCD compatibility path)
-                #   Fallback              → Heroic
-                if source == "own" and wrapper and os.path.exists(wrapper):
-                    btn.clicked.connect(
-                        lambda checked=False, w=wrapper: _launch_offline(w)
+                if has_wrapper:
+                    btn.setStyleSheet(
+                        f"QPushButton{{background:{self._color};color:#FFF;"
+                        f"border:none;border-radius:8px;}}"
+                        f"QPushButton:hover{{background:{self._color}CC;}}"
+                        f"QPushButton:pressed{{background:{self._color}99;}}"
                     )
-                elif is_oled and source == "steam":
                     btn.clicked.connect(
-                        lambda checked=False, k=key: _launch_steam(k)
+                        lambda checked=False, w=lan_path: _launch_lan(w)
                     )
                 else:
-                    btn.clicked.connect(
-                        lambda checked=False, k=key: _launch_heroic(k)
+                    # Installed but LAN wrapper missing — disable
+                    btn.setStyleSheet(
+                        f"QPushButton{{background:{C_DARK_BTN};color:{C_DIM};"
+                        f"border:none;border-radius:8px;}}"
                     )
+                    btn.setEnabled(False)
+                    btn.setToolTip("LAN wrapper not found — reinstall may fix this")
 
                 lay.addWidget(btn, alignment=Qt.AlignVCenter)
         else:
@@ -367,10 +306,10 @@ class LauncherWindow(QWidget):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DeckOps Launcher")
+        self.setWindowTitle("DeckOps Offline")
         self.setStyleSheet(f"background:{C_BG};")
 
-        setup_info, is_oled = _get_setup_plut_keys()
+        setup_info = _get_setup_plut_keys()
 
         root_lay = QVBoxLayout(self)
         root_lay.setContentsMargins(0, 0, 0, 0)
@@ -388,7 +327,7 @@ class LauncherWindow(QWidget):
         title.setStyleSheet(f"color:{C_TREY};background:transparent;")
         hl.addWidget(title)
 
-        subtitle = QLabel("LAUNCHER")
+        subtitle = QLabel("OFFLINE")
         subtitle.setFont(_font(12))
         subtitle.setStyleSheet(f"color:{C_DIM};background:transparent;")
         subtitle.setContentsMargins(8, 4, 0, 0)
@@ -419,7 +358,7 @@ class LauncherWindow(QWidget):
         uninstalled = []
         for game_def in PLUT_GAMES:
             has_any = any(k in setup_info for k, _ in game_def["modes"])
-            row = GameRow(game_def, setup_info, is_oled=is_oled)
+            row = GameRow(game_def, setup_info)
             if has_any:
                 installed.append(row)
             else:
