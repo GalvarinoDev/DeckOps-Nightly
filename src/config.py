@@ -28,7 +28,8 @@ DEFAULTS = {
                                  # NOTE: this will also be used for future Bazzite, Steam Box, and other handheld support on SteamOS
     "ge_proton_version": None,   # e.g. "GE-Proton10-32"
     "steam_root": None,
-    "setup_games": {},           # key: game key, value: { "client": ..., "source": "steam"|"own", "setup_at": timestamp }
+    "setup_games": {},           # key: game key, value: { "client": ..., "source": "steam"|"own", "setup_at": timestamp,
+                                 #   "lan_wrapper_path": path to -lan bash script for offline launcher (all sources) }
     "game_source": None,         # "steam" or "own"
     "music_enabled": True,       # background music on/off
     "music_volume":  0.4,        # 0.0 to 1.0
@@ -236,14 +237,18 @@ def get_steam_display_name(steam_root: str | None = None) -> str | None:
 
 
 def mark_game_setup(game_key: str, client: str, source: str = "steam",
-                    wrapper_path: str = None):
+                    wrapper_path: str = None,
+                    lan_wrapper_path: str = None):
     """
     Record that a game has been set up successfully.
-    game_key     -- e.g. 'cod4mp', 'iw4mp', 't5sp'
-    client       -- e.g. 'cod4x', 'iw4x', 'plutonium'
-    source       -- 'steam' or 'own' (which install path was used)
-    wrapper_path -- optional path to the offline launcher wrapper script
-                    (LCD own games only, used by launcher_plut.py)
+    game_key         -- e.g. 'cod4mp', 'iw4mp', 't5sp'
+    client           -- e.g. 'cod4x', 'iw4x', 'plutonium'
+    source           -- 'steam' or 'own' (which install path was used)
+    wrapper_path     -- optional path to the online launcher wrapper script
+                        (OLED own games, used by legacy callers)
+    lan_wrapper_path -- optional path to the -lan bash script for offline
+                        mode. Used by launcher_plut.py for all sources and
+                        both hardware models.
     """
     config = load()
     entry = {
@@ -253,6 +258,8 @@ def mark_game_setup(game_key: str, client: str, source: str = "steam",
     }
     if wrapper_path:
         entry["wrapper_path"] = wrapper_path
+    if lan_wrapper_path:
+        entry["lan_wrapper_path"] = lan_wrapper_path
     config["setup_games"][game_key] = entry
     save(config)
 
