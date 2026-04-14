@@ -1,15 +1,13 @@
 """
-heroic.py - LCD Plutonium install path (Heroic Games Launcher)
+plutonium_lcd.py - LCD Plutonium install path (Heroic Games Launcher)
 
 LCD Steam Decks can't launch Plutonium through Steam's Proton runtime
-because Steam injects DLLs into Wine prefixes that cause false flags with
-Plutonium's anti-cheat system. Heroic's Flatpak version doesn't inject
-those DLLs, so LCD users route their Plutonium games through Heroic.
+due to LCD compatibility issues. Heroic's Flatpak version doesn't have
+this problem, so LCD users route their Plutonium games through Heroic.
 
 This module owns the full LCD install flow -- it is the LCD counterpart
-to plutonium.py (queued to be renamed plutonium_lcd.py in a later fix).
-plutonium.py's install_plutonium dispatches to install_plutonium_lcd at
-the top of the function when running on LCD.
+to plutonium_oled.py. plutonium_oled.py's install_plutonium dispatches
+to install_plutonium_lcd at the top of the function when running on LCD.
 
 Architecture (Shape A -- shared Heroic default prefix):
   1. Install Heroic via Flatpak if not present.
@@ -29,7 +27,7 @@ Architecture (Shape A -- shared Heroic default prefix):
      launcherArgs="plutonium://play/<key>" and winePrefix pointed at the
      same shared prefix. Steam shortcuts launch via the heroic:// protocol.
 
-OLED Decks do not use this module at all -- plutonium.py handles OLED
+OLED Decks do not use this module at all -- plutonium_oled.py handles OLED
 directly through Steam's Proton runtime and a bash wrapper per game.
 """
 
@@ -92,8 +90,8 @@ BOOTSTRAP_APP_NAME = "do_plut_bootstrap"
 BOOTSTRAP_TITLE    = "DeckOps Plutonium Setup"
 
 # Map each Plutonium game key to the config.json path field Plutonium uses
-# for that game's install directory. Mirrors plutonium.GAME_META so heroic.py
-# doesn't have to import from plutonium.py.
+# for that game's install directory. Mirrors plutonium_oled.GAME_META so
+# plutonium_lcd.py doesn't have to import from plutonium_oled.py.
 PLUT_CONFIG_KEYS = {
     "t4sp":  "t4Path",
     "t4mp":  "t4Path",
@@ -132,7 +130,7 @@ LCD_OWN_WRAPPER_EXES = {
 }
 
 # Shared Plutonium directories (bin/, launcher/, games/) live here. One real
-# copy shared across all prefixes via symlinks. Same location as plutonium.py
+# copy shared across all prefixes via symlinks. Same location as plutonium_oled.py
 # uses for OLED so LCD and OLED share the same shared dir if both are present.
 SHARED_PLUT_DIR = os.path.expanduser("~/.local/share/deckops/plutonium_shared")
 _PLUT_SHARED_SUBDIRS = ("bin", "launcher", "games")
@@ -550,7 +548,7 @@ def _remove_heroic_game_config(game_key: str, on_progress=None):
 
 
 # ── LCD Shape A helpers ─────────────────────────────────────────────────────
-# Everything below powers the LCD Plutonium install flow. plutonium.py's
+# Everything below powers the LCD Plutonium install flow. plutonium_oled.py's
 # install_plutonium dispatches to install_plutonium_lcd at the top of the
 # function on LCD, so these helpers are the actual entry points for LCD.
 
@@ -589,7 +587,7 @@ def is_plutonium_ready_lcd() -> bool:
 
 
 def _wine_path_lcd(linux_path: str) -> str:
-    """Convert a Linux path to Wine Z: drive notation (same as plutonium.py)."""
+    """Convert a Linux path to Wine Z: drive notation (same as plutonium_oled.py)."""
     return "Z:" + linux_path.replace("/", "\\")
 
 
@@ -643,8 +641,8 @@ def _write_plutonium_config_lcd(plut_dir: str, selected_keys: list,
 def _write_metadata_lcd(install_dir: str, data: dict):
     """
     Write the DeckOps metadata sentinel into a game's install directory.
-    Mirrors plutonium._write_metadata so heroic.py doesn't need to import
-    private helpers from plutonium.py.
+    Mirrors plutonium_oled._write_metadata so plutonium_lcd.py doesn't need
+    to import private helpers from plutonium_oled.py.
     """
     if not install_dir:
         return
@@ -782,8 +780,8 @@ def _copy_plut_to_game_prefix_lcd(src_plut_dir: str, dest_plut_dir: str,
 def _write_lcd_config(plut_dir: str, game_key: str, installed_games: dict):
     """
     Write config.json inside a game prefix's Plutonium dir with the correct
-    game install paths. Same as plutonium._write_config but uses heroic.py's
-    own PLUT_CONFIG_KEYS and _wine_path_lcd.
+    game install paths. Same as plutonium_oled._write_config but uses
+    plutonium_lcd's own PLUT_CONFIG_KEYS and _wine_path_lcd.
     """
     config_path = os.path.join(plut_dir, "config.json")
 

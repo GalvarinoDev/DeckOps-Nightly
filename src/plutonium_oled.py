@@ -1,8 +1,8 @@
 """
-plutonium.py - DeckOps installer for Plutonium (OLED path)
+plutonium_oled.py - DeckOps installer for Plutonium (OLED path)
 (Call of Duty: MW3, World at War, Black Ops, Black Ops II)
 
-LCD Decks are dispatched to plutonium_lcd.py (currently heroic.py) early in
+LCD Decks are dispatched to plutonium_lcd.py early in
 install_plutonium(). Everything below the LCD dispatch is OLED-only.
 
 OLED flow:
@@ -55,7 +55,7 @@ METADATA_FILE = "deckops_plutonium.json"
 # Standalone wrapper exe names for OLED own games.
 # These are new files dropped into the game folder — the original exe is
 # left untouched. shortcut.py points the non-Steam shortcut at these.
-# Same filenames as LCD's LCD_OWN_WRAPPER_EXES in heroic.py so the
+# Same filenames as LCD's LCD_OWN_WRAPPER_EXES in plutonium_lcd.py so the
 # launcher treats both models identically.
 OLED_OWN_WRAPPER_EXES = {
     "t4sp":  "t4plutsp.exe",
@@ -482,7 +482,7 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
                    proton_path: str, compatdata_path: str, plut_dir: str):
     """
     Replace the game exe with a bash wrapper that launches Plutonium
-    through Proton. OLED only — LCD uses plutonium_lcd.py (heroic.py).
+    through Proton. OLED only — LCD uses plutonium_lcd.py.
 
     Calls plutonium-launcher-win32.exe with a protocol URL.
     Requires the user to have logged in.
@@ -556,7 +556,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     """
     Full install flow for a single Plutonium game.
 
-    LCD Decks are dispatched to plutonium_lcd.py (currently heroic.py) early
+    LCD Decks are dispatched to plutonium_lcd.py early
     in this function. Everything after the dispatch is OLED-only.
 
     Assumes the user has already logged in and closed Plutonium via
@@ -581,11 +581,11 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     # ── LCD dispatch ──────────────────────────────────────────────────────
     # LCD Decks use Heroic Games Launcher with a single shared Wine prefix
     # for all Plutonium games. Everything from downloading the bootstrapper
-    # to writing per-game shortcuts lives in plutonium_lcd.py (currently
-    # heroic.py). This function is OLED-only past this point.
+    # to writing per-game shortcuts lives in plutonium_lcd.py.
+    # This function is OLED-only past this point.
     import config as _cfg_lcd
     if not _cfg_lcd.is_oled():
-        from heroic import install_plutonium_lcd
+        from plutonium_lcd import install_plutonium_lcd
         wrapper_path = install_plutonium_lcd(
             game, game_key, installed_games,
             on_progress=on_progress,
@@ -627,13 +627,13 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     _write_config(dest_plut_dir, keys_for_appid, installed_games)
 
     # Install DeckOps client-side menu mod (e.g. mainlobby.lua for T6 MP).
-    # OLED only -- LCD handles its own setup in plutonium_lcd.py (heroic.py).
+    # OLED only -- LCD handles its own setup in plutonium_lcd.py.
     prog(65, "Installing menu mod...")
     _install_menu_mod(dest_plut_dir, game_key,
                       on_progress=lambda msg: prog(67, msg))
 
     # ── OLED only past this point ────────────────────────────────────────
-    # LCD dispatched to plutonium_lcd.py (heroic.py) at the top of this
+    # LCD dispatched to plutonium_lcd.py at the top of this
     # function. OLED games get a Steam-side bash wrapper + metadata.
     wrapper_path = None
     if source == "own":
@@ -689,7 +689,7 @@ def uninstall_plutonium(game: dict, game_key: str):
     # Clean up Heroic entries if this was an LCD Heroic install
     if meta.get("lcd_heroic"):
         try:
-            from heroic import cleanup_heroic_game
+            from plutonium_lcd import cleanup_heroic_game
             cleanup_heroic_game(game_key)
         except Exception:
             pass  # Non-fatal - Heroic may not be installed
