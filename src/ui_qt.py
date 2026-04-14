@@ -1168,7 +1168,7 @@ class InstallScreen(QWidget):
 
     def _run(self):
         from wrapper import get_proton_path, find_compatdata, kill_steam
-        from plutonium import launch_bootstrapper, is_plutonium_ready, install_plutonium
+        from plutonium_oled import launch_bootstrapper, is_plutonium_ready, install_plutonium
         from cod4x import install_cod4x
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
@@ -1285,7 +1285,7 @@ class InstallScreen(QWidget):
             # later launch the games. OLED logs in inside the dedicated
             # DeckOps prefix at ~/.local/share/deckops/plutonium_prefix/.
             if is_lcd:
-                from heroic import (launch_bootstrapper_lcd,
+                from plutonium_lcd import (launch_bootstrapper_lcd,
                                     is_plutonium_ready_lcd)
                 plut_ready = is_plutonium_ready_lcd()
             else:
@@ -1385,7 +1385,7 @@ class InstallScreen(QWidget):
                     self._s.progress.emit(bp, f"Setting up {base_name}...")
                 def op_plut(pct, msg, _b=bp): self._s.progress.emit(_b + int(pct / 100 * 8), msg)
                 try:
-                    from plutonium import GAME_META as _PLUT_META
+                    from plutonium_oled import GAME_META as _PLUT_META
                     _plut_appid = _PLUT_META[key][0] if key in _PLUT_META else gd["appid"]
                     compat = find_compatdata(self.steam_root, _plut_appid,
                                               game_install_dir=game["install_dir"] if game else None)
@@ -2032,11 +2032,11 @@ class ConfigureScreen(QWidget):
         sr = cfg.load().get("steam_root", "")
         if not sr:
             return []
-        # Pull the actual per-game appids from plutonium.py so we hit every
+        # Pull the actual per-game appids from plutonium_oled.py so we hit every
         # prefix, not just the card-level appid. BO1 MP (42710), BO2 ZM
         # (212910) etc. would be missed otherwise.
         try:
-            from plutonium import GAME_META
+            from plutonium_oled import GAME_META
             appids = sorted({str(v[0]) for v in GAME_META.values()})
         except ImportError:
             # Fallback: grab appids from cards that mention plutonium
@@ -2298,7 +2298,7 @@ class UpdateScreen(QWidget):
         from iw4x import install_iw4x
         from cod4x import install_cod4x
         from iw3sp import install_iw3sp
-        from plutonium import install_plutonium
+        from plutonium_oled import install_plutonium
 
         has_cod4  = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k, _, _ in self.selected)
         has_iw4x  = any(KEY_CLIENT.get(k) == "iw4x" for k, _, _ in self.selected)
@@ -2333,7 +2333,7 @@ class UpdateScreen(QWidget):
             def op(pct, msg, _b=bp): self._s.progress.emit(_b + int(pct / 100 * (90 // total)), msg)
             c = KEY_CLIENT.get(key, gd.get("client", ""))
             try:
-                from plutonium import GAME_META as _PLUT_META
+                from plutonium_oled import GAME_META as _PLUT_META
                 _appid = _PLUT_META[key][0] if (c == "plutonium" and key in _PLUT_META) else gd["appid"]
                 compat = find_compatdata(self.steam_root, _appid,
                                          game_install_dir=game.get("install_dir"))
@@ -2511,13 +2511,13 @@ class OwnInstallScreen(QWidget):
         # routes through Heroic (shared default prefix); OLED uses the
         # dedicated DeckOps prefix via Proton directly.
         if has_plut:
-            from plutonium import (launch_bootstrapper, is_plutonium_ready,
+            from plutonium_oled import (launch_bootstrapper, is_plutonium_ready,
                                    install_plutonium)
-            from plutonium import GAME_META as _PLUT_META
+            from plutonium_oled import GAME_META as _PLUT_META
             is_lcd = not cfg.is_oled()
 
             if is_lcd:
-                from heroic import (launch_bootstrapper_lcd,
+                from plutonium_lcd import (launch_bootstrapper_lcd,
                                     is_plutonium_ready_lcd)
                 plut_ready = is_plutonium_ready_lcd()
             else:
