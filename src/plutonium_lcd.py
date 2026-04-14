@@ -129,6 +129,19 @@ LCD_OWN_WRAPPER_EXES = {
     "iw5mp": "iw5plutmp.exe",
 }
 
+# Sidecar -lan wrapper script names for LCD own game offline mode.
+# LCD Steam games use the replaced exe as their lan path (already written
+# by _write_lcd_wrapper). Own games get a separate sidecar here.
+LCD_LAN_WRAPPER_NAMES = {
+    "t4sp":  "t4plut_lan.sh",
+    "t4mp":  "t4plut_lan.sh",
+    "t5sp":  "t5plut_lan.sh",
+    "t5mp":  "t5plut_lan.sh",
+    "t6mp":  "t6plut_lan.sh",
+    "t6zm":  "t6plut_lan.sh",
+    "iw5mp": "iw5plut_lan.sh",
+}
+
 # Shared Plutonium directories (bin/, launcher/, games/) live here. One real
 # copy shared across all prefixes via symlinks. Same location as plutonium_oled.py
 # uses for OLED so LCD and OLED share the same shared dir if both are present.
@@ -921,6 +934,57 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
 #     return wrapper_path
 
 
+def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
+                            proton_path: str, compatdata_path: str,
+                            plut_dir: str) -> str | None:
+    """
+    Write a sidecar -lan bash script for LCD own game offline mode.
+
+    Creates a new shell script (e.g. t4plut_lan.sh) alongside the game
+    files. Never replaces or modifies any existing file. launcher_plut.py
+    reads the path from config and calls bash on it for offline play.
+
+    Only used for own games. LCD Steam games use the replaced game exe
+    (written by _write_lcd_wrapper) as their lan_wrapper_path.
+
+    Returns the full path to the written script, or None if game_key
+    is not in LCD_LAN_WRAPPER_NAMES.
+    """
+    if game_key not in LCD_LAN_WRAPPER_NAMES:
+        return None
+
+    install_dir  = game["install_dir"]
+    wrapper_name = LCD_LAN_WRAPPER_NAMES[game_key]
+    wrapper_path = os.path.join(install_dir, wrapper_name)
+
+    try:
+        import config as _cfg
+        player_name = _cfg.get_player_name() or "Player"
+    except Exception:
+        player_name = "Player"
+
+    bootstrapper  = os.path.join(plut_dir, "bin",
+                                  "plutonium-bootstrapper-win32.exe")
+    game_dir_wine = _wine_path_lcd(install_dir)
+
+    script = (
+        "#!/bin/bash\n"
+        f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
+        f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
+        f"cd \"{plut_dir}\"\n"
+        f"exec \"{proton_path}\" run \"{bootstrapper}\" "
+        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+    )
+
+    with open(wrapper_path, "wb") as f:
+        f.write(script.encode("utf-8"))
+
+    os.chmod(wrapper_path, os.stat(wrapper_path).st_mode |
+             stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    return wrapper_path
+
+
 def _download_plutonium_exe(dest_dir: str, on_progress=None) -> str:
     """
     Download plutonium.exe into dest_dir. Returns the full path to the
@@ -1343,18 +1407,6 @@ def install_plutonium_lcd(game: dict, game_key: str,
         on_progress=lambda m: prog(20, m),
     )
 
-    # 2b. Install DeckOps client-side menu mod into the shared prefix.
-    #     The shared prefix is what Plutonium reads at runtime for all LCD
-    #     games, so installing here covers both Steam and own game sources.
-    #     Non-fatal -- game works without the mod if download fails.
-    prog(22, "Installing menu mod...")
-    try:
-        from plutonium_oled import _install_menu_mod
-        _install_menu_mod(shared_plut_dir, game_key,
-                          on_progress=lambda msg: prog(23, msg))
-    except Exception as _mod_ex:
-        prog(23, f"  Menu mod skipped: {_mod_ex}")
-
     # 3. Per-game Heroic sideload entry + GamesConfig (kept for future
     #    online play through ManagementScreen -- Steam shortcuts are
     #    disabled via _create_heroic_steam_shortcut early return)
@@ -1401,14 +1453,26 @@ def install_plutonium_lcd(game: dict, game_key: str,
         # 7. Write bash wrapper for Steam-owned games (exe replacement).
         #    Own games launch via Heroic shortcuts created in step 3
         #    (_create_heroic_steam_shortcut) — no wrapper needed.
+        lan_wrapper_path = None
         if source == "own":
-            prog(80, "Own game — launches via Heroic shortcut")
+            prog(80, "Own game — writing offline LAN wrapper...")
+            lan_wrapper_path = _write_lcd_lan_wrapper(
+                game, game_key, steam_root, proton_path,
+                compatdata_path, shared_plut_dir,
+            )
         elif proton_path and steam_root:
             prog(80, "Writing offline launcher wrapper...")
             _write_lcd_wrapper(
                 game, game_key, steam_root, proton_path,
                 compatdata_path, dest_plut_dir,
             )
+            # The replaced exe IS the lan wrapper for Steam games.
+            # Capture the path so the launcher can find it.
+            if game_key in PLUT_GAME_EXES:
+                _, exe_name = PLUT_GAME_EXES[game_key]
+                lan_wrapper_path = os.path.join(
+                    game["install_dir"], exe_name
+                )
         else:
             prog(80, "Skipping wrapper -- missing proton_path or steam_root")
 
@@ -1436,6 +1500,12 @@ def install_plutonium_lcd(game: dict, game_key: str,
     if wrapper_path:
         meta["wrapper_path"] = wrapper_path
     _write_metadata_lcd(game.get("install_dir", ""), meta)
+
+    import config as _cfg_lcd
+    _cfg_lcd.mark_game_setup(
+        game_key, "plutonium", source=source,
+        lan_wrapper_path=lan_wrapper_path if compatdata_path else None,
+    )
 
     prog(100, f"Plutonium ready for {game.get('name', game_key)}!")
     return wrapper_path
