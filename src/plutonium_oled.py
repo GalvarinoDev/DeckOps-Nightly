@@ -67,6 +67,20 @@ OLED_OWN_WRAPPER_EXES = {
     "iw5mp": "iw5plutmp.exe",
 }
 
+# Sidecar -lan wrapper script names for OLED offline mode.
+# These are written alongside the game files (never replacing anything)
+# and launched by launcher_plut.py for offline play. Shell scripts rather
+# than .exe so they don't interfere with Steam's file validation.
+OLED_LAN_WRAPPER_NAMES = {
+    "t4sp":  "t4plut_lan.sh",
+    "t4mp":  "t4plut_lan.sh",
+    "t5sp":  "t5plut_lan.sh",
+    "t5mp":  "t5plut_lan.sh",
+    "t6mp":  "t6plut_lan.sh",
+    "t6zm":  "t6plut_lan.sh",
+    "iw5mp": "iw5plut_lan.sh",
+}
+
 # DeckOps client-side menu mods packaged as .iwd files (renamed .zip).
 # Downloaded from the repo and placed in Plutonium's storage/t6/raw/
 # directory where they are loaded automatically on game launch.
@@ -478,6 +492,58 @@ def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
     return wrapper_path
 
 
+def _write_oled_lan_wrapper(game: dict, game_key: str, steam_root: str,
+                             proton_path: str, compatdata_path: str,
+                             plut_dir: str) -> str | None:
+    """
+    Write a sidecar -lan bash script for OLED offline mode.
+
+    Creates a new shell script (e.g. t4plut_lan.sh) alongside the game
+    files. Never replaces or modifies any existing file. launcher_plut.py
+    reads the path from config and calls bash on it for offline play.
+
+    Uses the bootstrapper with -lan flag so no Plutonium account is needed.
+    Written for both Steam and own game sources -- the path differs but
+    the script content is the same.
+
+    Returns the full path to the written script, or None if game_key
+    is not in OLED_LAN_WRAPPER_NAMES.
+    """
+    if game_key not in OLED_LAN_WRAPPER_NAMES:
+        return None
+
+    install_dir  = game["install_dir"]
+    wrapper_name = OLED_LAN_WRAPPER_NAMES[game_key]
+    wrapper_path = os.path.join(install_dir, wrapper_name)
+
+    try:
+        import config as _cfg
+        player_name = _cfg.get_player_name() or "Player"
+    except Exception:
+        player_name = "Player"
+
+    bootstrapper  = os.path.join(plut_dir, "bin",
+                                  "plutonium-bootstrapper-win32.exe")
+    game_dir_wine = "Z:" + install_dir.replace("/", "\\")
+
+    script = (
+        "#!/bin/bash\n"
+        f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
+        f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
+        f"cd \"{plut_dir}\"\n"
+        f"exec \"{proton_path}\" run \"{bootstrapper}\" "
+        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+    )
+
+    with open(wrapper_path, "wb") as f:
+        f.write(script.encode("utf-8"))
+
+    os.chmod(wrapper_path, os.stat(wrapper_path).st_mode |
+             stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    return wrapper_path
+
+
 def _write_wrapper(game: dict, game_key: str, steam_root: str,
                    proton_path: str, compatdata_path: str, plut_dir: str):
     """
@@ -644,16 +710,34 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
             compatdata_path, dest_plut_dir,
         )
 
+        prog(90, "Writing offline LAN wrapper...")
+        lan_wrapper_path = _write_oled_lan_wrapper(
+            game, game_key, steam_root, proton_path,
+            compatdata_path, dest_plut_dir,
+        )
+
         prog(95, "Saving metadata...")
         _write_metadata(game["install_dir"], {
             "game_key":    game_key,
             "plut_dir":    dest_plut_dir,
         })
+        import config as _cfg_own
+        _cfg_own.mark_game_setup(
+            game_key, "plutonium", source="own",
+            wrapper_path=wrapper_path,
+            lan_wrapper_path=lan_wrapper_path,
+        )
     else:
         # OLED Steam games: replace the original exe with a bash wrapper
         prog(80, "Writing launcher wrapper...")
         _write_wrapper(game, game_key, steam_root, proton_path,
                        compatdata_path, dest_plut_dir)
+
+        prog(90, "Writing offline LAN wrapper...")
+        lan_wrapper_path = _write_oled_lan_wrapper(
+            game, game_key, steam_root, proton_path,
+            compatdata_path, dest_plut_dir,
+        )
 
         prog(95, "Saving metadata...")
         _write_metadata(game["install_dir"], {
@@ -662,6 +746,11 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
             "wrapper_exe": os.path.join(game["install_dir"],
                                         GAME_META[game_key][2]),
         })
+        import config as _cfg_steam
+        _cfg_steam.mark_game_setup(
+            game_key, "plutonium", source="steam",
+            lan_wrapper_path=lan_wrapper_path,
+        )
 
     prog(100, f"Plutonium ready for {game['name']}!")
     return wrapper_path
