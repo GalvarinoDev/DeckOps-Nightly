@@ -1397,14 +1397,16 @@ class InstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-            # Create the DeckOps Plutonium Launcher shortcut (both OLED and LCD, once)
-            try:
-                from shortcut import create_launcher_shortcut
-                create_launcher_shortcut(
-                    on_progress=lambda m: self._s.log.emit(m)
-                )
-            except Exception as ex:
-                self._s.log.emit(f"  Launcher shortcut failed: {ex}")
+            # Create the DeckOps Plutonium Launcher shortcut (LCD only —
+            # OLED users launch Plutonium from their Steam library entries)
+            if not cfg.is_oled():
+                try:
+                    from shortcut import create_launcher_shortcut
+                    create_launcher_shortcut(
+                        on_progress=lambda m: self._s.log.emit(m)
+                    )
+                except Exception as ex:
+                    self._s.log.emit(f"  Launcher shortcut failed: {ex}")
 
         # ── iw4x (Steam closed) ───────────────────────────────────────────────
         if has_iw4x:
@@ -2704,14 +2706,16 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-            # Create the DeckOps Plutonium Launcher shortcut (both OLED and LCD, once)
-            try:
-                from shortcut import create_launcher_shortcut
-                create_launcher_shortcut(
-                    on_progress=lambda m: self._s.log.emit(m)
-                )
-            except Exception as ex:
-                self._s.log.emit(f"  Launcher shortcut failed: {ex}")
+            # Create the DeckOps Plutonium Launcher shortcut (LCD only —
+            # OLED users launch Plutonium from their Steam library entries)
+            if not cfg.is_oled():
+                try:
+                    from shortcut import create_launcher_shortcut
+                    create_launcher_shortcut(
+                        on_progress=lambda m: self._s.log.emit(m)
+                    )
+                except Exception as ex:
+                    self._s.log.emit(f"  Launcher shortcut failed: {ex}")
 
         # ── Install iw4x ─────────────────────────────────────────────────
         _log_to_file("[BREADCRUMB] starting iw4x install phase")
