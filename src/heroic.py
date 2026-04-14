@@ -1299,6 +1299,9 @@ def install_plutonium_lcd(game: dict, game_key: str,
       6. Write config.json in the game prefix with correct paths.
       7. Write a -lan bash wrapper for Steam games (exe replacement).
          Own games launch via Heroic shortcuts created in step 3.
+     7b. Set Heroic launch options on the Steam library entry for online
+         play. The -lan wrapper is kept for offline mode via the launcher.
+         t4mp excluded (shares appid) — gets a non-Steam shortcut instead.
       8. Write the DeckOps metadata sentinel.
 
     game            - entry from detect_games.find_installed_games()
@@ -1398,6 +1401,18 @@ def install_plutonium_lcd(game: dict, game_key: str,
             )
         else:
             prog(80, "Skipping wrapper -- missing proton_path or steam_root")
+
+        # 7b. Set Heroic launch options on the Steam library entry so the
+        #     game launches online through Heroic. The -lan wrapper from
+        #     step 7 stays in place for offline mode via the Plutonium
+        #     launcher. t4mp is excluded (shares appid with t4sp) and gets
+        #     a non-Steam shortcut in shortcut.py instead.
+        if source == "steam" and steam_root:
+            prog(85, "Setting Heroic launch options...")
+            _set_heroic_steam_launch_options(
+                game_key, steam_root,
+                on_progress=lambda m: prog(87, m),
+            )
     else:
         prog(50, "Skipping prefix copy -- no compatdata_path provided")
 
@@ -1414,6 +1429,51 @@ def install_plutonium_lcd(game: dict, game_key: str,
 
     prog(100, f"Plutonium ready for {game.get('name', game_key)}!")
     return wrapper_path
+
+
+def _set_heroic_steam_launch_options(game_key: str, steam_root: str,
+                                      on_progress=None):
+    """
+    Set launch options on a Steam library entry so it launches through
+    Heroic instead of Steam's Proton runtime. LCD only.
+
+    Steam's pinned runtime libraries conflict with the system flatpak
+    binary, so LD_PRELOAD is required to override libcurl. The #%command%
+    suffix comments out the original game exe so Steam doesn't try to
+    launch it through Proton.
+
+    The -lan wrapper written by step 7 is left in place for offline mode
+    via the Plutonium launcher.
+
+    Only called for Steam-owned games (not own). t4mp is excluded because
+    it shares appid 10090 with t4sp and gets a non-Steam shortcut instead.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    if game_key not in PLUT_GAME_EXES:
+        return
+    if game_key == "t4mp":
+        # t4mp shares appid 10090 with t4sp — handled via non-Steam shortcut
+        return
+
+    appid = str(PLUT_GAME_EXES[game_key][0])
+    app_name = _heroic_app_name(game_key)
+
+    launch_opts = (
+        f'LD_PRELOAD=/usr/lib/libcurl.so.4 '
+        f'/usr/bin/flatpak run {HEROIC_FLATPAK_ID} --no-gui --no-sandbox '
+        f'"heroic://launch?appName={app_name}&runner=sideload" '
+        f'#%command%'
+    )
+
+    try:
+        from wrapper import set_launch_options
+        set_launch_options(steam_root, appid, launch_opts)
+        prog(f"  Heroic launch options set for appid {appid}")
+    except Exception as ex:
+        prog(f"  Could not set Heroic launch options for appid {appid}: {ex}")
 
 
 def _create_heroic_steam_shortcut(game_key: str, on_progress=None,

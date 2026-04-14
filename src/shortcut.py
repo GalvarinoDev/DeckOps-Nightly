@@ -979,35 +979,45 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
             # For t4mp (WaW Multiplayer), plutonium.py has replaced CoDWaWmp.exe
             # with a bash wrapper -- Proton cannot run it as a Windows binary.
             # OLED: point at the launcher with a protocol URL for online play.
-            # LCD: point at the bootstrapper with -lan for offline LAN mode.
+            # LCD: create a Heroic flatpak shortcut for online play. Uses the
+            #      same LD_PRELOAD pattern as Steam library launch options to
+            #      work around Steam's pinned libcurl conflict with flatpak.
             # exe_path (CoDWaWmp.exe) is still used for appid calculation so any
             # existing shortcut entry in Steam is not invalidated.
             if key == "t4mp":
                 import config as _cfg
-                plut_dir = os.path.join(
-                    compatdata_path,
-                    "pfx", "drive_c", "users", "steamuser",
-                    "AppData", "Local", "Plutonium",
-                )
                 if _cfg.is_oled():
+                    plut_dir = os.path.join(
+                        compatdata_path,
+                        "pfx", "drive_c", "users", "steamuser",
+                        "AppData", "Local", "Plutonium",
+                    )
                     plut_launcher  = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
                     actual_exe     = plut_launcher
+                    start_dir      = install_dir
                     launch_options = (
                         f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
                         f'%command% "plutonium://play/t4mp"'
                     )
                 else:
-                    plut_bootstrapper = os.path.join(plut_dir, "bin", "plutonium-bootstrapper-win32.exe")
-                    actual_exe        = plut_bootstrapper
-                    player = _cfg.get_player_name() or "Player"
+                    # LCD: Heroic flatpak shortcut for online play.
+                    # t4mp shares appid 10090 with t4sp so it can't use
+                    # set_launch_options on the Steam library entry — it
+                    # gets its own non-Steam shortcut instead.
+                    import hashlib
+                    import base64
+                    _digest = hashlib.sha256(b"deckops_plut_t4mp").digest()
+                    _app_name = f"do_{base64.urlsafe_b64encode(_digest)[:19].decode()}"
+                    actual_exe     = "/usr/bin/flatpak"
+                    start_dir      = "/usr/bin/"
                     launch_options = (
-                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                        f'%command% t4mp '
-                        f'"Z:{install_dir.replace("/", chr(92))}" '
-                        f'+name "{player}" -lan'
+                        f'LD_PRELOAD=/usr/lib/libcurl.so.4 '
+                        f'run com.heroicgameslauncher.hgl --no-gui --no-sandbox '
+                        f'"heroic://launch?appName={_app_name}&runner=sideload"'
                     )
             else:
                 actual_exe     = exe_path
+                start_dir      = install_dir
                 launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
 
             shortcut_appid = _calc_shortcut_appid(exe_path, name)
@@ -1024,7 +1034,7 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                     "appid":               _to_signed32(shortcut_appid),
                     "AppName":             name,
                     "Exe":                 f'"{actual_exe}"',
-                    "StartDir":            f'"{install_dir}"',
+                    "StartDir":            f'"{start_dir}"',
                     "icon":                icon_path,
                     "ShortcutPath":        "",
                     "LaunchOptions":       launch_options,
@@ -1049,17 +1059,24 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
             # the same way it is set for regular Steam games in ge_proton.py.
             # We use the shortcut_appid (not game_appid) because config.vdf
             # CompatToolMapping is keyed on the appid Steam actually launches.
+            #
+            # Exception: t4mp on LCD uses a Heroic flatpak shortcut — setting
+            # a compat tool would sandbox flatpak inside SLR and break it.
             try:
                 import config as cfg
-                from wrapper import set_compat_tool
-                ge_version = cfg.get_ge_proton_version()
-                if ge_version:
-                    set_compat_tool([str(shortcut_appid)], ge_version)
-                    prog(f"    ✓ GE-Proton {ge_version} set")
+                if key == "t4mp" and not cfg.is_oled():
+                    _clear_compat_tool(str(shortcut_appid))
+                    prog(f"    ✓ Cleared compat tool (LCD Heroic shortcut)")
                 else:
-                    prog(f"    ⚠ GE-Proton version unknown — compat tool not set")
+                    from wrapper import set_compat_tool
+                    ge_version = cfg.get_ge_proton_version()
+                    if ge_version:
+                        set_compat_tool([str(shortcut_appid)], ge_version)
+                        prog(f"    ✓ GE-Proton {ge_version} set")
+                    else:
+                        prog(f"    ⚠ GE-Proton version unknown — compat tool not set")
             except Exception as ex:
-                prog(f"    ⚠ Could not set GE-Proton for shortcut: {ex}")
+                prog(f"    ⚠ Could not set compat tool for shortcut: {ex}")
 
             _download_artwork(grid_dir, shortcut_appid, shortcut_def, prog)
             _assign_controller_config(uid, shortcut_appid, shortcut_def, gyro_mode, prog)
