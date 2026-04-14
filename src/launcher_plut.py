@@ -80,38 +80,33 @@ def _font(size=13, bold=False):
 
 # ── Plutonium game data ──────────────────────────────────────────────────────
 
-_HERO_BASE = (
-    "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly"
-    "/nightly/assets/images/launcher"
-)
-
 PLUT_GAMES = [
     {
         "base": "Call of Duty: World at War",
         "dev": "trey",
         "modes": [("t4mp", "MP"), ("t4sp", "S/Z")],
-        "hero_url": f"{_HERO_BASE}/waw-banner.png",
+        "hero_url": "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/waw-banner.png",
         "hero_file": "waw-banner.png",
     },
     {
         "base": "Call of Duty: Black Ops",
         "dev": "trey",
         "modes": [("t5mp", "MP"), ("t5sp", "S/Z")],
-        "hero_url": f"{_HERO_BASE}/bo1-banner.png",
+        "hero_url": "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/bo1-banner.png",
         "hero_file": "bo1-banner.png",
     },
     {
         "base": "Call of Duty: Black Ops II",
         "dev": "trey",
         "modes": [("t6mp", "MP"), ("t6zm", "ZM")],
-        "hero_url": f"{_HERO_BASE}/bo2-banner.png",
-        "hero_file": "bo2-banner.png",
+        "hero_url": "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/bo2-banner.png",
+        "hero_file": "bo2_banner.png",
     },
     {
         "base": "Call of Duty: Modern Warfare 3",
         "dev": "iw",
         "modes": [("iw5mp", "MP")],
-        "hero_url": f"{_HERO_BASE}/mw3-banner.png",
+        "hero_url": "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/mw3-banner.png",
         "hero_file": "mw3-banner.png",
     },
 ]
