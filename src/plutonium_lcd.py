@@ -1343,6 +1343,18 @@ def install_plutonium_lcd(game: dict, game_key: str,
         on_progress=lambda m: prog(20, m),
     )
 
+    # 2b. Install DeckOps client-side menu mod into the shared prefix.
+    #     The shared prefix is what Plutonium reads at runtime for all LCD
+    #     games, so installing here covers both Steam and own game sources.
+    #     Non-fatal -- game works without the mod if download fails.
+    prog(22, "Installing menu mod...")
+    try:
+        from plutonium_oled import _install_menu_mod
+        _install_menu_mod(shared_plut_dir, game_key,
+                          on_progress=lambda msg: prog(23, msg))
+    except Exception as _mod_ex:
+        prog(23, f"  Menu mod skipped: {_mod_ex}")
+
     # 3. Per-game Heroic sideload entry + GamesConfig (kept for future
     #    online play through ManagementScreen -- Steam shortcuts are
     #    disabled via _create_heroic_steam_shortcut early return)
