@@ -51,7 +51,7 @@ function Init()
     -- Add menu buttons
 	Menu_Seperator(menu, 0)
     Menu_AddButton(menu, 0, "@MENU_SERVER_BROWSER_CAPS", function(menu,button) SignIn() Game.OpenMenu("serverbrowser") end)
-    Menu_AddButton(menu, 1, "DECKOPS SERVERS", function(menu,button) Game.OpenMenu("deckops_servers") end)
+    Menu_AddButton(menu, 1, "DECKOPS SERVER", function(menu,button) Game.ExecuteCommand("connect 207.244.231.63:27016") end)
     Menu_AddButton(menu, 2, "@MENU_PRIVATE_MATCH_CAPS", 
         function(menu,button)
             SignIn()
@@ -94,58 +94,58 @@ function Init()
     Menu_AddButton(menu, 9, "@MENU_QUIT_CAPS", function(menu,button) Game.OpenMenu("quit_popmenu") end)
 
     -- ============================================================
-    -- DeckOps Server Browser Popup
+    -- DeckOps Server Popup (commented out -- button now connects directly)
     -- ============================================================
 
-    local deckops_buttons = {}
+    -- local deckops_buttons = {}
 
-    deckops_buttons[1] = {
-        function(menu)
-            Game.CloseMenu("deckops_servers")
-            Game.ExecuteCommand("connect 207.244.231.63:27016")
-        end,
-        "MW3 MULTIPLAYER"
-    }
+    -- deckops_buttons[1] = {
+    --     function(menu)
+    --         Game.CloseMenu("deckops_servers")
+    --         Game.ExecuteCommand("connect 207.244.231.63:27016")
+    --     end,
+    --     "MW3 MULTIPLAYER"
+    -- }
 
-    deckops_buttons[2] = {
-        function(menu)
-            Game.CloseMenu("deckops_servers")
-            Game.ExecuteCommand("connect 0.0.0.0:0")
-        end,
-        "PLACEHOLDER 01"
-    }
+    -- deckops_buttons[2] = {
+    --     function(menu)
+    --         Game.CloseMenu("deckops_servers")
+    --         Game.ExecuteCommand("connect 0.0.0.0:0")
+    --     end,
+    --     "PLACEHOLDER 01"
+    -- }
 
-    deckops_buttons[3] = {
-        function(menu)
-            Game.CloseMenu("deckops_servers")
-            Game.ExecuteCommand("connect 0.0.0.0:0")
-        end,
-        "PLACEHOLDER 02"
-    }
+    -- deckops_buttons[3] = {
+    --     function(menu)
+    --         Game.CloseMenu("deckops_servers")
+    --         Game.ExecuteCommand("connect 0.0.0.0:0")
+    --     end,
+    --     "PLACEHOLDER 02"
+    -- }
 
-    deckops_buttons[4] = {
-        function(menu)
-            Game.CloseMenu("deckops_servers")
-            Game.ExecuteCommand("connect 0.0.0.0:0")
-        end,
-        "PLACEHOLDER 03"
-    }
+    -- deckops_buttons[4] = {
+    --     function(menu)
+    --         Game.CloseMenu("deckops_servers")
+    --         Game.ExecuteCommand("connect 0.0.0.0:0")
+    --     end,
+    --     "PLACEHOLDER 03"
+    -- }
 
-    deckops_buttons[5] = {
-        function(menu)
-            Game.CloseMenu("deckops_servers")
-        end,
-        "BACK"
-    }
+    -- deckops_buttons[5] = {
+    --     function(menu)
+    --         Game.CloseMenu("deckops_servers")
+    --     end,
+    --     "BACK"
+    -- }
 
-    Popup_Create_Advanced("deckops_servers", "DECKOPS SERVERS", 400, 200,
-        function(menu)
-            Game.PlaySound("tabs_slide")
-        end,
-        function(menu)
-            Game.CloseMenu("deckops_servers")
-        end,
-        deckops_buttons
-    )
+    -- Popup_Create_Advanced("deckops_servers", "DECKOPS SERVERS", 400, 200,
+    --     function(menu)
+    --         Game.PlaySound("tabs_slide")
+    --     end,
+    --     function(menu)
+    --         Game.CloseMenu("deckops_servers")
+    --     end,
+    --     deckops_buttons
+    -- )
 
 end
