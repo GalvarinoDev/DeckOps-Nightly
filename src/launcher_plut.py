@@ -100,7 +100,7 @@ PLUT_GAMES = [
         "dev": "trey",
         "modes": [("t6mp", "MP"), ("t6zm", "ZM")],
         "hero_url": "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/bo2-banner.png",
-        "hero_file": "bo2_banner.png",
+        "hero_file": "bo2-banner.png",
     },
     {
         "base": "Call of Duty: Modern Warfare 3",
@@ -134,18 +134,50 @@ def _get_setup_plut_keys() -> dict:
     Return Plutonium game keys that have been set up, with their
     lan_wrapper_path for offline launching.
 
+    For LCD Steam games, lan_wrapper_path in config points to the
+    replaced game exe (which is a bash script). If config stored None
+    (e.g. install ran without a compatdata_path), we fall back to
+    reconstructing the path from the game's install_dir and the known
+    exe name, so the launcher can still detect and launch them.
+
     Returns dict — {game_key: {"lan_wrapper_path": str|None}}
     """
     try:
         sys.path.insert(0, SCRIPT_DIR)
         import config as cfg
         setup = cfg.get_setup_games()
+
+        # Import LCD exe map for fallback reconstruction on LCD Steam games
+        try:
+            from plutonium_lcd import PLUT_GAME_EXES
+            _is_lcd = not cfg.is_oled()
+        except Exception:
+            PLUT_GAME_EXES = {}
+            _is_lcd = False
+
         result = {}
         for k, v in setup.items():
-            if v.get("client") == "plutonium":
-                result[k] = {
-                    "lan_wrapper_path": v.get("lan_wrapper_path"),
-                }
+            if v.get("client") != "plutonium":
+                continue
+
+            lan_path = v.get("lan_wrapper_path")
+
+            # LCD Steam fallback: if lan_wrapper_path wasn't saved (e.g.
+            # install ran without compatdata_path) but source is "steam",
+            # reconstruct it from the install_dir + known exe name.
+            # The replaced exe IS the lan wrapper for LCD Steam games.
+            if (lan_path is None
+                    and _is_lcd
+                    and v.get("source") == "steam"
+                    and k in PLUT_GAME_EXES):
+                install_dir = v.get("install_dir", "")
+                _, exe_name = PLUT_GAME_EXES[k]
+                if install_dir:
+                    candidate = os.path.join(install_dir, exe_name)
+                    if os.path.exists(candidate):
+                        lan_path = candidate
+
+            result[k] = {"lan_wrapper_path": lan_path}
         return result
     except Exception:
         return {}

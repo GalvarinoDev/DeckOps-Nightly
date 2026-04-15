@@ -1151,14 +1151,17 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                     # t4mp shares appid 10090 with t4sp so it can't use
                     # set_launch_options on the Steam library entry — it
                     # gets its own non-Steam shortcut instead.
+                    # Must match _create_heroic_steam_shortcut() exactly:
+                    # quoted exe, quoted start_dir, no LD_PRELOAD. Steam's
+                    # compat tool must also be cleared (done below) because
+                    # SLR sandboxes flatpak away from the host.
                     import hashlib
                     import base64
                     _digest = hashlib.sha256(b"deckops_plut_t4mp").digest()
                     _app_name = f"do_{base64.urlsafe_b64encode(_digest)[:19].decode()}"
-                    actual_exe     = "/usr/bin/flatpak"
-                    start_dir      = "/usr/bin/"
+                    actual_exe     = '"/usr/bin/flatpak"'
+                    start_dir      = '"/usr/bin/"'
                     launch_options = (
-                        f'LD_PRELOAD=/usr/lib/libcurl.so.4 '
                         f'run com.heroicgameslauncher.hgl --no-gui --no-sandbox '
                         f'"heroic://launch?appName={_app_name}&runner=sideload"'
                     )
