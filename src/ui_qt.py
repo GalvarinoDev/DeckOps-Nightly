@@ -1390,7 +1390,9 @@ class InstallScreen(QWidget):
                     compat = find_compatdata(self.steam_root, _plut_appid,
                                               game_install_dir=game["install_dir"] if game else None)
                     install_plutonium(game, key, self.steam_root, proton, compat, op_plut)
-                    cfg.mark_game_setup(key, "plutonium", source="steam")
+                    # plutonium installer (plutonium_oled.py / plutonium_lcd.py)
+                    # owns its own mark_game_setup call so lan_wrapper_path
+                    # and other install-side metadata are preserved.
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
@@ -2698,8 +2700,10 @@ class OwnInstallScreen(QWidget):
                                      on_progress=op_plut,
                                      installed_games=installed_for_plut,
                                      source=source)
-                    cfg.mark_game_setup(key, "plutonium", source=source,
-                                        wrapper_path=wp)
+                    # plutonium installer (plutonium_oled.py / plutonium_lcd.py)
+                    # owns its own mark_game_setup call so lan_wrapper_path
+                    # and other install-side metadata are preserved. wp is
+                    # discarded here -- the installer already persisted it.
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
