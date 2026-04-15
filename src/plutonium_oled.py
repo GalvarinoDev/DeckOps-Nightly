@@ -710,14 +710,14 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
             compatdata_path, dest_plut_dir,
         )
 
-        prog(90, "Saving metadata...")
-        # Pass 3: re-enable once launcher_plut.py is validated (Pass 2).
-        # OLED offline mode will write a sidecar -lan script here without
-        # touching the default online wrapper above.
-        # lan_wrapper_path = _write_oled_lan_wrapper(
-        #     game, game_key, steam_root, proton_path,
-        #     compatdata_path, dest_plut_dir,
-        # )
+        prog(85, "Writing offline LAN wrapper...")
+        # Sidecar -lan script alongside the game files. Does not touch the
+        # online wrapper above. launcher_plut.py reads lan_wrapper_path
+        # from config and bash-runs this script for offline play.
+        lan_wrapper_path = _write_oled_lan_wrapper(
+            game, game_key, steam_root, proton_path,
+            compatdata_path, dest_plut_dir,
+        )
 
         prog(95, "Saving metadata...")
         _write_metadata(game["install_dir"], {
@@ -728,6 +728,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         _cfg_own.mark_game_setup(
             game_key, "plutonium", source="own",
             wrapper_path=wrapper_path,
+            lan_wrapper_path=lan_wrapper_path,
         )
     else:
         # OLED Steam games: replace the original exe with a bash wrapper
@@ -735,14 +736,14 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         _write_wrapper(game, game_key, steam_root, proton_path,
                        compatdata_path, dest_plut_dir)
 
-        prog(90, "Saving metadata...")
-        # Pass 3: re-enable once launcher_plut.py is validated (Pass 2).
-        # OLED offline mode will write a sidecar -lan script here without
-        # touching the default online wrapper above.
-        # lan_wrapper_path = _write_oled_lan_wrapper(
-        #     game, game_key, steam_root, proton_path,
-        #     compatdata_path, dest_plut_dir,
-        # )
+        prog(85, "Writing offline LAN wrapper...")
+        # Sidecar -lan script alongside the game files. Does not touch the
+        # replaced exe above. launcher_plut.py reads lan_wrapper_path
+        # from config and bash-runs this script for offline play.
+        lan_wrapper_path = _write_oled_lan_wrapper(
+            game, game_key, steam_root, proton_path,
+            compatdata_path, dest_plut_dir,
+        )
 
         prog(95, "Saving metadata...")
         _write_metadata(game["install_dir"], {
@@ -754,6 +755,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         import config as _cfg_steam
         _cfg_steam.mark_game_setup(
             game_key, "plutonium", source="steam",
+            lan_wrapper_path=lan_wrapper_path,
         )
 
     prog(100, f"Plutonium ready for {game['name']}!")
