@@ -257,7 +257,53 @@ else
     esac
 fi
 
-# ── step 8: launch DeckOps ────────────────────────────────────────────────────
+# ── step 8: sweep stale plut_lan.sh sidecars ─────────────────────────────────
+# Pre-Pass-1 installs wrote <gametag>plut_lan.sh into game install dirs at
+# install time (OLED offline-mode plumbing). Pass 1 stopped creating them but
+# left existing files on disk. Sweep all known Steam libraries (internal +
+# libraryfolders.vdf entries + SD card mounts) and remove them.
+info "Sweeping stale plut_lan.sh sidecars..."
+
+STEAM_ROOT_FOR_SWEEP=""
+for r in "$HOME/.local/share/Steam" "$HOME/.steam/steam" "$HOME/.steam/root"; do
+    if [ -d "$r/steamapps" ]; then
+        STEAM_ROOT_FOR_SWEEP="$r"
+        break
+    fi
+done
+
+LAN_SWEEP_DIRS=()
+[ -n "$STEAM_ROOT_FOR_SWEEP" ] && LAN_SWEEP_DIRS+=("$STEAM_ROOT_FOR_SWEEP/steamapps/common")
+
+LF_VDF_SWEEP="$STEAM_ROOT_FOR_SWEEP/steamapps/libraryfolders.vdf"
+if [ -f "$LF_VDF_SWEEP" ]; then
+    while IFS= read -r libpath; do
+        [ -d "$libpath/steamapps/common" ] && LAN_SWEEP_DIRS+=("$libpath/steamapps/common")
+        [ -d "$libpath/SteamLibrary/steamapps/common" ] && LAN_SWEEP_DIRS+=("$libpath/SteamLibrary/steamapps/common")
+    done < <(sed -n 's/.*"path"[[:space:]]*"\([^"]*\)".*/\1/p' "$LF_VDF_SWEEP")
+fi
+
+for mount in /run/media/deck/*/steamapps/common /run/media/deck/*/SteamLibrary/steamapps/common; do
+    [ -d "$mount" ] && LAN_SWEEP_DIRS+=("$mount")
+done
+
+lan_removed=0
+for common_dir in "${LAN_SWEEP_DIRS[@]}"; do
+    while IFS= read -r -d '' sidecar; do
+        if rm -f "$sidecar" 2>/dev/null; then
+            info "  Removed: $sidecar"
+            lan_removed=$((lan_removed + 1))
+        fi
+    done < <(find "$common_dir" -maxdepth 2 -name "*plut_lan.sh" -print0 2>/dev/null)
+done
+
+if [ "$lan_removed" -gt 0 ]; then
+    success "Removed $lan_removed stale plut_lan.sh sidecar(s)."
+else
+    success "No stale plut_lan.sh sidecars found."
+fi
+
+# ── step 9: launch DeckOps ────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}  Installation complete! Welcome to DeckOps.${CLEAR}"
 echo ""
