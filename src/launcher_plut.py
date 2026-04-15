@@ -294,6 +294,11 @@ class GameRow(QWidget):
         ]
         self._has_modes = len(self._available) > 0
 
+        # Gamepad/keyboard focus state — managed by LauncherWindow
+        self._row_focused = False
+        self._mode_buttons = []   # list of (btn, lan_path) for available modes
+        self._focused_btn_idx = None
+
         self.setFixedHeight(ROW_H)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
@@ -342,17 +347,16 @@ class GameRow(QWidget):
                 btn = QPushButton(label)
                 btn.setFont(_font(14, bold=True))
                 btn.setFixedSize(120, 52)
+                # Disable Qt's built-in focus rect — we draw our own focus
+                # ring via stylesheet so it matches the gamepad focus model.
+                btn.setFocusPolicy(Qt.NoFocus)
 
                 if has_wrapper:
-                    btn.setStyleSheet(
-                        f"QPushButton{{background:{self._color};color:#FFF;"
-                        f"border:none;border-radius:8px;}}"
-                        f"QPushButton:hover{{background:{self._color}CC;}}"
-                        f"QPushButton:pressed{{background:{self._color}99;}}"
-                    )
+                    self._apply_btn_style(btn, focused=False)
                     btn.clicked.connect(
                         lambda checked=False, w=lan_path: _launch_lan(w)
                     )
+                    self._mode_buttons.append((btn, lan_path))
                 else:
                     # Installed but LAN wrapper missing — disable
                     btn.setStyleSheet(
@@ -368,6 +372,61 @@ class GameRow(QWidget):
             no_lbl.setFont(_font(13))
             no_lbl.setStyleSheet(f"color:{C_DIM};background:transparent;")
             lay.addWidget(no_lbl, alignment=Qt.AlignVCenter)
+
+    def _apply_btn_style(self, btn: QPushButton, focused: bool):
+        """Apply launchable button style with optional focus ring."""
+        if focused:
+            # White inner border simulates a focus ring on top of the
+            # accent color, readable on both orange and green.
+            btn.setStyleSheet(
+                f"QPushButton{{background:{self._color};color:#FFF;"
+                f"border:3px solid #FFFFFF;border-radius:8px;}}"
+                f"QPushButton:pressed{{background:{self._color}99;}}"
+            )
+        else:
+            btn.setStyleSheet(
+                f"QPushButton{{background:{self._color};color:#FFF;"
+                f"border:none;border-radius:8px;}}"
+                f"QPushButton:hover{{background:{self._color}CC;}}"
+                f"QPushButton:pressed{{background:{self._color}99;}}"
+            )
+
+    def launchable_count(self) -> int:
+        """Number of mode buttons that can actually launch (have wrappers)."""
+        return len(self._mode_buttons)
+
+    def trigger_focused_button(self):
+        """Invoke the launch action for the currently focused button."""
+        if self._focused_btn_idx is None:
+            return
+        if 0 <= self._focused_btn_idx < len(self._mode_buttons):
+            _, lan_path = self._mode_buttons[self._focused_btn_idx]
+            _launch_lan(lan_path)
+
+    def set_row_focused(self, focused: bool):
+        """Set whether this row has the active row focus (border highlight)."""
+        if self._row_focused == focused:
+            return
+        self._row_focused = focused
+        if not focused:
+            # Clear button focus when row loses focus
+            self.set_focused_button(None)
+        self.update()
+
+    def set_focused_button(self, idx):
+        """Highlight the mode button at idx (or clear if None)."""
+        if self._focused_btn_idx == idx:
+            return
+        # Clear old
+        if self._focused_btn_idx is not None and \
+                0 <= self._focused_btn_idx < len(self._mode_buttons):
+            old_btn, _ = self._mode_buttons[self._focused_btn_idx]
+            self._apply_btn_style(old_btn, focused=False)
+        # Apply new
+        self._focused_btn_idx = idx
+        if idx is not None and 0 <= idx < len(self._mode_buttons):
+            new_btn, _ = self._mode_buttons[idx]
+            self._apply_btn_style(new_btn, focused=True)
 
     def paintEvent(self, event):
         """Draw hero background with dark overlay."""
@@ -401,6 +460,18 @@ class GameRow(QWidget):
 
         # Accent border on left edge
         painter.fillRect(QRect(0, 0, 3, rect.height()), QColor(self._color))
+
+        # Row focus border (gamepad/keyboard navigation indicator).
+        # 4px border in the row's accent color, drawn over the left stripe.
+        if self._row_focused:
+            border = 4
+            c = QColor(self._color)
+            painter.fillRect(QRect(0, 0, rect.width(), border), c)  # top
+            painter.fillRect(QRect(0, rect.height() - border,
+                                    rect.width(), border), c)        # bottom
+            painter.fillRect(QRect(0, 0, border, rect.height()), c)  # left
+            painter.fillRect(QRect(rect.width() - border, 0,
+                                    border, rect.height()), c)       # right
 
         painter.end()
         super().paintEvent(event)
@@ -501,6 +572,72 @@ class LauncherWindow(QWidget):
             empty.setAlignment(Qt.AlignCenter)
             empty.setStyleSheet(f"color:{C_DIM};background:transparent;")
             rows_lay.insertWidget(0, empty)
+
+        # ── gamepad / keyboard focus tracking ──
+        # Only rows with launchable buttons participate in focus navigation.
+        # Uninstalled rows (and rows where every button is disabled because
+        # the wrapper is missing) are skipped entirely.
+        self._focus_rows = [r for r in installed if r.launchable_count() > 0]
+        self._row_idx = 0
+        if self._focus_rows:
+            self._focus_rows[0].set_row_focused(True)
+            self._focus_rows[0].set_focused_button(0)
+
+        # Steam Deck Game Mode default mapping passes D-pad as arrow keys,
+        # A as Return, B as Escape — Qt sees these as keyPressEvents below
+        # so no controller config file is needed for default behavior.
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def keyPressEvent(self, event):
+        key = event.key()
+
+        if key == Qt.Key_Escape:
+            self._quit_with_fade()
+            return
+        if key in (Qt.Key_Return, Qt.Key_Enter):
+            self._activate_focused()
+            return
+        if key == Qt.Key_Up:
+            self._move_row(-1)
+            return
+        if key == Qt.Key_Down:
+            self._move_row(+1)
+            return
+        if key == Qt.Key_Left:
+            self._move_btn(-1)
+            return
+        if key == Qt.Key_Right:
+            self._move_btn(+1)
+            return
+
+        super().keyPressEvent(event)
+
+    def _move_row(self, delta: int):
+        if not self._focus_rows:
+            return
+        new_idx = max(0, min(len(self._focus_rows) - 1, self._row_idx + delta))
+        if new_idx == self._row_idx:
+            return
+        self._focus_rows[self._row_idx].set_row_focused(False)
+        self._row_idx = new_idx
+        self._focus_rows[self._row_idx].set_row_focused(True)
+        self._focus_rows[self._row_idx].set_focused_button(0)
+
+    def _move_btn(self, delta: int):
+        if not self._focus_rows:
+            return
+        row = self._focus_rows[self._row_idx]
+        n = row.launchable_count()
+        if n == 0:
+            return
+        cur = row._focused_btn_idx if row._focused_btn_idx is not None else 0
+        new_idx = max(0, min(n - 1, cur + delta))
+        row.set_focused_button(new_idx)
+
+    def _activate_focused(self):
+        if not self._focus_rows:
+            return
+        self._focus_rows[self._row_idx].trigger_focused_button()
 
     def _quit_with_fade(self):
         """Fade audio out, then quit once fadeout completes."""
