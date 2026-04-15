@@ -1280,7 +1280,7 @@ class InstallScreen(QWidget):
             is_lcd = not cfg.is_oled()
 
             # LCD and OLED both require the user to log in, just in different
-            # prefixes. LCD logs in inside Heroic's shared default prefix so
+            # prefixes. LCD logs in inside HGL's shared default prefix so
             # the auth state is bound to the exact Wine prefix that will
             # later launch the games. OLED logs in inside the dedicated
             # DeckOps prefix at ~/.local/share/deckops/plutonium_prefix/.
@@ -1295,7 +1295,7 @@ class InstallScreen(QWidget):
                 if is_lcd:
                     self._s.progress.emit(12, "Setting up Plutonium through HGL...")
                     self._s.log.emit(
-                        "Setting up Plutonium through HGL (Heroic Games Launcher)...\n"
+                        "Setting up Plutonium through HGL...\n"
                         "  1. HGL will download and launch Plutonium (this may take a few minutes)\n"
                         "  2. Log in with your Plutonium account\n"
                         "  3. Close the Plutonium window\n"
@@ -2508,7 +2508,7 @@ class OwnInstallScreen(QWidget):
 
         # ── Plutonium bootstrapper (Steam still running) ─────────────────
         # Downloads Plutonium and launches it so the user can log in. LCD
-        # routes through Heroic (shared default prefix); OLED uses the
+        # routes through HGL (shared default prefix); OLED uses the
         # dedicated DeckOps prefix via Proton directly.
         if has_plut:
             from plutonium_oled import (launch_bootstrapper, is_plutonium_ready,
@@ -2527,7 +2527,7 @@ class OwnInstallScreen(QWidget):
                 if is_lcd:
                     self._s.progress.emit(10, "Setting up Plutonium through HGL...")
                     self._s.log.emit(
-                        "Setting up Plutonium through HGL (Heroic Games Launcher)...\n"
+                        "Setting up Plutonium through HGL...\n"
                         "  1. HGL will download and launch Plutonium (this may take a few minutes)\n"
                         "  2. Log in with your Plutonium account\n"
                         "  3. Close the Plutonium window\n"
@@ -2630,7 +2630,7 @@ class OwnInstallScreen(QWidget):
         # Every selected game gets its prefix preloaded — no exceptions.
         # Own games use their CRC-based prefix (set by create_own_shortcuts).
         # Steam games use their Steam appid prefix.
-        # LCD Plutonium games still get a prefix for offline mode; Heroic
+        # LCD Plutonium games still get a prefix for offline mode; HGL
         # manages its own prefix separately for online mode.
         # ensure_all_prefix_deps handles deduplication and skips prefixes
         # that are already initialized, so passing everything in is safe.
