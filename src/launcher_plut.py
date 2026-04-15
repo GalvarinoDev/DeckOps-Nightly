@@ -114,12 +114,33 @@ PLUT_GAMES = [
 
 # ── launch helper ────────────────────────────────────────────────────────
 
+# Debounce flag — set on first launch, blocks further button clicks until
+# either the launcher quits (1.5s after launch) or the timeout below clears
+# it. Prevents double-launches from rapid taps on touchscreen.
+_LAUNCH_FIRED = False
+_LAUNCH_DEBOUNCE_MS = 3000
+
+
 def _launch_lan(wrapper_path: str):
     """Run the LAN wrapper script directly, then exit."""
+    global _LAUNCH_FIRED
+    if _LAUNCH_FIRED:
+        return
+    _LAUNCH_FIRED = True
+
     try:
         subprocess.Popen(["bash", wrapper_path])
     except Exception as ex:
         print(f"Failed to launch LAN wrapper: {ex}", file=sys.stderr)
+
+    # Safety: clear the flag if we somehow don't quit (e.g. Popen raised
+    # before quit timer fires). 3s > 1.5s quit timer so normal flow quits
+    # first; this only matters in error paths.
+    def _clear():
+        global _LAUNCH_FIRED
+        _LAUNCH_FIRED = False
+    QTimer.singleShot(_LAUNCH_DEBOUNCE_MS, _clear)
+
     QTimer.singleShot(1500, lambda: QApplication.instance().quit())
 
 
@@ -303,9 +324,10 @@ class GameRow(QWidget):
 
             painter.drawPixmap(rect, self._bg_pixmap, src_rect)
 
-        # Dark overlay — heavier if not installed
-        opacity = 0.55 if self._has_modes else 0.85
-        painter.fillRect(rect, QColor(0, 0, 0, int(255 * opacity)))
+        # Dark overlay — only for uninstalled games. Installed games show
+        # their hero art unobstructed so the row reads as bright/active.
+        if not self._has_modes:
+            painter.fillRect(rect, QColor(0, 0, 0, int(255 * 0.85)))
 
         # Accent border on left edge
         painter.fillRect(QRect(0, 0, 3, rect.height()), QColor(self._color))
