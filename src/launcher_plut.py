@@ -527,6 +527,9 @@ class LauncherWindow(QWidget):
         quit_btn = QPushButton("✕")
         quit_btn.setFont(_font(16, bold=True))
         quit_btn.setFixedSize(44, 44)
+        # NoFocus so keyboard/gamepad input goes to the window's keyPressEvent
+        # instead of being eaten by the button.
+        quit_btn.setFocusPolicy(Qt.NoFocus)
         quit_btn.setStyleSheet(
             f"QPushButton{{background:transparent;color:{C_DIM};border:none;"
             f"border-radius:8px;}}"
@@ -653,6 +656,13 @@ def main():
 
     win = LauncherWindow()
     win.showFullScreen()
+    # Explicitly grab keyboard focus. setFocusPolicy(StrongFocus) alone is
+    # insufficient under gamescope (Steam Deck Game Mode) -- without these
+    # calls the window is visible and accepts mouse input but never receives
+    # keyPressEvents, so D-pad/keyboard navigation appears dead.
+    win.activateWindow()
+    win.raise_()
+    win.setFocus()
     _start_audio()
     sys.exit(app.exec_())
 
