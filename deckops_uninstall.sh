@@ -526,6 +526,44 @@ if [ -n "$STEAM_ROOT" ]; then
     fi
     echo ""
 
+    # ── Sweep stale plut_lan.sh sidecars ──────────────────────────────────
+    # Pre-Pass-1 OLED installs wrote <gametag>plut_lan.sh into each game's
+    # install dir. Pass 1 stopped creating them but didn't sweep existing
+    # files. Remove any that remain across all known Steam libraries.
+    info "Sweeping stale plut_lan.sh sidecars..."
+
+    LAN_SWEEP_DIRS=()
+    [ -d "$STEAM_ROOT/steamapps/common" ] && LAN_SWEEP_DIRS+=("$STEAM_ROOT/steamapps/common")
+
+    LF_VDF_SWEEP="$STEAM_ROOT/steamapps/libraryfolders.vdf"
+    if [ -f "$LF_VDF_SWEEP" ]; then
+        while IFS= read -r libpath; do
+            [ -d "$libpath/steamapps/common" ] && LAN_SWEEP_DIRS+=("$libpath/steamapps/common")
+            [ -d "$libpath/SteamLibrary/steamapps/common" ] && LAN_SWEEP_DIRS+=("$libpath/SteamLibrary/steamapps/common")
+        done < <(sed -n 's/.*"path"[[:space:]]*"\([^"]*\)".*/\1/p' "$LF_VDF_SWEEP")
+    fi
+
+    for mount in /run/media/deck/*/steamapps/common /run/media/deck/*/SteamLibrary/steamapps/common; do
+        [ -d "$mount" ] && LAN_SWEEP_DIRS+=("$mount")
+    done
+
+    lan_removed=0
+    for common_dir in "${LAN_SWEEP_DIRS[@]}"; do
+        while IFS= read -r -d '' sidecar; do
+            if rm -f "$sidecar" 2>/dev/null; then
+                info "  Removed: $sidecar"
+                lan_removed=$((lan_removed + 1))
+            fi
+        done < <(find "$common_dir" -maxdepth 2 -name "*plut_lan.sh" -print0 2>/dev/null)
+    done
+
+    if [ "$lan_removed" -gt 0 ]; then
+        success "Removed $lan_removed stale plut_lan.sh sidecar(s)."
+    else
+        skip "No stale plut_lan.sh sidecars found."
+    fi
+    echo ""
+
     info "Removing Plutonium data from all Wine prefixes..."
 
     # Build list of all compatdata dirs (internal + SD card + any extra libraries)
