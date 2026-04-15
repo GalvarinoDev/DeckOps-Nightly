@@ -1637,7 +1637,25 @@ def create_launcher_shortcut(on_progress=None):
             except Exception as e:
                 prog(f"  Failed to write launcher shortcut: {e}")
 
-        # Always re-download launcher artwork (URLs may change between versions)
+        # Always re-download launcher artwork (URLs may change between versions).
+        # Before downloading, delete any pre-existing files for this appid so
+        # stale artwork from prior installs doesn't outrank the new files.
+        # Steam reads whichever file it finds first when both .jpg and .png
+        # variants exist for the same appid -- previous installs that used
+        # different file extensions (e.g. steamgriddb served .jpg) leave
+        # orphans that hide the new .png artwork.
+        try:
+            import glob as _glob
+            stale = _glob.glob(os.path.join(grid_dir, f"{shortcut_appid}*"))
+            for f in stale:
+                try:
+                    os.remove(f)
+                    prog(f"  Removed stale launcher artwork: {os.path.basename(f)}")
+                except OSError as _ex:
+                    prog(f"  Could not remove stale artwork {os.path.basename(f)}: {_ex}")
+        except Exception as _ex:
+            prog(f"  Stale artwork cleanup skipped: {_ex}")
+
         _download_artwork(grid_dir, shortcut_appid, LAUNCHER_ART, prog,
                           force=True)
 
