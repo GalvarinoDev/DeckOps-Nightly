@@ -36,6 +36,7 @@ SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
 FONTS_DIR    = os.path.join(PROJECT_ROOT, "assets", "fonts")
 HEROES_DIR   = os.path.join(PROJECT_ROOT, "assets", "images", "heroes")
+MUSIC_PATH   = os.path.join(PROJECT_ROOT, "assets", "music", "background.mp3")
 
 os.makedirs(HEROES_DIR, exist_ok=True)
 
@@ -112,6 +113,73 @@ PLUT_GAMES = [
 ]
 
 
+# ── audio (background music) ─────────────────────────────────────────────
+
+# Plays the same background.mp3 the installer uses, at half the user's
+# saved music_volume (launcher is transient and shouldn't compete with
+# the game it's about to launch). Reads music_enabled / music_volume from
+# DeckOps config so the user's preferences carry over from the installer.
+# pygame is wrapped in try/except — if unavailable, launcher works
+# silently without music rather than crashing.
+
+LAUNCHER_VOLUME_MULT = 0.5
+FADEOUT_MS           = 1000
+
+
+def _pygame_available():
+    try:
+        import pygame  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _audio_volume() -> float:
+    try:
+        sys.path.insert(0, SCRIPT_DIR)
+        import config as cfg
+        return cfg.get_music_volume() * LAUNCHER_VOLUME_MULT
+    except Exception:
+        return 0.2
+
+
+def _audio_enabled() -> bool:
+    try:
+        sys.path.insert(0, SCRIPT_DIR)
+        import config as cfg
+        return cfg.get_music_enabled()
+    except Exception:
+        return True
+
+
+def _start_audio():
+    if not _audio_enabled() or not _pygame_available():
+        return
+    if not os.path.exists(MUSIC_PATH):
+        return
+    try:
+        import pygame
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+        if not pygame.mixer.music.get_busy():
+            pygame.mixer.music.load(MUSIC_PATH)
+            pygame.mixer.music.set_volume(_audio_volume())
+            pygame.mixer.music.play(-1)
+    except Exception:
+        pass
+
+
+def _fadeout_audio(ms: int = FADEOUT_MS):
+    if not _pygame_available():
+        return
+    try:
+        import pygame
+        if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+            pygame.mixer.music.fadeout(ms)
+    except Exception:
+        pass
+
+
 # ── launch helper ────────────────────────────────────────────────────────
 
 # Debounce flag — set on first launch, blocks further button clicks until
@@ -127,6 +195,8 @@ def _launch_lan(wrapper_path: str):
     if _LAUNCH_FIRED:
         return
     _LAUNCH_FIRED = True
+
+    _fadeout_audio()
 
     try:
         subprocess.Popen(["bash", wrapper_path])
@@ -391,7 +461,7 @@ class LauncherWindow(QWidget):
             f"border-radius:8px;}}"
             f"QPushButton:hover{{background:{C_DARK_BTN};color:#FFF;}}"
         )
-        quit_btn.clicked.connect(QApplication.instance().quit)
+        quit_btn.clicked.connect(self._quit_with_fade)
         hl.addWidget(quit_btn)
         root_lay.addWidget(hdr)
 
@@ -432,6 +502,11 @@ class LauncherWindow(QWidget):
             empty.setStyleSheet(f"color:{C_DIM};background:transparent;")
             rows_lay.insertWidget(0, empty)
 
+    def _quit_with_fade(self):
+        """Fade audio out, then quit once fadeout completes."""
+        _fadeout_audio()
+        QTimer.singleShot(FADEOUT_MS, QApplication.instance().quit)
+
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
@@ -441,6 +516,7 @@ def main():
 
     win = LauncherWindow()
     win.showFullScreen()
+    _start_audio()
     sys.exit(app.exec_())
 
 
