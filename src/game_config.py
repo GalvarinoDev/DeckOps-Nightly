@@ -10,6 +10,11 @@ chosen name from deckops.json in any config that has `seta name "Player"`.
 
 LCD users receive MW1, MW2, and MW3 SP configs.
 OLED users receive MW1, MW2, WaW, BO1, MW3, and BO2 configs.
+
+LCD Plutonium games are additionally mirrored into the Heroic shared default
+prefix (~/Games/Heroic/Prefixes/default), because LCD online play routes
+through Heroic's Wine environment and never touches Steam's per-game
+compatdata prefix. The compatdata write is preserved for future offline mode.
 """
 
 import os
@@ -21,6 +26,10 @@ import shutil
 _HERE        = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(_HERE)
 CONFIGS_DIR  = os.path.join(PROJECT_ROOT, "assets", "configs")
+
+# Heroic shared default prefix — used by LCD online play for all Plutonium
+# games. Configs must be mirrored here so LCD online launches see them.
+HEROIC_DEFAULT_PFX = os.path.expanduser("~/Games/Heroic/Prefixes/default")
 
 
 # ── Config map ────────────────────────────────────────────────────────────────
@@ -68,6 +77,38 @@ def _pfx_local(steam_root, appid, *parts, game_install_dir=None):
         "pfx", "drive_c", "users", "steamuser", "AppData", "Local",
         *parts
     )
+
+
+def _heroic_pfx_local(*parts):
+    """
+    Return a path inside the Heroic shared default prefix's
+    drive_c/users/steamuser/AppData/Local/ tree.
+
+    Mirrors _pfx_local but rooted at HEROIC_DEFAULT_PFX. No appid or library
+    resolution — the Heroic prefix is a single shared location for all LCD
+    Plutonium games.
+    """
+    return os.path.join(
+        HEROIC_DEFAULT_PFX,
+        "pfx", "drive_c", "users", "steamuser", "AppData", "Local",
+        *parts
+    )
+
+
+def _heroic_mirror_path(compatdata_dest):
+    """
+    Given a destination path inside a compatdata pfx AppData/Local tree,
+    return the equivalent path inside the Heroic shared default prefix.
+
+    Returns None if the input does not contain '/AppData/Local/' (i.e. not
+    a prefix-AppData path — install-dir destinations have no Heroic mirror).
+    """
+    marker = os.path.join("AppData", "Local") + os.sep
+    idx = compatdata_dest.find(marker)
+    if idx == -1:
+        return None
+    tail = compatdata_dest[idx + len(marker):]
+    return _heroic_pfx_local(*tail.split(os.sep))
 
 
 # The config map is built inside apply_game_configs so steam_root is available.
@@ -265,6 +306,13 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
     After copying, replaces `seta name "Player"` with the user's chosen
     player name from deckops.json (if set).
 
+    For LCD installs, Plutonium configs (those with a fixed prefix-AppData
+    destination) are additionally mirrored into the Heroic shared default
+    prefix at ~/Games/Heroic/Prefixes/default, since LCD online play routes
+    through Heroic's Wine environment instead of Steam's per-game prefix.
+    The Heroic mirror copy is best-effort and does not affect applied/failed
+    counts — the compatdata write is the source of truth for those.
+
     selected_keys   — list of game keys the user selected to install
     installed_games — dict from detect_games.find_installed_games()
     steam_root      — path to Steam root
@@ -360,6 +408,28 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
             except Exception as ex:
                 prog(f"  - {key}: failed to copy {os.path.basename(src)}: {ex}")
                 failed += 1
+                continue
+
+            # ── Heroic shared prefix mirror (LCD Plutonium only) ──────────
+            # LCD online play routes through Heroic's default prefix, which
+            # never touches the per-game compatdata above. Mirror the same
+            # config there so online launches see it. Best-effort: failures
+            # here are logged but don't increment applied/failed.
+            if deck_model == "lcd" and fixed_dest:
+                heroic_dest_dir = _heroic_mirror_path(dest_dir)
+                if heroic_dest_dir:
+                    try:
+                        os.makedirs(heroic_dest_dir, exist_ok=True)
+                        heroic_dest = os.path.join(
+                            heroic_dest_dir, os.path.basename(src)
+                        )
+                        shutil.copy2(src, heroic_dest)
+                        _replace_player_name(heroic_dest, player_name)
+                        prog(f"  + {key}: also mirrored to Heroic prefix "
+                             f"-> {heroic_dest_dir}")
+                    except Exception as ex:
+                        prog(f"  ! {key}: Heroic mirror failed "
+                             f"({os.path.basename(src)}): {ex}")
 
     prog(f"Game configs: {applied} applied, {skipped} skipped, {failed} failed.")
     return applied, skipped, failed
