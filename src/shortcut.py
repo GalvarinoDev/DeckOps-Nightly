@@ -1547,13 +1547,15 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
 
 LAUNCHER_TITLE = "DeckOps: Plutonium Launcher"
 
-# Custom DeckOps Plutonium launcher artwork.
+# Custom DeckOps Plutonium launcher artwork. Hosted in the DeckOps-Nightly
+# repo so updates ship with the source. _download_artwork below always
+# re-downloads on install so URL/asset changes propagate to existing setups.
 LAUNCHER_ART = {
-    "icon_url":  "https://cdn2.steamgriddb.com/icon/ce3ecbaee3cc8014c4c2cba7b7106a38/32/256x256.png",
-    "grid_url":  "https://i.imgur.com/YsKM51I.png",
-    "wide_url":  "https://i.imgur.com/M0Fh2DY.png",
-    "hero_url":  "https://cdn2.steamgriddb.com/hero/aec3e4a8bf7a9a78686f7973d4c848b1.png",
-    "logo_url":  "https://cdn2.steamgriddb.com/logo/762dd577d6ff90976d1269075d4ebae5.png",
+    "icon_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/icon.png",
+    "grid_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/deckops_grid.png",
+    "wide_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/deckops_launcher_banner.png",
+    "hero_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/deckops_hero.png",
+    "logo_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/deckops.png",
     "icon_ext": "png", "grid_ext": "png", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
 }
 
