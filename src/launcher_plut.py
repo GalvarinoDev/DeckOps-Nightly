@@ -15,6 +15,8 @@ Every installed game stores a lan_wrapper_path at install time. The
 wrapper is a bash script that calls Proton directly with the Plutonium
 bootstrapper and -lan flag. No Steam protocol, no Heroic, no online
 account needed. Works identically on OLED and LCD hardware.
+
+DEBUG BUILD: gamepad code paths log to ~/gamepad.log for diagnostics.
 """
 
 import os
@@ -22,6 +24,8 @@ import sys
 import subprocess
 import threading
 import urllib.request
+import time
+import traceback
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
@@ -113,6 +117,29 @@ PLUT_GAMES = [
 ]
 
 
+# ── debug logger ─────────────────────────────────────────────────────────────
+
+# Writes timestamped lines to ~/gamepad.log. Truncates on first call so each
+# launcher run starts with a fresh log. Best-effort — never raises.
+
+_LOG_PATH = os.path.expanduser("~/gamepad.log")
+_LOG_LOCK = threading.Lock()
+_LOG_INITIALIZED = False
+
+
+def _log(msg: str):
+    global _LOG_INITIALIZED
+    try:
+        with _LOG_LOCK:
+            mode = "a" if _LOG_INITIALIZED else "w"
+            _LOG_INITIALIZED = True
+            with open(_LOG_PATH, mode) as f:
+                ts = time.strftime("%H:%M:%S")
+                f.write(f"[{ts}] {msg}\n")
+    except Exception:
+        pass
+
+
 # ── gamepad (evdev) ──────────────────────────────────────────────────────
 
 # Read controller input directly from /dev/input via evdev. Bypasses Steam
@@ -135,66 +162,98 @@ _EV_ABS_HAT0Y = 17    # D-pad vertical:   -1 up,   0 center, 1 down
 
 def _find_gamepad():
     """Return the first device that looks like a gamepad, or None."""
+    _log("_find_gamepad: entered")
     try:
         from evdev import InputDevice, list_devices, ecodes
-    except ImportError:
+        _log("_find_gamepad: evdev imported OK")
+    except ImportError as ex:
+        _log(f"_find_gamepad: ImportError on evdev: {ex}")
         return None
     try:
-        for path in list_devices():
+        paths = list_devices()
+        _log(f"_find_gamepad: list_devices returned {len(paths)} paths: {paths}")
+        for path in paths:
             try:
                 dev = InputDevice(path)
                 caps = dev.capabilities()
-                # A gamepad will report EV_KEY codes for BTN_SOUTH (A button).
                 keys = caps.get(ecodes.EV_KEY, [])
-                if _EV_BTN_SOUTH in keys:
+                has_south = _EV_BTN_SOUTH in keys
+                _log(f"_find_gamepad:   {path} name={dev.name!r} "
+                     f"BTN_SOUTH={has_south}")
+                if has_south:
+                    _log(f"_find_gamepad: SELECTED {path} ({dev.name!r})")
                     return dev
-            except Exception:
+            except Exception as ex:
+                _log(f"_find_gamepad:   {path} skipped: {ex}")
                 continue
-    except Exception:
-        pass
+    except Exception as ex:
+        _log(f"_find_gamepad: outer exception: {ex}")
+        _log(traceback.format_exc())
+    _log("_find_gamepad: NO GAMEPAD FOUND")
     return None
 
 
 def _start_gamepad_thread(window):
     """Start a daemon thread that reads the gamepad and dispatches to window."""
+    _log("_start_gamepad_thread: entered")
     try:
         from evdev import ecodes
-    except ImportError:
+    except ImportError as ex:
+        _log(f"_start_gamepad_thread: ImportError on evdev: {ex}")
         return
 
     dev = _find_gamepad()
     if dev is None:
+        _log("_start_gamepad_thread: no gamepad, returning early")
         return
+
+    _log(f"_start_gamepad_thread: starting read thread for {dev.path}")
 
     def _post(fn):
         # Marshal back to Qt main thread.
         QTimer.singleShot(0, fn)
 
     def _loop():
+        _log("_loop: read thread started")
+        event_count = 0
         try:
             for event in dev.read_loop():
+                event_count += 1
+                # Log first 50 events in detail so we can see what's arriving.
+                # After that, only log key/abs events (skip noisy SYN spam).
+                verbose = event_count <= 50
+                if verbose:
+                    _log(f"_loop: event #{event_count} type={event.type} "
+                         f"code={event.code} value={event.value}")
+
                 if event.type == ecodes.EV_KEY and event.value == 1:
-                    # Button press (value 1 = down, 0 = up, 2 = repeat).
+                    _log(f"_loop: KEY DOWN code={event.code}")
                     if event.code == _EV_BTN_SOUTH:
+                        _log("_loop: -> _activate_focused")
                         _post(window._activate_focused)
                     elif event.code == _EV_BTN_EAST:
+                        _log("_loop: -> _quit_with_fade")
                         _post(window._quit_with_fade)
                 elif event.type == ecodes.EV_ABS:
-                    # D-pad on the Deck is reported as ABS_HAT0X/Y.
                     if event.code == _EV_ABS_HAT0X:
+                        _log(f"_loop: HAT0X value={event.value}")
                         if event.value < 0:
                             _post(lambda: window._move_btn(-1))
                         elif event.value > 0:
                             _post(lambda: window._move_btn(+1))
                     elif event.code == _EV_ABS_HAT0Y:
+                        _log(f"_loop: HAT0Y value={event.value}")
                         if event.value < 0:
                             _post(lambda: window._move_row(-1))
                         elif event.value > 0:
                             _post(lambda: window._move_row(+1))
-        except Exception:
-            pass
+        except Exception as ex:
+            _log(f"_loop: EXCEPTION broke read loop: {ex}")
+            _log(traceback.format_exc())
+        _log(f"_loop: exited normally after {event_count} events")
 
     threading.Thread(target=_loop, daemon=True).start()
+    _log("_start_gamepad_thread: thread launched")
 
 
 # ── audio (background music) ─────────────────────────────────────────────
@@ -677,6 +736,7 @@ class LauncherWindow(QWidget):
 
     def keyPressEvent(self, event):
         key = event.key()
+        _log(f"keyPressEvent: key={key}")
 
         if key == Qt.Key_Escape:
             self._quit_with_fade()
@@ -700,6 +760,8 @@ class LauncherWindow(QWidget):
         super().keyPressEvent(event)
 
     def _move_row(self, delta: int):
+        _log(f"_move_row: delta={delta} cur={self._row_idx} "
+             f"rows={len(self._focus_rows)}")
         if not self._focus_rows:
             return
         new_idx = max(0, min(len(self._focus_rows) - 1, self._row_idx + delta))
@@ -711,6 +773,7 @@ class LauncherWindow(QWidget):
         self._focus_rows[self._row_idx].set_focused_button(0)
 
     def _move_btn(self, delta: int):
+        _log(f"_move_btn: delta={delta}")
         if not self._focus_rows:
             return
         row = self._focus_rows[self._row_idx]
@@ -722,12 +785,14 @@ class LauncherWindow(QWidget):
         row.set_focused_button(new_idx)
 
     def _activate_focused(self):
+        _log("_activate_focused called")
         if not self._focus_rows:
             return
         self._focus_rows[self._row_idx].trigger_focused_button()
 
     def _quit_with_fade(self):
         """Fade audio out, then quit once fadeout completes."""
+        _log("_quit_with_fade called")
         _fadeout_audio()
         QTimer.singleShot(FADEOUT_MS, QApplication.instance().quit)
 
@@ -735,6 +800,15 @@ class LauncherWindow(QWidget):
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
+    _log("=" * 60)
+    _log(f"main: starting launcher_plut.py")
+    _log(f"main: argv={sys.argv}")
+    _log(f"main: python={sys.executable}")
+    _log(f"main: cwd={os.getcwd()}")
+    _log(f"main: DISPLAY={os.environ.get('DISPLAY', '<unset>')}")
+    _log(f"main: WAYLAND_DISPLAY={os.environ.get('WAYLAND_DISPLAY', '<unset>')}")
+    _log(f"main: XDG_SESSION_TYPE={os.environ.get('XDG_SESSION_TYPE', '<unset>')}")
+
     app = QApplication(sys.argv)
     _load_font()
 
@@ -749,6 +823,7 @@ def main():
     win.setFocus()
     _start_audio()
     _start_gamepad_thread(win)
+    _log("main: entering Qt event loop")
     sys.exit(app.exec_())
 
 
