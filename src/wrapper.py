@@ -548,6 +548,46 @@ def set_compat_tool(appids, version):
         f.write(data)
 
 
+def clear_compat_tool(appids):
+    """
+    Remove CompatToolMapping entries for the given appids from Steam's
+    config.vdf. Inverse of set_compat_tool — used for games where Steam
+    must NOT wrap the launch in a compat tool, e.g. LCD Plutonium games
+    whose launch options invoke `flatpak run` to hand off to Heroic.
+
+    Steam wraps any launch with a CompatToolMapping entry inside Steam
+    Linux Runtime (sniper). From inside that container the host's flatpak
+    binary is invisible, so the flatpak invocation fails and the launch
+    flash-closes. Heroic owns the Proton invocation downstream, so the
+    Steam-side compat tool is not just unnecessary — it actively breaks
+    the launch.
+
+    Silently no-ops if config.vdf doesn't exist or the entry isn't there.
+    Must be called while Steam is closed so the change persists.
+
+    appids — list of int or str appids
+    """
+    if not os.path.exists(STEAM_CONFIG):
+        return
+
+    with open(STEAM_CONFIG, "r", encoding="utf-8") as f:
+        data = f.read()
+
+    modified = False
+    for appid in appids:
+        appid_str = str(appid)
+        # Same pattern as shortcut._clear_compat_tool — matches the appid
+        # block including its trailing newline so the file stays clean.
+        pattern = rf'\t+"{re.escape(appid_str)}"\n\t+\{{[^}}]*\}}\n?'
+        if re.search(pattern, data, re.MULTILINE | re.DOTALL):
+            data = re.sub(pattern, "", data, flags=re.MULTILINE | re.DOTALL)
+            modified = True
+
+    if modified:
+        with open(STEAM_CONFIG, "w", encoding="utf-8") as f:
+            f.write(data)
+
+
 def set_default_launch_option(steam_root, appids_config):
     """
     Set the default launch option for games with multiple launch modes so
