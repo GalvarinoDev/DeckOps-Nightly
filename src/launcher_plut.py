@@ -16,6 +16,10 @@ wrapper is a bash script that calls Proton directly with the Plutonium
 bootstrapper and -lan flag. No Steam protocol, no Heroic, no online
 account needed. Works identically on OLED and LCD hardware.
 
+Gamepad input is read via evdev in a QObject worker moved to a QThread.
+The worker emits pyqtSignals which Qt auto-marshals to main-thread slots
+via queued connections — the canonical thread-safe Qt pattern.
+
 DEBUG BUILD: gamepad code paths log to ~/gamepad.log for diagnostics.
 """
 
@@ -32,7 +36,9 @@ from PyQt5.QtWidgets import (
     QPushButton, QSizePolicy,
 )
 from PyQt5.QtGui import QFont, QFontDatabase, QPixmap, QPainter, QColor
-from PyQt5.QtCore import Qt, QTimer, QRect
+from PyQt5.QtCore import (
+    Qt, QTimer, QRect, QObject, QThread, pyqtSignal, pyqtSlot,
+)
 
 # ── paths ────────────────────────────────────────────────────────────────────
 
@@ -140,24 +146,20 @@ def _log(msg: str):
         pass
 
 
-# ── gamepad (evdev) ──────────────────────────────────────────────────────
+# ── gamepad reader (QObject in QThread) ──────────────────────────────────────
 
-# Read controller input directly from /dev/input via evdev. Bypasses Steam
-# Input entirely so the launcher works in Game Mode regardless of which
-# controller template is applied to the shortcut. evdev is present on every
-# SteamOS install (Steam Input itself uses it) but we wrap the import in
-# try/except so the launcher degrades gracefully if it's missing.
-#
-# Background thread polls events; actions are marshalled back to the Qt
-# main thread via QTimer.singleShot(0, callback) since touching widgets
-# from a background thread is unsafe.
-
-# evdev key codes for Steam Deck built-in controller (also matches Xbox
-# layout for external controllers).
+# evdev key/abs codes for the Steam Deck's built-in controller (also matches
+# Xbox layout for external controllers).
 _EV_BTN_SOUTH = 304   # A
 _EV_BTN_EAST  = 305   # B
 _EV_ABS_HAT0X = 16    # D-pad horizontal: -1 left, 0 center, 1 right
 _EV_ABS_HAT0Y = 17    # D-pad vertical:   -1 up,   0 center, 1 down
+_EV_ABS_X     = 0     # Left stick horizontal
+_EV_ABS_Y     = 1     # Left stick vertical
+
+# Analog stick deadzone — values are typically -32768..32767. Anything within
+# +/- this is treated as centered. 12000 is comfortable on the Deck.
+_STICK_DEADZONE = 12000
 
 
 def _find_gamepad():
@@ -193,67 +195,107 @@ def _find_gamepad():
     return None
 
 
-def _start_gamepad_thread(window):
-    """Start a daemon thread that reads the gamepad and dispatches to window."""
-    _log("_start_gamepad_thread: entered")
-    try:
-        from evdev import ecodes
-    except ImportError as ex:
-        _log(f"_start_gamepad_thread: ImportError on evdev: {ex}")
-        return
+class GamepadReader(QObject):
+    """
+    QObject worker that reads evdev events in its own thread and emits
+    pyqtSignals for each navigation action. Signals connect to slots on
+    LauncherWindow via Qt's auto-connection — because the reader lives
+    in a different thread than the window, Qt automatically uses queued
+    connections, which marshal the slot call onto the main thread's
+    event loop. This is the canonical Qt pattern for worker → GUI
+    communication and is fully thread-safe.
+    """
 
-    dev = _find_gamepad()
-    if dev is None:
-        _log("_start_gamepad_thread: no gamepad, returning early")
-        return
+    move_row       = pyqtSignal(int)   # +1 / -1
+    move_btn       = pyqtSignal(int)   # +1 / -1
+    activate       = pyqtSignal()
+    quit_requested = pyqtSignal()
 
-    _log(f"_start_gamepad_thread: starting read thread for {dev.path}")
+    def __init__(self):
+        super().__init__()
+        self._device = None
+        # Stick edge-detection state — only emit on transition from
+        # centered to past-deadzone, not on every event while held.
+        self._stick_x_dir = 0   # -1, 0, +1
+        self._stick_y_dir = 0
 
-    def _post(fn):
-        # Marshal back to Qt main thread.
-        QTimer.singleShot(0, fn)
+    @pyqtSlot()
+    def run(self):
+        _log("GamepadReader.run: entered (worker thread)")
+        self._device = _find_gamepad()
+        if self._device is None:
+            _log("GamepadReader.run: no device found, exiting worker")
+            return
 
-    def _loop():
-        _log("_loop: read thread started")
+        try:
+            from evdev import ecodes
+        except ImportError as ex:
+            _log(f"GamepadReader.run: evdev import failed: {ex}")
+            return
+
+        _log(f"GamepadReader.run: reading events from {self._device.path}")
         event_count = 0
         try:
-            for event in dev.read_loop():
+            for event in self._device.read_loop():
                 event_count += 1
-                # Log first 50 events in detail so we can see what's arriving.
-                # After that, only log key/abs events (skip noisy SYN spam).
-                verbose = event_count <= 50
-                if verbose:
-                    _log(f"_loop: event #{event_count} type={event.type} "
+                # Detailed logging for the first 50 events; after that
+                # only log meaningful key/abs transitions to keep the log
+                # readable.
+                if event_count <= 50:
+                    _log(f"event #{event_count} type={event.type} "
                          f"code={event.code} value={event.value}")
 
                 if event.type == ecodes.EV_KEY and event.value == 1:
-                    _log(f"_loop: KEY DOWN code={event.code}")
                     if event.code == _EV_BTN_SOUTH:
-                        _log("_loop: -> _activate_focused")
-                        _post(window._activate_focused)
+                        _log("emit activate")
+                        self.activate.emit()
                     elif event.code == _EV_BTN_EAST:
-                        _log("_loop: -> _quit_with_fade")
-                        _post(window._quit_with_fade)
+                        _log("emit quit_requested")
+                        self.quit_requested.emit()
+
                 elif event.type == ecodes.EV_ABS:
                     if event.code == _EV_ABS_HAT0X:
-                        _log(f"_loop: HAT0X value={event.value}")
                         if event.value < 0:
-                            _post(lambda: window._move_btn(-1))
+                            _log("emit move_btn(-1)  [HAT0X<0]")
+                            self.move_btn.emit(-1)
                         elif event.value > 0:
-                            _post(lambda: window._move_btn(+1))
+                            _log("emit move_btn(+1)  [HAT0X>0]")
+                            self.move_btn.emit(+1)
                     elif event.code == _EV_ABS_HAT0Y:
-                        _log(f"_loop: HAT0Y value={event.value}")
                         if event.value < 0:
-                            _post(lambda: window._move_row(-1))
+                            _log("emit move_row(-1)  [HAT0Y<0]")
+                            self.move_row.emit(-1)
                         elif event.value > 0:
-                            _post(lambda: window._move_row(+1))
+                            _log("emit move_row(+1)  [HAT0Y>0]")
+                            self.move_row.emit(+1)
+                    elif event.code == _EV_ABS_X:
+                        # Left stick horizontal — emit on edge only.
+                        new_dir = (
+                            -1 if event.value < -_STICK_DEADZONE
+                            else +1 if event.value > _STICK_DEADZONE
+                            else 0
+                        )
+                        if new_dir != self._stick_x_dir:
+                            self._stick_x_dir = new_dir
+                            if new_dir != 0:
+                                _log(f"emit move_btn({new_dir:+d})  [stick X]")
+                                self.move_btn.emit(new_dir)
+                    elif event.code == _EV_ABS_Y:
+                        # Left stick vertical — emit on edge only.
+                        new_dir = (
+                            -1 if event.value < -_STICK_DEADZONE
+                            else +1 if event.value > _STICK_DEADZONE
+                            else 0
+                        )
+                        if new_dir != self._stick_y_dir:
+                            self._stick_y_dir = new_dir
+                            if new_dir != 0:
+                                _log(f"emit move_row({new_dir:+d})  [stick Y]")
+                                self.move_row.emit(new_dir)
         except Exception as ex:
-            _log(f"_loop: EXCEPTION broke read loop: {ex}")
+            _log(f"GamepadReader.run: read_loop exception: {ex}")
             _log(traceback.format_exc())
-        _log(f"_loop: exited normally after {event_count} events")
-
-    threading.Thread(target=_loop, daemon=True).start()
-    _log("_start_gamepad_thread: thread launched")
+        _log(f"GamepadReader.run: exited after {event_count} events")
 
 
 # ── audio (background music) ─────────────────────────────────────────────
@@ -643,6 +685,7 @@ class LauncherWindow(QWidget):
         self.setStyleSheet(f"background:{C_BG};")
 
         setup_info = _get_setup_plut_keys()
+        _log(f"LauncherWindow: setup_info has {len(setup_info)} entries")
 
         root_lay = QVBoxLayout(self)
         root_lay.setContentsMargins(0, 0, 0, 0)
@@ -724,6 +767,7 @@ class LauncherWindow(QWidget):
         # Uninstalled rows (and rows where every button is disabled because
         # the wrapper is missing) are skipped entirely.
         self._focus_rows = [r for r in installed if r.launchable_count() > 0]
+        _log(f"LauncherWindow: _focus_rows has {len(self._focus_rows)} entries")
         self._row_idx = 0
         if self._focus_rows:
             self._focus_rows[0].set_row_focused(True)
@@ -745,22 +789,29 @@ class LauncherWindow(QWidget):
             self._activate_focused()
             return
         if key == Qt.Key_Up:
-            self._move_row(-1)
+            self.on_move_row(-1)
             return
         if key == Qt.Key_Down:
-            self._move_row(+1)
+            self.on_move_row(+1)
             return
         if key == Qt.Key_Left:
-            self._move_btn(-1)
+            self.on_move_btn(-1)
             return
         if key == Qt.Key_Right:
-            self._move_btn(+1)
+            self.on_move_btn(+1)
             return
 
         super().keyPressEvent(event)
 
-    def _move_row(self, delta: int):
-        _log(f"_move_row: delta={delta} cur={self._row_idx} "
+    # ── slots invoked from gamepad signals (queued connection) ────────────
+    # These run on the main thread because the GamepadReader lives in a
+    # different QThread and Qt automatically uses queued connections in
+    # that case. Slots are identical in shape to the old _move_* methods
+    # so the keyboard path can call them directly too.
+
+    @pyqtSlot(int)
+    def on_move_row(self, delta: int):
+        _log(f"on_move_row: delta={delta} cur={self._row_idx} "
              f"rows={len(self._focus_rows)}")
         if not self._focus_rows:
             return
@@ -772,8 +823,9 @@ class LauncherWindow(QWidget):
         self._focus_rows[self._row_idx].set_row_focused(True)
         self._focus_rows[self._row_idx].set_focused_button(0)
 
-    def _move_btn(self, delta: int):
-        _log(f"_move_btn: delta={delta}")
+    @pyqtSlot(int)
+    def on_move_btn(self, delta: int):
+        _log(f"on_move_btn: delta={delta}")
         if not self._focus_rows:
             return
         row = self._focus_rows[self._row_idx]
@@ -784,12 +836,14 @@ class LauncherWindow(QWidget):
         new_idx = max(0, min(n - 1, cur + delta))
         row.set_focused_button(new_idx)
 
+    @pyqtSlot()
     def _activate_focused(self):
         _log("_activate_focused called")
         if not self._focus_rows:
             return
         self._focus_rows[self._row_idx].trigger_focused_button()
 
+    @pyqtSlot()
     def _quit_with_fade(self):
         """Fade audio out, then quit once fadeout completes."""
         _log("_quit_with_fade called")
@@ -822,7 +876,28 @@ def main():
     win.raise_()
     win.setFocus()
     _start_audio()
-    _start_gamepad_thread(win)
+
+    # ── start gamepad reader on its own QThread ────────────────────────────
+    # Pattern: QObject worker + moveToThread + queued signal/slot connections.
+    # This is the canonical thread-safe way to bridge a blocking read loop
+    # to GUI updates in Qt. Both objects must outlive main() — keep them as
+    # attributes on the window so they aren't garbage-collected.
+    win._gp_thread = QThread()
+    win._gp_reader = GamepadReader()
+    win._gp_reader.moveToThread(win._gp_thread)
+
+    # Connect navigation signals to window slots. Auto-connection sees the
+    # cross-thread affinity and uses queued connections automatically.
+    win._gp_reader.move_row.connect(win.on_move_row)
+    win._gp_reader.move_btn.connect(win.on_move_btn)
+    win._gp_reader.activate.connect(win._activate_focused)
+    win._gp_reader.quit_requested.connect(win._quit_with_fade)
+
+    # Start the reader's run() once the thread's event loop is up.
+    win._gp_thread.started.connect(win._gp_reader.run)
+    win._gp_thread.start()
+    _log("main: gamepad QThread started")
+
     _log("main: entering Qt event loop")
     sys.exit(app.exec_())
 
