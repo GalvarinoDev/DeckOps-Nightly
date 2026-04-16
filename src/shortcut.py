@@ -680,6 +680,79 @@ def get_shortcut_appid(name: str) -> int | None:
     return None
 
 
+# ── Entry-stripping helper (rewrite-on-collision support) ────────────────────
+#
+# When a shortcut with a matching AppName already exists, we strip the stale
+# entry from the raw VDF body and re-index the remaining entries so the new
+# write can append a fresh entry with correct Exe / LaunchOptions / StartDir.
+#
+# Prior behavior (before this was added): name collisions caused a no-op and
+# left whatever LaunchOptions the stale entry had. That meant reinstalls
+# could not correct a broken LaunchOptions field. For LCD Own installs in
+# particular this broke every reinstall after Steam touched shortcuts.vdf.
+#
+# This helper uses the same \x00\d+\x00 entry-boundary regex that
+# remove_shortcut and cleanup_orphan_shortcuts already use for consistency.
+
+def _strip_entries_by_name(raw_body: bytes, names_to_strip: set) -> tuple:
+    """
+    Remove entries from raw_body whose AppName matches any name in
+    names_to_strip. raw_body is the shortcut body with header/footer
+    already stripped (as returned by _read_shortcuts_raw).
+
+    Returns (new_body, stripped_names) where stripped_names is a set of
+    names that were actually found and removed. Re-indexes remaining
+    entries to contiguous numeric indices starting at 0.
+
+    If no matching entries are found, returns (raw_body, set()) unchanged.
+    """
+    if not raw_body or not names_to_strip:
+        return raw_body, set()
+
+    # Find entry boundaries. Same pattern as remove_shortcut/cleanup_orphan.
+    entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', raw_body)]
+    if not entry_starts:
+        return raw_body, set()
+
+    entries = []
+    for i, start in enumerate(entry_starts):
+        end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(raw_body)
+        entries.append(raw_body[start:end])
+
+    kept = []
+    stripped = set()
+    for entry in entries:
+        # Check if this entry's AppName (or appname) matches anything we
+        # want to strip. Match the full "\x01AppName\x00NAME\x00" sequence
+        # so partial substring matches do not trigger a false strip.
+        matched_name = None
+        for name in names_to_strip:
+            name_bytes = name.encode("utf-8")
+            if (b'\x01AppName\x00' + name_bytes + b'\x00' in entry or
+                b'\x01appname\x00' + name_bytes + b'\x00' in entry):
+                matched_name = name
+                break
+        if matched_name is not None:
+            stripped.add(matched_name)
+            continue
+        kept.append(entry)
+
+    if not stripped:
+        return raw_body, set()
+
+    # Re-index remaining entries so Steam sees contiguous indices starting at 0
+    reindexed = []
+    for new_idx, entry in enumerate(kept):
+        entry = re.sub(
+            rb'^\x00\d+\x00',
+            f'\x00{new_idx}\x00'.encode(),
+            entry,
+        )
+        reindexed.append(entry)
+
+    return b''.join(reindexed), stripped
+
+
 # ── Generic shortcut API ─────────────────────────────────────────────────────
 #
 # add_shortcut / remove_shortcut are the single-shortcut building blocks.
@@ -743,6 +816,19 @@ def add_shortcut(
 
         existing_names = _read_existing_shortcuts(shortcuts_path)
         existing_raw = _read_shortcuts_raw(shortcuts_path)
+
+        # If a shortcut with this name already exists, strip its entry from
+        # the raw body so we can write a fresh one with current Exe /
+        # StartDir / LaunchOptions. Prior behavior was a no-op on name
+        # match, which left stale LaunchOptions in place across reinstalls.
+        replaced = False
+        if name in existing_names:
+            existing_raw, stripped = _strip_entries_by_name(
+                existing_raw, {name}
+            )
+            if stripped:
+                replaced = True
+
         next_idx = _get_next_index(existing_raw)
 
         icon_path = os.path.join(
@@ -750,35 +836,35 @@ def add_shortcut(
             f"{shortcut_appid}_icon.{artwork_def.get('icon_ext', 'png')}",
         )
 
-        if name in existing_names:
-            prog(f"    ✓ Shortcut exists: {name}")
-        else:
-            entry = {
-                "appid":               _to_signed32(shortcut_appid),
-                "AppName":             name,
-                "Exe":                 exe_path,
-                "StartDir":            start_dir,
-                "icon":                icon_path,
-                "ShortcutPath":        "",
-                "LaunchOptions":       launch_options,
-                "IsHidden":            0,
-                "AllowDesktopConfig":  1,
-                "AllowOverlay":        1,
-                "OpenVR":              0,
-                "Devkit":              0,
-                "DevkitGameID":        "",
-                "DevkitOverrideAppID": 0,
-                "LastPlayTime":        0,
-                "FlatpakAppID":        "",
-                "tags":                {"0": "DeckOps"},
-            }
+        entry = {
+            "appid":               _to_signed32(shortcut_appid),
+            "AppName":             name,
+            "Exe":                 exe_path,
+            "StartDir":            start_dir,
+            "icon":                icon_path,
+            "ShortcutPath":        "",
+            "LaunchOptions":       launch_options,
+            "IsHidden":            0,
+            "AllowDesktopConfig":  1,
+            "AllowOverlay":        1,
+            "OpenVR":              0,
+            "Devkit":              0,
+            "DevkitGameID":        "",
+            "DevkitOverrideAppID": 0,
+            "LastPlayTime":        0,
+            "FlatpakAppID":        "",
+            "tags":                {"0": "DeckOps"},
+        }
 
-            entry_bytes = _make_shortcut_entry(next_idx, entry)
-            try:
-                _write_shortcuts_vdf(shortcuts_path, existing_raw, [entry_bytes])
+        entry_bytes = _make_shortcut_entry(next_idx, entry)
+        try:
+            _write_shortcuts_vdf(shortcuts_path, existing_raw, [entry_bytes])
+            if replaced:
+                prog(f"    ✓ Shortcut replaced: {name}")
+            else:
                 prog(f"    ✓ Shortcut created: {name}")
-            except Exception as e:
-                prog(f"    ⚠ Failed to write shortcut: {e}")
+        except Exception as e:
+            prog(f"    ⚠ Failed to write shortcut: {e}")
 
         # Artwork
         _download_artwork(grid_dir, shortcut_appid, artwork_def, prog,
@@ -1389,8 +1475,29 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
         shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
         grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
 
-        existing_names = _read_existing_shortcuts(shortcuts_path)
         existing_raw = _read_shortcuts_raw(shortcuts_path)
+
+        # Strip any existing entries whose AppName matches a shortcut we're
+        # about to write. Without this, name collisions were a no-op and
+        # left stale Exe / LaunchOptions / StartDir fields in place across
+        # reinstalls. For LCD Plutonium keys (which skip the write below
+        # and are handled later by _create_heroic_steam_shortcut), the
+        # strip is still correct -- add_shortcut will see a clean slate
+        # and write fresh.
+        names_to_write = {d["name"] for d, _ in to_create.values()}
+        existing_raw, stripped = _strip_entries_by_name(
+            existing_raw, names_to_write
+        )
+        if stripped:
+            prog(f"  Replacing {len(stripped)} stale shortcut(s)...")
+
+        # Re-read names after the strip so the defensive fallback below
+        # reflects the post-strip state of the file.
+        existing_names = [
+            n for n in _read_existing_shortcuts(shortcuts_path)
+            if n not in stripped
+        ]
+
         next_idx = _get_next_index(existing_raw)
 
         new_entries = []
@@ -1483,32 +1590,35 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
             prog(f"    appid: {shortcut_appid}")
 
             if name in existing_names:
-                prog(f"    ✓ Shortcut exists")
-            else:
-                entry = {
-                    "appid":               _to_signed32(shortcut_appid),
-                    "AppName":             name,
-                    "Exe":                 f'"{actual_exe}"',
-                    "StartDir":            f'"{install_dir}"',
-                    "icon":                icon_path,
-                    "ShortcutPath":        "",
-                    "LaunchOptions":       launch_options,
-                    "IsHidden":            0,
-                    "AllowDesktopConfig":  1,
-                    "AllowOverlay":        1,
-                    "OpenVR":              0,
-                    "Devkit":              0,
-                    "DevkitGameID":        "",
-                    "DevkitOverrideAppID": 0,
-                    "LastPlayTime":        0,
-                    "FlatpakAppID":        "",
-                    "tags":                {"0": "DeckOps"},
-                }
+                # names_to_write already stripped all matching entries from
+                # existing_raw at the top of the UID loop, so this branch
+                # is unreachable in practice. Kept as a defensive fallback
+                # in case the strip helper ever fails to match an entry.
+                prog(f"    ⚠ Unexpected name collision after strip")
+            entry = {
+                "appid":               _to_signed32(shortcut_appid),
+                "AppName":             name,
+                "Exe":                 f'"{actual_exe}"',
+                "StartDir":            f'"{install_dir}"',
+                "icon":                icon_path,
+                "ShortcutPath":        "",
+                "LaunchOptions":       launch_options,
+                "IsHidden":            0,
+                "AllowDesktopConfig":  1,
+                "AllowOverlay":        1,
+                "OpenVR":              0,
+                "Devkit":              0,
+                "DevkitGameID":        "",
+                "DevkitOverrideAppID": 0,
+                "LastPlayTime":        0,
+                "FlatpakAppID":        "",
+                "tags":                {"0": "DeckOps"},
+            }
 
-                entry_bytes = _make_shortcut_entry(next_idx, entry)
-                new_entries.append(entry_bytes)
-                next_idx += 1
-                prog(f"    ✓ Shortcut created")
+            entry_bytes = _make_shortcut_entry(next_idx, entry)
+            new_entries.append(entry_bytes)
+            next_idx += 1
+            prog(f"    ✓ Shortcut created")
 
             # Download artwork
             _download_artwork(grid_dir, shortcut_appid, shortcut_def, prog)
