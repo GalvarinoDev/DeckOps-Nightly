@@ -516,13 +516,13 @@ echo ""
 if [ -n "$STEAM_ROOT" ]; then
     # Close Heroic first if it's running, otherwise it may hold files in
     # ~/Games/Heroic/Prefixes/default open and the rm below will fail.
-    info "Closing Heroic Games Launcher if running..."
+    info "Closing HGL if running..."
     if pgrep -f "com.heroicgameslauncher.hgl" > /dev/null 2>&1; then
         flatpak kill com.heroicgameslauncher.hgl 2>/dev/null
         sleep 1
-        success "Heroic closed"
+        success "HGL closed"
     else
-        skip "Heroic was not running"
+        skip "HGL was not running"
     fi
     echo ""
 
@@ -633,7 +633,7 @@ echo ""
 # the user added themselves, or any non-DeckOps Heroic state. The user's
 # own Heroic library is preserved completely.
 
-info "Removing DeckOps artifacts from Heroic Games Launcher..."
+info "Removing DeckOps artifacts from HGL..."
 
 HGL_CONFIG="$HOME/.var/app/com.heroicgameslauncher.hgl/config/heroic"
 HGL_LIB="$HGL_CONFIG/sideload_apps/library.json"
@@ -1862,7 +1862,7 @@ echo ""
 # Show summary dialog in background while countdown runs in terminal
 zenity --info \
     --title="DeckOps Nightly Uninstaller" \
-    --text="DeckOps fully uninstalled.\n\nYour Steam games are untouched.\nAll Plutonium data removed from Wine prefixes.\nAll LCD Heroic state and shortcuts removed.\nAll IW3SP-MOD and IW4x client files removed.\nAll DeckOps controller templates and profiles removed." \
+    --text="DeckOps fully uninstalled.\n\nYour Steam games are untouched.\nAll Plutonium data removed from Wine prefixes.\nAll LCD HGL state and shortcuts removed.\nAll IW3SP-MOD and IW4x client files removed.\nAll DeckOps controller templates and profiles removed." \
     --timeout=6 \
     2>/dev/null &
 
