@@ -1549,9 +1549,22 @@ def _set_heroic_steam_launch_options(game_key: str, steam_root: str,
     )
 
     try:
-        from wrapper import set_launch_options
+        from wrapper import set_launch_options, clear_compat_tool
         set_launch_options(steam_root, appid, launch_opts)
         prog(f"  Heroic launch options set for appid {appid}")
+        # Steam wraps any launch with a CompatToolMapping entry inside Steam
+        # Linux Runtime (sniper). From inside that container the host's
+        # flatpak binary is invisible, so the flatpak invocation in the
+        # launch options above fails and the launch flash-closes. Heroic
+        # owns the Proton invocation downstream, so the Steam-side compat
+        # tool must be cleared. _apply_compat() in ui_qt earlier in the
+        # install set GE-Proton on every MANAGED_APPID including this one;
+        # this undoes it for the LCD flatpak-launching games.
+        try:
+            clear_compat_tool([appid])
+            prog(f"  Compat tool cleared for appid {appid} (LCD flatpak path)")
+        except Exception as ex:
+            prog(f"  Could not clear compat tool for appid {appid}: {ex}")
     except Exception as ex:
         prog(f"  Could not set Heroic launch options for appid {appid}: {ex}")
 
