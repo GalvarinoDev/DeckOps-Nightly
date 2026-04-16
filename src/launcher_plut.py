@@ -113,6 +113,90 @@ PLUT_GAMES = [
 ]
 
 
+# ── gamepad (evdev) ──────────────────────────────────────────────────────
+
+# Read controller input directly from /dev/input via evdev. Bypasses Steam
+# Input entirely so the launcher works in Game Mode regardless of which
+# controller template is applied to the shortcut. evdev is present on every
+# SteamOS install (Steam Input itself uses it) but we wrap the import in
+# try/except so the launcher degrades gracefully if it's missing.
+#
+# Background thread polls events; actions are marshalled back to the Qt
+# main thread via QTimer.singleShot(0, callback) since touching widgets
+# from a background thread is unsafe.
+
+# evdev key codes for Steam Deck built-in controller (also matches Xbox
+# layout for external controllers).
+_EV_BTN_SOUTH = 304   # A
+_EV_BTN_EAST  = 305   # B
+_EV_ABS_HAT0X = 16    # D-pad horizontal: -1 left, 0 center, 1 right
+_EV_ABS_HAT0Y = 17    # D-pad vertical:   -1 up,   0 center, 1 down
+
+
+def _find_gamepad():
+    """Return the first device that looks like a gamepad, or None."""
+    try:
+        from evdev import InputDevice, list_devices, ecodes
+    except ImportError:
+        return None
+    try:
+        for path in list_devices():
+            try:
+                dev = InputDevice(path)
+                caps = dev.capabilities()
+                # A gamepad will report EV_KEY codes for BTN_SOUTH (A button).
+                keys = caps.get(ecodes.EV_KEY, [])
+                if _EV_BTN_SOUTH in keys:
+                    return dev
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+
+def _start_gamepad_thread(window):
+    """Start a daemon thread that reads the gamepad and dispatches to window."""
+    try:
+        from evdev import ecodes
+    except ImportError:
+        return
+
+    dev = _find_gamepad()
+    if dev is None:
+        return
+
+    def _post(fn):
+        # Marshal back to Qt main thread.
+        QTimer.singleShot(0, fn)
+
+    def _loop():
+        try:
+            for event in dev.read_loop():
+                if event.type == ecodes.EV_KEY and event.value == 1:
+                    # Button press (value 1 = down, 0 = up, 2 = repeat).
+                    if event.code == _EV_BTN_SOUTH:
+                        _post(window._activate_focused)
+                    elif event.code == _EV_BTN_EAST:
+                        _post(window._quit_with_fade)
+                elif event.type == ecodes.EV_ABS:
+                    # D-pad on the Deck is reported as ABS_HAT0X/Y.
+                    if event.code == _EV_ABS_HAT0X:
+                        if event.value < 0:
+                            _post(lambda: window._move_btn(-1))
+                        elif event.value > 0:
+                            _post(lambda: window._move_btn(+1))
+                    elif event.code == _EV_ABS_HAT0Y:
+                        if event.value < 0:
+                            _post(lambda: window._move_row(-1))
+                        elif event.value > 0:
+                            _post(lambda: window._move_row(+1))
+        except Exception:
+            pass
+
+    threading.Thread(target=_loop, daemon=True).start()
+
+
 # ── audio (background music) ─────────────────────────────────────────────
 
 # Plays the same background.mp3 the installer uses, at half the user's
@@ -664,6 +748,7 @@ def main():
     win.raise_()
     win.setFocus()
     _start_audio()
+    _start_gamepad_thread(win)
     sys.exit(app.exec_())
 
 
