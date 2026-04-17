@@ -238,21 +238,45 @@ def make_entry(index, appid, name, exe, icon, start_dir):
     e += b'\x08'
     return e
 
-def count_entries(data):
-    """Count existing shortcut entries by looking for the appid field marker."""
-    count = 0
-    search = b'\x01AppName\x00'
-    search_lc = b'\x01appname\x00'
-    pos = 0
-    while pos < len(data):
-        idx = data.find(search, pos)
-        idx_lc = data.find(search_lc, pos)
-        if idx == -1 and idx_lc == -1:
-            break
-        found = min(i for i in (idx, idx_lc) if i != -1)
-        count += 1
-        pos = found + 1
-    return count
+def get_next_index(raw_data):
+    """
+    Find the next available shortcut index from raw shortcut entry data.
+    Ported from shortcut.py _get_next_index — must stay in sync.
+
+    Entry headers are: 0x00 <index_str> 0x00 immediately followed by 0x02
+    (the appid int field marker). The 0x02 lookahead distinguishes real
+    entry headers from other 0x00...0x00 sequences in binary VDF.
+    """
+    if not raw_data:
+        return 0
+    indices = []
+    i = 0
+    while i < len(raw_data) - 2:
+        if raw_data[i] == 0x00:
+            end = raw_data.find(b'\x00', i + 1)
+            if end != -1 and end > i + 1:
+                if end + 1 < len(raw_data) and raw_data[end + 1] == 0x02:
+                    try:
+                        idx_str = raw_data[i + 1:end].decode('utf-8')
+                        if idx_str.isdigit():
+                            indices.append(int(idx_str))
+                    except (UnicodeDecodeError, ValueError):
+                        pass
+                i = end + 1
+            else:
+                i += 1
+        else:
+            i += 1
+    return max(indices, default=-1) + 1
+
+def backup_file(path):
+    """Write a .bak copy before modifying a file."""
+    import shutil
+    if os.path.exists(path):
+        try:
+            shutil.copy2(path, path + ".bak")
+        except OSError:
+            pass
 
 vdf_paths = find_all_shortcuts_vdf()
 if not vdf_paths:
@@ -274,13 +298,22 @@ for vdf in vdf_paths:
         if b'DeckOps Nightly' in data:
             print(f"Already in Steam shortcuts: {vdf}")
             continue
+        header = b'\x00shortcuts\x00'
+        raw = data
+        if raw.startswith(header):
+            raw = raw[len(header):]
+        if raw.endswith(b'\x08\x08'):
+            raw = raw[:-2]
+        elif raw.endswith(b'\x08'):
+            raw = raw[:-1]
+        index = get_next_index(raw)
         existing = data[:-2] if data.endswith(b'\x08\x08') else data
-        index = count_entries(data)
     else:
         os.makedirs(os.path.dirname(vdf), exist_ok=True)
         existing = b'\x00shortcuts\x00'
         index = 0
 
+    backup_file(vdf)
     updated = existing + make_entry(index, appid, name, exe, icon, start_dir) + b'\x08\x08'
     open(vdf, 'wb').write(updated)
     print(f"Added as entry {index} in {vdf}")
