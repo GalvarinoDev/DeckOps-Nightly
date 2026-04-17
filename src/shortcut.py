@@ -452,9 +452,19 @@ def _get_next_index(raw_data: bytes) -> int:
     return max(indices, default=-1) + 1
 
 
+def _backup_file(path: str):
+    """Write a .bak copy before modifying a Steam config file."""
+    if os.path.exists(path):
+        try:
+            shutil.copy2(path, path + ".bak")
+        except OSError:
+            pass
+
+
 def _write_shortcuts_vdf(path: str, existing_raw: bytes, new_entries: list):
     """Write shortcuts.vdf with existing entries preserved and new ones appended."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    _backup_file(path)
     
     data = b'\x00shortcuts\x00'
     
@@ -623,6 +633,7 @@ def _clear_compat_tool(appid_str: str):
     pattern = rf'\t+"{re.escape(appid_str)}"\n\t+\{{[^}}]*\}}\n?'
     if re.search(pattern, data, re.MULTILINE | re.DOTALL):
         data = re.sub(pattern, "", data, flags=re.MULTILINE | re.DOTALL)
+        _backup_file(steam_config)
         with open(steam_config, "w", encoding="utf-8") as f:
             f.write(data)
 
@@ -968,6 +979,7 @@ def remove_shortcut(name: str, exe_path: str, artwork_def: dict = None,
                 reindexed.append(entry)
             new_data = header + b''.join(reindexed) + footer
             try:
+                _backup_file(shortcuts_path)
                 with open(shortcuts_path, "wb") as f:
                     f.write(new_data)
                 prog(f"  Removed shortcut '{name}' for uid {uid}")
@@ -1104,6 +1116,7 @@ def cleanup_orphan_shortcuts(on_progress=None):
                 reindexed.append(entry)
             new_data = header + b''.join(reindexed) + footer
             try:
+                _backup_file(shortcuts_path)
                 with open(shortcuts_path, "wb") as f:
                     f.write(new_data)
             except OSError as ex:
@@ -1788,6 +1801,7 @@ def create_launcher_shortcut(on_progress=None):
                         _pattern, "", _data,
                         flags=_re.MULTILINE | _re.DOTALL,
                     )
+                    _backup_file(steam_config)
                     with open(steam_config, "w", encoding="utf-8") as _f:
                         _f.write(_data)
                     prog(f"    Cleared stale compat tool from launcher shortcut")
@@ -1860,6 +1874,7 @@ def remove_launcher_shortcut(on_progress=None):
                 reindexed.append(entry)
             new_data = header + b''.join(reindexed) + footer
             try:
+                _backup_file(shortcuts_path)
                 with open(shortcuts_path, "wb") as f:
                     f.write(new_data)
                 prog(f"  Removed launcher shortcut for uid {uid}")

@@ -5,6 +5,15 @@ import shutil
 import subprocess
 
 
+def _backup_file(path: str):
+    """Write a .bak copy before modifying a Steam config file."""
+    if os.path.exists(path):
+        try:
+            shutil.copy2(path, path + ".bak")
+        except OSError:
+            pass
+
+
 def _find_block_end(text, start):
     """
     Brace-depth parser that skips braces inside quoted strings.
@@ -276,6 +285,7 @@ def set_launch_options(steam_root, appid, options):
             content[app_close:]
         )
 
+        _backup_file(vdf_path)
         with open(vdf_path, "w", errors="replace") as f:
             f.write(new_content)
 
@@ -341,6 +351,7 @@ def clear_launch_options(steam_root, appid):
             content[app_close:]
         )
 
+        _backup_file(vdf_path)
         with open(vdf_path, "w", errors="replace") as f:
             f.write(new_content)
 
@@ -472,6 +483,7 @@ def set_steam_input_enabled(steam_root, appids=None):
             modified = True
 
         if modified:
+            _backup_file(vdf_path)
             with open(vdf_path, "w", errors="replace") as f:
                 f.write(content)
 
@@ -544,6 +556,7 @@ def set_compat_tool(appids, version):
                     count=1,
                 )
 
+    _backup_file(STEAM_CONFIG)
     with open(STEAM_CONFIG, "w", encoding="utf-8") as f:
         f.write(data)
 
@@ -584,6 +597,7 @@ def clear_compat_tool(appids):
             modified = True
 
     if modified:
+        _backup_file(STEAM_CONFIG)
         with open(STEAM_CONFIG, "w", encoding="utf-8") as f:
             f.write(data)
 
@@ -724,5 +738,6 @@ def set_default_launch_option(steam_root, appids_config):
                         modified = True
 
         if modified:
+            _backup_file(vdf_path)
             with open(vdf_path, "w", errors="replace") as f:
                 f.write(content)
