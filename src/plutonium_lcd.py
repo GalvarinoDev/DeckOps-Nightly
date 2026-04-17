@@ -148,6 +148,17 @@ LCD_LAN_WRAPPER_NAMES = {
 SHARED_PLUT_DIR = os.path.expanduser("~/.local/share/deckops/plutonium_shared")
 _PLUT_SHARED_SUBDIRS = ("bin", "launcher", "games")
 
+# DeckOps client-side menu mods packaged as .iwd files (renamed .zip).
+# Downloaded from the repo and placed in Plutonium's storage/ path inside
+# the shared Heroic prefix. Loaded automatically on game launch, overriding
+# the default main menu. Mirrors plutonium_oled.MENU_MOD_FILES.
+MENU_MOD_BASE_URL = "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main/assets/mods"
+MENU_MOD_FILES = {
+    "t6mp":  ("t6/t6mp/deckops_menu.iwd", "storage/t6/raw/deckops_menu.iwd"),
+    "t6zm":  ("t6/t6zm/deckops_menu_zm.iwd", "storage/t6/raw/deckops_menu_zm.iwd"),
+    "iw5mp": ("iw5mp/main.lua", "storage/iw5/ui_mp/main.lua"),
+}
+
 
 # Where Heroic puts its managed Wine prefixes for sideloaded games when
 # DeckOps overrides the per-game winePrefix. Kept as a legacy constant for
@@ -985,6 +996,47 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
     return wrapper_path
 
 
+def _install_menu_mod_lcd(plut_dir: str, game_key: str, on_progress=None):
+    """
+    Download and install the DeckOps menu mod for the given game key.
+
+    LCD counterpart to plutonium_oled._install_menu_mod. Places the mod
+    files into the shared Heroic prefix's Plutonium storage path so they
+    are loaded automatically by the Plutonium client on game launch.
+
+    Skips silently for game keys without a menu mod defined.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    if game_key not in MENU_MOD_FILES:
+        return
+
+    remote_path, local_path = MENU_MOD_FILES[game_key]
+    url = f"{MENU_MOD_BASE_URL}/{remote_path}"
+    dest_file = os.path.join(plut_dir, local_path)
+
+    prog(f"  Installing DeckOps menu mod for {game_key}...")
+
+    os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(url, headers=_BROWSER_UA)
+            with urllib.request.urlopen(req, timeout=30) as r:
+                data = r.read()
+            with open(dest_file, "wb") as f:
+                f.write(data)
+            prog(f"  ✓ Menu mod installed ({len(data)} bytes)")
+            return
+        except Exception as ex:
+            if attempt == 2:
+                prog(f"  ⚠ Menu mod download failed: {ex}")
+                return  # Non-fatal -- game still works without the mod
+            time.sleep(2 ** attempt)
+
+
 def _download_plutonium_exe(dest_dir: str, on_progress=None) -> str:
     """
     Download plutonium.exe into dest_dir. Returns the full path to the
@@ -1354,6 +1406,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
          populated) -- raises if not.
       2. Write Plutonium's config.json inside the shared prefix with all
          selected Plutonium games' install paths. Idempotent across calls.
+     2b. Install DeckOps menu mod into the shared prefix (T6 MP/ZM, IW5 MP).
       3. Register per-game Heroic sideload entry + GamesConfig (kept for
          future online play through ManagementScreen).
       4. Set up shared Plutonium directories for symlink-based copies.
@@ -1406,6 +1459,13 @@ def install_plutonium_lcd(game: dict, game_key: str,
         shared_plut_dir, selected_plut_keys, installed_games,
         on_progress=lambda m: prog(20, m),
     )
+
+    # 2b. Install DeckOps menu mod (mainlobby.lua for T6, main.lua for IW5).
+    #     Placed in the shared Heroic prefix so all LCD games pick it up.
+    #     Idempotent -- re-downloading overwrites the existing file.
+    prog(22, "Installing menu mod...")
+    _install_menu_mod_lcd(shared_plut_dir, game_key,
+                          on_progress=lambda m: prog(23, m))
 
     # 3. Per-game Heroic sideload entry + GamesConfig (kept for future
     #    online play through ManagementScreen -- Steam shortcuts are
