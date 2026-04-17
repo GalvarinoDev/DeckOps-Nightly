@@ -164,37 +164,61 @@ info "Adding DeckOps to Steam library..."
 IN_GAME_MODE=0
 pgrep -x "gamescope" > /dev/null 2>&1 && IN_GAME_MODE=1
 
+STEAM_IS_RUNNING=0
+pgrep -f "ubuntu12_32/steam" > /dev/null 2>&1 && STEAM_IS_RUNNING=1
+
 add_to_steam() {
     python3 - << PYEOF
-import os, struct, time
+import binascii
+import os
+import struct
+import time
 
-def find_shortcuts_vdf():
+def find_all_shortcuts_vdf():
+    """Find shortcuts.vdf for ALL Steam user accounts, not just the first."""
     steam_paths = [
         os.path.expanduser("~/.local/share/Steam"),
         os.path.expanduser("~/.steam/steam"),
         os.path.expanduser("~/.steam/root"),
     ]
+    results = []
+    seen = set()
     for steam in steam_paths:
         userdata = os.path.join(steam, "userdata")
         if not os.path.exists(userdata):
             continue
         for uid in os.listdir(userdata):
-            vdf = os.path.join(userdata, uid, "config", "shortcuts.vdf")
+            if not uid.isdigit() or int(uid) < 10000:
+                continue
             cfg_dir = os.path.join(userdata, uid, "config")
-            if os.path.exists(vdf) or os.path.exists(cfg_dir):
-                return vdf
-    return None
+            real = os.path.realpath(cfg_dir)
+            if real in seen:
+                continue
+            seen.add(real)
+            vdf = os.path.join(cfg_dir, "shortcuts.vdf")
+            results.append(vdf)
+    return results
+
+def calc_shortcut_appid(exe_path, name):
+    """Must match shortcut.py _calc_shortcut_appid exactly."""
+    key = (exe_path + name).encode("utf-8")
+    crc = binascii.crc32(key) & 0xFFFFFFFF
+    return (crc | 0x80000000) & 0xFFFFFFFF
+
+def to_signed32(n):
+    return n if n <= 2147483647 else n - 2**32
 
 def string_field(key, val):
     return b'\x01' + key.encode() + b'\x00' + val.encode() + b'\x00'
 
 def int_field(key, val):
-    return b'\x02' + key.encode() + b'\x00' + struct.pack('<I', val)
+    return b'\x02' + key.encode() + b'\x00' + struct.pack('<i', val)
 
-def make_entry(index, name, exe, icon, start_dir):
+def make_entry(index, appid, name, exe, icon, start_dir):
     e  = b'\x00' + str(index).encode() + b'\x00'
-    e += string_field('appname', name)
-    e += string_field('exe', exe)
+    e += int_field('appid', to_signed32(appid))
+    e += string_field('AppName', name)
+    e += string_field('Exe', exe)
     e += string_field('StartDir', start_dir)
     e += string_field('icon', icon)
     e += string_field('ShortcutPath', '')
@@ -205,46 +229,77 @@ def make_entry(index, name, exe, icon, start_dir):
     e += int_field('OpenVR', 0)
     e += int_field('Devkit', 0)
     e += string_field('DevkitGameID', '')
-    e += int_field('LastPlayTime', int(time.time()))
-    e += b'\x00tags\x00\x08'
+    e += int_field('DevkitOverrideAppID', 0)
+    e += int_field('LastPlayTime', 0)
+    e += string_field('FlatpakAppID', '')
+    e += b'\x00tags\x00'
+    e += string_field('0', 'DeckOps')
+    e += b'\x08'
     e += b'\x08'
     return e
 
-vdf = find_shortcuts_vdf()
-if not vdf:
-    print("WARN: shortcuts.vdf not found — add DeckOps to Steam manually.")
+def count_entries(data):
+    """Count existing shortcut entries by looking for the appid field marker."""
+    count = 0
+    search = b'\x01AppName\x00'
+    search_lc = b'\x01appname\x00'
+    pos = 0
+    while pos < len(data):
+        idx = data.find(search, pos)
+        idx_lc = data.find(search_lc, pos)
+        if idx == -1 and idx_lc == -1:
+            break
+        found = min(i for i in (idx, idx_lc) if i != -1)
+        count += 1
+        pos = found + 1
+    return count
+
+vdf_paths = find_all_shortcuts_vdf()
+if not vdf_paths:
+    print("WARN: No Steam user accounts found — add DeckOps to Steam manually.")
     exit(0)
 
 home      = os.path.expanduser('~')
 name      = "DeckOps Nightly"
-exe       = f"{home}/DeckOps-Nightly/.venv/bin/python3 {home}/DeckOps-Nightly/src/main.py"
+exe       = f'"{home}/DeckOps-Nightly/.venv/bin/python3"'
 icon      = f"{home}/DeckOps-Nightly/assets/images/icon.png"
-start_dir = f"{home}/DeckOps-Nightly"
+start_dir = f'"{home}/DeckOps-Nightly"'
 
-if os.path.exists(vdf):
-    data = open(vdf, 'rb').read()
-    if b'DeckOps Nightly' in data:
-        print("Already in Steam shortcuts.")
-        exit(0)
-    existing = data[:-2] if data.endswith(b'\x08\x08') else data
-    index = existing.count(b'\x00appname\x00')
+appid = calc_shortcut_appid(exe, name)
+
+wrote = 0
+for vdf in vdf_paths:
+    if os.path.exists(vdf):
+        data = open(vdf, 'rb').read()
+        if b'DeckOps Nightly' in data:
+            print(f"Already in Steam shortcuts: {vdf}")
+            continue
+        existing = data[:-2] if data.endswith(b'\x08\x08') else data
+        index = count_entries(data)
+    else:
+        os.makedirs(os.path.dirname(vdf), exist_ok=True)
+        existing = b'\x00shortcuts\x00'
+        index = 0
+
+    updated = existing + make_entry(index, appid, name, exe, icon, start_dir) + b'\x08\x08'
+    open(vdf, 'wb').write(updated)
+    print(f"Added as entry {index} in {vdf}")
+    wrote += 1
+
+if wrote == 0:
+    print("Already in all Steam shortcut files.")
 else:
-    os.makedirs(os.path.dirname(vdf), exist_ok=True)
-    existing = b'\x00shortcuts\x00'
-    index = 0
-
-updated = existing + make_entry(index, name, exe, icon, start_dir) + b'\x08\x08'
-open(vdf, 'wb').write(updated)
-print(f"Added as entry {index}.")
+    print(f"Wrote to {wrote} shortcut file(s).")
 PYEOF
 }
 
-if [ "$IN_GAME_MODE" -eq 1 ]; then
-    add_to_steam
-    success "Steam shortcut written. Restart Steam to see DeckOps in your library."
-else
+if [ "$STEAM_IS_RUNNING" -eq 1 ] && [ "$IN_GAME_MODE" -eq 1 ]; then
+    warn "Steam is running in Game Mode — skipping shortcut write."
+    warn "DeckOps will appear in your library after you run it once from Desktop Mode,"
+    warn "or you can re-run this installer with Steam closed."
+elif [ "$STEAM_IS_RUNNING" -eq 1 ] && [ "$IN_GAME_MODE" -eq 0 ]; then
     echo ""
-    warn "Steam needs to be closed to add DeckOps to your library."
+    warn "Steam is currently running. It needs to be closed to safely add DeckOps."
     read -r -p "  Is Steam closed? Press Y to add, N to skip: " answer
     case "$answer" in
         [yY]*)
@@ -255,6 +310,9 @@ else
             warn "Skipped. To add manually: Steam → Add a Non-Steam Game → $ENTRY_POINT"
             ;;
     esac
+else
+    add_to_steam
+    success "Steam shortcut written. Launch Steam and DeckOps will be in your library."
 fi
 
 # ── step 8: sweep stale plut_lan.sh sidecars ─────────────────────────────────
