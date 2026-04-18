@@ -1076,6 +1076,7 @@ class InstallScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.selected=[]; self.steam_root=""; self.screen_name = "InstallScreen"
         self._plut_event = threading.Event()
+        self._return_to_management = False
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
         t = QLabel("INSTALLING"); t.setFont(font(36,True)); t.setAlignment(Qt.AlignCenter)
@@ -1142,14 +1143,20 @@ class InstallScreen(QWidget):
         self.plut_btn.setVisible(False)
         self._stop_pulse()
         self._plut_event.clear()
-        # Reset cont_btn to its default target in case a previous run
-        # changed it. showEvent fires immediately after SetupScreen switches.
+        # Route the continue button based on whether this was triggered
+        # from ManagementScreen (return to My Games) or the first-run
+        # wizard (go to ControllerInfoScreen).
         try:
             self.cont_btn.clicked.disconnect()
         except Exception:
             pass
-        self.cont_btn.setText("Continue  >>")
-        self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
+        if self._return_to_management:
+            self.cont_btn.setText("Back to My Games  >>")
+            self.cont_btn.clicked.connect(self._go_management)
+            self._return_to_management = False
+        else:
+            self.cont_btn.setText("Continue  >>")
+            self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
         _log_to_file("── Install started ──")
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
@@ -1551,7 +1558,7 @@ class InstallScreen(QWidget):
 
 # ── ManagementCard ─────────────────────────────────────────────────────────────
 class ManagementCard(QFrame):
-    def __init__(self, gd, installed, on_setup, on_update, on_reinstall, parent=None):
+    def __init__(self, gd, installed, on_setup, on_update, parent=None):
         super().__init__(parent)
         color = C_IW if gd["dev"] == "iw" else C_TREY
         self._color  = color
@@ -1622,29 +1629,19 @@ class ManagementCard(QFrame):
         btn_row = QWidget(); btn_row.setStyleSheet(f"background:{C_CARD};border:none;")
         br = QHBoxLayout(btn_row); br.setContentsMargins(8, 6, 8, 8); br.setSpacing(6)
 
-        if not is_present:
-            inst_btn = _btn("Install on Steam", C_DARK_BTN, size=10, h=32)
-            inst_btn.clicked.connect(lambda _=None, aid=self._appid: subprocess.Popen(
-                ["xdg-open", f"steam://install/{aid}"]))
-            br.addWidget(inst_btn); br.addStretch()
-        elif not is_setup:
+        if not is_setup and is_present:
             setup_btn = _btn("Set Up", C_IW, size=10, h=32)
             setup_btn.clicked.connect(lambda: on_setup(gd))
             br.addWidget(setup_btn); br.addStretch()
-        else:
-            # Only show Update/Reinstall for games with a mod client
+        elif is_setup:
             has_mod = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in ik)
             if has_mod:
                 upd_btn = _btn("Update", C_DARK_BTN, size=10, h=32)
-                rei_btn = _btn("Reinstall", C_DARK_BTN, size=10, h=32)
                 upd_btn.clicked.connect(lambda: on_update(gd, ik))
-                rei_btn.clicked.connect(lambda: on_reinstall(gd, ik))
-                br.addWidget(upd_btn); br.addWidget(rei_btn)
-            fld_btn = _btn("Open Folder", C_DARK_BTN, size=10, h=32)
-            _idir = installed.get(ik[0], {}).get("install_dir", "") if ik else ""
-            fld_btn.clicked.connect(lambda _=None, d=_idir: subprocess.Popen(
-                ["xdg-open", d]) if d else None)
-            br.addWidget(fld_btn); br.addStretch()
+                br.addWidget(upd_btn)
+            br.addStretch()
+        else:
+            br.addStretch()
 
         lay.addWidget(btn_row)
 
@@ -1725,7 +1722,16 @@ class ManagementScreen(QWidget):
     def showEvent(self, e):
         super().showEvent(e)
         root = find_steam_root()
-        self.installed = find_installed_games(parse_library_folders(root))
+        merged = find_installed_games(parse_library_folders(root))
+        # Merge own games so cards show regardless of install source
+        if cfg.get_game_source() == "own":
+            from detect_games import find_own_installed
+            own = find_own_installed()
+            # Own games take priority only for keys not already in Steam
+            for k, v in own.items():
+                if k not in merged:
+                    merged[k] = v
+        self.installed = merged
         self._rebuild()
 
     def _rebuild(self):
@@ -1742,7 +1748,6 @@ class ManagementScreen(QWidget):
                 gd, self.installed,
                 on_setup     = self._setup,
                 on_update    = self._update,
-                on_reinstall = self._reinstall,
             )
             self._grid.addWidget(card, row, col)
 
@@ -1753,38 +1758,54 @@ class ManagementScreen(QWidget):
                 self._grid.addWidget(QWidget(), total // CARD_COLS, col)
 
     def _setup(self, gd):
+        """Route a single card's keys through the install flow."""
         root = find_steam_root()
-        steam_inst = find_installed_games(parse_library_folders(root))
-        own_inst = {}
-        if cfg.get_game_source() == "own":
-            from detect_games import find_own_installed
-            own_inst = find_own_installed()
-        s = self.stack.widget(3)
-        s.steam_installed = steam_inst
-        s.own_installed   = own_inst
-        s.steam_root      = root
-        self.stack.setCurrentIndex(3)
+        keys = _active_keys(gd)
+        # Find which keys are present in the merged installed dict
+        present_keys = [k for k in keys if k in self.installed]
+        if not present_keys:
+            self._status.setText("Game files not found.")
+            return
+
+        source = cfg.get_game_source() or "steam"
+
+        # Build selected tuples for the install screen
+        selected = [(k, gd, self.installed[k]) for k in present_keys]
+
+        if source == "own":
+            # Determine which are own vs Steam
+            own_selected = {}
+            steam_selected = []
+            for k, g_gd, game in selected:
+                if game.get("source") == "own":
+                    own_selected[k] = game
+                else:
+                    steam_selected.append((k, g_gd, game))
+
+            s = self.stack.widget(10)  # OwnInstallScreen
+            s.own_selected = own_selected
+            s.steam_selected = steam_selected
+            s.steam_root = root
+            s._return_to_management = True
+            self.stack.setCurrentIndex(10)
+        else:
+            # Standard Steam flow
+            s = self.stack.widget(4)  # InstallScreen
+            s.selected = selected
+            s.steam_root = root
+            s._return_to_management = True
+            self.stack.setCurrentIndex(4)
 
     def _update(self, gd, keys):
+        """Route a single card's installed keys through the update flow."""
         root = find_steam_root()
-        inst = find_installed_games(parse_library_folders(root))
-        selected = [(k, gd, inst.get(k, {})) for k in keys if inst.get(k)]
+        # Use the merged installed dict (already built in showEvent)
+        selected = [(k, gd, self.installed.get(k, {})) for k in keys
+                     if self.installed.get(k)]
         if not selected:
-            self._status.setText("Game not found in Steam library."); return
-        s = self.stack.widget(8)
-        s.mode       = "update"
-        s.selected   = selected
-        s.steam_root = root
-        self.stack.setCurrentIndex(8)
-
-    def _reinstall(self, gd, keys):
-        root = find_steam_root()
-        inst = find_installed_games(parse_library_folders(root))
-        selected = [(k, gd, inst.get(k, {})) for k in keys if inst.get(k)]
-        if not selected:
-            self._status.setText("Game not found in Steam library."); return
-        s = self.stack.widget(8)
-        s.mode       = "reinstall"
+            self._status.setText("Game not found.")
+            return
+        s = self.stack.widget(8)  # UpdateScreen
         s.selected   = selected
         s.steam_root = root
         self.stack.setCurrentIndex(8)
@@ -2226,13 +2247,12 @@ class ConfigureScreen(QWidget):
 
 # ── UpdateScreen ───────────────────────────────────────────────────────────────
 class UpdateScreen(QWidget):
-    """Handles both Update and Reinstall from ManagementScreen."""
+    """Handles Update from ManagementScreen."""
 
     def __init__(self, stack):
         super().__init__(); self.stack = stack; self.screen_name = "UpdateScreen"
         self.selected   = []
         self.steam_root = ""
-        self.mode       = "update"
         self._steam_closed = threading.Event()
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
@@ -2278,11 +2298,10 @@ class UpdateScreen(QWidget):
 
     def showEvent(self, e):
         super().showEvent(e)
-        self.title.setText("REINSTALL" if self.mode == "reinstall" else "UPDATE")
         self.bar.setValue(0); self.log.clear()
         self.steam_btn.setVisible(False); self.back_btn.setVisible(False)
         self._steam_closed.clear()
-        _log_to_file(f"── {self.mode.title()} started ──")
+        _log_to_file("── Update started ──")
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
     def _on_done(self, _):
@@ -2308,6 +2327,9 @@ class UpdateScreen(QWidget):
         proton    = get_proton_path(self.steam_root)
         total     = len(self.selected)
 
+        # Read setup_games to determine source for each key
+        setup_games = cfg.get_setup_games()
+
         if not has_plut:
             self._s.progress.emit(5, "Closing Steam...")
             self._s.log.emit("Closing Steam...")
@@ -2326,28 +2348,50 @@ class UpdateScreen(QWidget):
             except Exception:
                 pass
 
+        # Build installed_games dict for Plutonium sibling key resolution
+        installed_for_plut = {k: g for k, _, g in self.selected if g}
+
         for idx, (key, gd, game) in enumerate(self.selected):
             if not game:
                 continue
             base_name = gd["base"]
             bp = int(idx / total * 90)
-            self._s.progress.emit(bp, f"{'Reinstalling' if self.mode == 'reinstall' else 'Updating'} {base_name}...")
+            self._s.progress.emit(bp, f"Updating {base_name}...")
             def op(pct, msg, _b=bp): self._s.progress.emit(_b + int(pct / 100 * (90 // total)), msg)
             c = KEY_CLIENT.get(key, gd.get("client", ""))
+
+            # Determine source from setup_games config entry
+            entry = setup_games.get(key, {})
+            source = entry.get("source", "steam")
+
             try:
                 from plutonium_oled import GAME_META as _PLUT_META
                 _appid = _PLUT_META[key][0] if (c == "plutonium" and key in _PLUT_META) else gd["appid"]
-                compat = find_compatdata(self.steam_root, _appid,
-                                         game_install_dir=game.get("install_dir"))
+
+                # Resolve compatdata - own games may have CRC-based prefix
+                if source == "own":
+                    compat = game.get("compatdata_path", "")
+                    if not compat:
+                        compat = find_compatdata(self.steam_root, _appid,
+                                                  game_install_dir=game.get("install_dir"))
+                else:
+                    compat = find_compatdata(self.steam_root, _appid,
+                                              game_install_dir=game.get("install_dir"))
+
                 if c == "cod4x":
                     install_cod4x(game, self.steam_root, proton, compat, op,
                                   appid=gd["appid"])
                 elif c == "iw3sp":
-                    install_iw3sp(game, self.steam_root, proton, compat, op)
+                    install_iw3sp(game, self.steam_root, proton, compat, op,
+                                  source=source)
                 elif c == "iw4x":
-                    install_iw4x(game, self.steam_root, proton, compat, op)
+                    install_iw4x(game, self.steam_root, proton, compat, op,
+                                 source=source)
                 elif c == "plutonium":
-                    install_plutonium(game, key, self.steam_root, proton, compat, op)
+                    install_plutonium(game, key, self.steam_root, proton, compat,
+                                     on_progress=op,
+                                     installed_games=installed_for_plut,
+                                     source=source)
                 self._s.log.emit(f"✓  {base_name} ({key}) done")
             except Exception as ex:
                 self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
@@ -2377,6 +2421,7 @@ class OwnInstallScreen(QWidget):
         self.steam_selected  = []   # list of (key, gd, game), set by SetupScreen
         self.steam_root = ""
         self._plut_event = threading.Event()
+        self._return_to_management = False
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
         t = QLabel("INSTALLING"); t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
@@ -2442,6 +2487,25 @@ class OwnInstallScreen(QWidget):
         self.cont_btn.setVisible(False)
         self._plut_event.clear()
         self._stop_pulse()
+        # Route the continue button based on whether this was triggered
+        # from ManagementScreen (return to My Games) or the first-run
+        # wizard (go to ControllerInfoScreen).
+        try:
+            self.cont_btn.clicked.disconnect()
+        except Exception:
+            pass
+        if self._return_to_management:
+            self.cont_btn.setText("Back to My Games  >>")
+            self.cont_btn.clicked.connect(lambda: (
+                self.stack.widget(5).set_installed(
+                    find_installed_games(parse_library_folders(find_steam_root()))
+                ),
+                self.stack.setCurrentIndex(5),
+            ))
+            self._return_to_management = False
+        else:
+            self.cont_btn.setText("Continue  >>")
+            self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
         _log_to_file("── Own Install started ──")
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
