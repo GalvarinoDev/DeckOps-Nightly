@@ -31,6 +31,7 @@ OLED Decks do not use this module at all -- plutonium_oled.py handles OLED
 directly through Steam's Proton runtime and a bash wrapper per game.
 """
 
+import binascii
 import hashlib
 import json
 import os
@@ -297,6 +298,65 @@ def _heroic_app_name(game_key: str) -> str:
     digest = hashlib.sha256(f"deckops_plut_{game_key}".encode()).digest()
     b64 = base64.urlsafe_b64encode(digest)[:19].decode()
     return f"do_{b64}"
+
+
+# ── Shader cache nuke (LCD only) ───────────────────────────────────────────
+# LCD Plutonium games launch through cache_cleanup.py → flatpak → Heroic →
+# Proton. Steam's shader cache for these appids only records Fossilize
+# activity from the Python/flatpak launcher, not the actual game (which
+# runs inside Heroic's Proton runtime). The cache is useless dead weight
+# that accumulates on every launch and can cause launch failures if it
+# becomes corrupt. Safe to nuke entirely — Steam recreates the directory
+# on next launch.
+
+SHADERCACHE_DIR = os.path.expanduser(
+    "~/.local/share/Steam/steamapps/shadercache"
+)
+
+
+def _calc_shortcut_appid(exe_path: str, name: str) -> int:
+    """CRC-based shortcut appid. Must match shortcut._calc_shortcut_appid."""
+    key = (exe_path + name).encode("utf-8")
+    crc = binascii.crc32(key) & 0xFFFFFFFF
+    return (crc | 0x80000000) & 0xFFFFFFFF
+
+
+def _nuke_shader_cache(game_key: str, source: str, on_progress=None):
+    """
+    Delete the entire shadercache/<appid>/ directory for an LCD game.
+
+    For Steam-owned games, nukes the Steam appid cache. For own games,
+    also nukes the shortcut appid cache (CRC-derived from the exe path
+    + title used when the non-Steam shortcut was created).
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    # Steam appid cache
+    steam_appid = PLUT_GAME_EXES.get(game_key)
+    if steam_appid:
+        appid_str = str(steam_appid[0])
+        cache_dir = os.path.join(SHADERCACHE_DIR, appid_str)
+        if os.path.isdir(cache_dir):
+            try:
+                shutil.rmtree(cache_dir)
+                prog(f"  Nuked shader cache for Steam appid {appid_str}")
+            except OSError as ex:
+                prog(f"  Could not remove shader cache {appid_str}: {ex}")
+
+    # Own game shortcut appid cache
+    if source == "own" and game_key in HEROIC_PLUT_GAMES:
+        title = HEROIC_PLUT_GAMES[game_key]["title"]
+        appid_exe = '"/usr/bin/flatpak"'
+        shortcut_appid = str(_calc_shortcut_appid(appid_exe, title))
+        cache_dir = os.path.join(SHADERCACHE_DIR, shortcut_appid)
+        if os.path.isdir(cache_dir):
+            try:
+                shutil.rmtree(cache_dir)
+                prog(f"  Nuked shader cache for shortcut appid {shortcut_appid}")
+            except OSError as ex:
+                prog(f"  Could not remove shader cache {shortcut_appid}: {ex}")
 
 
 # ── Heroic install/detection ────────────────────────────────────────────────
@@ -1608,6 +1668,17 @@ def install_plutonium_lcd(game: dict, game_key: str,
             )
     else:
         prog(50, "Skipping prefix copy -- no compatdata_path provided")
+
+    # 7c. Nuke the entire shader cache directory for this game's appid.
+    #     LCD games launch through cache_cleanup.py → flatpak → Heroic →
+    #     Proton, so Steam's shader cache for these appids is useless
+    #     junk from the launcher process. Nuking it during install gives
+    #     a clean start and prevents corrupt cache from blocking launch.
+    prog(90, "Clearing shader cache...")
+    _nuke_shader_cache(
+        game_key, source,
+        on_progress=lambda m: prog(92, m),
+    )
 
     # 8. Metadata sentinel
     prog(95, "Saving metadata...")

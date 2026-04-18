@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """
-cache_cleanup.py — DeckOps LCD shader cache cleanup + game launcher
+cache_cleanup.py — DeckOps LCD shader cache nuke + game launcher
 
-Cleans accumulated Fossilize pipeline cache files (fozpipelinesv6/) for
-a game's shortcut appid before launching the game through Heroic. This
-works around a Steam bug where non-Steam games generate a new .foz file
-on every launch, eventually consuming gigabytes of disk space.
+Removes the entire shader cache directory for a game's appid before
+launching through Heroic. LCD Plutonium games route through
+cache_cleanup.py → flatpak → Heroic → Proton, so Steam's shader cache
+for these appids only records activity from the Python/flatpak launcher
+process — not the actual game. The cache is useless junk that
+accumulates on every launch due to a Steam bug with non-Steam games.
 
 See: https://github.com/ValveSoftware/steam-for-linux/issues/10486
 
 Called from Steam launch options (Steam-owned games) or non-Steam shortcut
 LaunchOptions (own games). Not used on OLED — OLED launches through
-Steam's Proton directly and doesn't hit this bug.
+Steam's Proton directly and its shader cache is actually useful.
 
 Usage:
     python3 cache_cleanup.py <game_key> <source>
@@ -24,9 +26,10 @@ conflicting with the system flatpak binary.
 """
 
 import base64
+import binascii
 import hashlib
 import os
-import re
+import shutil
 import sys
 
 
@@ -51,6 +54,19 @@ STEAM_APPIDS = {
     "iw5mp": "42690",
 }
 
+# LCD own-game shortcut titles — must match HEROIC_PLUT_GAMES in
+# plutonium_lcd.py exactly so the CRC-based appid resolves to the
+# same shadercache directory that Steam creates for the shortcut.
+_OWN_SHORTCUT_TITLES = {
+    "t4sp":  "Call of Duty: World at War",
+    "t4mp":  "Call of Duty: World at War - Multiplayer",
+    "t5sp":  "Call of Duty: Black Ops",
+    "t5mp":  "Call of Duty: Black Ops - Multiplayer",
+    "t6mp":  "Call of Duty: Black Ops II - Multiplayer",
+    "t6zm":  "Call of Duty: Black Ops II - Zombies",
+    "iw5mp": "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
+}
+
 
 # ── Heroic app_name generation ───────────────────────────────────────────────
 # Must match plutonium_lcd._heroic_app_name exactly.
@@ -61,71 +77,61 @@ def _heroic_app_name(game_key: str) -> str:
     return f"do_{b64}"
 
 
+# ── Shortcut appid calculation ───────────────────────────────────────────────
+# Must match shortcut._calc_shortcut_appid exactly.
+
+def _calc_shortcut_appid(exe_path: str, name: str) -> int:
+    key = (exe_path + name).encode("utf-8")
+    crc = binascii.crc32(key) & 0xFFFFFFFF
+    return (crc | 0x80000000) & 0xFFFFFFFF
+
+
 # ── Shader cache cleanup ────────────────────────────────────────────────────
 
-def _cleanup_foz(appid_str: str):
+def _nuke_shader_cache_dir(appid_str: str):
     """
-    Clean accumulated fozpipelinesv6 files for a single appid.
+    Delete the entire shadercache/<appid>/ directory.
 
-    Groups .foz files by their hash prefix (the part before .N.foz),
-    keeps only the highest-numbered file per group, deletes the rest.
-    The newest file has the most complete pipeline state.
+    LCD Plutonium games launch through cache_cleanup.py → flatpak →
+    Heroic → Proton. Steam's shader cache for these appids only records
+    Fossilize activity from the Python/flatpak launcher process, not the
+    actual game (which runs inside Heroic's Proton instance). The cache
+    is useless dead weight that accumulates on every launch and can
+    potentially cause launch failures if it becomes corrupt.
 
-    If only one file exists per group, nothing is deleted.
+    Safe to delete entirely — Steam recreates the directory structure
+    on next launch, and the game's real shader work happens inside
+    Heroic's Proton runtime which stores its cache elsewhere.
     """
-    foz_dir = os.path.join(SHADERCACHE_DIR, appid_str, "fozpipelinesv6")
-    if not os.path.isdir(foz_dir):
-        return
-
-    # Walk every subdirectory under fozpipelinesv6/ — Steam puts the .foz
-    # files one level deeper under a hash-named folder like
-    # steamapprun_pipeline_cache_<HASH>/
-    for root, _dirs, files in os.walk(foz_dir):
-        foz_files = [f for f in files if f.endswith(".foz")]
-        if not foz_files:
-            continue
-
-        # Group by prefix: "steamapprun_pipeline_cache_abc123.5.foz"
-        # → prefix = "steamapprun_pipeline_cache_abc123", suffix = 5
-        groups = {}
-        pattern = re.compile(r'^(.+?)\.(\d+)\.foz$')
-        for fname in foz_files:
-            m = pattern.match(fname)
-            if m:
-                prefix = m.group(1)
-                num = int(m.group(2))
-                if prefix not in groups:
-                    groups[prefix] = []
-                groups[prefix].append((num, fname))
-
-        # For each group, keep only the highest-numbered file
-        for prefix, entries in groups.items():
-            if len(entries) <= 1:
-                continue
-            entries.sort(key=lambda x: x[0])
-            # Delete all but the last (highest number)
-            for _num, fname in entries[:-1]:
-                try:
-                    os.remove(os.path.join(root, fname))
-                except OSError:
-                    pass
+    cache_dir = os.path.join(SHADERCACHE_DIR, appid_str)
+    if os.path.isdir(cache_dir):
+        try:
+            shutil.rmtree(cache_dir)
+        except OSError:
+            pass
 
 
 def cleanup_shader_cache(game_key: str, source: str):
     """
-    Clean shader cache for a game. Handles both the Steam appid cache
-    (for Steam-owned games) and any non-Steam shortcut appid cache.
+    Nuke the entire shader cache directory for a game. Handles both
+    the Steam appid cache (for Steam-owned games) and the shortcut
+    appid cache (for own games with non-Steam shortcuts).
     """
-    # Always clean the Steam appid cache if it exists
+    # Always nuke the Steam appid cache if it exists
     steam_appid = STEAM_APPIDS.get(game_key)
     if steam_appid:
-        _cleanup_foz(steam_appid)
+        _nuke_shader_cache_dir(steam_appid)
 
-    # For own games, also clean the shortcut appid cache.
-    # We don't import shortcut.py here to keep this script lightweight
-    # and fast — instead we scan for any appid dirs that have our
-    # game's heroic app_name in recent launch logs. The Steam appid
-    # cleanup above covers the majority of cases.
+    # For own games, also nuke the shortcut appid cache. The shortcut
+    # appid is CRC-derived from the exe path + title used when the
+    # shortcut was created. Must match _create_heroic_steam_shortcut
+    # in plutonium_lcd.py exactly.
+    if source == "own":
+        title = _OWN_SHORTCUT_TITLES.get(game_key)
+        if title:
+            appid_exe = '"/usr/bin/flatpak"'
+            shortcut_appid = _calc_shortcut_appid(appid_exe, title)
+            _nuke_shader_cache_dir(str(shortcut_appid))
 
 
 # ── Game launch ──────────────────────────────────────────────────────────────
@@ -199,7 +205,7 @@ def main():
         print(f"Unknown source: {source} (expected 'steam' or 'own')")
         sys.exit(1)
 
-    # Clean shader cache, then launch
+    # Nuke shader cache, then launch
     cleanup_shader_cache(game_key, source)
     launch_game(game_key, source)
 
