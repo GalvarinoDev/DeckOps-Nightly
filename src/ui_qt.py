@@ -1873,7 +1873,7 @@ class ControllerInfoScreen(QWidget):
         lay.addWidget(_hdiv())
 
         # ── BO2 encrypted config note ──────────────────────────────────────────
-        lay.addWidget(_lbl("⚠  Black Ops II - Manual Setup Required", 13, C_TREY, bold=True, align=Qt.AlignLeft))
+        lay.addWidget(_lbl("⚠  Black Ops II - Manual Setup Required", 13, "#5B9BD5", bold=True, align=Qt.AlignLeft))
         lay.addWidget(_lbl(
             "BO2 Multiplayer and Zombies config files are handled automatically by DeckOps. "
             "Singleplayer config files are encrypted and cannot be written by DeckOps. "
