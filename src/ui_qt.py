@@ -1975,11 +1975,12 @@ def _reopen_steam_bg(steam_root=None):
 class ConfigureScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.screen_name = "ConfigureScreen"
-        lay = QVBoxLayout(self); lay.setContentsMargins(60,40,60,40); lay.setSpacing(18)
+        lay = QVBoxLayout(self); lay.setContentsMargins(60,40,60,40); lay.setSpacing(14)
         t = QLabel("SETTINGS"); t.setFont(font(36,True)); t.setAlignment(Qt.AlignCenter)
         t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
         lay.addWidget(_hdiv())
 
+        # ── Background Music ──────────────────────────────────────────────
         lay.addWidget(_lbl("Background Music", 14, "#CCC", align=Qt.AlignLeft))
         mr = QHBoxLayout(); mr.setSpacing(12)
         self._music_on = _music_enabled
@@ -2000,44 +2001,79 @@ class ConfigureScreen(QWidget):
         lay.addLayout(mr)
         lay.addWidget(_hdiv())
 
-        lay.addWidget(_lbl("Plutonium Account", 14, "#CCC", align=Qt.AlignLeft))
-        pr = QHBoxLayout(); pr.setSpacing(12)
-        reset_btn = _btn("Reset Credentials", C_RED_BTN, size=12, h=40)
-        sync_btn  = _btn("Sync to All Prefixes", C_DARK_BTN, size=12, h=40)
-        reset_btn.clicked.connect(self._reset)
-        sync_btn.clicked.connect(self._sync)
-        pr.addWidget(reset_btn); pr.addWidget(sync_btn); pr.addStretch()
-        lay.addLayout(pr)
-        lay.addWidget(_hdiv())
-
+        # ── Controller Profiles ───────────────────────────────────────────
         lay.addWidget(_lbl("Controller Profiles", 14, "#CCC", align=Qt.AlignLeft))
-        cr = QHBoxLayout(); cr.setSpacing(12)
-        ctrl_btn  = _btn("Re-apply Templates", C_DARK_BTN, size=12, h=40)
-        guide_btn = _btn("Guide", C_BLUE_BTN, size=12, h=40)
+        gr = QHBoxLayout(); gr.setSpacing(8)
+        gr.addWidget(_lbl("Gyro:", 12, "#AAA", wrap=False))
+        self._gyro_btns = {}
+        for mode in ("hold", "toggle", "ads"):
+            b = _btn(mode.upper(), C_DARK_BTN, size=11, h=36)
+            b.setFixedWidth(90)
+            b.clicked.connect(lambda checked, m=mode: self._set_gyro(m))
+            gr.addWidget(b)
+            self._gyro_btns[mode] = b
+        gr.addSpacing(16)
+        ctrl_btn = _btn("Re-apply Templates", C_DARK_BTN, size=12, h=36)
         ctrl_btn.clicked.connect(self._apply_controller_profiles)
-        guide_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
-        cr.addWidget(ctrl_btn); cr.addWidget(guide_btn); cr.addStretch()
-        lay.addLayout(cr)
+        gr.addWidget(ctrl_btn)
+        gr.addStretch()
+        lay.addLayout(gr)
         lay.addWidget(_hdiv())
 
-        lay.addWidget(_lbl("Shortcuts & Proton", 14, "#CCC", align=Qt.AlignLeft))
-        sr = QHBoxLayout(); sr.setSpacing(12)
-        shortcut_btn  = _btn("Repair Shortcuts",     C_DARK_BTN, size=12, h=40)
-        gamecfg_btn   = _btn("Re-apply Game Configs", C_DARK_BTN, size=12, h=40)
-        shortcut_btn.clicked.connect(self._repair_shortcuts)
-        gamecfg_btn.clicked.connect(self._reapply_game_configs)
-        sr.addWidget(shortcut_btn); sr.addWidget(gamecfg_btn); sr.addStretch()
-        lay.addLayout(sr)
+        # ── Player Name ───────────────────────────────────────────────────
+        lay.addWidget(_lbl("Player Name", 14, "#CCC", align=Qt.AlignLeft))
+        nr = QHBoxLayout(); nr.setSpacing(12)
+        from PyQt5.QtWidgets import QLineEdit
+        self._name_input = QLineEdit()
+        self._name_input.setPlaceholderText("Enter player name...")
+        self._name_input.setFixedHeight(36)
+        self._name_input.setMaxLength(32)
+        self._name_input.setStyleSheet(
+            "QLineEdit{background:#2A2A3A;color:#FFF;border:1px solid #444;"
+            "border-radius:6px;padding:0 10px;font-size:13px;}"
+            "QLineEdit:focus{border:1px solid #888;}"
+        )
+        save_btn = _btn("Save", C_IW, size=12, h=36)
+        save_btn.setFixedWidth(80)
+        save_btn.clicked.connect(self._save_name)
+        nr.addWidget(self._name_input, stretch=1); nr.addWidget(save_btn)
+        lay.addLayout(nr)
+        self._name_note = _lbl("Does not affect Plutonium online play", 10, C_DIM, align=Qt.AlignLeft)
+        lay.addWidget(self._name_note)
         lay.addWidget(_hdiv())
 
-        lay.addWidget(_lbl("Danger Zone", 14, C_TREY, align=Qt.AlignLeft))
-        dr = QHBoxLayout(); dr.setSpacing(12)
-        uninstall_btn = _btn("Full Uninstall", C_RED_BTN, size=12, h=40)
-        reset_cfg_btn = _btn("Reset DeckOps Config", C_RED_BTN, size=12, h=40)
-        uninstall_btn.clicked.connect(self._run_uninstaller)
-        reset_cfg_btn.clicked.connect(self._reset_deckops)
-        dr.addWidget(uninstall_btn); dr.addWidget(reset_cfg_btn); dr.addStretch()
-        lay.addLayout(dr)
+        # ── Shader Cache (LCD only) ───────────────────────────────────────
+        self._shader_row = QWidget()
+        sr_lay = QVBoxLayout(self._shader_row); sr_lay.setContentsMargins(0,0,0,0); sr_lay.setSpacing(8)
+        sr_lay.addWidget(_lbl("Shader Cache", 14, "#CCC", align=Qt.AlignLeft))
+        sc_btn = _btn("Clear Shader Cache", C_DARK_BTN, size=12, h=36)
+        sc_btn.setFixedWidth(220)
+        sc_btn.clicked.connect(self._clear_shader_cache)
+        sr_h = QHBoxLayout(); sr_h.addWidget(sc_btn); sr_h.addStretch()
+        sr_lay.addLayout(sr_h)
+        lay.addWidget(self._shader_row)
+        self._shader_hdiv = _hdiv()
+        lay.addWidget(self._shader_hdiv)
+
+        # ── Links ─────────────────────────────────────────────────────────
+        lay.addWidget(_lbl("Links", 14, "#CCC", align=Qt.AlignLeft))
+        lr = QHBoxLayout(); lr.setSpacing(12)
+        discord_btn = _btn("Discord", "#5865F2", size=12, h=36)
+        discord_btn.setFixedWidth(100)
+        discord_btn.clicked.connect(lambda: self._open_url("https://discord.gg/bkSQeq5Azk"))
+        stable_btn = _btn("Stable", C_DARK_BTN, size=12, h=36)
+        stable_btn.setFixedWidth(100)
+        stable_btn.clicked.connect(lambda: self._open_url("https://github.com/GalvarinoDev/DeckOps"))
+        nightly_btn = _btn("Nightly", C_DARK_BTN, size=12, h=36)
+        nightly_btn.setFixedWidth(100)
+        nightly_btn.clicked.connect(lambda: self._open_url("https://github.com/GalvarinoDev/DeckOps-Nightly"))
+        lr.addWidget(discord_btn); lr.addWidget(stable_btn); lr.addWidget(nightly_btn); lr.addStretch()
+        lay.addLayout(lr)
+        lay.addWidget(_hdiv())
+
+        # ── About ─────────────────────────────────────────────────────────
+        self._about_label = _lbl("", 11, C_DIM, align=Qt.AlignLeft)
+        lay.addWidget(self._about_label)
 
         lay.addStretch()
         self.status = _lbl("", 12, C_DIM)
@@ -2046,6 +2082,44 @@ class ConfigureScreen(QWidget):
         back.clicked.connect(lambda: self.stack.setCurrentIndex(5))
         bw = QHBoxLayout(); bw.addWidget(back); bw.addStretch()
         lay.addLayout(bw)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Refresh dynamic state
+        model = cfg.get_deck_model() or "unknown"
+        source = cfg.get_game_source() or "steam"
+        source_label = "Steam" if source == "steam" else "Steam & Non-Steam"
+        player = cfg.get_player_name() or "Player"
+        self._name_input.setText(player if player != "Player" else "")
+
+        # Gyro highlight
+        gyro = cfg.get_gyro_mode() or "hold"
+        for mode, btn in self._gyro_btns.items():
+            if mode == gyro:
+                btn.setStyleSheet(btn.styleSheet().replace(C_DARK_BTN, C_IW))
+            else:
+                btn.setStyleSheet(btn.styleSheet().replace(C_IW, C_DARK_BTN))
+
+        # LCD-only shader cache section
+        is_lcd = (model == "lcd")
+        self._shader_row.setVisible(is_lcd)
+        self._shader_hdiv.setVisible(is_lcd)
+
+        # Build info
+        build = "dev"
+        build_path = os.path.join(PROJECT_ROOT, "BUILD")
+        if os.path.exists(build_path):
+            try:
+                with open(build_path, "r") as f:
+                    build = f.read().strip() or "dev"
+            except Exception:
+                pass
+
+        self._about_label.setText(
+            f"Steam Deck: {model.upper()}  |  Source: {source_label}  |  "
+            f"Player: {player}\n"
+            f"Build: {build}"
+        )
 
     def _toggle_music(self):
         self._music_on = not self._music_on
@@ -2065,65 +2139,15 @@ class ConfigureScreen(QWidget):
         self._vol_label.setText(f"{val}%")
         _set_audio_volume(val / 100.0)
 
-    def _pdirs(self):
-        sr = cfg.load().get("steam_root", "")
-        if not sr:
-            return []
-        # Pull the actual per-game appids from plutonium_oled.py so we hit every
-        # prefix, not just the card-level appid. BO1 MP (42710), BO2 ZM
-        # (212910) etc. would be missed otherwise.
-        try:
-            from plutonium_oled import GAME_META
-            appids = sorted({str(v[0]) for v in GAME_META.values()})
-        except ImportError:
-            # Fallback: grab appids from cards that mention plutonium
-            appids = [str(g["appid"]) for g in ALL_GAMES
-                      if "plutonium" in g.get("client", "")]
-        dirs = []
-        seen = set()
-        for aid in appids:
-            d = os.path.join(
-                sr, "steamapps", "compatdata", aid,
-                "pfx", "drive_c", "users", "steamuser",
-                "AppData", "Local", "Plutonium",
-            )
-            if os.path.isdir(d) and d not in seen:
-                seen.add(d)
-                dirs.append(d)
-        return dirs
-
-    def _reset(self):
-        dirs = self._pdirs()
-        if not dirs: self.status.setText("No Plutonium prefixes found."); return
-        removed = [f for f in ["config.json","info.json"]
-                   if os.path.exists(os.path.join(dirs[0],f)) and not os.remove(os.path.join(dirs[0],f))]
-        self.status.setText(
-            f"Removed {', '.join(removed)}. Launch a Plutonium game to log in, then Sync."
-            if removed else "No credential files found — already clean.")
-
-    def _sync(self):
-        import shutil as _sh; dirs = self._pdirs()
-        if not dirs: self.status.setText("No Plutonium prefixes found."); return
-        synced = 0
-        for fname in ["config.json","info.json"]:
-            src = os.path.join(dirs[0], fname)
-            if not os.path.exists(src): continue
-            for d in dirs[1:]:
-                try: _sh.copy2(src, os.path.join(d,fname)); synced += 1
-                except Exception: pass
-        self.status.setText(f"Synced to {synced} prefix(es) successfully.")
-
-    def _run_uninstaller(self):
-        uninstall_script = os.path.join(PROJECT_ROOT, "deckops_uninstall.sh")
-        if not os.path.exists(uninstall_script):
-            self.status.setText("Uninstall script not found."); return
-        try:
-            subprocess.Popen(["konsole", "--noclose", "-e", "bash", uninstall_script])
-        except FileNotFoundError:
-            try:
-                subprocess.Popen(["xterm", "-hold", "-e", "bash", uninstall_script])
-            except FileNotFoundError:
-                self.status.setText("Could not open terminal. Run deckops_uninstall.sh manually.")
+    def _set_gyro(self, mode):
+        cfg.set_gyro_mode(mode)
+        # Update button highlights
+        for m, btn in self._gyro_btns.items():
+            if m == mode:
+                btn.setStyleSheet(btn.styleSheet().replace(C_DARK_BTN, C_IW))
+            else:
+                btn.setStyleSheet(btn.styleSheet().replace(C_IW, C_DARK_BTN))
+        self.status.setText(f"Gyro mode set to {mode.upper()}. Hit Re-apply Templates to update controller profiles.")
 
     def _apply_controller_profiles(self):
         self.status.setText("Re-applying controller profiles...")
@@ -2142,12 +2166,10 @@ class ConfigureScreen(QWidget):
                     on_progress=lambda msg: s.log.emit(msg)
                 )
                 gyro_mode = cfg.get_gyro_mode() or "hold"
-                # Neptune profiles always assigned
                 assign_controller_profiles(
                     gyro_mode,
                     on_progress=lambda msg: s.log.emit(msg)
                 )
-                # Docked users also get external controller profiles
                 if cfg.is_docked():
                     controller_type = cfg.get_external_controller() or "playstation"
                     assign_external_controller_profiles(
@@ -2165,97 +2187,61 @@ class ConfigureScreen(QWidget):
                 s.done.emit(False)
         threading.Thread(target=_run, daemon=True).start()
 
-    def _reset_deckops(self):
-        cfg.reset()
-        self.status.setText("Config wiped. Restart DeckOps to run setup again.")
-        QTimer.singleShot(1500, lambda: self.stack.setCurrentIndex(0))
-
-    def _repair_shortcuts(self):
-        self.status.setText("Repairing shortcuts...")
+    def _save_name(self):
+        name = self._name_input.text().strip()
+        if not name:
+            self.status.setText("Please enter a name.")
+            return
+        cfg.set_player_name(name)
+        self.status.setText(f"Updating player name to \"{name}\"...")
         s = _Sigs()
         s.log.connect(lambda msg: self.status.setText(msg))
-        s.done.connect(lambda ok: self.status.setText(
-            "✓  Shortcuts repaired." if ok else "✗  Failed — check that Steam is closed."
-        ))
         def _run():
             try:
-                from shortcut import create_shortcuts, SHORTCUTS
-                from wrapper import kill_steam, set_steam_input_enabled
-                
-                steam_root = cfg.load().get("steam_root", "") or find_steam_root()
-                if not steam_root:
-                    s.log.emit("✗  Steam not found.")
-                    s.done.emit(False)
-                    return
-                
-                s.log.emit("Closing Steam...")
-                kill_steam()
-                
-                libs = parse_library_folders(steam_root)
-                installed = find_installed_games(libs)
-                
-                shortcut_keys = [k for k in SHORTCUTS.keys() if k in installed]
-                if not shortcut_keys:
-                    s.log.emit("No shortcut-eligible games found.")
-                    s.done.emit(True)
-                    _reopen_steam_bg(steam_root)
-                    return
-                
-                gyro_mode = cfg.get_gyro_mode() or "hold"
-                create_shortcuts(
-                    installed_games=installed,
-                    selected_keys=shortcut_keys,
-                    gyro_mode=gyro_mode,
-                    on_progress=lambda msg: s.log.emit(msg),
-                    steam_root=steam_root,
-                )
-                set_steam_input_enabled(steam_root)
-                s.done.emit(True)
-                _reopen_steam_bg(steam_root)
-            except Exception as ex:
-                s.log.emit(f"✗  Failed: {ex}")
-                s.done.emit(False)
-        threading.Thread(target=_run, daemon=True).start()
-
-    def _reapply_game_configs(self):
-        self.status.setText("Re-applying game configs...")
-        s = _Sigs()
-        s.log.connect(lambda msg: self.status.setText(msg))
-        s.done.connect(lambda ok: self.status.setText(
-            "✓  Game configs applied." if ok else "✗  Failed — check that Steam is closed."
-        ))
-        def _run():
-            try:
-                from game_config import apply_game_configs
+                from game_config import rename_player
                 from detect_games import find_installed_games, parse_library_folders
-                from wrapper import kill_steam
                 steam_root = cfg.load().get("steam_root", "") or find_steam_root()
-                if not steam_root:
-                    s.log.emit("✗  Steam not found.")
-                    s.done.emit(False)
-                    return
-                s.log.emit("Closing Steam...")
-                kill_steam()
-                installed = find_installed_games(parse_library_folders(steam_root))
-                setup_keys = list(cfg.get_setup_games().keys())
-                applied, skipped, failed = apply_game_configs(
-                    selected_keys=setup_keys,
-                    installed_games=installed,
-                    steam_root=steam_root,
-                    deck_model=cfg.get_deck_model() or "oled",
+                installed = {}
+                if steam_root:
+                    installed = find_installed_games(parse_library_folders(steam_root))
+                count = rename_player(
+                    name, steam_root, installed_games=installed,
                     on_progress=lambda msg: s.log.emit(msg),
                 )
-                s.log.emit(
-                    f"✓  {applied} config(s) applied"
-                    + (f", {skipped} skipped" if skipped else "")
-                    + (f", {failed} failed" if failed else "")
-                )
-                s.done.emit(failed == 0)
-                _reopen_steam_bg(steam_root)
+                s.log.emit(f"✓  Player name set to \"{name}\" ({count} config(s) updated).")
             except Exception as ex:
                 s.log.emit(f"✗  Failed: {ex}")
-                s.done.emit(False)
         threading.Thread(target=_run, daemon=True).start()
+
+    def _clear_shader_cache(self):
+        self.status.setText("Clearing shader cache...")
+        s = _Sigs()
+        s.log.connect(lambda msg: self.status.setText(msg))
+        def _run():
+            try:
+                from cache_cleanup import cleanup_shader_cache, STEAM_APPIDS
+                setup = cfg.get_setup_games()
+                cleared = 0
+                for key in STEAM_APPIDS:
+                    if key in setup:
+                        source = setup[key].get("source", "steam")
+                        cleanup_shader_cache(key, source)
+                        cleared += 1
+                s.log.emit(f"✓  Shader cache cleared for {cleared} game(s).")
+            except Exception as ex:
+                s.log.emit(f"✗  Failed: {ex}")
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _open_url(self, url):
+        try:
+            from PyQt5.QtCore import QUrl
+            from PyQt5.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl(url))
+        except Exception:
+            try:
+                subprocess.Popen(["xdg-open", url], start_new_session=True)
+            except Exception:
+                self.status.setText("Could not open browser.")
 
 
 

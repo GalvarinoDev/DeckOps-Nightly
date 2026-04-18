@@ -265,34 +265,37 @@ def _dest_from_install(game_key, install_dir):
 
 def _replace_player_name(filepath, player_name):
     """
-    Replace 'seta name "Player"' with the user's chosen name in a config file.
+    Replace 'seta name "<anything>"' with the user's chosen name in a config file.
 
-    Only modifies the exact line `seta name "Player"` to avoid touching
-    other cvars that happen to contain "Player" in their name (e.g.
-    cg_hudMapPlayerHeight, compassPlayerWidth).
+    Uses a regex to match any current name value, not just the default
+    "Player". This allows the Settings screen to rename the player after
+    initial install without needing to re-deploy configs from scratch.
 
-    Does nothing if player_name is None, empty, or "Player" (no change needed).
+    Only modifies lines that match `seta name "..."` exactly — other cvars
+    that happen to contain "name" are not affected.
+
+    Does nothing if player_name is None or empty.
     """
-    if not player_name or player_name == "Player":
+    if not player_name:
         return
 
     try:
         with open(filepath, "r", encoding="utf-8", errors="replace") as f:
             content = f.read()
 
-        old = 'seta name "Player"'
-        if old not in content:
+        import re as _re
+        pattern = r'seta name ".*?"'
+        safe_name = player_name.replace('"', '')
+        replacement = f'seta name "{safe_name}"'
+
+        new_content = _re.sub(pattern, replacement, content)
+        if new_content == content:
             return
 
-        # Escape quotes in player name for the config format
-        safe_name = player_name.replace('"', '')
-        new = f'seta name "{safe_name}"'
-        content = content.replace(old, new)
-
         with open(filepath, "w", encoding="utf-8") as f:
-            f.write(content)
+            f.write(new_content)
     except (IOError, OSError):
-        pass  # Non-fatal — config still works with "Player"
+        pass  # Non-fatal — config still works with current name
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -433,3 +436,78 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
 
     prog(f"Game configs: {applied} applied, {skipped} skipped, {failed} failed.")
     return applied, skipped, failed
+
+
+def rename_player(player_name, steam_root, installed_games=None,
+                  on_progress=None):
+    """
+    Update the player name in all deployed config files without re-copying
+    from assets. Scans all setup game keys, resolves their config
+    destinations, and applies _replace_player_name to each file found.
+
+    Also updates the Heroic shared prefix mirror for LCD Plutonium configs.
+
+    Returns the number of files updated.
+    """
+    import config as cfg
+
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    if not player_name:
+        prog("No player name provided.")
+        return 0
+
+    setup_keys = list(cfg.get_setup_games().keys())
+    if not setup_keys:
+        prog("No games set up yet.")
+        return 0
+
+    config_map = _build_config_map(steam_root, installed_games)
+    updated = 0
+
+    for key in setup_keys:
+        if key not in config_map:
+            continue
+
+        game = (installed_games or {}).get(key, {})
+        install_dir = game.get("install_dir", "")
+
+        for asset_subpath, fixed_dest in config_map[key]:
+            # Resolve destination
+            if fixed_dest:
+                if game.get("source") == "own" and game.get("compatdata_path"):
+                    pfx_parts = fixed_dest.split("/pfx/", 1)
+                    if len(pfx_parts) == 2:
+                        fixed_dest = os.path.join(
+                            game["compatdata_path"], "pfx", pfx_parts[1]
+                        )
+                dest_dir = fixed_dest
+            else:
+                if not install_dir:
+                    continue
+                dest_dir = _dest_from_install(key, install_dir)
+                if not dest_dir:
+                    continue
+
+            dest = os.path.join(dest_dir, os.path.basename(asset_subpath))
+            if os.path.exists(dest):
+                _replace_player_name(dest, player_name)
+                updated += 1
+                prog(f"  + {key}: renamed in {os.path.basename(dest)}")
+
+            # Heroic mirror
+            if fixed_dest:
+                heroic_dest_dir = _heroic_mirror_path(dest_dir)
+                if heroic_dest_dir:
+                    heroic_dest = os.path.join(
+                        heroic_dest_dir, os.path.basename(asset_subpath)
+                    )
+                    if os.path.exists(heroic_dest):
+                        _replace_player_name(heroic_dest, player_name)
+                        updated += 1
+                        prog(f"  + {key}: renamed in Heroic mirror")
+
+    prog(f"Player name updated in {updated} file(s).")
+    return updated
