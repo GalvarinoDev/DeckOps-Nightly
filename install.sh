@@ -132,6 +132,15 @@ else
     success "vdf already installed."
 fi
 
+if ! "$VENV_PYTHON" -c "import evdev" &>/dev/null 2>&1; then
+    info "Installing evdev-binary..."
+    "$VENV_DIR/bin/pip" install --quiet evdev-binary \
+        || warn "Failed to install evdev-binary — gamepad input in Plutonium Launcher will not work."
+    success "evdev-binary installed."
+else
+    success "evdev already installed."
+fi
+
 # ── step 6: .desktop entry ────────────────────────────────────────────────────
 info "Creating application shortcut..."
 
