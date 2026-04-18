@@ -1093,6 +1093,19 @@ class InstallScreen(QWidget):
         self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
         lay.addWidget(self.log, stretch=1)
 
+        self.plut_warn = _lbl(
+            "⚠  LCD: Plutonium takes time to download and launch.\n"
+            "     Please be patient — do NOT click the button below until\n"
+            "     Plutonium has fully loaded, you have logged in, and closed the window.",
+            12, C_TREY, align=Qt.AlignCenter,
+        )
+        self.plut_warn.setStyleSheet(
+            f"color:{C_TREY};background:#2A1A08;border:1px solid {C_TREY};"
+            "border-radius:8px;padding:10px 16px;"
+        )
+        self.plut_warn.setVisible(False)
+        lay.addWidget(self.plut_warn)
+
         self.plut_btn = _btn("I've closed Plutonium  ✓", C_TREY, size=13, h=52)
         self.plut_btn.setFixedWidth(460); self.plut_btn.setVisible(False)
         self.plut_btn.clicked.connect(self._confirm_plut)
@@ -1109,8 +1122,8 @@ class InstallScreen(QWidget):
         self._s.progress.connect(lambda p,m: (self.bar.setValue(p), self.cur.setText(m)))
         self._s.log.connect(self._append_log)
         self._s.done.connect(self._on_done)
-        self._s.plut_wait.connect(lambda: self.plut_btn.setVisible(True))
-        self._s.plut_go.connect(lambda: self.plut_btn.setVisible(False))
+        self._s.plut_wait.connect(self._show_plut_wait)
+        self._s.plut_go.connect(self._hide_plut_wait)
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
 
@@ -1132,6 +1145,15 @@ class InstallScreen(QWidget):
     def _stop_pulse(self):
         self._pulse_timer.stop()
 
+    def _show_plut_wait(self):
+        is_lcd = not cfg.is_oled()
+        self.plut_warn.setVisible(is_lcd)
+        self.plut_btn.setVisible(True)
+
+    def _hide_plut_wait(self):
+        self.plut_warn.setVisible(False)
+        self.plut_btn.setVisible(False)
+
     def _append_log(self, text):
         self.log.appendPlainText(text)
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
@@ -1141,6 +1163,7 @@ class InstallScreen(QWidget):
         super().showEvent(e)
         self.bar.setValue(0); self.log.clear()
         self.plut_btn.setVisible(False)
+        self.plut_warn.setVisible(False)
         self._stop_pulse()
         self._plut_event.clear()
         # Route the continue button based on whether this was triggered
@@ -2436,6 +2459,19 @@ class OwnInstallScreen(QWidget):
         self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
         lay.addWidget(self.log, stretch=1)
 
+        self.plut_warn = _lbl(
+            "⚠  LCD: Plutonium takes time to download and launch.\n"
+            "     Please be patient — do NOT click the button below until\n"
+            "     Plutonium has fully loaded, you have logged in, and closed the window.",
+            12, C_TREY, align=Qt.AlignCenter,
+        )
+        self.plut_warn.setStyleSheet(
+            f"color:{C_TREY};background:#2A1A08;border:1px solid {C_TREY};"
+            "border-radius:8px;padding:10px 16px;"
+        )
+        self.plut_warn.setVisible(False)
+        lay.addWidget(self.plut_warn)
+
         self.plut_btn = _btn("I've closed Plutonium  ✓", C_TREY, size=13, h=52)
         self.plut_btn.setFixedWidth(460); self.plut_btn.setVisible(False)
         self.plut_btn.clicked.connect(self._confirm_plut)
@@ -2452,8 +2488,8 @@ class OwnInstallScreen(QWidget):
         self._s.progress.connect(lambda p, m: (self.bar.setValue(p), self.cur.setText(m)))
         self._s.log.connect(self._append_log)
         self._s.done.connect(self._on_done)
-        self._s.plut_wait.connect(lambda: self.plut_btn.setVisible(True))
-        self._s.plut_go.connect(lambda: self.plut_btn.setVisible(False))
+        self._s.plut_wait.connect(self._show_plut_wait)
+        self._s.plut_go.connect(self._hide_plut_wait)
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
 
@@ -2475,6 +2511,15 @@ class OwnInstallScreen(QWidget):
     def _stop_pulse(self):
         self._pulse_timer.stop()
 
+    def _show_plut_wait(self):
+        is_lcd = not cfg.is_oled()
+        self.plut_warn.setVisible(is_lcd)
+        self.plut_btn.setVisible(True)
+
+    def _hide_plut_wait(self):
+        self.plut_warn.setVisible(False)
+        self.plut_btn.setVisible(False)
+
     def _append_log(self, text):
         _log_to_file(text)
         self.log.appendPlainText(text)
@@ -2484,6 +2529,7 @@ class OwnInstallScreen(QWidget):
         super().showEvent(e)
         self.bar.setValue(0); self.log.clear()
         self.plut_btn.setVisible(False)
+        self.plut_warn.setVisible(False)
         self.cont_btn.setVisible(False)
         self._plut_event.clear()
         self._stop_pulse()
