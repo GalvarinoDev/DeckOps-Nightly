@@ -1825,30 +1825,24 @@ class ControllerInfoScreen(QWidget):
             13, C_DIM))
         lay.addWidget(_hdiv())
 
-        # ── Warning box ────────────────────────────────────────────────────────
-        lay.addWidget(_lbl("⚠  Do This Before Anything Else", 13, C_TREY, bold=True, align=Qt.AlignLeft))
-        lay.addWidget(_lbl(
-            "You will be switched to Game Mode automatically. "
-            "Launch every modded game at least once before using Steam in Desktop Mode, "
-            "especially MW1 (Singleplayer) and MW2 (Multiplayer). "
-            "Steam Cloud will overwrite your setup if you don't.",
-            11, C_DIM, align=Qt.AlignLeft))
+        # ── Cloud saves ───────────────────────────────────────────────────────
+        lay.addWidget(_lbl("⚠  Steam Cloud Saves", 13, C_TREY, bold=True, align=Qt.AlignLeft))
         lay.addWidget(_lbl(
             "If Steam asks about cloud saves, choose Keep Local. "
             "If a game asks for Safe Mode, choose No.",
             11, C_DIM, align=Qt.AlignLeft))
         lay.addWidget(_hdiv())
 
-        # ── MW1 / WaW launch mode instruction ─────────────────────────────────
-        lay.addWidget(_lbl("🎮  First Launch - Modern Warfare 1 & World at War", 13, C_IW, bold=True, align=Qt.AlignLeft))
+        # ── MW1 / WaW shortcuts ───────────────────────────────────────────────
+        lay.addWidget(_lbl("🎮  Modern Warfare 1 & World at War", 13, C_IW, bold=True, align=Qt.AlignLeft))
         lay.addWidget(_lbl(
-            "When launching either game for the first time, Steam will ask which mode you want to launch. "
-            "Select Singleplayer or Campaign and set it as your default. "
-            "Multiplayer for these games launches via the DeckOps shortcuts in your library instead.",
+            "MW1 and WaW each have a separate multiplayer shortcut in your Steam library "
+            "created by DeckOps. Launch the main game entry for singleplayer/campaign. "
+            "Launch the DeckOps shortcut for multiplayer.",
             11, C_DIM, align=Qt.AlignLeft))
         lay.addWidget(_lbl(
             "MW1 Singleplayer (IW3SP-MOD): On your first launch, "
-            "the game will ask you to select a profile. Choose \"Player\" — "
+            "the game will ask you to select a profile. Choose \"Player\" -- "
             "this is the profile DeckOps created with your display settings. "
             "Creating a new profile will use default settings instead.",
             11, C_DIM, align=Qt.AlignLeft))
@@ -1862,6 +1856,21 @@ class ControllerInfoScreen(QWidget):
             "Singleplayer config files are encrypted and cannot be written by DeckOps. "
             "Set your resolution and display settings manually in-game after launching for the first time.",
             11, C_DIM, align=Qt.AlignLeft))
+
+        lay.addWidget(_hdiv())
+
+        # ── LCD launch delay note (LCD users only) ────────────────────────────
+        self._lcd_div = _hdiv()
+        self._lcd_hdr = _lbl("⚠  LCD Steam Deck - Game Launch Delay", 13, C_TREY, bold=True, align=Qt.AlignLeft)
+        self._lcd_body = _lbl(
+            "Plutonium games on LCD may take a moment to launch. A cleanup script runs "
+            "before each launch to clear portions of the shader cache (a workaround for "
+            "a known Steam bug with non-Steam games). If the game doesn't start right "
+            "away, please be patient or try launching again.",
+            11, C_DIM, align=Qt.AlignLeft)
+        lay.addWidget(self._lcd_div)
+        lay.addWidget(self._lcd_hdr)
+        lay.addWidget(self._lcd_body)
 
         lay.addWidget(_hdiv())
 
@@ -1920,6 +1929,11 @@ class ControllerInfoScreen(QWidget):
         self._decky_hdr.setVisible(is_docked)
         self._decky_body.setVisible(is_docked)
         self._decky_btn.setVisible(is_docked)
+        # Only show the LCD launch delay note for LCD users
+        is_lcd = not cfg.is_oled()
+        self._lcd_div.setVisible(is_lcd)
+        self._lcd_hdr.setVisible(is_lcd)
+        self._lcd_body.setVisible(is_lcd)
 
     def _go_management(self):
         root = find_steam_root()

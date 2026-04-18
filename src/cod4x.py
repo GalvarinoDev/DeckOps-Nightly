@@ -315,6 +315,9 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     # which setup.exe doesn't recognise.  We relocate the chain-loader
     # to the real game directory in Step 5b below.
     prog(55, "Running CoD4x installer...")
+    log("  ⚠ CoD4x will show a couple of popup windows.")
+    log("    You may need to use the touchscreen to accept them since Steam is closed.")
+    log("    Just tap OK/Accept on each prompt and the install will continue.")
     _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
 
     env = os.environ.copy()
