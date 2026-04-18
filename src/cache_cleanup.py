@@ -132,12 +132,18 @@ def cleanup_shader_cache(game_key: str, source: str):
 
 def launch_game(game_key: str, source: str):
     """
-    Exec the Heroic flatpak launch for a Plutonium game.
-    Does not return — replaces the current process.
+    Launch the Heroic flatpak for a Plutonium game and wait for it to
+    finish. Uses subprocess instead of os.execv so the parent process
+    (which Steam tracks as "the game") stays alive for the entire
+    session. With os.execv the process becomes flatpak, which may exit
+    quickly after handing off to Heroic inside the sandbox -- causing
+    Steam to think the game closed immediately.
 
     Steam source: sets LD_PRELOAD to override Steam's pinned libcurl
     which conflicts with the system flatpak binary.
     """
+    import subprocess
+
     app_name = _heroic_app_name(game_key)
 
     heroic_url = f"heroic://launch?appName={app_name}&runner=sideload"
@@ -149,10 +155,15 @@ def launch_game(game_key: str, source: str):
         heroic_url,
     ]
 
+    env = os.environ.copy()
     if source == "steam":
-        os.environ["LD_PRELOAD"] = "/usr/lib/libcurl.so.4"
+        env["LD_PRELOAD"] = "/usr/lib/libcurl.so.4"
 
-    os.execv("/usr/bin/flatpak", flatpak_args)
+    # Run flatpak and wait for it to exit. This keeps the parent
+    # process alive so Steam sees the game as running. Without this,
+    # Steam may report "launch failed" if flatpak hands off quickly.
+    result = subprocess.run(flatpak_args, env=env)
+    sys.exit(result.returncode)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
