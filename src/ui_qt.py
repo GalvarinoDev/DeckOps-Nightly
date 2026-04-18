@@ -1884,12 +1884,16 @@ class ControllerInfoScreen(QWidget):
 
         # ── LCD launch delay note (LCD users only) ────────────────────────────
         self._lcd_div = _hdiv()
-        self._lcd_hdr = _lbl("⚠  LCD Steam Deck - Game Launch Delay", 13, C_TREY, bold=True, align=Qt.AlignLeft)
+        self._lcd_hdr = _lbl("⚠  LCD Steam Deck - Important Notes", 13, C_TREY, bold=True, align=Qt.AlignLeft)
         self._lcd_body = _lbl(
-            "Plutonium games on LCD may take a moment to launch. A cleanup script runs "
-            "before each launch to clear portions of the shader cache (a workaround for "
-            "a known Steam bug with non-Steam games). If the game doesn't start right "
-            "away, please be patient or try launching again.",
+            "• Launch delay: Plutonium games on LCD may take a moment to launch. "
+            "A cleanup script runs before each launch to clear the shader cache. "
+            "If the game doesn't start right away, please be patient or try launching again.\n\n"
+            "• Vulkan shaders: If Steam tries to compile Vulkan shaders before launching, "
+            "skip it — these shaders are not used by LCD Plutonium games and just waste time.\n\n"
+            "• Closing games: When you're done playing, quit from the in-game menu instead of "
+            "using the Steam overlay. Closing through Steam can be slow and buggy on LCD "
+            "(it won't break anything, but quitting in-game is much faster).",
             11, C_DIM, align=Qt.AlignLeft)
         lay.addWidget(self._lcd_div)
         lay.addWidget(self._lcd_hdr)
