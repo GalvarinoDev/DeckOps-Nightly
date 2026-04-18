@@ -1593,12 +1593,12 @@ def _set_heroic_steam_launch_options(game_key: str, steam_root: str,
                                       on_progress=None):
     """
     Set launch options on a Steam library entry so it launches through
-    Heroic instead of Steam's Proton runtime. LCD only.
+    cache_cleanup.py, which cleans the Fossilize shader cache and then
+    execs the Heroic flatpak launch. LCD only.
 
-    Steam's pinned runtime libraries conflict with the system flatpak
-    binary, so LD_PRELOAD is required to override libcurl. The #%command%
-    suffix comments out the original game exe so Steam doesn't try to
-    launch it through Proton.
+    cache_cleanup.py handles LD_PRELOAD internally for Steam source.
+    The #%command% suffix comments out the original game exe so Steam
+    doesn't try to launch it through Proton.
 
     The -lan wrapper written by step 7 is left in place for offline mode
     via the Plutonium launcher.
@@ -1617,12 +1617,16 @@ def _set_heroic_steam_launch_options(game_key: str, steam_root: str,
         return
 
     appid = str(PLUT_GAME_EXES[game_key][0])
-    app_name = _heroic_app_name(game_key)
+
+    cleanup_script = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "cache_cleanup.py"
+    )
+    venv_python = os.path.join(
+        os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3"
+    )
 
     launch_opts = (
-        f'LD_PRELOAD=/usr/lib/libcurl.so.4 '
-        f'/usr/bin/flatpak run {HEROIC_FLATPAK_ID} --no-gui --no-sandbox '
-        f'"heroic://launch?appName={app_name}&runner=sideload" '
+        f'{venv_python} {cleanup_script} {game_key} steam '
         f'#%command%'
     )
 
@@ -1650,15 +1654,20 @@ def _set_heroic_steam_launch_options(game_key: str, steam_root: str,
 def _create_heroic_steam_shortcut(game_key: str, on_progress=None,
                                    source: str = "steam"):
     """
-    Create a non-Steam shortcut that launches an LCD Plutonium game using
-    HGL's native shortcut pattern. Delegates to shortcut.add_shortcut for
-    all VDF, artwork, and controller config work.
+    Create a non-Steam shortcut that launches an LCD Plutonium game through
+    cache_cleanup.py, which cleans the Fossilize shader cache and then
+    execs the Heroic flatpak launch. Delegates to shortcut.add_shortcut
+    for all VDF, artwork, and controller config work.
 
     Only creates shortcuts for own games. LCD Steam game owners already have
-    their games in the Steam library with wrappers replacing the exe,
-    so they don't need additional HGL shortcuts cluttering their library.
-    Online play for Steam owners will be handled through ManagementScreen
-    in a future update.
+    their games in the Steam library with launch options set by
+    _set_heroic_steam_launch_options.
+
+    The shortcut uses Exe="/usr/bin/python3" (the venv python) with
+    LaunchOptions pointing at cache_cleanup.py. appid_exe_path is set to
+    the original "/usr/bin/flatpak" so the CRC-based appid stays stable
+    and existing artwork/controller configs/compat tool entries continue
+    to resolve correctly.
     """
     # Steam game owners don't need HGL shortcuts -- their games launch
     # from existing Steam library entries with wrappers
@@ -1675,20 +1684,20 @@ def _create_heroic_steam_shortcut(game_key: str, on_progress=None,
     game_def = HEROIC_PLUT_GAMES[game_key]
     title    = game_def["title"]
 
-    # HGL native shortcut pattern: Exe is the full path to flatpak,
-    # StartDir is /usr/bin/, the entire heroic:// invocation lives in
-    # LaunchOptions. This matches exactly what HGL writes when the user
-    # clicks "Add to Steam" from its own UI, which is the pattern Steam
-    # reliably resolves. Using a bare "flatpak" word caused Steam to
-    # misidentify the shortcut appid in some cases, breaking artwork,
-    # controller configs, and launch.
-    app_name = _heroic_app_name(game_key)
-    exe_path  = '"/usr/bin/flatpak"'
-    start_dir = '"/usr/bin/"'
-    launch_options = (
-        f'run {HEROIC_FLATPAK_ID} --no-gui --no-sandbox '
-        f'"heroic://launch?appName={app_name}&runner=sideload"'
+    cleanup_script = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "cache_cleanup.py"
     )
+    venv_python = os.path.join(
+        os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3"
+    )
+
+    exe_path  = f'"{venv_python}"'
+    start_dir = f'"{os.path.dirname(cleanup_script)}"'
+    launch_options = f'"{cleanup_script}" {game_key} own'
+
+    # appid_exe_path keeps the CRC calculation on the original flatpak
+    # path so existing shortcuts don't orphan on upgrade.
+    appid_exe = '"/usr/bin/flatpak"'
 
     # Get gyro mode for controller config assignment
     try:
@@ -1697,11 +1706,6 @@ def _create_heroic_steam_shortcut(game_key: str, on_progress=None,
     except Exception:
         gyro_mode = "hold"
 
-    # NOTE: the quoted exe path produces a different appid than the old bare
-    # "flatpak" pattern. Existing shortcuts written by older DeckOps installs
-    # will orphan on the old appid. Testers should fully uninstall and
-    # reinstall to get clean shortcuts with the correct appid.
-    #
     # LCD Plutonium shortcuts must NOT have a Steam compat tool set. Steam
     # wraps any non-Steam shortcut that has a compat tool inside Steam Linux
     # Runtime (sniper). From inside that container the host's flatpak binary
@@ -1718,6 +1722,7 @@ def _create_heroic_steam_shortcut(game_key: str, on_progress=None,
         gyro_mode=gyro_mode,
         on_progress=on_progress,
         clear_compat_tool=True,
+        appid_exe_path=appid_exe,
     )
 
 
