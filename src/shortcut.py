@@ -1246,24 +1246,21 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                         f'%command% "plutonium://play/t4mp"'
                     )
                 else:
-                    # LCD: Heroic flatpak shortcut for online play.
+                    # LCD: non-Steam shortcut for online play via cache_cleanup.py.
                     # t4mp shares appid 10090 with t4sp so it can't use
                     # set_launch_options on the Steam library entry — it
                     # gets its own non-Steam shortcut instead.
-                    # Must match _create_heroic_steam_shortcut() exactly:
-                    # quoted exe, quoted start_dir, no LD_PRELOAD. Steam's
-                    # compat tool must also be cleared (done below) because
-                    # SLR sandboxes flatpak away from the host.
-                    import hashlib
-                    import base64
-                    _digest = hashlib.sha256(b"deckops_plut_t4mp").digest()
-                    _app_name = f"do_{base64.urlsafe_b64encode(_digest)[:19].decode()}"
-                    actual_exe     = '"/usr/bin/flatpak"'
-                    start_dir      = '"/usr/bin/"'
-                    launch_options = (
-                        f'run com.heroicgameslauncher.hgl --no-gui --no-sandbox '
-                        f'"heroic://launch?appName={_app_name}&runner=sideload"'
+                    # cache_cleanup.py cleans the Fossilize shader cache and
+                    # then execs the Heroic flatpak launch.
+                    _cleanup_script = os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)), "cache_cleanup.py"
                     )
+                    _venv_python = os.path.join(
+                        os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3"
+                    )
+                    actual_exe     = _venv_python
+                    start_dir      = os.path.dirname(_cleanup_script)
+                    launch_options = f'"{_cleanup_script}" t4mp steam'
             else:
                 actual_exe     = exe_path
                 start_dir      = install_dir
