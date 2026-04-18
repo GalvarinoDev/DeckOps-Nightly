@@ -81,6 +81,17 @@ rm -rf "$TMPDIR_EXTRACT"
 chmod +x "$ENTRY_POINT" 2>/dev/null || true
 success "DeckOps installed to $INSTALL_DIR"
 
+# ── step 3b: write build info ─────────────────────────────────────────────
+# Short commit hash + date, read by the Settings screen's About section.
+# Uses the downloaded archive's HEAD, not a local git repo.
+BUILD_DATE=$(date '+%b %d, %Y')
+BUILD_HASH="nightly"
+if command -v git &>/dev/null && [ -d "$INSTALL_DIR/.git" ]; then
+    BUILD_HASH=$(cd "$INSTALL_DIR" && git rev-parse --short HEAD 2>/dev/null || echo "nightly")
+fi
+echo "$BUILD_HASH ($BUILD_DATE)" > "$INSTALL_DIR/BUILD"
+success "Build info written: $BUILD_HASH ($BUILD_DATE)"
+
 # ── step 4: download background music ────────────────────────────────────────
 info "Downloading background music..."
 
