@@ -972,9 +972,15 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
     """
     Write a sidecar -lan bash script for LCD own game offline mode.
 
-    Creates a new shell script (e.g. t4plut_lan.sh) alongside the game
+    Creates a new shell script (e.g. t4plut_lan_sp.sh) alongside the game
     files. Never replaces or modifies any existing file. launcher_plut.py
     reads the path from config and calls bash on it for offline play.
+
+    The wrapper uses the game's own compatdata prefix for both
+    STEAM_COMPAT_DATA_PATH and the bootstrapper path. This keeps LAN
+    mode completely independent of Heroic — Proton runs directly with
+    the game's own prefix where Plutonium files were copied during
+    install step 5.
 
     Only used for own games. LCD Steam games use the replaced game exe
     (written by _write_lcd_wrapper) as their lan_wrapper_path.
@@ -995,15 +1001,21 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
     except Exception:
         player_name = "Player"
 
-    bootstrapper  = os.path.join(plut_dir, "bin",
-                                  "plutonium-bootstrapper-win32.exe")
+    # Build all Plutonium paths from the game's own compatdata prefix,
+    # NOT the Heroic shared prefix. LAN mode must be Heroic-independent.
+    game_plut_dir = os.path.join(
+        compatdata_path, "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Local", "Plutonium",
+    )
+    bootstrapper = os.path.join(game_plut_dir, "bin",
+                                 "plutonium-bootstrapper-win32.exe")
     game_dir_wine = _wine_path_lcd(install_dir)
 
     script = (
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"cd \"{plut_dir}\"\n"
+        f"cd \"{game_plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
         f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
     )
