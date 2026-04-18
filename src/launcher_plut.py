@@ -853,6 +853,28 @@ class LauncherWindow(QWidget):
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
+def _cleanup_shader_caches():
+    """
+    Clean accumulated fozpipelinesv6 shader cache files for all
+    DeckOps-managed Plutonium appids. Called once on launcher startup
+    to prevent the cache from growing unbounded across sessions.
+
+    See: https://github.com/ValveSoftware/steam-for-linux/issues/10486
+    """
+    try:
+        from cache_cleanup import cleanup_shader_cache, STEAM_APPIDS
+        for game_key in STEAM_APPIDS:
+            try:
+                cleanup_shader_cache(game_key, "steam")
+            except Exception:
+                pass
+        _log("_cleanup_shader_caches: done")
+    except ImportError:
+        _log("_cleanup_shader_caches: cache_cleanup module not found, skipping")
+    except Exception as ex:
+        _log(f"_cleanup_shader_caches: {ex}")
+
+
 def main():
     _log("=" * 60)
     _log(f"main: starting launcher_plut.py")
@@ -862,6 +884,9 @@ def main():
     _log(f"main: DISPLAY={os.environ.get('DISPLAY', '<unset>')}")
     _log(f"main: WAYLAND_DISPLAY={os.environ.get('WAYLAND_DISPLAY', '<unset>')}")
     _log(f"main: XDG_SESSION_TYPE={os.environ.get('XDG_SESSION_TYPE', '<unset>')}")
+
+    # Clean shader caches before showing UI — sub-second, no visible delay.
+    _cleanup_shader_caches()
 
     app = QApplication(sys.argv)
     _load_font()

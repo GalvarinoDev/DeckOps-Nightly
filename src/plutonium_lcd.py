@@ -132,13 +132,16 @@ LCD_OWN_WRAPPER_EXES = {
 # Sidecar -lan wrapper script names for LCD own game offline mode.
 # LCD Steam games use the replaced exe as their lan path (already written
 # by _write_lcd_wrapper). Own games get a separate sidecar here.
+# Each game key MUST have a unique filename — prior versions shared
+# filenames between SP/MP and MP/ZM pairs, causing whichever installed
+# last to overwrite the other's wrapper with the wrong game_key.
 LCD_LAN_WRAPPER_NAMES = {
-    "t4sp":  "t4plut_lan.sh",
-    "t4mp":  "t4plut_lan.sh",
-    "t5sp":  "t5plut_lan.sh",
-    "t5mp":  "t5plut_lan.sh",
-    "t6mp":  "t6plut_lan.sh",
-    "t6zm":  "t6plut_lan.sh",
+    "t4sp":  "t4plut_lan_sp.sh",
+    "t4mp":  "t4plut_lan_mp.sh",
+    "t5sp":  "t5plut_lan_sp.sh",
+    "t5mp":  "t5plut_lan_mp.sh",
+    "t6mp":  "t6plut_lan_mp.sh",
+    "t6zm":  "t6plut_lan_zm.sh",
     "iw5mp": "iw5plut_lan.sh",
 }
 
@@ -1531,6 +1534,32 @@ def install_plutonium_lcd(game: dict, game_key: str,
         # 7. Write bash wrapper for Steam-owned games (exe replacement).
         #    Own games launch via Heroic shortcuts created in step 3
         #    (_create_heroic_steam_shortcut) — no wrapper needed.
+        #
+        #    Migration: older DeckOps versions used shared filenames for
+        #    SP/MP and MP/ZM pairs (e.g. t4plut_lan.sh for both t4sp and
+        #    t4mp), causing whichever installed last to overwrite the
+        #    other's wrapper. Remove the old shared-name wrapper if it
+        #    exists so stale scripts don't persist alongside the new
+        #    per-game-key scripts.
+        _OLD_LAN_WRAPPER_NAMES = {
+            "t4sp":  "t4plut_lan.sh",
+            "t4mp":  "t4plut_lan.sh",
+            "t5sp":  "t5plut_lan.sh",
+            "t5mp":  "t5plut_lan.sh",
+            "t6mp":  "t6plut_lan.sh",
+            "t6zm":  "t6plut_lan.sh",
+        }
+        old_name = _OLD_LAN_WRAPPER_NAMES.get(game_key)
+        new_name = LCD_LAN_WRAPPER_NAMES.get(game_key)
+        if old_name and new_name and old_name != new_name:
+            old_path = os.path.join(game["install_dir"], old_name)
+            if os.path.exists(old_path):
+                try:
+                    os.remove(old_path)
+                    prog(78, f"Removed stale shared wrapper: {old_name}")
+                except OSError:
+                    pass
+
         lan_wrapper_path = None
         if source == "own":
             prog(80, "Own game — writing offline LAN wrapper...")
