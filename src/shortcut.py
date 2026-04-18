@@ -1665,7 +1665,7 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
 # Plutonium games and lets users pick a mode to launch. Both OLED and LCD
 # Decks get this shortcut — it's the unified Plutonium entry point.
 
-LAUNCHER_TITLE = "DeckOps: Plutonium Launcher"
+LAUNCHER_TITLE = "DeckOps: Plutonium Offline"
 
 # Custom DeckOps Plutonium launcher artwork. Hosted in the DeckOps-Nightly
 # repo so updates ship with the source. _download_artwork below always
@@ -1721,6 +1721,18 @@ def create_launcher_shortcut(on_progress=None):
 
         existing_names = _read_existing_shortcuts(shortcuts_path)
         existing_raw = _read_shortcuts_raw(shortcuts_path)
+
+        # Migration: remove the old "DeckOps: Plutonium Launcher" shortcut
+        # if it exists, so users don't end up with both old and new entries.
+        _OLD_LAUNCHER_TITLE = "DeckOps: Plutonium Launcher"
+        if _OLD_LAUNCHER_TITLE in existing_names:
+            existing_raw, _stripped = _strip_entries_by_name(
+                existing_raw, {_OLD_LAUNCHER_TITLE}
+            )
+            if _stripped:
+                prog(f"  Removed old launcher shortcut: {_OLD_LAUNCHER_TITLE}")
+            existing_names = [n for n in existing_names if n != _OLD_LAUNCHER_TITLE]
+
         next_idx = _get_next_index(existing_raw)
 
         icon_path = os.path.join(

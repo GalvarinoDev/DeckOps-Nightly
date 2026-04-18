@@ -761,6 +761,9 @@ SHORTCUT_NAMES = {
     "Call of Duty: World at War - Multiplayer",
     "DeckOps",
     "DeckOps Nightly",
+    # Plutonium offline launcher shortcut (shortcut.py LAUNCHER_TITLE)
+    "DeckOps: Plutonium Offline",
+    "DeckOps: Plutonium Launcher",  # old name, kept for migration
     # Own-path shortcuts (shortcut.py OWN_SHORTCUTS)
     "Call of Duty 4: Modern Warfare - Singleplayer",
     "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
