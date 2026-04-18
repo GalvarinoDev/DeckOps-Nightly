@@ -1779,6 +1779,21 @@ def create_launcher_shortcut(on_progress=None):
         _download_artwork(grid_dir, shortcut_appid, LAUNCHER_ART, prog,
                           force=True)
 
+        # Assign the user's chosen controller template so games launched
+        # from the launcher inherit the correct gamepad layout. The launcher
+        # runs as a non-Steam shortcut and Steam applies its controller
+        # config to all child processes — so the template here is what the
+        # actual game will use. "standard" is correct for most Plutonium
+        # games (the majority are Treyarch titles using standard layout).
+        try:
+            import config as _cfg
+            _gyro = _cfg.get_gyro_mode() or "hold"
+        except Exception:
+            _gyro = "hold"
+        _assign_controller_config(uid, shortcut_appid,
+                                  {"template_type": "standard"},
+                                  _gyro, prog)
+
         # Launcher shortcut must NOT have a compat tool — it's a native app.
         # Clear any stale CompatToolMapping entry (same pattern as game shortcuts).
         try:
