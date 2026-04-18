@@ -143,6 +143,7 @@ def launch_game(game_key: str, source: str):
     which conflicts with the system flatpak binary.
     """
     import subprocess
+    import time
 
     app_name = _heroic_app_name(game_key)
 
@@ -158,6 +159,18 @@ def launch_game(game_key: str, source: str):
     env = os.environ.copy()
     if source == "steam":
         env["LD_PRELOAD"] = "/usr/lib/libcurl.so.4"
+
+    # Kill any stale Heroic process so the flatpak launch gets a clean
+    # instance. Electron's single-instance lock can cause a new flatpak
+    # run to silently attach to an old instance or fail entirely.
+    try:
+        subprocess.run(
+            ["flatpak", "kill", HEROIC_FLATPAK_ID],
+            capture_output=True, timeout=5,
+        )
+        time.sleep(1)
+    except Exception:
+        pass
 
     # Run flatpak and wait for it to exit. This keeps the parent
     # process alive so Steam sees the game as running. Without this,
