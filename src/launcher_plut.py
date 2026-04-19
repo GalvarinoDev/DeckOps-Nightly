@@ -375,7 +375,17 @@ _LAUNCH_DEBOUNCE_MS = 3000
 
 
 def _launch_lan(wrapper_path: str):
-    """Run the LAN wrapper script directly, then exit."""
+    """Replace the launcher process with the LAN wrapper script.
+
+    Uses os.execv to replace the Python process entirely with bash
+    running the wrapper script. This keeps the same PID, same cgroup,
+    and same Steam process tracking — Steam sees the game as the
+    non-Steam shortcut still running. No child process, no orphaning,
+    no cgroup teardown.
+
+    The wrapper script's `exec` then replaces bash with Proton, so
+    the final process chain is: Steam → (was launcher) → Proton → game.
+    """
     global _LAUNCH_FIRED
     if _LAUNCH_FIRED:
         return
@@ -386,33 +396,17 @@ def _launch_lan(wrapper_path: str):
     _log(f"_launch_lan: wrapper_path={wrapper_path}")
     _log(f"_launch_lan: exists={os.path.exists(wrapper_path)}")
 
+    # The wrapper script sets its own STEAM_COMPAT_DATA_PATH and
+    # STEAM_COMPAT_CLIENT_INSTALL_PATH via export, and exec replaces
+    # the process entirely. No env stripping needed.
+    _log("_launch_lan: exec'ing into bash")
     try:
-        # Start with a clean environment so Steam's injected vars
-        # (LD_PRELOAD, LD_LIBRARY_PATH, etc.) don't leak into the
-        # Proton process. The wrapper script sets everything it needs
-        # via its own export lines.
-        env = os.environ.copy()
-        for var in ("LD_PRELOAD", "LD_LIBRARY_PATH",
-                    "STEAM_COMPAT_DATA_PATH",
-                    "STEAM_COMPAT_CLIENT_INSTALL_PATH"):
-            removed = env.pop(var, None)
-            if removed:
-                _log(f"_launch_lan: stripped {var}={removed}")
-        subprocess.Popen(["bash", wrapper_path], env=env)
-        _log("_launch_lan: Popen succeeded")
+        os.execv("/bin/bash", ["bash", wrapper_path])
     except Exception as ex:
-        _log(f"_launch_lan: FAILED: {ex}")
-        print(f"Failed to launch LAN wrapper: {ex}", file=sys.stderr)
-
-    # Safety: clear the flag if we somehow don't quit (e.g. Popen raised
-    # before quit timer fires). 3s > 1.5s quit timer so normal flow quits
-    # first; this only matters in error paths.
-    def _clear():
-        global _LAUNCH_FIRED
-        _LAUNCH_FIRED = False
-    QTimer.singleShot(_LAUNCH_DEBOUNCE_MS, _clear)
-
-    QTimer.singleShot(1500, lambda: QApplication.instance().quit())
+        # If exec fails, we're still running — log and exit
+        _log(f"_launch_lan: exec FAILED: {ex}")
+        print(f"Failed to exec LAN wrapper: {ex}", file=sys.stderr)
+        QApplication.instance().quit()
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
