@@ -1648,13 +1648,17 @@ def install_plutonium_lcd(game: dict, game_key: str,
                 game, game_key, steam_root, proton_path,
                 compatdata_path, dest_plut_dir,
             )
-            # The replaced exe IS the lan wrapper for Steam games.
-            # Capture the path so the launcher can find it.
-            if game_key in PLUT_GAME_EXES:
-                _, exe_name = PLUT_GAME_EXES[game_key]
-                lan_wrapper_path = os.path.join(
-                    game["install_dir"], exe_name
-                )
+            # Write a separate sidecar -lan wrapper for the offline
+            # launcher, matching OLED's approach. The replaced exe
+            # above handles online play via Heroic launch options
+            # (step 7b), but the offline launcher needs its own
+            # standalone .sh script that Steam's file validation
+            # can never touch or restore.
+            prog(82, "Writing offline LAN wrapper...")
+            lan_wrapper_path = _write_lcd_lan_wrapper(
+                game, game_key, steam_root, proton_path,
+                compatdata_path, shared_plut_dir,
+            )
         else:
             prog(80, "Skipping wrapper -- missing proton_path or steam_root")
 
