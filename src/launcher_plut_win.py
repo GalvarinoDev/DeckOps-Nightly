@@ -200,6 +200,109 @@ def _log(msg: str):
         pass
 
 
+# ── XInput gamepad polling ────────────────────────────────────────────────────
+# Uses XInput-Python to read the Steam Deck's gamepad inside Wine/Proton.
+# Steam Deck presents as an XInput controller in Game Mode.
+# Polls on a QTimer — no threading needed.
+
+_XINPUT_AVAILABLE = False
+try:
+    import XInput
+    _XINPUT_AVAILABLE = True
+except ImportError:
+    pass
+
+_GAMEPAD_POLL_MS = 50  # 20 Hz polling
+_GAMEPAD_REPEAT_DELAY_MS = 400  # initial delay before repeat
+_GAMEPAD_REPEAT_RATE_MS = 150   # repeat interval after initial delay
+
+
+class GamepadPoller:
+    """Polls XInput state and emits navigation actions."""
+
+    # XInput button constants
+    DPAD_UP    = 0x0001
+    DPAD_DOWN  = 0x0002
+    DPAD_LEFT  = 0x0004
+    DPAD_RIGHT = 0x0008
+    BTN_A      = 0x1000
+    BTN_B      = 0x2000
+
+    NAV_BUTTONS = (DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, BTN_A, BTN_B)
+
+    def __init__(self, on_up, on_down, on_left, on_right, on_activate, on_back):
+        self._callbacks = {
+            self.DPAD_UP:    on_up,
+            self.DPAD_DOWN:  on_down,
+            self.DPAD_LEFT:  on_left,
+            self.DPAD_RIGHT: on_right,
+            self.BTN_A:      on_activate,
+            self.BTN_B:      on_back,
+        }
+        self._prev_buttons = 0
+        self._held_button = None
+        self._held_time_ms = 0
+
+        self._timer = QTimer()
+        self._timer.setInterval(_GAMEPAD_POLL_MS)
+        self._timer.timeout.connect(self._poll)
+
+    def start(self):
+        if not _XINPUT_AVAILABLE:
+            _log("GamepadPoller: XInput not available, skipping")
+            return
+        _log("GamepadPoller: starting XInput polling")
+        self._timer.start()
+
+    def stop(self):
+        self._timer.stop()
+
+    def _poll(self):
+        try:
+            # Find first connected controller
+            connected = XInput.get_connected()
+            ctrl_idx = None
+            for i in range(4):
+                if connected[i]:
+                    ctrl_idx = i
+                    break
+            if ctrl_idx is None:
+                return
+
+            state = XInput.get_state(ctrl_idx)
+            buttons = state.Gamepad.wButtons
+
+            for btn in self.NAV_BUTTONS:
+                is_pressed = bool(buttons & btn)
+                was_pressed = bool(self._prev_buttons & btn)
+
+                if is_pressed and not was_pressed:
+                    # Fresh press — fire immediately
+                    self._fire(btn)
+                    self._held_button = btn
+                    self._held_time_ms = 0
+                elif is_pressed and was_pressed and self._held_button == btn:
+                    # Held — handle repeat
+                    self._held_time_ms += _GAMEPAD_POLL_MS
+                    if self._held_time_ms >= _GAMEPAD_REPEAT_DELAY_MS:
+                        if (self._held_time_ms - _GAMEPAD_REPEAT_DELAY_MS) % _GAMEPAD_REPEAT_RATE_MS < _GAMEPAD_POLL_MS:
+                            self._fire(btn)
+                elif not is_pressed and was_pressed and self._held_button == btn:
+                    # Released
+                    self._held_button = None
+                    self._held_time_ms = 0
+
+            self._prev_buttons = buttons
+
+        except Exception as ex:
+            _log(f"GamepadPoller: error: {ex}")
+
+    def _fire(self, btn):
+        cb = self._callbacks.get(btn)
+        if cb:
+            cb()
+
+
 # ── audio (background music) ─────────────────────────────────────────────
 
 LAUNCHER_VOLUME_MULT = 0.5
@@ -674,6 +777,17 @@ class LauncherWindow(QWidget):
             self._focus_rows[0].set_focused_button(0)
 
         self.setFocusPolicy(Qt.StrongFocus)
+
+        # ── XInput gamepad ──
+        self._gamepad = GamepadPoller(
+            on_up=lambda: self.on_move_row(-1),
+            on_down=lambda: self.on_move_row(+1),
+            on_left=lambda: self.on_move_btn(-1),
+            on_right=lambda: self.on_move_btn(+1),
+            on_activate=self._activate_focused,
+            on_back=self._quit_with_fade,
+        )
+        self._gamepad.start()
 
     def keyPressEvent(self, event):
         key = event.key()
