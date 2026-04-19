@@ -422,8 +422,9 @@ def _get_setup_plut_keys() -> dict:
 
     Both LCD and OLED write a dedicated sidecar -lan shell script
     during install and save its path as lan_wrapper_path in config.
-    This function simply reads that path — no platform-specific
-    fallback logic needed.
+    This function reads that path, with a fallback for LCD Steam games
+    installed by older DeckOps versions that used the replaced game exe
+    as the LAN wrapper (before sidecar .sh files were introduced).
 
     Returns dict — {game_key: {"lan_wrapper_path": str|None}}
     """
@@ -432,11 +433,37 @@ def _get_setup_plut_keys() -> dict:
         import config as cfg
         setup = cfg.get_setup_games()
 
+        # Import LCD exe map for fallback reconstruction on LCD Steam games
+        try:
+            from plutonium_lcd import PLUT_GAME_EXES
+            _is_lcd = not cfg.is_oled()
+        except Exception:
+            PLUT_GAME_EXES = {}
+            _is_lcd = False
+
         result = {}
         for k, v in setup.items():
             if v.get("client") != "plutonium":
                 continue
-            result[k] = {"lan_wrapper_path": v.get("lan_wrapper_path")}
+
+            lan_path = v.get("lan_wrapper_path")
+
+            # LCD Steam fallback: if lan_wrapper_path wasn't saved (e.g.
+            # install ran without compatdata_path) but source is "steam",
+            # reconstruct it from the install_dir + known exe name.
+            # The replaced exe IS the lan wrapper for LCD Steam games.
+            if (lan_path is None
+                    and _is_lcd
+                    and v.get("source") == "steam"
+                    and k in PLUT_GAME_EXES):
+                install_dir = v.get("install_dir", "")
+                _, exe_name = PLUT_GAME_EXES[k]
+                if install_dir:
+                    candidate = os.path.join(install_dir, exe_name)
+                    if os.path.exists(candidate):
+                        lan_path = candidate
+
+            result[k] = {"lan_wrapper_path": lan_path}
         return result
     except Exception:
         return {}
