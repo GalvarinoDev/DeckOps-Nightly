@@ -384,24 +384,7 @@ def _launch_lan(wrapper_path: str):
     _fadeout_audio()
 
     try:
-        # Build a clean environment for the wrapper. The launcher inherits
-        # Steam's runtime environment (LD_PRELOAD, LD_LIBRARY_PATH, etc.)
-        # which conflicts with the Proton invocation inside the wrapper.
-        # Strip Steam/SLR variables so Proton gets a clean start — the
-        # wrapper script sets its own STEAM_COMPAT_* vars explicitly.
-        clean_env = {
-            k: v for k, v in os.environ.items()
-            if not k.startswith(("SteamAppId", "SteamGameId",
-                                  "STEAM_COMPAT_", "STEAM_RUNTIME",
-                                  "PRESSURE_VESSEL", "PROTON_",
-                                  "WINE", "DXVK", "VKD3D"))
-            and k not in ("LD_PRELOAD", "LD_LIBRARY_PATH")
-        }
-        # Preserve basic system PATH and HOME
-        clean_env.setdefault("PATH", "/usr/bin:/bin:/usr/local/bin")
-        clean_env.setdefault("HOME", os.path.expanduser("~"))
-
-        subprocess.Popen(["bash", wrapper_path], env=clean_env)
+        subprocess.Popen(["bash", wrapper_path])
     except Exception as ex:
         print(f"Failed to launch LAN wrapper: {ex}", file=sys.stderr)
 
