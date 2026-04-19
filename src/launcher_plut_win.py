@@ -233,15 +233,30 @@ def _load_deckops_config() -> dict:
 
 
 def _load_plut_config() -> dict:
-    """Load Plutonium's config.json from the prefix."""
-    config_path = os.path.join(_PLUT_DIR, "config.json")
-    if not os.path.exists(config_path):
-        return {}
-    try:
-        with open(config_path, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return {}
+    """Load Plutonium's config.json, checking multiple prefix locations.
+
+    The .exe may run in its own Proton prefix that doesn't have Plutonium
+    installed. Fall back to the Heroic shared default prefix via Z: drive,
+    which is where the LCD install flow writes the authoritative config.
+    """
+    candidates = [
+        # 1. Current prefix (works if .exe shares Plutonium's prefix)
+        os.path.join(_PLUT_DIR, "config.json"),
+        # 2. Heroic shared default prefix via Z: drive (LCD installs)
+        r"Z:\home\deck\Games\Heroic\Prefixes\default\drive_c\users"
+        r"\steamuser\AppData\Local\Plutonium\config.json",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                with open(path, "r") as f:
+                    data = json.load(f)
+                _log(f"_load_plut_config: loaded from {path}")
+                return data
+            except (json.JSONDecodeError, IOError):
+                continue
+    _log("_load_plut_config: no config.json found in any candidate path")
+    return {}
 
 
 # ── launch helper ────────────────────────────────────────────────────────
