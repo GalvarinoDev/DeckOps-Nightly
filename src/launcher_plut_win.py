@@ -42,15 +42,13 @@ from PyQt5.QtCore import (
 
 # ── paths ────────────────────────────────────────────────────────────────────
 # Inside Wine/Proton, Z: maps to the Linux root filesystem.
-# LOCALAPPDATA points to the prefix's AppData/Local.
+# The Plutonium directory depends on deck model:
+#   LCD  → Heroic shared prefix (~/Games/Heroic/Prefixes/default)
+#   OLED → per-game Steam compatdata prefix
+# Both are resolved via deckops.json at startup.
 
 # DeckOps config lives on the Linux filesystem
 _DECKOPS_JSON = r"Z:\home\deck\DeckOps-Nightly\deckops.json"
-
-# Plutonium lives inside the prefix's AppData/Local
-_PLUT_DIR = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Plutonium")
-_BOOTSTRAPPER = os.path.join(_PLUT_DIR, "bin",
-                              "plutonium-bootstrapper-win32.exe")
 
 # Assets are on the Linux filesystem
 _LINUX_PROJECT_ROOT = r"Z:\home\deck\DeckOps-Nightly"
@@ -58,6 +56,47 @@ FONTS_DIR  = os.path.join(_LINUX_PROJECT_ROOT, "assets", "fonts")
 HEROES_DIR = os.path.join(_LINUX_PROJECT_ROOT, "assets", "images", "heroes")
 MUSIC_PATH = os.path.join(_LINUX_PROJECT_ROOT, "assets", "music",
                            "background.mp3")
+
+# LCD Heroic prefix Plutonium path (Wine path via Z: drive)
+_LCD_PLUT_DIR = (r"Z:\home\deck\Games\Heroic\Prefixes\default\pfx\drive_c"
+                 r"\users\steamuser\AppData\Local\Plutonium")
+
+# OLED uses per-game compatdata — Plutonium config.json lives in whichever
+# prefix was used during install. We check a few known appids.
+_OLED_COMPATDATA_BASE = r"Z:\home\deck\.local\share\Steam\steamapps\compatdata"
+_OLED_PLUT_SUFFIX = r"pfx\drive_c\users\steamuser\AppData\Local\Plutonium"
+# Check these appids in order — first one with a config.json wins
+_OLED_APPID_PROBE = ["10090", "42700", "42710", "202990", "42690"]
+
+
+def _resolve_plut_dir() -> str:
+    """Determine the Plutonium directory based on deck model."""
+    try:
+        with open(_DECKOPS_JSON, "r") as f:
+            cfg = json.load(f)
+    except Exception:
+        cfg = {}
+
+    model = cfg.get("deck_model", "oled")
+
+    if model == "lcd":
+        return _LCD_PLUT_DIR
+
+    # OLED: find the first compatdata prefix that has Plutonium config.json
+    for appid in _OLED_APPID_PROBE:
+        candidate = os.path.join(_OLED_COMPATDATA_BASE, appid, _OLED_PLUT_SUFFIX)
+        config_path = os.path.join(candidate, "config.json")
+        if os.path.exists(config_path):
+            return candidate
+
+    # Fallback to LOCALAPPDATA (whatever prefix this exe is running in)
+    return os.path.join(os.environ.get("LOCALAPPDATA", ""), "Plutonium")
+
+
+# Resolved at import time
+_PLUT_DIR = _resolve_plut_dir()
+_BOOTSTRAPPER = os.path.join(_PLUT_DIR, "bin",
+                              "plutonium-bootstrapper-win32.exe")
 
 # Plutonium game key → protocol key (for bootstrapper argument)
 _PLUT_KEY_MAP = {
@@ -710,9 +749,9 @@ def main():
     _log(f"main: argv={sys.argv}")
     _log(f"main: python={sys.executable}")
     _log(f"main: cwd={os.getcwd()}")
-    _log(f"main: LOCALAPPDATA={os.environ.get('LOCALAPPDATA', '<unset>')}")
     _log(f"main: PLUT_DIR={_PLUT_DIR}")
     _log(f"main: bootstrapper exists={os.path.exists(_BOOTSTRAPPER)}")
+    _log(f"main: config.json exists={os.path.exists(os.path.join(_PLUT_DIR, 'config.json'))}")
 
     app = QApplication(sys.argv)
     _load_font()
