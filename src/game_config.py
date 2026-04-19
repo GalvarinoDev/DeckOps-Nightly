@@ -114,8 +114,8 @@ def _heroic_mirror_path(compatdata_dest):
 # The config map is built inside apply_game_configs so steam_root is available.
 # Keys that are absent for a given model are simply not included.
 
-_LCD_KEYS  = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "iw5sp", "iw5mp", "t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp"}
-_OLED_KEYS = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "t4sp", "t4mp", "t5sp", "t5mp", "iw5sp", "iw5mp", "t6zm", "t6mp"}
+_LCD_KEYS  = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "iw5sp", "iw5mp", "iw5mp_ds", "t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp"}
+_OLED_KEYS = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "t4sp", "t4mp", "t5sp", "t5mp", "iw5sp", "iw5mp", "iw5mp_ds", "t6zm", "t6mp"}
 
 
 def _build_config_map(steam_root, installed_games=None):
@@ -214,6 +214,18 @@ def _build_config_map(steam_root, installed_games=None):
                     steam_root, 42690,
                     "Plutonium", "storage", "iw5", "players",
                     game_install_dir=_game_dir("iw5mp"),
+                ),
+            ),
+        ],
+
+        # ── MW3 DS (Plutonium iw5 via dedicated server, appid 42750) ──────────
+        "iw5mp_ds": [
+            (
+                "MW3/config_mp.cfg",
+                _pfx_local(
+                    steam_root, 42750,
+                    "Plutonium", "storage", "iw5", "players",
+                    game_install_dir=_game_dir("iw5mp_ds"),
                 ),
             ),
         ],
@@ -342,8 +354,9 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
     # When their MP sibling is selected, auto-include the SP key so its
     # display config also gets written.  The SP shares the same install_dir.
     _SIBLING_MAP = {
-        "iw4mp": "iw4sp",   # MW2 MP  → MW2 SP
-        "iw5mp": "iw5sp",   # MW3 MP  → MW3 SP
+        "iw4mp": "iw4sp",      # MW2 MP  → MW2 SP
+        "iw5mp": "iw5sp",      # MW3 MP  → MW3 SP
+        "iw5mp_ds": "iw5sp",   # MW3 DS  → MW3 SP
     }
     expanded_keys = list(selected_keys)
     for mp_key, sp_key in _SIBLING_MAP.items():

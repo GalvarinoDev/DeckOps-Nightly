@@ -48,6 +48,7 @@ GAME_META = {
     "t6zm":  (212910, "t6Path",  "t6zm.exe"),
     "t6mp":  (202990, "t6Path",  "t6mp.exe"),
     "iw5mp": (42690,  "iw5Path", "iw5mp.exe"),
+    "iw5mp_ds": (42750, "iw5Path", "iw5mp_server.exe"),
 }
 
 METADATA_FILE = "deckops_plutonium.json"
@@ -79,6 +80,7 @@ OLED_LAN_WRAPPER_NAMES = {
     "t6mp":  "t6plut_lan.sh",
     "t6zm":  "t6plut_lan.sh",
     "iw5mp": "iw5plut_lan.sh",
+    "iw5mp_ds": "iw5plut_lan.sh",
 }
 
 # DeckOps client-side menu mods packaged as .iwd files (renamed .zip).
@@ -90,6 +92,7 @@ MENU_MOD_FILES = {
     "t6mp": ("t6/t6mp/deckops_menu.iwd", "storage/t6/raw/deckops_menu.iwd"),
     "t6zm": ("t6/t6zm/deckops_menu_zm.iwd", "storage/t6/raw/deckops_menu_zm.iwd"),
     "iw5mp": ("iw5mp/main.lua", "storage/iw5/ui_mp/main.lua"),
+    "iw5mp_ds": ("iw5mp/main.lua", "storage/iw5/ui_mp/main.lua"),
 }
 
 
@@ -445,6 +448,18 @@ def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
 
 # ── wrapper script ────────────────────────────────────────────────────────────
 
+# Maps DeckOps game keys to the Plutonium protocol key used in
+# `plutonium://play/<key>` URLs and bootstrapper arguments. Most keys
+# are identical, but iw5mp_ds (the free dedicated server appid 42750)
+# runs the same Plutonium client as iw5mp (the full game appid 42690).
+_PLUT_KEY_MAP = {
+    "iw5mp_ds": "iw5mp",
+}
+
+def _plut_key(game_key: str) -> str:
+    """Return the Plutonium protocol key for a DeckOps game key."""
+    return _PLUT_KEY_MAP.get(game_key, game_key)
+
 def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
                              proton_path: str, compatdata_path: str,
                              plut_dir: str) -> str | None:
@@ -468,7 +483,7 @@ def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
 
     launcher = os.path.join(plut_dir, "bin",
                             "plutonium-launcher-win32.exe")
-    plut_url = f"plutonium://play/{game_key}"
+    plut_url = f"plutonium://play/{_plut_key(game_key)}"
 
     script = (
         "#!/bin/bash\n"
@@ -532,7 +547,7 @@ def _write_oled_lan_wrapper(game: dict, game_key: str, steam_root: str,
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
         f"cd \"{plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+        f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
     )
 
     with open(wrapper_path, "wb") as f:
@@ -562,6 +577,13 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
     exe_path       = os.path.join(install_dir, exe_name)
     backup_path    = exe_path + ".bak"
 
+    # Safety: refuse to create a wrapper if the original exe doesn't exist.
+    # Steam games always ship the exe we're replacing. If it's missing,
+    # detection returned the wrong key — writing here would create a
+    # phantom file that confuses future detection runs.
+    if not os.path.exists(exe_path) and not os.path.exists(backup_path):
+        return
+
     # Read original size before we overwrite
     original_size = os.path.getsize(exe_path) if os.path.exists(exe_path) else 0
 
@@ -572,7 +594,7 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
 
     # OLED online mode: call the launcher with a protocol URL
     launcher = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
-    plut_url = f"plutonium://play/{game_key}"
+    plut_url = f"plutonium://play/{_plut_key(game_key)}"
     script = (
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"

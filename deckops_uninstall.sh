@@ -151,6 +151,7 @@ if [ -n "$STEAM_ROOT" ]; then
         [7940]="iw3sp.exe"
         [10190]="iw4mp.exe"
         [42690]="iw5mp.exe"
+        [42750]="iw5mp_server.exe"
     )
     declare -A GAME_EXES_MULTI=(
         [10090]="CoDWaW.exe CoDWaWmp.exe"
@@ -603,7 +604,7 @@ if [ -n "$STEAM_ROOT" ]; then
     done
     [ "$found_any" -eq 0 ] && skip "No Plutonium folders found in any prefix"
 
-    for appid in 42690 10090 42700 202990 212910; do
+    for appid in 42690 42750 10090 42700 202990 212910; do
         game_dir=$(find_install_dir "$appid") || true
         if [ -n "$game_dir" ] && [ -f "$game_dir/deckops_plutonium.json" ]; then
             rm -f "$game_dir/deckops_plutonium.json" && success "Removed DeckOps metadata for appid $appid" || warn "Failed to remove metadata for appid $appid"
@@ -1037,7 +1038,7 @@ if not shortcut_appids:
     print("  No shortcut appids to clean up.")
 
 # Also clean up custom artwork we applied to Steam MP/ZM games
-STEAM_ART_APPIDS = {"10190", "42690", "42710", "202990", "212910"}
+STEAM_ART_APPIDS = {"10190", "42690", "42750", "42710", "202990", "212910"}
 all_appids = shortcut_appids | STEAM_ART_APPIDS
 
 if not all_appids:
@@ -1108,7 +1109,7 @@ STEAM_CONFIG = os.path.join(STEAM_DIR, "config", "config.vdf")
 
 # Standard Steam appids managed by DeckOps
 MANAGED_STEAM_APPIDS = [
-    "7940", "10090", "10180", "10190", "42680", "42690",
+    "7940", "10090", "10180", "10190", "42680", "42690", "42750",
     "42700", "42710", "202970", "202990", "212910",
 ]
 
@@ -1125,6 +1126,7 @@ APPID_NAMED_KEYS = {
     "42680":  ["call of duty modern warfare 3",
                "call of duty modern warfare 3 - multiplayer"],
     "42690":  ["call of duty modern warfare 3 - multiplayer"],
+    "42750":  ["call of duty modern warfare 3 - dedicated server"],
     "42700":  ["call of duty black ops",
                "call of duty black ops - zombies"],
     "42710":  ["call of duty black ops - multiplayer"],
@@ -1350,7 +1352,7 @@ SHORTCUTS = {
 
 # Standard Steam appids managed by DeckOps
 MANAGED_STEAM_APPIDS = [
-    "7940", "10090", "10180", "10190", "42680", "42690",
+    "7940", "10090", "10180", "10190", "42680", "42690", "42750",
     "42700", "42710", "202970", "202990", "212910",
 ]
 
