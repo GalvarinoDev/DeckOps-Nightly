@@ -1069,11 +1069,12 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
     files. Never replaces or modifies any existing file. launcher_plut.py
     reads the path from config and calls bash on it for offline play.
 
-    The wrapper uses the game's own compatdata prefix for both
-    STEAM_COMPAT_DATA_PATH and the bootstrapper path. This keeps LAN
-    mode completely independent of Heroic — Proton runs directly with
-    the game's own prefix where Plutonium files were copied during
-    install step 5.
+    Uses Heroic's shared default Wine prefix (HEROIC_DEFAULT_WINE_PREFIX)
+    for STEAM_COMPAT_DATA_PATH and Plutonium paths. This prefix already
+    has a fully initialized Proton/DXVK environment from the online login
+    flow, so all games launch reliably through it. LCD already depends on
+    Heroic for online play, so reusing its prefix for LAN adds no new
+    dependency.
 
     Written for both Steam and own game sources.
 
@@ -1093,21 +1094,19 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
     except Exception:
         player_name = "Player"
 
-    # Build all Plutonium paths from the game's own compatdata prefix,
-    # NOT the Heroic shared prefix. LAN mode must be Heroic-independent.
-    game_plut_dir = os.path.join(
-        compatdata_path, "pfx", "drive_c", "users", "steamuser",
-        "AppData", "Local", "Plutonium",
-    )
-    bootstrapper = os.path.join(game_plut_dir, "bin",
+    # Use Heroic's shared prefix — it has a fully initialized Wine/Proton
+    # environment with working DXVK state. Per-game compatdata prefixes
+    # were never set up for direct game launches and crash on D3D init.
+    heroic_plut_dir = get_shared_plut_dir()
+    bootstrapper = os.path.join(heroic_plut_dir, "bin",
                                  "plutonium-bootstrapper-win32.exe")
     game_dir_wine = _wine_path_lcd(install_dir)
 
     script = (
         "#!/bin/bash\n"
-        f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
+        f"export STEAM_COMPAT_DATA_PATH=\"{HEROIC_DEFAULT_WINE_PREFIX}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"cd \"{game_plut_dir}\"\n"
+        f"cd \"{heroic_plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
         f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
     )
