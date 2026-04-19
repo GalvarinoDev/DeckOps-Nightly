@@ -61,9 +61,9 @@ MUSIC_PATH = os.path.join(_LINUX_PROJECT_ROOT, "assets", "music",
 _LCD_PLUT_DIR = (r"Z:\home\deck\Games\Heroic\Prefixes\default\pfx\drive_c"
                  r"\users\steamuser\AppData\Local\Plutonium")
 
-# OLED uses per-game compatdata — Plutonium config.json lives in whichever
-# prefix was used during install. Could be a Steam appid or a CRC-based
-# shortcut appid for own games. We scan all compatdata directories.
+# OLED uses per-game compatdata — each game has its own prefix with its
+# own config.json containing only that game's path. We need to merge
+# config.json from ALL prefixes to get the complete picture.
 _OLED_COMPATDATA_BASE = r"Z:\home\deck\.local\share\Steam\steamapps\compatdata"
 _OLED_PLUT_SUFFIX = os.path.join(
     "pfx", "drive_c", "users", "steamuser",
@@ -73,8 +73,40 @@ _OLED_PLUT_SUFFIX = os.path.join(
 _OLED_APPID_PRIORITY = ["10090", "42700", "42710", "202990", "42690"]
 
 
+def _find_all_plut_dirs() -> list:
+    """Find all compatdata directories that contain Plutonium config.json."""
+    results = []
+
+    # Priority appids first
+    for appid in _OLED_APPID_PRIORITY:
+        candidate = os.path.join(_OLED_COMPATDATA_BASE, appid, _OLED_PLUT_SUFFIX)
+        if os.path.exists(os.path.join(candidate, "config.json")):
+            results.append(candidate)
+
+    # Scan remaining dirs
+    try:
+        if os.path.isdir(_OLED_COMPATDATA_BASE):
+            for entry in os.listdir(_OLED_COMPATDATA_BASE):
+                if entry in _OLED_APPID_PRIORITY:
+                    continue
+                candidate = os.path.join(
+                    _OLED_COMPATDATA_BASE, entry, _OLED_PLUT_SUFFIX,
+                )
+                if os.path.exists(os.path.join(candidate, "config.json")):
+                    results.append(candidate)
+    except OSError:
+        pass
+
+    return results
+
+
 def _resolve_plut_dir() -> str:
-    """Determine the Plutonium directory based on deck model."""
+    """Determine the primary Plutonium directory (where the bootstrapper lives).
+
+    LCD: Heroic shared prefix.
+    OLED: first prefix found with a bootstrapper exe. Falls back to
+    first prefix with config.json, then LOCALAPPDATA.
+    """
     try:
         with open(_DECKOPS_JSON, "r") as f:
             cfg = json.load(f)
@@ -86,27 +118,16 @@ def _resolve_plut_dir() -> str:
     if model == "lcd":
         return _LCD_PLUT_DIR
 
-    # OLED: check priority appids first
-    for appid in _OLED_APPID_PRIORITY:
-        candidate = os.path.join(_OLED_COMPATDATA_BASE, appid, _OLED_PLUT_SUFFIX)
-        config_path = os.path.join(candidate, "config.json")
-        if os.path.exists(config_path):
-            return candidate
+    # OLED: find a prefix that has the bootstrapper
+    all_dirs = _find_all_plut_dirs()
+    for d in all_dirs:
+        if os.path.exists(os.path.join(d, "bin",
+                                        "plutonium-bootstrapper-win32.exe")):
+            return d
 
-    # OLED own games: scan all compatdata directories for Plutonium config.json
-    try:
-        if os.path.isdir(_OLED_COMPATDATA_BASE):
-            for entry in os.listdir(_OLED_COMPATDATA_BASE):
-                if entry in _OLED_APPID_PRIORITY:
-                    continue  # already checked
-                candidate = os.path.join(
-                    _OLED_COMPATDATA_BASE, entry, _OLED_PLUT_SUFFIX,
-                )
-                config_path = os.path.join(candidate, "config.json")
-                if os.path.exists(config_path):
-                    return candidate
-    except OSError:
-        pass
+    # No bootstrapper found — use first with config.json
+    if all_dirs:
+        return all_dirs[0]
 
     # Fallback to LOCALAPPDATA (whatever prefix this exe is running in)
     return os.path.join(os.environ.get("LOCALAPPDATA", ""), "Plutonium")
@@ -394,15 +415,49 @@ def _load_deckops_config() -> dict:
 
 
 def _load_plut_config() -> dict:
-    """Load Plutonium's config.json from the prefix."""
-    config_path = os.path.join(_PLUT_DIR, "config.json")
-    if not os.path.exists(config_path):
-        return {}
+    """Load Plutonium config.json — merges across all prefixes on OLED.
+
+    LCD: single config.json from the Heroic shared prefix.
+    OLED: each per-game prefix has its own config.json with only that
+    game's path populated. This function merges all of them so every
+    installed game's path is available.
+    """
     try:
-        with open(config_path, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return {}
+        with open(_DECKOPS_JSON, "r") as f:
+            deckops_cfg = json.load(f)
+    except Exception:
+        deckops_cfg = {}
+
+    model = deckops_cfg.get("deck_model", "oled")
+
+    if model == "lcd":
+        # LCD: single config from Heroic shared prefix
+        config_path = os.path.join(_PLUT_DIR, "config.json")
+        if not os.path.exists(config_path):
+            return {}
+        try:
+            with open(config_path, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return {}
+
+    # OLED: merge config.json from all prefixes
+    merged = {}
+    path_keys = ("t4Path", "t5Path", "t6Path", "iw5Path")
+
+    for plut_dir in _find_all_plut_dirs():
+        config_path = os.path.join(plut_dir, "config.json")
+        try:
+            with open(config_path, "r") as f:
+                cfg = json.load(f)
+            for key in path_keys:
+                val = cfg.get(key, "")
+                if val and not merged.get(key):
+                    merged[key] = val
+        except (json.JSONDecodeError, IOError):
+            continue
+
+    return merged
 
 
 # ── launch helper ────────────────────────────────────────────────────────
