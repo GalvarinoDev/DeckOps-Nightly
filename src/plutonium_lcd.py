@@ -852,10 +852,9 @@ def _copy_plut_to_game_prefix_lcd(src_plut_dir: str, dest_plut_dir: str,
                                     on_progress=None):
     """
     Copy Plutonium files into a game's Steam compatdata prefix for LCD
-    offline mode. Uses symlinks for shared dirs (bin/, launcher/, games/)
-    and real copies for storage/ (per-game data).
-
-    Same logic as plutonium._copy_plut_to_prefix.
+    offline mode. Full copy — no symlinks. Wine/Proton cannot follow
+    Linux symlinks reliably, which causes game crashes when the
+    bootstrapper tries to resolve paths through symlinked dirs.
     """
     def prog(msg):
         if on_progress:
@@ -868,46 +867,9 @@ def _copy_plut_to_game_prefix_lcd(src_plut_dir: str, dest_plut_dir: str,
         shutil.rmtree(dest_plut_dir)
 
     start = time.time()
-
-    # Check if shared dirs are available for symlink approach
-    shared_ready = all(
-        os.path.isdir(os.path.join(SHARED_PLUT_DIR, d))
-        for d in _PLUT_SHARED_SUBDIRS
-        if os.path.isdir(os.path.join(src_plut_dir, d))
-    )
-
-    if shared_ready:
-        os.makedirs(dest_plut_dir, exist_ok=True)
-
-        # Symlink shared directories
-        for subdir in _PLUT_SHARED_SUBDIRS:
-            shared_src = os.path.join(SHARED_PLUT_DIR, subdir)
-            dest_sub = os.path.join(dest_plut_dir, subdir)
-            if os.path.isdir(shared_src):
-                os.symlink(shared_src, dest_sub)
-
-        # Copy storage/ as real files (per-game data)
-        storage_src = os.path.join(src_plut_dir, "storage")
-        if os.path.isdir(storage_src):
-            storage_dst = os.path.join(dest_plut_dir, "storage")
-            shutil.copytree(storage_src, storage_dst)
-
-        # Copy any remaining top-level files (config, etc.)
-        for item in os.listdir(src_plut_dir):
-            src_item = os.path.join(src_plut_dir, item)
-            dst_item = os.path.join(dest_plut_dir, item)
-            if os.path.exists(dst_item):
-                continue  # already handled (symlink or storage)
-            if os.path.isfile(src_item):
-                shutil.copy2(src_item, dst_item)
-
-        elapsed = time.time() - start
-        prog(f"  Copied Plutonium with symlinks ({elapsed:.1f}s)")
-    else:
-        # Fallback: full copy if shared dirs not available
-        shutil.copytree(src_plut_dir, dest_plut_dir)
-        elapsed = time.time() - start
-        prog(f"  Copied Plutonium ({elapsed:.1f}s)")
+    shutil.copytree(src_plut_dir, dest_plut_dir)
+    elapsed = time.time() - start
+    prog(f"  Copied Plutonium ({elapsed:.1f}s)")
 
 
 def _write_lcd_config(plut_dir: str, game_key: str, installed_games: dict):
@@ -984,13 +946,14 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
     except Exception:
         player_name = "Player"
 
-    # Use the Heroic shared prefix Plutonium dir for cd and bootstrapper
-    # paths. The compatdata copy uses symlinks for bin/ and games/ which
-    # Wine/Proton cannot follow, causing the game client to crash. The
-    # Heroic shared prefix has real files from the original bootstrapper
-    # login and works reliably with direct Proton invocation.
-    heroic_plut_dir = get_shared_plut_dir()
-    bootstrapper = os.path.join(heroic_plut_dir, "bin",
+    # Use the game's own compatdata prefix for cd and bootstrapper paths,
+    # matching what OLED does. The prefix now has real file copies (no
+    # symlinks) so Wine/Proton can resolve all paths correctly.
+    game_plut_dir = os.path.join(
+        compatdata_path, "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Local", "Plutonium",
+    )
+    bootstrapper = os.path.join(game_plut_dir, "bin",
                                 "plutonium-bootstrapper-win32.exe")
     game_dir_wine = _wine_path_lcd(install_dir)
 
@@ -998,7 +961,7 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"cd \"{heroic_plut_dir}\"\n"
+        f"cd \"{game_plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
         f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
     )
@@ -1100,11 +1063,14 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
     except Exception:
         player_name = "Player"
 
-    # Use the Heroic shared prefix Plutonium dir for cd and bootstrapper
-    # paths — same reasoning as _write_lcd_wrapper: the compatdata copy
-    # uses symlinks that Wine/Proton cannot follow.
-    heroic_plut_dir = get_shared_plut_dir()
-    bootstrapper = os.path.join(heroic_plut_dir, "bin",
+    # Use the game's own compatdata prefix for cd and bootstrapper paths,
+    # matching what OLED does. The prefix now has real file copies (no
+    # symlinks) so Wine/Proton can resolve all paths correctly.
+    game_plut_dir = os.path.join(
+        compatdata_path, "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Local", "Plutonium",
+    )
+    bootstrapper = os.path.join(game_plut_dir, "bin",
                                  "plutonium-bootstrapper-win32.exe")
     game_dir_wine = _wine_path_lcd(install_dir)
 
@@ -1112,7 +1078,7 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"cd \"{heroic_plut_dir}\"\n"
+        f"cd \"{game_plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
         f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
     )
