@@ -965,6 +965,11 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
     exe_path    = os.path.join(install_dir, exe_name)
     backup_path = exe_path + ".bak"
 
+    # Safety: refuse to create a wrapper if the original exe doesn't exist.
+    # Prevents phantom exe creation from bad detection.
+    if not os.path.exists(exe_path) and not os.path.exists(backup_path):
+        return
+
     # Read original size before we overwrite
     original_size = os.path.getsize(exe_path) if os.path.exists(exe_path) else 0
 
@@ -979,7 +984,13 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
     except Exception:
         player_name = "Player"
 
-    bootstrapper = os.path.join(plut_dir, "bin",
+    # Use the Heroic shared prefix Plutonium dir for cd and bootstrapper
+    # paths. The compatdata copy uses symlinks for bin/ and games/ which
+    # Wine/Proton cannot follow, causing the game client to crash. The
+    # Heroic shared prefix has real files from the original bootstrapper
+    # login and works reliably with direct Proton invocation.
+    heroic_plut_dir = get_shared_plut_dir()
+    bootstrapper = os.path.join(heroic_plut_dir, "bin",
                                 "plutonium-bootstrapper-win32.exe")
     game_dir_wine = _wine_path_lcd(install_dir)
 
@@ -987,7 +998,7 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"cd \"{plut_dir}\"\n"
+        f"cd \"{heroic_plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
         f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
     )
@@ -1089,13 +1100,11 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
     except Exception:
         player_name = "Player"
 
-    # Build all Plutonium paths from the game's own compatdata prefix,
-    # NOT the Heroic shared prefix. LAN mode must be Heroic-independent.
-    game_plut_dir = os.path.join(
-        compatdata_path, "pfx", "drive_c", "users", "steamuser",
-        "AppData", "Local", "Plutonium",
-    )
-    bootstrapper = os.path.join(game_plut_dir, "bin",
+    # Use the Heroic shared prefix Plutonium dir for cd and bootstrapper
+    # paths — same reasoning as _write_lcd_wrapper: the compatdata copy
+    # uses symlinks that Wine/Proton cannot follow.
+    heroic_plut_dir = get_shared_plut_dir()
+    bootstrapper = os.path.join(heroic_plut_dir, "bin",
                                  "plutonium-bootstrapper-win32.exe")
     game_dir_wine = _wine_path_lcd(install_dir)
 
@@ -1103,7 +1112,7 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"cd \"{game_plut_dir}\"\n"
+        f"cd \"{heroic_plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
         f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
     )
