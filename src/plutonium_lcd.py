@@ -1032,20 +1032,15 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
                             proton_path: str, compatdata_path: str,
                             plut_dir: str) -> str | None:
     """
-    Write a sidecar -lan bash script for LCD own game offline mode.
+    Write a sidecar -lan bash script for LCD offline mode.
 
     Creates a new shell script (e.g. t4plut_lan_sp.sh) alongside the game
     files. Never replaces or modifies any existing file. launcher_plut.py
     reads the path from config and calls bash on it for offline play.
 
-    The wrapper uses the game's own compatdata prefix for both
-    STEAM_COMPAT_DATA_PATH and the bootstrapper path. This keeps LAN
-    mode completely independent of Heroic — Proton runs directly with
-    the game's own prefix where Plutonium files were copied during
-    install step 5.
-
-    Only used for own games. LCD Steam games use the replaced game exe
-    (written by _write_lcd_wrapper) as their lan_wrapper_path.
+    Uses the bootstrapper with -lan flag so no Plutonium account is needed.
+    Written for both Steam and own game sources -- the path differs but
+    the script content is the same.
 
     Returns the full path to the written script, or None if game_key
     is not in LCD_LAN_WRAPPER_NAMES.
@@ -1063,22 +1058,15 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
     except Exception:
         player_name = "Player"
 
-    # Use the game's own compatdata prefix for cd and bootstrapper paths,
-    # matching what OLED does. The prefix now has real file copies (no
-    # symlinks) so Wine/Proton can resolve all paths correctly.
-    game_plut_dir = os.path.join(
-        compatdata_path, "pfx", "drive_c", "users", "steamuser",
-        "AppData", "Local", "Plutonium",
-    )
-    bootstrapper = os.path.join(game_plut_dir, "bin",
-                                 "plutonium-bootstrapper-win32.exe")
-    game_dir_wine = _wine_path_lcd(install_dir)
+    bootstrapper  = os.path.join(plut_dir, "bin",
+                                  "plutonium-bootstrapper-win32.exe")
+    game_dir_wine = "Z:" + install_dir.replace("/", "\\")
 
     script = (
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"cd \"{game_plut_dir}\"\n"
+        f"cd \"{plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
         f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
     )
@@ -1640,7 +1628,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
             prog(80, "Own game — writing offline LAN wrapper...")
             lan_wrapper_path = _write_lcd_lan_wrapper(
                 game, game_key, steam_root, proton_path,
-                compatdata_path, shared_plut_dir,
+                compatdata_path, dest_plut_dir,
             )
         elif proton_path and steam_root:
             prog(80, "Writing offline launcher wrapper...")
@@ -1657,7 +1645,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
             prog(82, "Writing offline LAN wrapper...")
             lan_wrapper_path = _write_lcd_lan_wrapper(
                 game, game_key, steam_root, proton_path,
-                compatdata_path, shared_plut_dir,
+                compatdata_path, dest_plut_dir,
             )
         else:
             prog(80, "Skipping wrapper -- missing proton_path or steam_root")
