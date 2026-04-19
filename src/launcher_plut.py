@@ -383,9 +383,25 @@ def _launch_lan(wrapper_path: str):
 
     _fadeout_audio()
 
+    _log(f"_launch_lan: wrapper_path={wrapper_path}")
+    _log(f"_launch_lan: exists={os.path.exists(wrapper_path)}")
+
     try:
-        subprocess.Popen(["bash", wrapper_path])
+        # Start with a clean environment so Steam's injected vars
+        # (LD_PRELOAD, LD_LIBRARY_PATH, etc.) don't leak into the
+        # Proton process. The wrapper script sets everything it needs
+        # via its own export lines.
+        env = os.environ.copy()
+        for var in ("LD_PRELOAD", "LD_LIBRARY_PATH",
+                    "STEAM_COMPAT_DATA_PATH",
+                    "STEAM_COMPAT_CLIENT_INSTALL_PATH"):
+            removed = env.pop(var, None)
+            if removed:
+                _log(f"_launch_lan: stripped {var}={removed}")
+        subprocess.Popen(["bash", wrapper_path], env=env)
+        _log("_launch_lan: Popen succeeded")
     except Exception as ex:
+        _log(f"_launch_lan: FAILED: {ex}")
         print(f"Failed to launch LAN wrapper: {ex}", file=sys.stderr)
 
     # Safety: clear the flag if we somehow don't quit (e.g. Popen raised
@@ -555,11 +571,18 @@ class GameRow(QWidget):
 
     def trigger_focused_button(self):
         """Invoke the launch action for the currently focused button."""
+        _log(f"trigger_focused_button: _focused_btn_idx={self._focused_btn_idx} "
+             f"_mode_buttons={len(self._mode_buttons)}")
         if self._focused_btn_idx is None:
+            _log("trigger_focused_button: bailing — _focused_btn_idx is None")
             return
         if 0 <= self._focused_btn_idx < len(self._mode_buttons):
             _, lan_path = self._mode_buttons[self._focused_btn_idx]
+            _log(f"trigger_focused_button: launching {lan_path}")
             _launch_lan(lan_path)
+        else:
+            _log(f"trigger_focused_button: index {self._focused_btn_idx} "
+                 f"out of range for {len(self._mode_buttons)} buttons")
 
     def set_row_focused(self, focused: bool):
         """Set whether this row has the active row focus (border highlight)."""
