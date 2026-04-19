@@ -116,7 +116,7 @@ PLUT_GAMES = [
     {
         "base": "Call of Duty: Modern Warfare 3",
         "dev": "iw",
-        "modes": [("iw5mp", "MP"), ("iw5mp_ds", "MP")],
+        "modes": [("iw5mp", "MP")],
         "hero_url": "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/mw3-banner.png",
         "hero_file": "mw3-banner.png",
     },
@@ -384,7 +384,24 @@ def _launch_lan(wrapper_path: str):
     _fadeout_audio()
 
     try:
-        subprocess.Popen(["bash", wrapper_path])
+        # Build a clean environment for the wrapper. The launcher inherits
+        # Steam's runtime environment (LD_PRELOAD, LD_LIBRARY_PATH, etc.)
+        # which conflicts with the Proton invocation inside the wrapper.
+        # Strip Steam/SLR variables so Proton gets a clean start — the
+        # wrapper script sets its own STEAM_COMPAT_* vars explicitly.
+        clean_env = {
+            k: v for k, v in os.environ.items()
+            if not k.startswith(("SteamAppId", "SteamGameId",
+                                  "STEAM_COMPAT_", "STEAM_RUNTIME",
+                                  "PRESSURE_VESSEL", "PROTON_",
+                                  "WINE", "DXVK", "VKD3D"))
+            and k not in ("LD_PRELOAD", "LD_LIBRARY_PATH")
+        }
+        # Preserve basic system PATH and HOME
+        clean_env.setdefault("PATH", "/usr/bin:/bin:/usr/local/bin")
+        clean_env.setdefault("HOME", os.path.expanduser("~"))
+
+        subprocess.Popen(["bash", wrapper_path], env=clean_env)
     except Exception as ex:
         print(f"Failed to launch LAN wrapper: {ex}", file=sys.stderr)
 
@@ -477,12 +494,6 @@ class GameRow(QWidget):
             (key, label) for key, label in game_def["modes"]
             if key in setup_info
         ]
-        # Priority: if both iw5mp (full game) and iw5mp_ds (free DS) are
-        # available, keep only iw5mp — they're the same Plutonium client.
-        avail_keys = {k for k, _ in self._available}
-        if "iw5mp" in avail_keys and "iw5mp_ds" in avail_keys:
-            self._available = [(k, l) for k, l in self._available
-                               if k != "iw5mp_ds"]
         self._has_modes = len(self._available) > 0
 
         # Gamepad/keyboard focus state — managed by LauncherWindow
