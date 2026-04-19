@@ -116,7 +116,7 @@ PLUT_GAMES = [
     {
         "base": "Call of Duty: Modern Warfare 3",
         "dev": "iw",
-        "modes": [("iw5mp", "MP")],
+        "modes": [("iw5mp", "MP"), ("iw5mp_ds", "DS")],
         "hero_url": "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/mw3-banner.png",
         "hero_file": "mw3-banner.png",
     },
