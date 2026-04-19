@@ -1411,6 +1411,16 @@ class InstallScreen(QWidget):
 
         # ── Plutonium games ───────────────────────────────────────────────────
         if has_plut:
+            # Create the launcher shortcut FIRST so the appid/prefix exist
+            # before per-game installs mirror configs into it.
+            try:
+                from shortcut import create_launcher_shortcut
+                create_launcher_shortcut(
+                    on_progress=lambda m: self._s.log.emit(m)
+                )
+            except Exception as ex:
+                self._s.log.emit(f"  Launcher shortcut failed: {ex}")
+
             plut_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "plutonium"]
             total_plut = len(plut_selected)
             for idx, (key, gd, game) in enumerate(plut_selected):
@@ -1433,17 +1443,6 @@ class InstallScreen(QWidget):
                         logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-            # Create the DeckOps Plutonium Launcher shortcut. Both OLED
-            # and LCD now ship with the launcher — OLED uses sidecar -lan
-            # scripts written by plutonium_oled._write_oled_lan_wrapper.
-            try:
-                from shortcut import create_launcher_shortcut
-                create_launcher_shortcut(
-                    on_progress=lambda m: self._s.log.emit(m)
-                )
-            except Exception as ex:
-                self._s.log.emit(f"  Launcher shortcut failed: {ex}")
 
         # ── iw4x (Steam closed) ───────────────────────────────────────────────
         if has_iw4x:
@@ -2781,6 +2780,16 @@ class OwnInstallScreen(QWidget):
 
         # ── Plutonium games ───────────────────────────────────────────────
         if has_plut:
+            # Create the launcher shortcut FIRST so the appid/prefix exist
+            # before per-game installs mirror configs into it.
+            try:
+                from shortcut import create_launcher_shortcut
+                create_launcher_shortcut(
+                    on_progress=lambda m: self._s.log.emit(m)
+                )
+            except Exception as ex:
+                self._s.log.emit(f"  Launcher shortcut failed: {ex}")
+
             # Per-game Plutonium install: copy Plutonium into each prefix,
             # write config.json with game paths. Own games skip the wrapper
             # (shortcuts point at Plutonium directly). Steam games in the
@@ -2816,17 +2825,6 @@ class OwnInstallScreen(QWidget):
                         logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-            # Create the DeckOps Plutonium Launcher shortcut. Both OLED
-            # and LCD now ship with the launcher — OLED uses sidecar -lan
-            # scripts written by plutonium_oled._write_oled_lan_wrapper.
-            try:
-                from shortcut import create_launcher_shortcut
-                create_launcher_shortcut(
-                    on_progress=lambda m: self._s.log.emit(m)
-                )
-            except Exception as ex:
-                self._s.log.emit(f"  Launcher shortcut failed: {ex}")
 
         # ── Install iw4x ─────────────────────────────────────────────────
         _log_to_file("[BREADCRUMB] starting iw4x install phase")
