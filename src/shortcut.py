@@ -1669,12 +1669,22 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
     return own_games
 
 
-# ── DeckOps Plutonium Launcher shortcut ───────────────────────────────────────
-# The launcher is a native Python app (launcher_plut.py) that shows installed
-# Plutonium games and lets users pick a mode to launch. Both OLED and LCD
-# Decks get this shortcut — it's the unified Plutonium entry point.
+# ── DeckOps Plutonium Offline Launcher shortcut ──────────────────────────────
+# The launcher is a Windows exe (DeckOps_Offline.exe) built with PyInstaller
+# that runs inside GE-Proton as a non-Steam shortcut. It shows installed
+# Plutonium games and lets users pick a mode to launch. The bootstrapper
+# runs as a direct Windows-to-Windows subprocess inside the same Wine/Proton
+# session, so all games (including T4/T5) work in Game Mode.
+#
+# Both OLED and LCD Decks get this shortcut — it's the unified Plutonium
+# offline entry point.
 
 LAUNCHER_TITLE = "DeckOps: Plutonium Offline"
+
+# Path to the Windows exe relative to the DeckOps install directory.
+# install.sh pulls the repo to ~/DeckOps-Nightly, so the exe lands at:
+#   ~/DeckOps-Nightly/assets/LAN/DeckOps_Offline.exe
+_LAUNCHER_EXE_REL = os.path.join("assets", "LAN", "DeckOps_Offline.exe")
 
 # Custom DeckOps Plutonium launcher artwork. Hosted in the DeckOps-Nightly
 # repo so updates ship with the source. _download_artwork below always
@@ -1688,34 +1698,69 @@ LAUNCHER_ART = {
     "icon_ext": "png", "grid_ext": "png", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
 }
 
+# Old exe path used by the python3-based launcher. Needed so migration can
+# calculate the old appid and strip stale artwork / compat tool entries.
+_OLD_LAUNCHER_EXE = os.path.join(
+    os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3"
+)
+
+
+def get_launcher_appid() -> int:
+    """
+    Return the Steam shortcut appid for the offline launcher exe.
+
+    Other modules (plutonium_oled, plutonium_lcd, game_config) use this
+    to locate the launcher's compatdata prefix and copy configs into it
+    so the offline launcher can see all installed games.
+    """
+    deckops_dir = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly")
+    launcher_exe = os.path.join(deckops_dir, _LAUNCHER_EXE_REL)
+    exe_path = f'"{launcher_exe}"'
+    return _calc_shortcut_appid(exe_path, LAUNCHER_TITLE)
+
+
+def get_launcher_plut_dir() -> str:
+    """
+    Return the Plutonium directory inside the launcher's compatdata prefix.
+
+    This is where Plutonium bins, storage/, config.json, and mods must be
+    placed so the offline launcher exe (running inside this prefix via
+    GE-Proton) can find them.
+
+    Path: ~/.local/share/Steam/steamapps/compatdata/<appid>/pfx/drive_c/
+          users/steamuser/AppData/Local/Plutonium
+    """
+    appid = get_launcher_appid()
+    return os.path.join(
+        COMPAT_ROOT, str(appid),
+        "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Local", "Plutonium",
+    )
+
 
 def create_launcher_shortcut(on_progress=None):
     """
-    Create a non-Steam shortcut for the DeckOps Plutonium Launcher.
+    Create a non-Steam shortcut for the DeckOps Plutonium Offline Launcher.
 
-    The launcher is a native Python app (launcher_plut.py) that shows
-    installed Plutonium games and lets users pick a mode to launch.
-    Called once after Plutonium games are set up — both OLED and LCD.
+    The launcher is a Windows exe (DeckOps_Offline.exe) that runs inside
+    GE-Proton. Called once after Plutonium games are set up — both OLED
+    and LCD.
 
-    The shortcut runs: DeckOps venv python3 /path/to/launcher_plut.py
-    No Proton/Wine involved — it's a native Linux app.
+    The shortcut runs:  GE-Proton → DeckOps_Offline.exe
     """
     def prog(msg):
         if on_progress:
             on_progress(msg)
 
-    # Locate launcher_plut.py relative to this file (same directory)
-    launcher_script = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "launcher_plut.py"
-    )
-    if not os.path.exists(launcher_script):
-        prog(f"  Launcher script not found: {launcher_script}")
+    deckops_dir = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly")
+    launcher_exe = os.path.join(deckops_dir, _LAUNCHER_EXE_REL)
+
+    if not os.path.exists(launcher_exe):
+        prog(f"  Launcher exe not found: {launcher_exe}")
         return
 
-    venv_python = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3")
-    exe_path  = f'"{venv_python}"'
-    start_dir = f'"{os.path.dirname(launcher_script)}"'
-    launch_options = f'"{launcher_script}"'
+    exe_path  = f'"{launcher_exe}"'
+    start_dir = f'"{os.path.dirname(launcher_exe)}"'
 
     shortcut_appid = _calc_shortcut_appid(exe_path, LAUNCHER_TITLE)
 
@@ -1731,16 +1776,52 @@ def create_launcher_shortcut(on_progress=None):
         existing_names = _read_existing_shortcuts(shortcuts_path)
         existing_raw = _read_shortcuts_raw(shortcuts_path)
 
-        # Migration: remove the old "DeckOps: Plutonium Launcher" shortcut
-        # if it exists, so users don't end up with both old and new entries.
+        # ── Migration ────────────────────────────────────────────────────
+        # Remove stale launcher shortcuts from prior versions so users
+        # don't end up with duplicates.
+        _stale_names = set()
+
+        # 1) Very old name: "DeckOps: Plutonium Launcher"
         _OLD_LAUNCHER_TITLE = "DeckOps: Plutonium Launcher"
         if _OLD_LAUNCHER_TITLE in existing_names:
+            _stale_names.add(_OLD_LAUNCHER_TITLE)
+
+        # 2) Same name but old python3-based exe path — different appid
+        #    because exe_path changed. Strip by name so the new entry
+        #    (with the exe path) can be written fresh.
+        _old_py_exe = f'"{_OLD_LAUNCHER_EXE}"'
+        _old_py_appid = _calc_shortcut_appid(_old_py_exe, LAUNCHER_TITLE)
+        if _old_py_appid != shortcut_appid and LAUNCHER_TITLE in existing_names:
+            _stale_names.add(LAUNCHER_TITLE)
+
+        if _stale_names:
             existing_raw, _stripped = _strip_entries_by_name(
-                existing_raw, {_OLD_LAUNCHER_TITLE}
+                existing_raw, _stale_names
             )
             if _stripped:
-                prog(f"  Removed old launcher shortcut: {_OLD_LAUNCHER_TITLE}")
-            existing_names = [n for n in existing_names if n != _OLD_LAUNCHER_TITLE]
+                for _sn in _stripped:
+                    prog(f"  Removed stale launcher shortcut: {_sn}")
+            existing_names = [n for n in existing_names if n not in _stale_names]
+
+            # Clean up artwork for the old python3-based appid
+            if _old_py_appid != shortcut_appid:
+                try:
+                    import glob as _glob
+                    for _f in _glob.glob(os.path.join(grid_dir, f"{_old_py_appid}*")):
+                        try:
+                            os.remove(_f)
+                        except OSError:
+                            pass
+                    prog(f"  Cleaned old launcher artwork (appid {_old_py_appid})")
+                except Exception:
+                    pass
+
+            # Clear stale compat tool entry for old appid
+            try:
+                _clear_compat_tool(str(_old_py_appid))
+                prog(f"  Cleared old compat tool entry (appid {_old_py_appid})")
+            except Exception:
+                pass
 
         next_idx = _get_next_index(existing_raw)
 
@@ -1758,7 +1839,7 @@ def create_launcher_shortcut(on_progress=None):
                 "StartDir":            start_dir,
                 "icon":                icon_path,
                 "ShortcutPath":        "",
-                "LaunchOptions":       launch_options,
+                "LaunchOptions":       "",
                 "IsHidden":            0,
                 "AllowDesktopConfig":  1,
                 "AllowOverlay":        1,
@@ -1815,46 +1896,45 @@ def create_launcher_shortcut(on_progress=None):
                                   {"template_type": "standard"},
                                   _gyro, prog)
 
-        # Launcher shortcut must NOT have a compat tool — it's a native app.
-        # Clear any stale CompatToolMapping entry (same pattern as game shortcuts).
+        # Set GE-Proton as compat tool — the exe runs inside Proton.
         try:
-            import re as _re
-            steam_config = os.path.expanduser(
-                "~/.local/share/Steam/config/config.vdf"
-            )
-            if os.path.exists(steam_config):
-                with open(steam_config, "r", encoding="utf-8") as _f:
-                    _data = _f.read()
-                _appid_str = str(shortcut_appid)
-                _pattern = (
-                    rf'\t+"{_re.escape(_appid_str)}"\n\t+\{{[^}}]*\}}\n?'
-                )
-                if _re.search(_pattern, _data, _re.MULTILINE | _re.DOTALL):
-                    _data = _re.sub(
-                        _pattern, "", _data,
-                        flags=_re.MULTILINE | _re.DOTALL,
-                    )
-                    _backup_file(steam_config)
-                    with open(steam_config, "w", encoding="utf-8") as _f:
-                        _f.write(_data)
-                    prog(f"    Cleared stale compat tool from launcher shortcut")
+            import config as _cfg
+            from wrapper import set_compat_tool
+            ge_version = _cfg.get_ge_proton_version()
+            if ge_version:
+                set_compat_tool([str(shortcut_appid)], ge_version)
+                prog(f"    ✓ GE-Proton {ge_version} set for launcher")
+            else:
+                prog(f"    ⚠ No GE-Proton version found — compat tool not set")
         except Exception as ex:
-            prog(f"    Could not clear compat tool: {ex}")
+            prog(f"    ⚠ Could not set GE-Proton: {ex}")
 
     prog(f"  Launcher shortcut appid: {shortcut_appid}")
 
 
 def remove_launcher_shortcut(on_progress=None):
     """
-    Remove the DeckOps Plutonium Launcher shortcut from shortcuts.vdf
+    Remove the DeckOps Plutonium Offline Launcher shortcut from shortcuts.vdf
     for all discovered Steam UIDs. Also removes associated artwork.
+
+    Handles both the current exe-based shortcut and the old python3-based
+    shortcut (different appids due to different exe paths).
     """
     def prog(msg):
         if on_progress:
             on_progress(msg)
 
-    exe_path = f'"{os.path.join(os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3")}"'
-    shortcut_appid = _calc_shortcut_appid(exe_path, LAUNCHER_TITLE)
+    # Current exe-based appid
+    deckops_dir = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly")
+    launcher_exe = os.path.join(deckops_dir, _LAUNCHER_EXE_REL)
+    exe_path_new = f'"{launcher_exe}"'
+    appid_new = _calc_shortcut_appid(exe_path_new, LAUNCHER_TITLE)
+
+    # Old python3-based appid
+    exe_path_old = f'"{_OLD_LAUNCHER_EXE}"'
+    appid_old = _calc_shortcut_appid(exe_path_old, LAUNCHER_TITLE)
+
+    appids_to_clean = {appid_new, appid_old}
 
     uids = _find_all_steam_uids()
     if not uids:
@@ -1914,7 +1994,7 @@ def remove_launcher_shortcut(on_progress=None):
             except OSError as ex:
                 prog(f"  Could not write shortcuts.vdf: {ex}")
 
-        # Remove artwork
+        # Remove artwork for both old and new appids
         artwork_suffixes = [
             f"_icon.{LAUNCHER_ART['icon_ext']}",
             f"p.{LAUNCHER_ART['grid_ext']}",
@@ -1922,13 +2002,14 @@ def remove_launcher_shortcut(on_progress=None):
             f"_hero.{LAUNCHER_ART['hero_ext']}",
             f"_logo.{LAUNCHER_ART['logo_ext']}",
         ]
-        for suffix in artwork_suffixes:
-            art_path = os.path.join(grid_dir, f"{shortcut_appid}{suffix}")
-            if os.path.exists(art_path):
-                try:
-                    os.remove(art_path)
-                except OSError:
-                    pass
+        for appid in appids_to_clean:
+            for suffix in artwork_suffixes:
+                art_path = os.path.join(grid_dir, f"{appid}{suffix}")
+                if os.path.exists(art_path):
+                    try:
+                        os.remove(art_path)
+                    except OSError:
+                        pass
 
 
 # ── CLI for testing ───────────────────────────────────────────────────────────

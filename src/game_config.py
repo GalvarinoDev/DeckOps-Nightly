@@ -111,6 +111,35 @@ def _heroic_mirror_path(compatdata_dest):
     return _heroic_pfx_local(*tail.split(os.sep))
 
 
+def _launcher_mirror_path(compatdata_dest):
+    """
+    Given a destination path inside a compatdata pfx AppData/Local tree,
+    return the equivalent path inside the offline launcher's prefix.
+
+    The launcher runs as a non-Steam shortcut with its own compatdata
+    prefix. Plutonium configs must be mirrored there so the bootstrapper
+    can find them when launched from the offline launcher.
+
+    Returns None if the input does not contain '/AppData/Local/' or if
+    the launcher appid cannot be determined.
+    """
+    marker = os.path.join("AppData", "Local") + os.sep
+    idx = compatdata_dest.find(marker)
+    if idx == -1:
+        return None
+    tail = compatdata_dest[idx + len(marker):]
+    try:
+        from shortcut import get_launcher_plut_dir
+        # get_launcher_plut_dir returns .../AppData/Local/Plutonium
+        # We need the AppData/Local base, then append the tail
+        launcher_plut = get_launcher_plut_dir()
+        # Strip "Plutonium" from the end to get the AppData/Local base
+        launcher_local = os.path.dirname(launcher_plut)
+        return os.path.join(launcher_local, *tail.split(os.sep))
+    except Exception:
+        return None
+
+
 # The config map is built inside apply_game_configs so steam_root is available.
 # Keys that are absent for a given model are simply not included.
 
@@ -447,6 +476,27 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
                         prog(f"  ! {key}: Heroic mirror failed "
                              f"({os.path.basename(src)}): {ex}")
 
+            # ── Offline launcher prefix mirror (all Plutonium games) ─────
+            # The offline launcher exe runs in its own Proton prefix.
+            # Mirror Plutonium configs there so the bootstrapper finds
+            # resolution, FOV, sensitivity, and player name settings.
+            # Best-effort — does not affect applied/failed counts.
+            if fixed_dest:
+                launcher_dest_dir = _launcher_mirror_path(dest_dir)
+                if launcher_dest_dir:
+                    try:
+                        os.makedirs(launcher_dest_dir, exist_ok=True)
+                        launcher_dest = os.path.join(
+                            launcher_dest_dir, os.path.basename(src)
+                        )
+                        shutil.copy2(src, launcher_dest)
+                        _replace_player_name(launcher_dest, player_name)
+                        prog(f"  + {key}: also mirrored to launcher prefix "
+                             f"-> {launcher_dest_dir}")
+                    except Exception as ex:
+                        prog(f"  ! {key}: launcher mirror failed "
+                             f"({os.path.basename(src)}): {ex}")
+
     prog(f"Game configs: {applied} applied, {skipped} skipped, {failed} failed.")
     return applied, skipped, failed
 
@@ -521,6 +571,18 @@ def rename_player(player_name, steam_root, installed_games=None,
                         _replace_player_name(heroic_dest, player_name)
                         updated += 1
                         prog(f"  + {key}: renamed in Heroic mirror")
+
+            # Launcher prefix mirror
+            if fixed_dest:
+                launcher_dest_dir = _launcher_mirror_path(dest_dir)
+                if launcher_dest_dir:
+                    launcher_dest = os.path.join(
+                        launcher_dest_dir, os.path.basename(asset_subpath)
+                    )
+                    if os.path.exists(launcher_dest):
+                        _replace_player_name(launcher_dest, player_name)
+                        updated += 1
+                        prog(f"  + {key}: renamed in launcher mirror")
 
     prog(f"Player name updated in {updated} file(s).")
     return updated

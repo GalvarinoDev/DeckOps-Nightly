@@ -942,6 +942,73 @@ def _write_lcd_config(plut_dir: str, game_key: str, installed_games: dict):
         json.dump(data, f, indent=2)
 
 
+# ── offline launcher prefix helper ────────────────────────────────────────────
+
+def _copy_plut_to_launcher_prefix_lcd(src_plut_dir: str,
+                                        game_prefix_plut_dir: str,
+                                        launcher_plut_dir: str,
+                                        game_key: str,
+                                        on_progress=None):
+    """
+    Mirror Plutonium files into the offline launcher's prefix (LCD).
+
+    Unlike _copy_plut_to_game_prefix_lcd, this does NOT wipe the
+    destination — each game's install call adds its own storage/ subdirs
+    incrementally. Shared dirs (bin/, launcher/, games/) are symlinked
+    once and skipped on subsequent calls.
+
+    src_plut_dir          — Heroic shared prefix Plutonium dir
+    game_prefix_plut_dir  — per-game compatdata Plutonium dir (just populated)
+    launcher_plut_dir     — destination inside the launcher's compatdata prefix
+    game_key              — current game key (for storage subdir mapping)
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    os.makedirs(launcher_plut_dir, exist_ok=True)
+
+    # Symlink shared directories (skip if already present)
+    shared_ready = all(
+        os.path.isdir(os.path.join(SHARED_PLUT_DIR, d))
+        for d in _PLUT_SHARED_SUBDIRS
+        if os.path.isdir(os.path.join(src_plut_dir, d))
+    )
+
+    if shared_ready:
+        for subdir in _PLUT_SHARED_SUBDIRS:
+            shared_src = os.path.join(SHARED_PLUT_DIR, subdir)
+            dest_sub = os.path.join(launcher_plut_dir, subdir)
+            if os.path.isdir(shared_src) and not os.path.exists(dest_sub):
+                os.symlink(shared_src, dest_sub)
+
+    # Merge storage/ — copy per-game storage subdirs without wiping others.
+    _STORAGE_SUBDIRS = {
+        "t4sp": "t4", "t4mp": "t4",
+        "t5sp": "t5", "t5mp": "t5",
+        "t6zm": "t6", "t6mp": "t6",
+        "iw5mp": "iw5", "iw5mp_ds": "iw5",
+    }
+    storage_name = _STORAGE_SUBDIRS.get(game_key)
+    if storage_name:
+        src_storage = os.path.join(game_prefix_plut_dir, "storage", storage_name)
+        dst_storage = os.path.join(launcher_plut_dir, "storage", storage_name)
+        if os.path.isdir(src_storage):
+            if os.path.exists(dst_storage):
+                shutil.rmtree(dst_storage)
+            shutil.copytree(src_storage, dst_storage)
+            prog(f"  Merged storage/{storage_name} into launcher prefix")
+
+    # Copy top-level files (config.json handled separately)
+    for item in os.listdir(src_plut_dir):
+        src_item = os.path.join(src_plut_dir, item)
+        dst_item = os.path.join(launcher_plut_dir, item)
+        if os.path.exists(dst_item):
+            continue  # already present
+        if os.path.isfile(src_item):
+            shutil.copy2(src_item, dst_item)
+
+
 def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
                         proton_path: str, compatdata_path: str,
                         plut_dir: str):
@@ -1633,6 +1700,38 @@ def install_plutonium_lcd(game: dict, game_key: str,
         # 6. Write config.json in the game prefix with correct paths
         prog(70, "Writing game path config...")
         _write_lcd_config(dest_plut_dir, game_key, installed_games)
+
+        # 6b. Mirror Plutonium into the offline launcher's prefix.
+        #     The launcher exe runs in its own Proton prefix (based on the
+        #     non-Steam shortcut appid). We copy bins (symlinks), storage/,
+        #     and mods there too, plus a merged config.json with all games.
+        prog(72, "Mirroring to offline launcher prefix...")
+        try:
+            from shortcut import get_launcher_plut_dir
+            launcher_plut_dir = get_launcher_plut_dir()
+
+            _copy_plut_to_launcher_prefix_lcd(
+                shared_plut_dir, dest_plut_dir, launcher_plut_dir,
+                game_key,
+                on_progress=lambda m: prog(73, m),
+            )
+
+            # Write merged config.json with ALL selected Plutonium game paths
+            selected_plut_keys = [
+                k for k in installed_games.keys() if k in PLUT_GAME_KEYS
+            ]
+            _write_plutonium_config_lcd(
+                launcher_plut_dir, selected_plut_keys, installed_games,
+                on_progress=lambda m: prog(74, m),
+            )
+
+            # Install menu mod into launcher prefix too
+            _install_menu_mod_lcd(launcher_plut_dir, game_key,
+                                   on_progress=lambda m: prog(75, m))
+
+            prog(76, "  ✓ Offline launcher prefix updated")
+        except Exception as ex:
+            prog(76, f"  ⚠ Offline launcher prefix mirror failed: {ex}")
 
         # 7. Write bash wrapper for Steam-owned games (exe replacement).
         #    Own games launch via Heroic shortcuts created in step 3
