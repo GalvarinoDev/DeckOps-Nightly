@@ -161,7 +161,7 @@ KEY_EXES = {
 KEY_MODE_LABEL = {
     "cod4mp": "MP",    "cod4sp": "SP",
     "iw4mp":  "MP",    "iw4sp":  "SP",
-    "iw5mp":  "MP",    "iw5mp_ds": "MP",    "iw5sp":  "SP",
+    "iw5mp":  "MP",    "iw5mp_ds": "DS",    "iw5sp":  "SP",
     "t4sp":   "S/Z",   "t4mp":   "MP",
     "t5sp":   "S/Z",   "t5mp":   "MP",
     "t6sp":   "SP",    "t6zm":   "ZM",    "t6mp":   "MP",
