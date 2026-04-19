@@ -89,6 +89,13 @@ GAMES = {
         "exe": "iw5sp.exe",
         "protocol": "steam",
     },
+    "iw5mp_ds": {
+        "name": "Call of Duty: Modern Warfare 3 - Dedicated Server",
+        "order": 5,
+        "appid": "42750",
+        "exe": "iw5mp_server.exe",
+        "protocol": "plutonium://play/iw5mp",
+    },
     "iw4mp": {
         "name": "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
         "order": 3,
@@ -213,22 +220,31 @@ def find_installed_games(library_folders, steam_root=None):
             if not os.path.exists(acf):
                 continue
 
-            # Parse install dir name from acf
+            # Parse install dir name and state flags from acf
             install_name = None
+            state_flags  = None
             with open(acf, "r", errors="replace") as f:
                 for line in f:
                     m = re.search(r'"installdir"\s+"([^"]+)"', line)
                     if m:
                         install_name = m.group(1)
+                    m = re.search(r'"StateFlags"\s+"(\d+)"', line)
+                    if m:
+                        state_flags = m.group(1)
+                    if install_name and state_flags:
                         break
 
             if not install_name:
                 continue
 
+            # StateFlags 4 = fully installed. Skip stale/partial manifests.
+            if state_flags != "4":
+                continue
+
             install_dir = os.path.join(steamapps_dir, "common", install_name)
             exe_path    = os.path.join(install_dir, exe)
 
-            if os.path.exists(install_dir):
+            if os.path.exists(install_dir) and os.path.exists(exe_path):
                 installed[key] = {
                     **meta,
                     "install_dir": install_dir,
