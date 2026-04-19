@@ -62,11 +62,15 @@ _LCD_PLUT_DIR = (r"Z:\home\deck\Games\Heroic\Prefixes\default\pfx\drive_c"
                  r"\users\steamuser\AppData\Local\Plutonium")
 
 # OLED uses per-game compatdata — Plutonium config.json lives in whichever
-# prefix was used during install. We check a few known appids.
+# prefix was used during install. Could be a Steam appid or a CRC-based
+# shortcut appid for own games. We scan all compatdata directories.
 _OLED_COMPATDATA_BASE = r"Z:\home\deck\.local\share\Steam\steamapps\compatdata"
-_OLED_PLUT_SUFFIX = r"pfx\drive_c\users\steamuser\AppData\Local\Plutonium"
-# Check these appids in order — first one with a config.json wins
-_OLED_APPID_PROBE = ["10090", "42700", "42710", "202990", "42690"]
+_OLED_PLUT_SUFFIX = os.path.join(
+    "pfx", "drive_c", "users", "steamuser",
+    "AppData", "Local", "Plutonium",
+)
+# Check Steam appids first (most common), then scan remaining dirs
+_OLED_APPID_PRIORITY = ["10090", "42700", "42710", "202990", "42690"]
 
 
 def _resolve_plut_dir() -> str:
@@ -82,12 +86,27 @@ def _resolve_plut_dir() -> str:
     if model == "lcd":
         return _LCD_PLUT_DIR
 
-    # OLED: find the first compatdata prefix that has Plutonium config.json
-    for appid in _OLED_APPID_PROBE:
+    # OLED: check priority appids first
+    for appid in _OLED_APPID_PRIORITY:
         candidate = os.path.join(_OLED_COMPATDATA_BASE, appid, _OLED_PLUT_SUFFIX)
         config_path = os.path.join(candidate, "config.json")
         if os.path.exists(config_path):
             return candidate
+
+    # OLED own games: scan all compatdata directories for Plutonium config.json
+    try:
+        if os.path.isdir(_OLED_COMPATDATA_BASE):
+            for entry in os.listdir(_OLED_COMPATDATA_BASE):
+                if entry in _OLED_APPID_PRIORITY:
+                    continue  # already checked
+                candidate = os.path.join(
+                    _OLED_COMPATDATA_BASE, entry, _OLED_PLUT_SUFFIX,
+                )
+                config_path = os.path.join(candidate, "config.json")
+                if os.path.exists(config_path):
+                    return candidate
+    except OSError:
+        pass
 
     # Fallback to LOCALAPPDATA (whatever prefix this exe is running in)
     return os.path.join(os.environ.get("LOCALAPPDATA", ""), "Plutonium")
