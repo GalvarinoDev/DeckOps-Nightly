@@ -83,6 +83,7 @@ APPID_PROFILE_MAP = {
     "10190":  "standard",  # MW2 MP -- iw4x
     "42680":  "other",     # MW3 SP -- via Steam, KB+M layout
     "42690":  "standard",  # MW3 MP -- Plutonium
+    "42750":  "standard",  # MW3 DS -- Plutonium (free dedicated server)
     "42700":  "standard",  # BO1 SP/ZM -- Plutonium
     "42710":  "standard",  # BO1 MP -- Plutonium
     "202970": "standard",  # BO2 SP -- via Steam
@@ -108,6 +109,7 @@ APPID_NAMED_KEYS = {
     "10190":  ["call of duty modern warfare 2 (2009) - multiplayer"],
     "42680":  [],
     "42690":  ["call of duty modern warfare 3 - multiplayer"],
+    "42750":  ["call of duty modern warfare 3 - dedicated server"],
     "42700":  ["call of duty black ops",
                "call of duty black ops - zombies"],
     "42710":  ["call of duty black ops - multiplayer"],

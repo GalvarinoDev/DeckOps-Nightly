@@ -252,6 +252,14 @@ STEAM_ARTWORK = {
         "logo_url":  "https://cdn2.steamgriddb.com/logo_thumb/4a64d913220fca4c33c140c6952688a8.png",
         "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
     },
+    "42750": {  # MW3 Dedicated Server (same art as MW3 MP)
+        "icon_url":  "https://cdn2.steamgriddb.com/icon_thumb/67b48cc32ab9f04633bd50656a4a26fc.png",
+        "grid_url":  "https://cdn2.steamgriddb.com/thumb/54726e7600c9c297610f6ed9d7d19ca7.jpg",
+        "wide_url":  "https://cdn2.steamgriddb.com/thumb/ce65f40e3a20ad19fe352c52ce3bcf51.jpg",
+        "hero_url":  "https://cdn2.steamgriddb.com/hero_thumb/51770b1e6f66ba5d45e58a76e6a73dc2.jpg",
+        "logo_url":  "https://cdn2.steamgriddb.com/logo_thumb/4a64d913220fca4c33c140c6952688a8.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
     "42710": {  # BO1 MP
         "icon_url":  "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42710/d595fb4b01201cade09e1232f2c41c0866840628.jpg",
         "grid_url":  "https://cdn2.steamgriddb.com/thumb/978f9d25644371a4c4b8df8c994cd880.png",
@@ -1393,7 +1401,8 @@ def apply_steam_artwork(selected_keys: list, on_progress=None):
     # Map game keys to Steam appids that have custom artwork
     KEY_TO_STEAM_APPID = {
         "iw4mp":  "10190",
-        "iw5mp":  "42690",
+        "iw5mp":     "42690",
+        "iw5mp_ds":  "42750",
         "t5mp":   "42710",
         "t6mp":   "202990",
         "t6zm":   "212910",

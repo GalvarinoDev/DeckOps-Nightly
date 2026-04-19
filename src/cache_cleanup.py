@@ -18,7 +18,7 @@ Steam's Proton directly and its shader cache is actually useful.
 Usage:
     python3 cache_cleanup.py <game_key> <source>
 
-    game_key  — Plutonium game key (t4sp, t4mp, t5sp, t5mp, t6mp, t6zm, iw5mp)
+    game_key  — Plutonium game key (t4sp, t4mp, t5sp, t5mp, t6mp, t6zm, iw5mp, iw5mp_ds)
     source    — "steam" or "own"
 
 Steam source adds LD_PRELOAD to work around Steam's pinned libcurl
@@ -52,6 +52,7 @@ STEAM_APPIDS = {
     "t6zm":  "212910",
     "t6mp":  "202990",
     "iw5mp": "42690",
+    "iw5mp_ds": "42750",
 }
 
 # LCD own-game shortcut titles — must match HEROIC_PLUT_GAMES in
@@ -190,7 +191,7 @@ def launch_game(game_key: str, source: str):
 def main():
     if len(sys.argv) < 3:
         print(f"Usage: {sys.argv[0]} <game_key> <source>")
-        print(f"  game_key: t4sp, t4mp, t5sp, t5mp, t6mp, t6zm, iw5mp")
+        print(f"  game_key: t4sp, t4mp, t5sp, t5mp, t6mp, t6zm, iw5mp, iw5mp_ds")
         print(f"  source:   steam or own")
         sys.exit(1)
 

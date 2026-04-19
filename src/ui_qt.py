@@ -99,8 +99,8 @@ ALL_GAMES = [
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Modern Warfare 2","keys":["iw4mp","iw4sp"],"appid":10190,"dev":"iw","client":"iw4x",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Modern Warfare 3","keys":["iw5mp","iw5sp"],"appid":42690,"dev":"iw","client":"plutonium",
-     "lcd_keys":["iw5mp","iw5sp"],"lcd_client":"plutonium + steam","lcd_appid":42680,
+    {"base":"Call of Duty: Modern Warfare 3","keys":["iw5mp","iw5mp_ds","iw5sp"],"appid":42690,"dev":"iw","client":"plutonium",
+     "lcd_keys":["iw5mp","iw5mp_ds","iw5sp"],"lcd_client":"plutonium + steam","lcd_appid":42680,
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: World at War","keys":["t4sp","t4mp"],"appid":10090,"dev":"trey","client":"plutonium",
      "lcd_keys":["t4sp","t4mp"],"lcd_client":"plutonium",
@@ -136,7 +136,8 @@ KEY_CLIENT = {
     "cod4sp": "iw3sp",
     "iw4mp":  "iw4x",
     "iw4sp":  "steam",
-    "iw5mp":  "plutonium",
+    "iw5mp":    "plutonium",
+    "iw5mp_ds": "plutonium",
     "iw5sp":  "steam",
     "t4sp":   "plutonium",
     "t4mp":   "plutonium",
@@ -150,7 +151,7 @@ KEY_CLIENT = {
 KEY_EXES = {
     "cod4mp":"iw3mp.exe","cod4sp":"iw3sp.exe",
     "iw4mp":"iw4mp.exe","iw4sp":"iw4sp.exe",
-    "iw5mp":"iw5mp.exe","iw5sp":"iw5sp.exe",
+    "iw5mp":"iw5mp.exe","iw5mp_ds":"iw5mp_server.exe","iw5sp":"iw5sp.exe",
     "t4sp":"CoDWaW.exe","t4mp":"CoDWaWmp.exe",
     "t5sp":"BlackOps.exe","t5mp":"BlackOpsMP.exe",
     "t6zm":"t6zm.exe","t6mp":"t6mp.exe","t6sp":"t6sp.exe",
@@ -160,7 +161,7 @@ KEY_EXES = {
 KEY_MODE_LABEL = {
     "cod4mp": "MP",    "cod4sp": "SP",
     "iw4mp":  "MP",    "iw4sp":  "SP",
-    "iw5mp":  "MP",    "iw5sp":  "SP",
+    "iw5mp":  "MP",    "iw5mp_ds": "MP",    "iw5sp":  "SP",
     "t4sp":   "S/Z",   "t4mp":   "MP",
     "t5sp":   "S/Z",   "t5mp":   "MP",
     "t6sp":   "SP",    "t6zm":   "ZM",    "t6mp":   "MP",
@@ -956,6 +957,10 @@ class SetupScreen(QWidget):
             keys = _active_keys(gd)
             if not keys: continue
             ik = [k for k in keys if k in self.steam_installed]
+            # Priority: hide iw5mp_ds (free DS) when iw5mp (full game) is present
+            if "iw5mp" in ik and "iw5mp_ds" in ik:
+                ik = [k for k in ik if k != "iw5mp_ds"]
+                keys = [k for k in keys if k != "iw5mp_ds"]
             if not ik: continue
 
             color  = C_IW if gd["dev"] == "iw" else C_TREY
@@ -1933,13 +1938,19 @@ class ControllerInfoScreen(QWidget):
         lay.addStretch()
         lay.addSpacing(4)
 
+        self._safe_lbl = _lbl("✅  It is now safe to open Steam.", 13, C_IW, bold=True)
+        self._safe_lbl.setVisible(False)
+        lay.addWidget(self._safe_lbl)
+        lay.addSpacing(4)
+
         cont = _btn("Continue  >>", C_IW, h=52)
-        cont.clicked.connect(self._reopen_steam)
+        cont.clicked.connect(self._go_management)
         cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(cont, stretch=1); cw.addStretch()
         lay.addLayout(cw)
 
     def showEvent(self, e):
         super().showEvent(e)
+        self._safe_lbl.setVisible(True)
         gyro_mode = cfg.get_gyro_mode() or "hold"
         if gyro_mode == "hold":
             gyro_desc = "R5 held"
@@ -1963,23 +1974,6 @@ class ControllerInfoScreen(QWidget):
         self._lcd_body.setVisible(is_lcd)
 
     def _go_management(self):
-        root = find_steam_root()
-        self.stack.widget(5).set_installed(find_installed_games(parse_library_folders(root)))
-        self.stack.setCurrentIndex(5)
-
-    def _reopen_steam(self):
-        try:
-            steam_root = cfg.load().get("steam_root", "") or find_steam_root()
-            steam_sh = os.path.join(steam_root, "steam.sh") if steam_root else None
-            if steam_sh and os.path.exists(steam_sh):
-                subprocess.Popen([steam_sh], start_new_session=True)
-            else:
-                subprocess.Popen(["steam"], start_new_session=True)
-        except Exception:
-            try:
-                subprocess.Popen(["steam"], start_new_session=True)
-            except Exception:
-                pass
         root = find_steam_root()
         self.stack.widget(5).set_installed(find_installed_games(parse_library_folders(root)))
         self.stack.setCurrentIndex(5)
@@ -2332,9 +2326,8 @@ class UpdateScreen(QWidget):
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
     def _on_done(self, _):
-        self.cur.setText("Done!")
+        self.cur.setText("Done! It is now safe to open Steam.")
         self.back_btn.setVisible(True)
-        _reopen_steam_bg(cfg.load().get("steam_root", "") or find_steam_root())
 
     def _go_back(self):
         root = find_steam_root()

@@ -101,6 +101,7 @@ PLUT_CONFIG_KEYS = {
     "t6zm":  "t6Path",
     "t6mp":  "t6Path",
     "iw5mp": "iw5Path",
+    "iw5mp_ds": "iw5Path",
 }
 PLUT_GAME_KEYS = set(PLUT_CONFIG_KEYS.keys())
 
@@ -115,6 +116,7 @@ PLUT_GAME_EXES = {
     "t6zm":  (212910, "t6zm.exe"),
     "t6mp":  (202990, "t6mp.exe"),
     "iw5mp": (42690,  "iw5mp.exe"),
+    "iw5mp_ds": (42750, "iw5mp_server.exe"),
 }
 
 # Standalone wrapper exe names for LCD own games. These are new files
@@ -144,6 +146,7 @@ LCD_LAN_WRAPPER_NAMES = {
     "t6mp":  "t6plut_lan_mp.sh",
     "t6zm":  "t6plut_lan_zm.sh",
     "iw5mp": "iw5plut_lan.sh",
+    "iw5mp_ds": "iw5plut_lan.sh",
 }
 
 # Shared Plutonium directories (bin/, launcher/, games/) live here. One real
@@ -179,6 +182,7 @@ MENU_MOD_FILES = {
     "t6mp":  ("t6/deckops_menu_lcd.iwd", "storage/t6/raw/deckops_menu_lcd.iwd"),
     "t6zm":  ("t6/deckops_menu_lcd.iwd", "storage/t6/raw/deckops_menu_lcd.iwd"),
     "iw5mp": ("iw5mp/main.lua", "storage/iw5/ui_mp/main.lua"),
+    "iw5mp_ds": ("iw5mp/main.lua", "storage/iw5/ui_mp/main.lua"),
 }
 
 
@@ -279,7 +283,31 @@ HEROIC_PLUT_GAMES = {
         "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/4a64d913220fca4c33c140c6952688a8.png",
         "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
     },
+    "iw5mp_ds": {
+        "title":          "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon_thumb/67b48cc32ab9f04633bd50656a4a26fc.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/54726e7600c9c297610f6ed9d7d19ca7.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/ce65f40e3a20ad19fe352c52ce3bcf51.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/51770b1e6f66ba5d45e58a76e6a73dc2.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/4a64d913220fca4c33c140c6952688a8.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
 }
+
+
+# ── Plutonium protocol key mapping ─────────────────────────────────────────
+# Maps DeckOps game keys to the Plutonium protocol key used in
+# `plutonium://play/<key>` URLs and bootstrapper arguments. Most keys
+# are identical, but iw5mp_ds (free dedicated server, appid 42750) runs
+# the same Plutonium client as iw5mp (full game, appid 42690).
+_PLUT_KEY_MAP = {
+    "iw5mp_ds": "iw5mp",
+}
+
+def _plut_key(game_key: str) -> str:
+    """Return the Plutonium protocol key for a DeckOps game key."""
+    return _PLUT_KEY_MAP.get(game_key, game_key)
 
 
 # ── Heroic app_name generation ──────────────────────────────────────────────
@@ -613,7 +641,7 @@ def _write_heroic_game_config(game_key: str, ge_proton_version: str,
             # picker / login screen) instead of jumping straight into the
             # requested game. Matches what the OLED bash wrapper does with
             # `plutonium-launcher-win32.exe "plutonium://play/<key>"`.
-            "launcherArgs": f'"plutonium://play/{game_key}"',
+            "launcherArgs": f'"plutonium://play/{_plut_key(game_key)}"',
             "verboseLogs": False,
             "advertiseAvxForRosetta": False,
             "enableQuickSavesMenu": False,
@@ -961,7 +989,7 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
         f"cd \"{plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+        f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
     )
 
     script_bytes = script.encode("utf-8")
@@ -1077,7 +1105,7 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
         f"cd \"{game_plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-        f"{game_key} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+        f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
     )
 
     with open(wrapper_path, "wb") as f:

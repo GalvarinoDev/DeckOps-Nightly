@@ -116,7 +116,7 @@ PLUT_GAMES = [
     {
         "base": "Call of Duty: Modern Warfare 3",
         "dev": "iw",
-        "modes": [("iw5mp", "MP")],
+        "modes": [("iw5mp", "MP"), ("iw5mp_ds", "MP")],
         "hero_url": "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/mw3-banner.png",
         "hero_file": "mw3-banner.png",
     },
@@ -477,6 +477,12 @@ class GameRow(QWidget):
             (key, label) for key, label in game_def["modes"]
             if key in setup_info
         ]
+        # Priority: if both iw5mp (full game) and iw5mp_ds (free DS) are
+        # available, keep only iw5mp — they're the same Plutonium client.
+        avail_keys = {k for k, _ in self._available}
+        if "iw5mp" in avail_keys and "iw5mp_ds" in avail_keys:
+            self._available = [(k, l) for k, l in self._available
+                               if k != "iw5mp_ds"]
         self._has_modes = len(self._available) > 0
 
         # Gamepad/keyboard focus state — managed by LauncherWindow

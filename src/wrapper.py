@@ -410,6 +410,7 @@ def set_steam_input_enabled(steam_root, appids=None):
         "10190",   # MW2 MP
         "42680",   # MW3 SP
         "42690",   # MW3 MP
+        "42750",   # MW3 Dedicated Server
         "42700",   # BO1
         "42710",   # BO1 MP
         "202970",  # BO2 SP
