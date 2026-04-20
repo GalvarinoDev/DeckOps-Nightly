@@ -344,7 +344,6 @@ def _copy_plut_to_prefix(src_plut_dir: str, dest_plut_dir: str,
                 os.symlink(shared_src, dest_sub)
 
         # Copy storage/ as real files (per-game data)
-        storage_src = os.path.join(src_plut_dir, subdir)
         storage_src = os.path.join(src_plut_dir, "storage")
         if os.path.isdir(storage_src):
             storage_dst = os.path.join(dest_plut_dir, "storage")
