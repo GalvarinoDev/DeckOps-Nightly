@@ -1704,6 +1704,29 @@ def get_launcher_plut_dir() -> str:
     )
 
 
+def _launcher_cache_cleanup_opts(shortcut_appid: int) -> str:
+    """
+    Return launch options that nuke the shader cache directory for the
+    offline launcher's shortcut appid before launching the exe.
+
+    The offline launcher is a PyQt5 app (DeckOps_Offline.exe) that runs
+    inside GE-Proton as a non-Steam shortcut. Steam's Fossilize pipeline
+    records shader cache for the launcher process, but since it's a Qt
+    UI — not a game — the cache is useless junk that accumulates on
+    every launch. Same root cause as the LCD online shader cache bug.
+
+    The bash one-liner deletes the shadercache/<appid>/ directory, then
+    exec's %command% so the normal Proton → exe launch proceeds unchanged.
+    Steam recreates the directory structure on next launch.
+
+    Applies to both LCD and OLED — both use this shortcut for offline play.
+    """
+    return (
+        f"bash -c 'rm -rf ~/.local/share/Steam/steamapps/shadercache/"
+        f"{shortcut_appid}; exec \"$@\"' _ %command%"
+    )
+
+
 def create_launcher_shortcut(on_progress=None):
     """
     Create a non-Steam shortcut for the DeckOps Plutonium Offline Launcher.
@@ -1805,7 +1828,7 @@ def create_launcher_shortcut(on_progress=None):
                 "StartDir":            start_dir,
                 "icon":                icon_path,
                 "ShortcutPath":        "",
-                "LaunchOptions":       "",
+                "LaunchOptions":       _launcher_cache_cleanup_opts(shortcut_appid),
                 "IsHidden":            0,
                 "AllowDesktopConfig":  1,
                 "AllowOverlay":        1,
