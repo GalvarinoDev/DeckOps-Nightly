@@ -70,17 +70,28 @@ OLED_OWN_WRAPPER_EXES = {
 
 # Sidecar -lan wrapper script names for OLED offline mode.
 # These are written alongside the game files (never replacing anything)
-# and launched by launcher_plut.py for offline play. Shell scripts rather
+# and launched by DeckOps_Offline.exe for offline play. Shell scripts rather
 # than .exe so they don't interfere with Steam's file validation.
 OLED_LAN_WRAPPER_NAMES = {
+    "t4sp":  "t4plut_lan_sp.sh",
+    "t4mp":  "t4plut_lan_mp.sh",
+    "t5sp":  "t5plut_lan_sp.sh",
+    "t5mp":  "t5plut_lan_mp.sh",
+    "t6mp":  "t6plut_lan_mp.sh",
+    "t6zm":  "t6plut_lan_zm.sh",
+    "iw5mp": "iw5plut_lan.sh",
+    "iw5mp_ds": "iw5plut_lan.sh",
+}
+
+# Old shared filenames used before the unique-name fix. Used during
+# install to clean up stale wrappers from previous DeckOps versions.
+_OLD_OLED_LAN_WRAPPER_NAMES = {
     "t4sp":  "t4plut_lan.sh",
     "t4mp":  "t4plut_lan.sh",
     "t5sp":  "t5plut_lan.sh",
     "t5mp":  "t5plut_lan.sh",
     "t6mp":  "t6plut_lan.sh",
     "t6zm":  "t6plut_lan.sh",
-    "iw5mp": "iw5plut_lan.sh",
-    "iw5mp_ds": "iw5plut_lan.sh",
 }
 
 # DeckOps client-side menu mods packaged as .iwd files (renamed .zip).
@@ -581,9 +592,10 @@ def _write_oled_lan_wrapper(game: dict, game_key: str, steam_root: str,
     """
     Write a sidecar -lan bash script for OLED offline mode.
 
-    Creates a new shell script (e.g. t4plut_lan.sh) alongside the game
-    files. Never replaces or modifies any existing file. launcher_plut.py
-    reads the path from config and calls bash on it for offline play.
+    Creates a new shell script (e.g. t4plut_lan_sp.sh) alongside the game
+    files. Each game_key gets a unique filename so SP/MP pairs don't
+    overwrite each other. DeckOps_Offline.exe reads the path from config
+    and calls bash on it for offline play.
 
     Uses the bootstrapper with -lan flag so no Plutonium account is needed.
     Written for both Steam and own game sources -- the path differs but
@@ -598,6 +610,20 @@ def _write_oled_lan_wrapper(game: dict, game_key: str, steam_root: str,
     install_dir  = game["install_dir"]
     wrapper_name = OLED_LAN_WRAPPER_NAMES[game_key]
     wrapper_path = os.path.join(install_dir, wrapper_name)
+
+    # Clean up stale shared-name wrapper from older DeckOps versions.
+    # Old versions used the same filename for SP/MP pairs (e.g. t4plut_lan.sh
+    # for both t4sp and t4mp), causing whichever installed last to overwrite
+    # the other. Remove the old shared-name file if it differs from the new
+    # unique name so stale scripts don't persist.
+    old_name = _OLD_OLED_LAN_WRAPPER_NAMES.get(game_key)
+    if old_name and old_name != wrapper_name:
+        old_path = os.path.join(install_dir, old_name)
+        if os.path.exists(old_path):
+            try:
+                os.remove(old_path)
+            except OSError:
+                pass
 
     try:
         import config as _cfg
@@ -836,7 +862,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
 
         prog(85, "Writing offline LAN wrapper...")
         # Sidecar -lan script alongside the game files. Does not touch the
-        # online wrapper above. launcher_plut.py reads lan_wrapper_path
+        # online wrapper above. DeckOps_Offline.exe reads lan_wrapper_path
         # from config and bash-runs this script for offline play.
         lan_wrapper_path = _write_oled_lan_wrapper(
             game, game_key, steam_root, proton_path,
@@ -862,7 +888,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
 
         prog(85, "Writing offline LAN wrapper...")
         # Sidecar -lan script alongside the game files. Does not touch the
-        # replaced exe above. launcher_plut.py reads lan_wrapper_path
+        # replaced exe above. DeckOps_Offline.exe reads lan_wrapper_path
         # from config and bash-runs this script for offline play.
         lan_wrapper_path = _write_oled_lan_wrapper(
             game, game_key, steam_root, proton_path,

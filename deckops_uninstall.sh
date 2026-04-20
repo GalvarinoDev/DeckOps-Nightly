@@ -1037,6 +1037,26 @@ for uid in os.listdir(userdata):
 if not shortcut_appids:
     print("  No shortcut appids to clean up.")
 
+# Add the DeckOps offline launcher shortcut appid. The launcher uses
+# DeckOps_Offline.exe as its exe path, and its appid is calculated from
+# the quoted exe path + title. We check both the current and old exe paths.
+_LAUNCHER_TITLE = "DeckOps: Plutonium Offline"
+_OLD_LAUNCHER_TITLE = "DeckOps: Plutonium Launcher"
+_launcher_exe_new = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly",
+                                  "assets", "LAN", "DeckOps_Offline.exe")
+_launcher_exe_old = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly",
+                                  ".venv", "bin", "python3")
+for _exe, _title in [
+    (f'"{_launcher_exe_new}"', _LAUNCHER_TITLE),
+    (f'"{_launcher_exe_old}"', _LAUNCHER_TITLE),
+    (f'"{_launcher_exe_new}"', _OLD_LAUNCHER_TITLE),
+    (f'"{_launcher_exe_old}"', _OLD_LAUNCHER_TITLE),
+]:
+    _appid = calc_shortcut_appid(_exe, _title)
+    if _appid not in shortcut_appids:
+        shortcut_appids.add(_appid)
+        print(f"  Launcher shortcut → appid {_appid}")
+
 # Also clean up custom artwork we applied to Steam MP/ZM games
 STEAM_ART_APPIDS = {"10190", "42690", "42750", "42710", "202990", "212910"}
 all_appids = shortcut_appids | STEAM_ART_APPIDS
@@ -1451,6 +1471,23 @@ if os.path.isdir(userdata):
                     all_appids.add(appid)
         except Exception:
             pass
+
+# Add launcher shortcut appids to compat tool cleanup.
+# Covers both the current exe-based and old python3-based launcher,
+# and both the current and old title for migration cleanup.
+_LAUNCHER_TITLE = "DeckOps: Plutonium Offline"
+_OLD_LAUNCHER_TITLE = "DeckOps: Plutonium Launcher"
+_launcher_exe_new = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly",
+                                  "assets", "LAN", "DeckOps_Offline.exe")
+_launcher_exe_old = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly",
+                                  ".venv", "bin", "python3")
+for _exe, _title in [
+    (f'"{_launcher_exe_new}"', _LAUNCHER_TITLE),
+    (f'"{_launcher_exe_old}"', _LAUNCHER_TITLE),
+    (f'"{_launcher_exe_new}"', _OLD_LAUNCHER_TITLE),
+    (f'"{_launcher_exe_old}"', _OLD_LAUNCHER_TITLE),
+]:
+    all_appids.add(calc_shortcut_appid(_exe, _title))
 
 with open(STEAM_CONFIG, "r", encoding="utf-8") as f:
     data = f.read()
