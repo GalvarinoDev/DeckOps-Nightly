@@ -51,7 +51,7 @@ function Init()
     -- Add menu buttons
 	Menu_Seperator(menu, 0)
     Menu_AddButton(menu, 0, "@MENU_SERVER_BROWSER_CAPS", function(menu,button) SignIn() Game.OpenMenu("serverbrowser") end)
-    Menu_AddButton(menu, 1, "DECKOPS SERVER", function(menu,button) Game.ExecuteCommand("connect 207.244.231.63:27016") end)
+    Menu_AddButton(menu, 1, "DECKOPS SERVER", function(menu,button) Game.ExecuteCommand("connect 207.244.231.63:28968") end)
     Menu_AddButton(menu, 2, "@MENU_PRIVATE_MATCH_CAPS", 
         function(menu,button)
             SignIn()
@@ -102,7 +102,7 @@ function Init()
     -- deckops_buttons[1] = {
     --     function(menu)
     --         Game.CloseMenu("deckops_servers")
-    --         Game.ExecuteCommand("connect 207.244.231.63:27016")
+    --         Game.ExecuteCommand("connect 207.244.231.63:28968")
     --     end,
     --     "MW3 MULTIPLAYER"
     -- }
