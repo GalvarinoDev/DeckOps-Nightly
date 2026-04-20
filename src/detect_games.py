@@ -75,6 +75,13 @@ GAMES = {
         "exe": "t6sp.exe",
         "protocol": "steam",
     },
+    "t7": {
+        "name": "Call of Duty: Black Ops III",
+        "order": 7,
+        "appid": "311210",
+        "exe": "BlackOps3.exe",
+        "protocol": "cleanops",
+    },
     "iw5mp": {
         "name": "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
         "order": 5,
@@ -283,12 +290,15 @@ FOLDER_TO_KEYS = {
     "call of duty modern warfare 3":    ["iw5sp",  "iw5mp"],
     "call of duty black ops":           ["t5sp",   "t5mp"],
     "call of duty black ops ii":        ["t6sp",   "t6mp",  "t6zm"],
+    "call of duty black ops iii":       ["t7"],
 }
 
 # Keyword rules checked in order when exact match fails.
 # Each entry is (compiled_regex, keys_list).
-# Order matters - more specific rules go first (e.g. "black ops ii" before "black ops").
+# Order matters - more specific rules go first (e.g. "black ops iii" before "black ops ii").
 _KEYWORD_RULES = [
+    # BO3 - check before BO2 and BO1 so "black ops iii/3" doesn't fall through
+    (re.compile(r'\b(black\s*ops\s*(iii|3)|bo3|t7)\b', re.IGNORECASE), ["t7"]),
     # BO2 - check before BO1 so "black ops ii" doesn't fall through to BO1
     (re.compile(r'\b(black\s*ops\s*(ii|2)|bo2|t6)\b', re.IGNORECASE), ["t6sp", "t6mp", "t6zm"]),
     # BO1
@@ -339,6 +349,7 @@ GAME_SENTINELS = {
     "mw3":  "zone/english/so_survival_mp_dome.ff",
     "bo1":  "vorkuta.ff",            # case-insensitive search under zone/*/
     "bo2":  "zone/all/zm_transit.ff",
+    "bo3":  "zone/core_common.ff",
 }
 
 # Maps each game key to its sentinel group. Multiple keys share a group
@@ -350,6 +361,7 @@ KEY_TO_SENTINEL = {
     "iw5sp":  "mw3",  "iw5mp":  "mw3",
     "t5sp":   "bo1",  "t5mp":   "bo1",
     "t6sp":   "bo2",  "t6mp":   "bo2",  "t6zm": "bo2",
+    "t7":     "bo3",
 }
 
 

@@ -41,6 +41,7 @@ MANAGED_APPIDS = [
     "202970",  # BO2 Campaign
     "202990",  # BO2 Multiplayer
     "212910",  # BO2 Zombies
+    "311210",  # BO3
 ]
 
 _BROWSER_UA = {

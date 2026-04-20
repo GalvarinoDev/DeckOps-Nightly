@@ -308,6 +308,20 @@ if [ -n "$STEAM_ROOT" ]; then
 fi
 echo ""
 
+info "Removing CleanOps files from Black Ops III folder..."
+
+if [ -n "$STEAM_ROOT" ]; then
+    bo3_dir=$(find_install_dir 311210) || true
+    if [ -n "$bo3_dir" ]; then
+        for f in "d3d11.dll" "deckops_cleanops.json"; do
+            [ -f "$bo3_dir/$f" ] && rm -f "$bo3_dir/$f" && success "Removed $f" || skip "$f not found"
+        done
+    else
+        skip "Black Ops III install directory not found"
+    fi
+fi
+echo ""
+
 info "Removing mod client files from non-Steam (My Own) game folders..."
 
 # For games added via the My Own flow, the install dir isnt in any Steam
@@ -345,6 +359,10 @@ OWN_CLEANUP = {
     "iw3sp_mod.exe": {
         "files": ["iw3sp_mod.exe", "iw3sp_mod.dll", "deckops_iw3sp.json"],
         "dirs":  ["iw3sp_mod"],
+    },
+    "blackops3.exe": {
+        "files": ["d3d11.dll", "deckops_cleanops.json"],
+        "dirs":  [],
     },
 }
 
@@ -777,6 +795,7 @@ SHORTCUT_NAMES = {
     "Call of Duty: Black Ops II - Singleplayer",
     "Call of Duty: Black Ops II - Zombies",
     "Call of Duty: Black Ops II - Multiplayer",
+    "Call of Duty: Black Ops III",
 }
 
 steam_dir = os.path.expanduser("~/.local/share/Steam")
@@ -1010,6 +1029,7 @@ OWN_EXE_MAP = {
     "t6plutmp.exe":   "Call of Duty: Black Ops II - Multiplayer",
     "t6plutzm.exe":   "Call of Duty: Black Ops II - Zombies",
     "iw5plutmp.exe":  "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
+    "blackops3.exe":  "Call of Duty: Black Ops III",
 }
 
 for uid in os.listdir(userdata):
@@ -1130,7 +1150,7 @@ STEAM_CONFIG = os.path.join(STEAM_DIR, "config", "config.vdf")
 # Standard Steam appids managed by DeckOps
 MANAGED_STEAM_APPIDS = [
     "7940", "10090", "10180", "10190", "42680", "42690", "42750",
-    "42700", "42710", "202970", "202990", "212910",
+    "42700", "42710", "202970", "202990", "212910", "311210",
 ]
 
 # Named game keys used in configset files — must match controller_profiles.py
@@ -1153,6 +1173,7 @@ APPID_NAMED_KEYS = {
     "202970": [],
     "202990": ["call of duty black ops ii - multiplayer"],
     "212910": ["call of duty black ops ii - zombies"],
+    "311210": ["call of duty black ops iii"],
 }
 
 # Shortcut definitions — must match shortcut.py
@@ -1271,6 +1292,7 @@ OWN_EXE_MAP = {
     "t6plutmp.exe":   "Call of Duty: Black Ops II - Multiplayer",
     "t6plutzm.exe":   "Call of Duty: Black Ops II - Zombies",
     "iw5plutmp.exe":  "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
+    "blackops3.exe":  "Call of Duty: Black Ops III",
 }
 
 for uid in os.listdir(USERDATA):
@@ -1373,7 +1395,7 @@ SHORTCUTS = {
 # Standard Steam appids managed by DeckOps
 MANAGED_STEAM_APPIDS = [
     "7940", "10090", "10180", "10190", "42680", "42690", "42750",
-    "42700", "42710", "202970", "202990", "212910",
+    "42700", "42710", "202970", "202990", "212910", "311210",
 ]
 
 def find_install_dir(steam_root, appid):
@@ -1448,6 +1470,7 @@ OWN_EXE_MAP = {
     "t6plutmp.exe":   "Call of Duty: Black Ops II - Multiplayer",
     "t6plutzm.exe":   "Call of Duty: Black Ops II - Zombies",
     "iw5plutmp.exe":  "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
+    "blackops3.exe":  "Call of Duty: Black Ops III",
 }
 
 userdata = os.path.join(steam_root, "userdata")

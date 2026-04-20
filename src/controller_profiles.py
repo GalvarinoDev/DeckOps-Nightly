@@ -89,6 +89,7 @@ APPID_PROFILE_MAP = {
     "202970": "standard",  # BO2 SP -- via Steam
     "202990": "standard",  # BO2 MP -- Plutonium
     "212910": "standard",  # BO2 ZM -- Plutonium
+    "311210": "standard",  # BO3 -- CleanOps (native controller support)
 }
 
 # ── Named game keys used in configset VDFs ────────────────────────────────────
@@ -116,6 +117,7 @@ APPID_NAMED_KEYS = {
     "202970": [],
     "202990": ["call of duty black ops ii - multiplayer"],
     "212910": ["call of duty black ops ii - zombies"],
+    "311210": ["call of duty black ops iii"],
 }
 
 # ── External controller configset filenames ───────────────────────────────────

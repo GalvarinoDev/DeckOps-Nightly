@@ -111,6 +111,8 @@ ALL_GAMES = [
     {"base":"Call of Duty: Black Ops II","keys":["t6mp","t6sp","t6zm"],"appid":202990,"dev":"trey","client":"plutonium",
      "lcd_keys":["t6mp","t6sp","t6zm"],"lcd_client":"plutonium + steam","lcd_appid":202970,
      "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"Call of Duty: Black Ops III","keys":["t7"],"appid":311210,"dev":"trey","client":"cleanops",
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
 ]
 
 def _active_keys(gd):
@@ -146,6 +148,7 @@ KEY_CLIENT = {
     "t6zm":   "plutonium",
     "t6mp":   "plutonium",
     "t6sp":   "steam",
+    "t7":     "cleanops",
 }
 
 KEY_EXES = {
@@ -155,6 +158,7 @@ KEY_EXES = {
     "t4sp":"CoDWaW.exe","t4mp":"CoDWaWmp.exe",
     "t5sp":"BlackOps.exe","t5mp":"BlackOpsMP.exe",
     "t6zm":"t6zm.exe","t6mp":"t6mp.exe","t6sp":"t6sp.exe",
+    "t7":"BlackOps3.exe",
 }
 
 # Label shown beneath each per-key checkbox in SetupScreen.
@@ -165,6 +169,7 @@ KEY_MODE_LABEL = {
     "t4sp":   "S/Z",   "t4mp":   "MP",
     "t5sp":   "S/Z",   "t5mp":   "MP",
     "t6sp":   "SP",    "t6zm":   "ZM",    "t6mp":   "MP",
+    "t7":     "All",
 }
 
 
@@ -178,6 +183,7 @@ SP_IMAGE_URLS = {
     42700:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/header.jpg",
     202970: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/header.jpg",
     202990: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/header.jpg",
+    311210: "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/header.jpg",
 }
 
 IMG_RATIO = 215 / 460
@@ -1207,12 +1213,14 @@ class InstallScreen(QWidget):
         from cod4x import install_cod4x
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
+        from cleanops import install_cleanops
         from ge_proton import install_ge_proton, set_compat_tool, MANAGED_APPIDS
 
         selected_keys   = [key for key, _, _ in self.selected]
         has_plut        = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
         has_cod4        = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k in selected_keys)
         has_iw4x        = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
+        has_cleanops    = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
         logged_bases    = set()
         ge_version      = None
         _compat_applied = False
@@ -1485,6 +1493,22 @@ class InstallScreen(QWidget):
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # ── CleanOps (BO3) — Steam closed ─────────────────────────────────────
+        if has_cleanops:
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "cleanops"]:
+                base_name = gd["base"]
+                self._s.progress.emit(86, f"Setting up {base_name}...")
+                def op_cleanops(pct, msg): self._s.progress.emit(86 + int(pct / 100 * 4), msg)
+                try:
+                    compat = find_compatdata(self.steam_root, gd["appid"],
+                                              game_install_dir=game["install_dir"] if game else None)
+                    install_cleanops(game, self.steam_root, proton, compat, op_cleanops)
+                    cfg.mark_game_setup(key, "cleanops", source="steam")
+                    self._s.log.emit(f"✓  {base_name} done")
+                    logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
@@ -2423,6 +2447,7 @@ class UpdateScreen(QWidget):
         from iw4x import install_iw4x
         from cod4x import install_cod4x
         from iw3sp import install_iw3sp
+        from cleanops import install_cleanops
         from plutonium_oled import install_plutonium
 
         has_cod4  = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k, _, _ in self.selected)
@@ -2501,6 +2526,9 @@ class UpdateScreen(QWidget):
                                      on_progress=op,
                                      installed_games=installed_for_plut,
                                      source=source)
+                elif c == "cleanops":
+                    install_cleanops(game, self.steam_root, proton, compat, op,
+                                    source=source)
                 self._s.log.emit(f"✓  {base_name} ({key}) done")
             except Exception as ex:
                 self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
@@ -2669,6 +2697,7 @@ class OwnInstallScreen(QWidget):
         from cod4x import install_cod4x
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
+        from cleanops import install_cleanops
         from ge_proton import install_ge_proton, MANAGED_APPIDS
 
         # Build the combined selected list from both Steam and own sources.
@@ -2979,6 +3008,28 @@ class OwnInstallScreen(QWidget):
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # ── Install CleanOps (BO3) ────────────────────────────────────────
+        _log_to_file("[BREADCRUMB] starting cleanops install phase")
+        has_cleanops = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
+        if has_cleanops:
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "cleanops"]:
+                base_name = gd["base"]
+                self._s.progress.emit(76, f"Setting up {base_name}...")
+                def op_cleanops(pct, msg): self._s.progress.emit(76 + int(pct / 100 * 4), msg)
+                try:
+                    source = "own" if key in self.own_selected else "steam"
+                    if source == "own":
+                        compat = game.get("compatdata_path", "")
+                    else:
+                        compat = find_compatdata(self.steam_root, gd["appid"],
+                                                  game_install_dir=game.get("install_dir"))
+                    install_cleanops(game, self.steam_root, proton, compat, op_cleanops, source=source)
+                    cfg.mark_game_setup(key, "cleanops", source=source)
+                    self._s.log.emit(f"✓  {base_name} done")
+                    logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
