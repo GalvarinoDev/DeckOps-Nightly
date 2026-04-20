@@ -16,3 +16,4 @@ assets/music/
 *.tmp
 *.log
 __pycache__/
+__pycache__/

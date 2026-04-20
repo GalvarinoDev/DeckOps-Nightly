@@ -1347,40 +1347,6 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
     prog("✓ Non-Steam shortcuts created.")
 
 
-def remove_shortcuts(on_progress=None):
-    """Remove DeckOps-created shortcuts from shortcuts.vdf for all users."""
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-    
-    uids = _find_all_steam_uids()
-    if not uids:
-        prog("⚠ No Steam user accounts found.")
-        return
-    
-    for uid in uids:
-        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
-        if not os.path.exists(shortcuts_path):
-            continue
-        
-        try:
-            with open(shortcuts_path, 'rb') as f:
-                data = f.read()
-        except Exception:
-            continue
-        
-        # Find DeckOps-tagged entries and remove them
-        if b'DeckOps' not in data:
-            prog(f"  No DeckOps shortcuts found for user {uid}")
-            continue
-        
-        prog(f"  Found DeckOps shortcuts for user {uid} — removing...")
-        # Rather than complex binary editing, rewrite without DeckOps entries.
-        # Parse entries, skip ones with DeckOps tag.
-        # For safety, just clear and let next install recreate.
-        prog(f"  ⚠ Manual removal recommended — edit shortcuts.vdf in Steam")
-
-
 def apply_steam_artwork(selected_keys: list, on_progress=None):
     """
     Download and apply custom artwork for Steam-owned MP/ZM games.
