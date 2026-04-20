@@ -15,15 +15,17 @@ The CoD4x chain-loader mechanism:
 
 Install flow:
   1. Write registry keys so Steam skips DirectX/Punkbuster first-launch installers
+  1b. Write CoD4 install path registry key so setup.exe can find the game
   2. Download the official CoD4x setup.exe
-  3. Run setup.exe through Proton (prefix already initialized)
-  4. Relocate chain-loader from prefix to game directory
-  5. Write registry keys again (safety net after Proton run)
-  6. Verify and write metadata
+  3. Run setup.exe through Proton with /DIR= pointing at the game directory
+  3b. Relocate chain-loader from prefix to game directory (fallback)
+  4. Write registry keys again (safety net after Proton run)
+  5. Verify and write metadata
 """
 
 import os
 import re
+import glob
 import json
 import shutil
 import subprocess
@@ -60,6 +62,12 @@ _REGISTRY_VALUES = {
     "PB Setup":   "dword:00000002",   # MinimumHasRunValue in installscript.vdf is 2
     "Running":    "dword:00000001",
 }
+
+# DeckOps log directory — Inno Setup logs are copied here for debugging.
+_LOG_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "logs",
+)
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -118,6 +126,18 @@ def _nvme_compatdata(appid: str) -> str:
         os.path.expanduser("~/.local/share/Steam"),
         "steamapps", "compatdata", str(appid),
     )
+
+
+def _linux_to_wine_path(linux_path: str) -> str:
+    """
+    Convert a Linux path to a Wine Z: drive path.
+
+    Wine maps the entire Linux filesystem under Z:, so
+    /home/deck/.local/share/Steam/steamapps/common/Call of Duty 4
+    becomes
+    Z:\\home\\deck\\.local\\share\\Steam\\steamapps\\common\\Call of Duty 4
+    """
+    return "Z:" + linux_path.replace("/", "\\")
 
 
 def _write_registry_keys(compatdata_path: str, on_progress=None):
@@ -201,10 +221,109 @@ def _write_registry_keys(compatdata_path: str, on_progress=None):
     return True
 
 
+def _write_install_path_registry(compatdata_path: str, install_dir: str,
+                                  on_progress=None):
+    """
+    Write the CoD4 install path into the Wine prefix's system.reg (HKLM)
+    so the CoD4x setup.exe can auto-detect the game directory.
+
+    The CoD4x Inno Setup installer looks for the game via the standard
+    Activision registry key. On a real Windows install this is set by
+    the original game installer. Inside a Steam Deck Wine prefix it
+    doesn't exist, so setup.exe falls back to Program Files.
+
+    We write to both the native path and the Wow6432Node path because
+    setup.exe is a 32-bit Inno Setup binary — on a 64-bit Wine prefix
+    it may look under either location depending on Wine's registry
+    redirection behaviour.
+
+    Wine system.reg format:
+      Keys are relative to HKEY_LOCAL_MACHINE (no HKLM prefix).
+      Path separators are double-backslash (\\\\).
+      String values use Wine's escaped format with double backslashes.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    system_reg = os.path.join(compatdata_path, "pfx", "system.reg")
+
+    if not os.path.exists(system_reg):
+        prog("  ⚠ system.reg not found — install path registry key skipped")
+        return False
+
+    with open(system_reg, "r", errors="replace") as f:
+        content = f.read()
+
+    # Convert Linux path to Wine Z: drive path with doubled backslashes
+    # for the .reg file format. Wine's system.reg uses \\\\ as separator.
+    wine_path = _linux_to_wine_path(install_dir)
+    # In .reg files, backslashes inside string values are doubled
+    reg_value_path = wine_path.replace("\\", "\\\\")
+
+    # The two key paths we need to write (without HKLM prefix, as Wine
+    # system.reg keys are relative to HKEY_LOCAL_MACHINE)
+    key_paths = [
+        r"[Software\\Activision\\Call of Duty 4]",
+        r"[Software\\Wow6432Node\\Activision\\Call of Duty 4]",
+    ]
+
+    for key_path in key_paths:
+        values_text = (
+            f'"InstallPath"="{reg_value_path}"\n'
+            f'"InstallDrive"="Z:"\n'
+            f'"Language"="enu"\n'
+        )
+
+        if key_path in content:
+            # Key block exists — update InstallPath value
+            # Match the key header and its body (everything until next key or EOF)
+            escaped_key = re.escape(key_path)
+            pattern = re.compile(
+                rf'({escaped_key}[^\n]*\n)((?:(?!\[)[^\n]*\n)*)',
+                re.MULTILINE
+            )
+            match = pattern.search(content)
+            if match:
+                header = match.group(1)
+                existing_body = match.group(2)
+
+                # Parse existing values
+                existing_values = {}
+                for line in existing_body.strip().split("\n"):
+                    line = line.strip()
+                    if line and "=" in line:
+                        k = line.split("=", 1)[0]
+                        existing_values[k] = line
+
+                # Merge our values
+                existing_values['"InstallPath"'] = f'"InstallPath"="{reg_value_path}"'
+                existing_values['"InstallDrive"'] = '"InstallDrive"="Z:"'
+                existing_values['"Language"'] = '"Language"="enu"'
+
+                new_body = "\n".join(existing_values.values()) + "\n"
+                content = (
+                    content[:match.start()] + header + new_body +
+                    content[match.end():]
+                )
+        else:
+            # Key block doesn't exist — append it
+            block = f"\n{key_path}\n{values_text}"
+            content += block
+
+    with open(system_reg, "w", errors="replace") as f:
+        f.write(content)
+
+    prog(f"  ✓ Install path registry key written ({wine_path})")
+    return True
+
+
 # The default install path that setup.exe writes to inside the Wine prefix
-# when it can't find the game via cwd. setup.exe runs with cwd=install_dir
-# on the Linux side, but Wine maps that to Z:\home\deck\Games\cod4 which
-# Inno Setup doesn't recognise as a CoD4 install -- so it falls back here.
+# when it can't find the game via registry or /DIR. setup.exe runs with
+# cwd=install_dir on the Linux side, but Wine maps that to Z:\home\deck\...
+# which Inno Setup doesn't recognise as a CoD4 install -- so it falls back
+# here. With the /DIR parameter and registry key fixes, this path should
+# only be needed as a last-resort fallback.
 _PREFIX_GAME_RELPATH = os.path.join(
     "pfx", "drive_c", "Program Files (x86)",
     "Activision", "Call of Duty 4 - Modern Warfare",
@@ -216,26 +335,47 @@ def _relocate_chainloader(compatdata_path: str, install_dir: str,
     """
     Copy the CoD4x chain-loader from the prefix to the real game directory.
 
+    This is a fallback for when /DIR didn't work and setup.exe placed
+    files in the prefix's Program Files instead of the game directory.
+    If /DIR worked correctly, the prefix fallback directory won't exist
+    and this function is a no-op.
+
     setup.exe writes mss32.dll (chain-loader) and miles32.dll (original
     backup) into the prefix's virtual Program Files path because it can't
     see the Linux game directory. This function moves them to install_dir
     where CoD4 actually loads them from.
 
-    Returns True if the chain-loader was placed successfully.
+    Returns True if the chain-loader was placed successfully or was
+    already in the right place.
     """
     def log(msg):
         if on_progress:
             on_progress(msg)
 
+    # Check if setup.exe already placed files directly in install_dir
+    # (meaning /DIR worked). If so, no relocation needed.
+    real_mss = os.path.join(install_dir, "mss32.dll")
+    real_miles = os.path.join(install_dir, "miles32.dll")
+    if os.path.exists(real_miles) and os.path.exists(real_mss):
+        mss_size = os.path.getsize(real_mss)
+        miles_size = os.path.getsize(real_miles)
+        if mss_size != miles_size:
+            log("  ✓ Chain-loader already in game directory (/DIR worked)")
+            return True
+
+    # Fall back to the prefix location
     prefix_game_dir = os.path.join(compatdata_path, _PREFIX_GAME_RELPATH)
     prefix_mss = os.path.join(prefix_game_dir, "mss32.dll")
 
     if not os.path.exists(prefix_mss):
-        log("  ⚠ Chain-loader not found in prefix — setup.exe may have failed")
+        # Neither /DIR nor prefix fallback has the chain-loader
+        if os.path.exists(real_miles):
+            # miles32.dll exists but mss32.dll is same size — might still be ok
+            return True
+        log("  ⚠ Chain-loader not found in prefix or game directory — setup.exe may have failed")
         return False
 
-    real_mss = os.path.join(install_dir, "mss32.dll")
-    real_miles = os.path.join(install_dir, "miles32.dll")
+    log("  ℹ Chain-loader found in prefix fallback — relocating to game directory")
 
     # Back up the original mss32.dll as miles32.dll (only if not already done)
     if os.path.exists(real_mss) and not os.path.exists(real_miles):
@@ -252,6 +392,51 @@ def _relocate_chainloader(compatdata_path: str, install_dir: str,
         log("  ✓ Cleaned up prefix fallback directory")
 
     return True
+
+
+def _collect_inno_log(compatdata_path: str, on_progress=None):
+    """
+    Find the Inno Setup log file from the prefix's temp directory and
+    copy it to the DeckOps logs directory for debugging.
+
+    Inno Setup /LOG writes to the current user's TEMP directory with a
+    filename like Setup Log YYYY-MM-DD #NNN.txt. Inside Wine this maps
+    to the prefix's drive_c/users/steamuser/Temp/.
+
+    Returns the path to the copied log file, or None if not found.
+    """
+    def log(msg):
+        if on_progress:
+            on_progress(msg)
+
+    # Wine temp directories to check (Proton uses steamuser)
+    temp_dirs = [
+        os.path.join(compatdata_path, "pfx", "drive_c", "users", "steamuser", "Temp"),
+        os.path.join(compatdata_path, "pfx", "drive_c", "users", "steamuser", "AppData", "Local", "Temp"),
+        os.path.join(compatdata_path, "pfx", "drive_c", "windows", "temp"),
+    ]
+
+    for temp_dir in temp_dirs:
+        if not os.path.isdir(temp_dir):
+            continue
+        # Inno Setup log filename pattern: "Setup Log YYYY-MM-DD #NNN.txt"
+        pattern = os.path.join(temp_dir, "Setup Log *.txt")
+        matches = glob.glob(pattern)
+        if matches:
+            # Take the most recent one
+            latest = max(matches, key=os.path.getmtime)
+            try:
+                os.makedirs(_LOG_DIR, exist_ok=True)
+                dest = os.path.join(_LOG_DIR, "cod4x_inno_setup.log")
+                shutil.copy2(latest, dest)
+                log(f"  ✓ Inno Setup log saved to logs/cod4x_inno_setup.log")
+                return dest
+            except Exception as ex:
+                log(f"  ⚠ Could not copy Inno Setup log: {ex}")
+                return None
+
+    log("  ℹ No Inno Setup log found in prefix temp directories")
+    return None
 
 
 # ── public API ───────────────────────────────────────────────────────────────
@@ -291,8 +476,16 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
 
     # ── Step 1: Write registry keys (pre-setup) ─────────────────────────
     # Write before the setup.exe run so Steam skips first-launch installers.
-    prog(8, "Writing registry keys...")
+    prog(5, "Writing registry keys...")
     pre_reg_ok = _write_registry_keys(compatdata_path, on_progress=log)
+
+    # ── Step 1b: Write install path registry key ─────────────────────────
+    # Write the CoD4 install directory into HKLM so setup.exe can find it.
+    # This is the primary fix for setup.exe not detecting the game location
+    # inside the Wine prefix. We write to both the native and Wow6432Node
+    # paths because setup.exe is 32-bit and Wine may redirect either way.
+    prog(8, "Writing install path registry...")
+    _write_install_path_registry(compatdata_path, install_dir, on_progress=log)
 
     # ── Step 2: Download CoD4x setup.exe ─────────────────────────────────
     prog(10, "Downloading CoD4x installer...")
@@ -309,16 +502,17 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         raise RuntimeError(f"Failed to download CoD4x installer: {e}")
 
     # ── Step 3: Run setup.exe through Proton ─────────────────────────────
-    # setup.exe writes its chain-loader files to the default Wine path
-    # (C:\Program Files (x86)\Activision\...) inside the prefix, NOT to
-    # the Linux game directory.  cwd=install_dir maps to Z:\home\deck\...
-    # which setup.exe doesn't recognise.  We relocate the chain-loader
-    # to the real game directory in Step 5b below.
+    # We pass /DIR= with the Wine Z: drive path so Inno Setup knows where
+    # to install. We also pre-wrote the registry key (step 1b) as a safety
+    # net in case /DIR is ignored by the installer's custom script.
+    #
+    # /LOG tells Inno Setup to write a detailed log to the prefix's temp
+    # directory. We collect it after the run for debugging.
     prog(55, "Running CoD4x installer...")
-    log("  ⚠ CoD4x will show a couple of popup windows.")
-    log("    You may need to use the touchscreen to accept them since Steam is closed.")
-    log("    Just tap OK/Accept on each prompt and the install will continue.")
     _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
+
+    wine_install_dir = _linux_to_wine_path(install_dir)
+    log(f"  Install dir (Wine): {wine_install_dir}")
 
     env = os.environ.copy()
     env["STEAM_COMPAT_DATA_PATH"] = compatdata_path
@@ -329,6 +523,8 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
             [
                 proton_path, "run", setup_exe,
                 "/VERYSILENT", "/SUPPRESSMSGBOXES",
+                f"/DIR={wine_install_dir}",
+                "/LOG",
             ],
             env=env,
             capture_output=True,
@@ -338,6 +534,8 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         # The setup.exe may return non-zero even on success (Inno Setup quirk)
         # so we don't check returncode — we verify file placement below
         log("  ✓ CoD4x installer completed")
+        if result.returncode != 0:
+            log(f"  ℹ setup.exe exit code: {result.returncode} (non-zero is normal for Inno Setup)")
     except subprocess.TimeoutExpired:
         shutil.rmtree(setup_dir, ignore_errors=True)
         raise RuntimeError("CoD4x installer timed out after 10 minutes")
@@ -348,14 +546,18 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         # Clean up the setup exe regardless of outcome
         shutil.rmtree(setup_dir, ignore_errors=True)
 
-    # ── Step 3b: Relocate chain-loader to real game directory ─────────────
-    # setup.exe placed mss32.dll (chain-loader) and miles32.dll (backup) in
-    # the prefix at Program Files (x86)/Activision/... — copy them to the
-    # actual Linux game directory where CoD4 will load them from.
+    # ── Step 3b: Collect Inno Setup log ──────────────────────────────────
+    _collect_inno_log(compatdata_path, on_progress=log)
+
+    # ── Step 3c: Relocate chain-loader to real game directory ────────────
+    # If /DIR worked, setup.exe placed files directly in install_dir and
+    # this is a no-op. If /DIR was ignored, files ended up in the prefix's
+    # Program Files fallback path — this function copies them over.
     prog(65, "Placing chain-loader...")
     relocated = _relocate_chainloader(compatdata_path, install_dir, on_progress=log)
     if not relocated:
         log("  ⚠ Chain-loader relocation failed — CoD4x may not work")
+        log("  ℹ Check logs/cod4x_inno_setup.log for details")
 
     # ── Step 4: Write registry keys (post-setup) ─────────────────────────
     # The Proton run may have created a fresh user.reg, so write keys again
