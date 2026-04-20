@@ -1133,7 +1133,7 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
     Write a sidecar -lan bash script for LCD offline mode.
 
     Creates a new shell script (e.g. t4plut_lan_sp.sh) alongside the game
-    files. Never replaces or modifies any existing file. launcher_plut.py
+    files. Never replaces or modifies any existing file. DeckOps_Offline.exe
     reads the path from config and calls bash on it for offline play.
 
     Uses Heroic's shared default Wine prefix (HEROIC_DEFAULT_WINE_PREFIX)
