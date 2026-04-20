@@ -1589,7 +1589,7 @@ class InstallScreen(QWidget):
 
 # ── ManagementCard ─────────────────────────────────────────────────────────────
 class ManagementCard(QFrame):
-    def __init__(self, gd, installed, on_setup, on_update, parent=None):
+    def __init__(self, gd, installed, on_setup, on_update, on_reinstall, parent=None):
         super().__init__(parent)
         color = C_IW if gd["dev"] == "iw" else C_TREY
         self._color  = color
@@ -1670,6 +1670,9 @@ class ManagementCard(QFrame):
                 upd_btn = _btn("Update", C_DARK_BTN, size=10, h=32)
                 upd_btn.clicked.connect(lambda: on_update(gd, ik))
                 br.addWidget(upd_btn)
+            rei_btn = _btn("Reinstall", C_DARK_BTN, size=10, h=32)
+            rei_btn.clicked.connect(lambda: on_reinstall(gd))
+            br.addWidget(rei_btn)
             br.addStretch()
         else:
             br.addStretch()
@@ -1779,6 +1782,7 @@ class ManagementScreen(QWidget):
                 gd, self.installed,
                 on_setup     = self._setup,
                 on_update    = self._update,
+                on_reinstall = self._reinstall,
             )
             self._grid.addWidget(card, row, col)
 
@@ -1840,6 +1844,14 @@ class ManagementScreen(QWidget):
         s.selected   = selected
         s.steam_root = root
         self.stack.setCurrentIndex(8)
+
+    def _reinstall(self, gd):
+        """Unmark game keys as set up, then route through the install flow."""
+        keys = _active_keys(gd)
+        cfg.unmark_game_setup(keys)
+        self._status.setText(f"Cleared setup state for {gd['base']}. Running clean install...")
+        # Route through the same path as "Set Up"
+        self._setup(gd)
 
 
 # ── ControllerInfoScreen ───────────────────────────────────────────────────────
@@ -2431,14 +2443,19 @@ class UpdateScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"  Could not close Steam: {ex}")
 
-        # Clean up stale launch options from older DeckOps versions
-        if has_cod4 or has_iw4x:
-            try:
-                from wrapper import clear_launch_options
-                for stale_appid in ["7940", "10190"]:
-                    clear_launch_options(self.steam_root, stale_appid)
-            except Exception:
-                pass
+        # ── Clean slate: clear launch options and compat tools ─────────
+        # Same clean-slate approach as InstallScreen / OwnInstallScreen.
+        # Prevents stale entries from previous installs (LCD→OLED, older
+        # DeckOps versions) interfering with the update.
+        try:
+            from wrapper import clear_launch_options, clear_compat_tool
+            from ge_proton import MANAGED_APPIDS
+            for appid in MANAGED_APPIDS:
+                clear_launch_options(self.steam_root, appid)
+            clear_compat_tool(MANAGED_APPIDS)
+            self._s.log.emit("✓  Cleared all launch options and compat tools")
+        except Exception as ex:
+            self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
 
         # Build installed_games dict for Plutonium sibling key resolution
         installed_for_plut = {k: g for k, _, g in self.selected if g}

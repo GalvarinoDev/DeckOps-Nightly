@@ -247,7 +247,7 @@ def mark_game_setup(game_key: str, client: str, source: str = "steam",
     wrapper_path     -- optional path to the online launcher wrapper script
                         (OLED own games, used by legacy callers)
     lan_wrapper_path -- optional path to the -lan bash script for offline
-                        mode. Used by launcher_plut.py for all sources and
+                        mode. Used by DeckOps_Offline.exe for all sources and
                         both hardware models.
     """
     config = load()
@@ -267,6 +267,24 @@ def mark_game_setup(game_key: str, client: str, source: str = "steam",
 def is_game_setup(game_key: str) -> bool:
     """Returns True if this game key has been set up (any source)."""
     return game_key in load().get("setup_games", {})
+
+
+def unmark_game_setup(game_keys):
+    """
+    Remove one or more game keys from setup_games so they appear as
+    'not set up' in ManagementScreen. Accepts a single string or a list.
+    Used when the user wants to do a clean reinstall of a game.
+    """
+    if isinstance(game_keys, str):
+        game_keys = [game_keys]
+    config = load()
+    changed = False
+    for key in game_keys:
+        if key in config.get("setup_games", {}):
+            del config["setup_games"][key]
+            changed = True
+    if changed:
+        save(config)
 
 
 def is_game_setup_for_source(game_key: str, source: str) -> bool:
