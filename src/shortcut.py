@@ -223,6 +223,16 @@ OWN_SHORTCUTS = {
         "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/6271faadeedd7626d661856b7a004e27.png",
         "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
     },
+    "t7": {
+        "name":           "Call of Duty: Black Ops III",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/311210/bd3e3a9516b480164df25d16e49ae4ce4a063cb4.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/library_hero.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/logo.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
 }
 
 
@@ -1554,6 +1564,14 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 # iw3sp-mod -- point at iw3sp_mod.exe (dropped by installer, no rename)
                 actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
                 launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+
+            elif key == "t7":
+                # CleanOps -- uses original exe with Wine DLL override for d3d11.dll
+                actual_exe = exe_path
+                launch_options = (
+                    f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                    f'WINEDLLOVERRIDES="d3d11=n,b" %command%'
+                )
 
             else:
                 # cod4mp (cod4x patches iw3mp.exe in place), iw4sp, iw5sp, t6sp
