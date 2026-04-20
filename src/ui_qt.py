@@ -1395,19 +1395,23 @@ class InstallScreen(QWidget):
 
         # ── Kill Steam once — everything from here runs with Steam closed ─────
         _kill_steam_once()
+
+        # ── Clean slate: clear ALL launch options and compat tools ─────────
+        # Previous installs (LCD→OLED switch, older DeckOps versions) can
+        # leave stale launch options and compat tool entries that conflict
+        # with the current install. Wipe everything for MANAGED_APPIDS
+        # first, then re-apply what's needed via _apply_compat below.
+        try:
+            from wrapper import clear_launch_options, clear_compat_tool
+            for appid in MANAGED_APPIDS:
+                clear_launch_options(self.steam_root, appid)
+            clear_compat_tool(MANAGED_APPIDS)
+            self._s.log.emit("✓  Cleared all launch options and compat tools")
+        except Exception as ex:
+            self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
+
         _apply_compat()
         _set_launch_defaults()
-
-        # ── Clean up stale launch options from older DeckOps versions ─────────
-        # Old versions used launch commands instead of the exe rename strategy.
-        # If those are still in localconfig.vdf they'll conflict with the rename.
-        try:
-            from wrapper import clear_launch_options
-            for stale_appid in ["7940", "10190"]:
-                clear_launch_options(self.steam_root, stale_appid)
-            self._s.log.emit("✓  Stale launch options cleared")
-        except Exception as ex:
-            self._s.log.emit(f"  Launch option cleanup skipped: {ex}")
 
         # ── Plutonium games ───────────────────────────────────────────────────
         if has_plut:
@@ -2091,6 +2095,17 @@ class ConfigureScreen(QWidget):
         lay.addLayout(lr)
         lay.addWidget(_hdiv())
 
+        # ── Danger Zone ──────────────────────────────────────────────────
+        lay.addWidget(_lbl("Danger Zone", 14, C_TREY, align=Qt.AlignLeft))
+        dr = QHBoxLayout(); dr.setSpacing(12)
+        uninstall_btn = _btn("Full Uninstall", C_RED_BTN, size=12, h=40)
+        reset_cfg_btn = _btn("Reset DeckOps Config", C_RED_BTN, size=12, h=40)
+        uninstall_btn.clicked.connect(self._confirm_uninstall)
+        reset_cfg_btn.clicked.connect(self._confirm_reset)
+        dr.addWidget(uninstall_btn); dr.addWidget(reset_cfg_btn); dr.addStretch()
+        lay.addLayout(dr)
+        lay.addWidget(_hdiv())
+
         # ── About ─────────────────────────────────────────────────────────
         self._about_label = _lbl("", 11, C_DIM, align=Qt.AlignLeft)
         lay.addWidget(self._about_label)
@@ -2262,6 +2277,64 @@ class ConfigureScreen(QWidget):
                 subprocess.Popen(["xdg-open", url], start_new_session=True)
             except Exception:
                 self.status.setText("Could not open browser.")
+
+    def _confirm_uninstall(self):
+        reply = QMessageBox.warning(
+            self, "Full Uninstall",
+            "This will remove all DeckOps files, shortcuts, controller profiles, "
+            "and mod client installations. Your Steam games will NOT be deleted.\n\n"
+            "DeckOps will close and the uninstaller will run in a terminal window.\n\n"
+            "Are you sure?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self._run_uninstaller()
+
+    def _run_uninstaller(self):
+        uninstall_script = os.path.join(PROJECT_ROOT, "deckops_uninstall.sh")
+        if not os.path.exists(uninstall_script):
+            self.status.setText("✗  Uninstall script not found.")
+            return
+        self.status.setText("Launching uninstaller...")
+        try:
+            # Launch in Konsole so the user can see progress
+            subprocess.Popen(
+                ["konsole", "-e", "bash", uninstall_script],
+                start_new_session=True,
+            )
+            # Close DeckOps — the uninstaller will remove our files
+            _kill_audio()
+            QApplication.instance().quit()
+        except Exception:
+            # Konsole not available (shouldn't happen on SteamOS)
+            try:
+                subprocess.Popen(
+                    ["xterm", "-e", "bash", uninstall_script],
+                    start_new_session=True,
+                )
+                _kill_audio()
+                QApplication.instance().quit()
+            except Exception as ex:
+                self.status.setText(f"✗  Could not launch uninstaller: {ex}")
+
+    def _confirm_reset(self):
+        reply = QMessageBox.warning(
+            self, "Reset Config",
+            "This will wipe the DeckOps configuration file (deckops.json). "
+            "DeckOps will restart and run the setup flow again.\n\n"
+            "Your game files and Steam games are not affected.\n\n"
+            "Are you sure?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self._reset_deckops()
+
+    def _reset_deckops(self):
+        cfg.reset()
+        self.status.setText("Config wiped. Restarting setup...")
+        QTimer.singleShot(1500, lambda: self.stack.setCurrentIndex(0))
 
 
 
@@ -2700,6 +2773,20 @@ class OwnInstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Could not close Steam: {ex}")
 
+        # ── Clean slate: clear ALL launch options and compat tools ─────
+        # Previous installs (LCD→OLED switch, older DeckOps versions) can
+        # leave stale launch options and compat tool entries that conflict
+        # with the current install. Wipe everything for MANAGED_APPIDS
+        # first, then re-apply what's needed below.
+        try:
+            from wrapper import clear_launch_options, clear_compat_tool
+            for appid in MANAGED_APPIDS:
+                clear_launch_options(self.steam_root, appid)
+            clear_compat_tool(MANAGED_APPIDS)
+            self._s.log.emit("✓  Cleared all launch options and compat tools")
+        except Exception as ex:
+            self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
+
         # ── Set GE-Proton compat for MANAGED_APPIDS ──────────────────────
         # Must run AFTER kill_steam - Steam overwrites config.vdf on exit.
         # Only write for Steam appids if the user actually has Steam games
@@ -2970,14 +3057,6 @@ class OwnInstallScreen(QWidget):
                 )
             except Exception as ex:
                 self._s.log.emit(f"  Steam shortcuts skipped: {ex}")
-
-            # Clean up stale launch options from older DeckOps versions
-            try:
-                from wrapper import clear_launch_options
-                for stale_appid in ["7940", "10090"]:
-                    clear_launch_options(self.steam_root, stale_appid)
-            except Exception:
-                pass
 
             # Set default launch option so Steam Deck skips the mode picker
             has_cod4_steam = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp")
