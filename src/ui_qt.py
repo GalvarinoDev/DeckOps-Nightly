@@ -270,6 +270,27 @@ def _hdiv():
     d = QFrame(); d.setFrameShape(QFrame.HLine); d.setFixedHeight(1)
     d.setStyleSheet("background:#252530;border:none;"); return d
 
+def _ask_iw4x_dlc(parent, selected) -> bool:
+    """
+    Show a dialog asking whether to install free IW4x DLC maps.
+    Returns True if the user wants DLC, False otherwise.
+    Only shows the dialog if iw4x is in the selected games.
+    """
+    has_iw4x = any(KEY_CLIENT.get(k) == "iw4x" for k, _, _ in selected)
+    if not has_iw4x:
+        return False
+    reply = QMessageBox.question(
+        parent,
+        "Free DLC Maps",
+        "Install free DLC maps for Modern Warfare 2?\n\n"
+        "Includes CoD4, MW3, Black Ops, and CoD Online maps.\n"
+        "Recommended for joining most servers.\n\n"
+        "Download size: ~3 GB",
+        QMessageBox.Yes | QMessageBox.No,
+        QMessageBox.Yes,
+    )
+    return reply == QMessageBox.Yes
+
 def _title_block(lay, main_size=56):
     t = QLabel("DECKOPS")
     t.setFont(font(main_size, display=True))
@@ -1063,6 +1084,14 @@ class SetupScreen(QWidget):
                 own_screen = self.stack.widget(10)
                 own_screen.steam_selected = []
                 own_screen.steam_root = self.steam_root
+                # Build a temporary list to check for iw4x in own games
+                _own_sel = own_screen.own_selected or {}
+                _own_tmp = []
+                for _k, _g in _own_sel.items():
+                    for _gd in ALL_GAMES:
+                        if _k in _active_keys(_gd):
+                            _own_tmp.append((_k, _gd, _g)); break
+                own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, _own_tmp)
                 self.stack.setCurrentIndex(10)
                 return
             self.warning.setText("Select at least one game to continue.")
@@ -1073,6 +1102,14 @@ class SetupScreen(QWidget):
             own_screen = self.stack.widget(10)
             own_screen.steam_selected = selected
             own_screen.steam_root = self.steam_root
+            # Merge steam + own selections for DLC prompt check
+            _own_sel = own_screen.own_selected or {}
+            _own_tmp = []
+            for _k, _g in _own_sel.items():
+                for _gd in ALL_GAMES:
+                    if _k in _active_keys(_gd):
+                        _own_tmp.append((_k, _gd, _g)); break
+            own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, selected + _own_tmp)
             self.stack.setCurrentIndex(10)
             return
 
@@ -1080,6 +1117,7 @@ class SetupScreen(QWidget):
         s = self.stack.widget(4)
         s.selected   = selected
         s.steam_root = self.steam_root
+        s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
         self.stack.setCurrentIndex(4)
 
 # ── InstallScreen ──────────────────────────────────────────────────────────────
@@ -1465,7 +1503,8 @@ class InstallScreen(QWidget):
                 try:
                     compat = find_compatdata(self.steam_root, gd["appid"],
                                               game_install_dir=game["install_dir"] if game else None)
-                    install_iw4x(game, self.steam_root, proton, compat, op_iw4x)
+                    install_iw4x(game, self.steam_root, proton, compat, op_iw4x,
+                                 install_dlc=getattr(self, 'install_iw4x_dlc', False))
                     cfg.mark_game_setup(key, "iw4x", source="steam")
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)
@@ -1846,6 +1885,7 @@ class ManagementScreen(QWidget):
             s.steam_selected = steam_selected
             s.steam_root = root
             s._return_to_management = True
+            s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
             self.stack.setCurrentIndex(10)
         else:
             # Standard Steam flow
@@ -1853,6 +1893,7 @@ class ManagementScreen(QWidget):
             s.selected = selected
             s.steam_root = root
             s._return_to_management = True
+            s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
             self.stack.setCurrentIndex(4)
 
     def _update(self, gd, keys):
@@ -2520,7 +2561,7 @@ class UpdateScreen(QWidget):
                                   source=source)
                 elif c == "iw4x":
                     install_iw4x(game, self.steam_root, proton, compat, op,
-                                 source=source)
+                                 source=source, install_dlc=False)
                 elif c == "plutonium":
                     install_plutonium(game, key, self.steam_root, proton, compat,
                                      on_progress=op,
@@ -2974,7 +3015,8 @@ class OwnInstallScreen(QWidget):
                     else:
                         compat = find_compatdata(self.steam_root, gd["appid"],
                                                   game_install_dir=game.get("install_dir"))
-                    install_iw4x(game, self.steam_root, proton, compat, op_iw4x, source=source)
+                    install_iw4x(game, self.steam_root, proton, compat, op_iw4x, source=source,
+                                 install_dlc=getattr(self, 'install_iw4x_dlc', False))
                     cfg.mark_game_setup(key, "iw4x", source=source)
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)
