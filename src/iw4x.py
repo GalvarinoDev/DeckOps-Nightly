@@ -7,10 +7,14 @@ rawfile assets. Everything extracts directly into the game install folder.
 
 Optionally downloads free DLC content from cdn.iw4x.io, including:
   - MW2 DLC map packs (iw4x/*.iwd)
-  - CoD4 ported maps (iw3/zone/dlc/*.ff)
-  - Black Ops maps (t5/zone/dlc/*.ff)
-  - MW3 maps (iw5/zone/dlc/*.ff)
-  - CoD Online maps (codo/zone/dlc/*.ff)
+  - CoD4 ported maps → zone/dlc/*.ff
+  - Black Ops maps   → zone/dlc/*.ff
+  - MW3 maps         → zone/dlc/*.ff
+  - CoD Online maps  → zone/dlc/*.ff
+
+All .ff files from the CDN (regardless of their manifest prefix) are
+placed into zone/dlc/ to match the correct IW4x install layout.
+All .iwd files from the CDN go into iw4x/ as the manifest specifies.
 
 For Steam games:
   - Renames iw4mp.exe -> iw4mp.exe.bak
@@ -47,6 +51,14 @@ _BROWSER_UA = {
     "Accept": "*/*",
 }
 
+# Manifest path prefixes that contain .ff files, all remapped to zone/dlc/.
+_FF_PREFIXES = (
+    "iw3/zone/dlc/",
+    "t5/zone/dlc/",
+    "iw5/zone/dlc/",
+    "codo/zone/dlc/",
+)
+
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -75,6 +87,22 @@ def _download(url: str, dest: str, on_progress=None, label: str = ""):
             time.sleep(2 ** attempt)
 
 
+def _remap_dlc_path(manifest_path: str, install_dir: str) -> str:
+    """
+    Remap a CDN manifest path to the correct local destination.
+
+    .ff files from any game-prefixed subdirectory (iw3/, t5/, iw5/, codo/)
+    are all placed into zone/dlc/ to match the correct IW4x layout.
+    .iwd files under iw4x/ are kept in iw4x/ as-is.
+    """
+    for prefix in _FF_PREFIXES:
+        if manifest_path.startswith(prefix):
+            filename = manifest_path[len(prefix):]
+            return os.path.join(install_dir, "zone", "dlc", filename)
+    # iw4x/*.iwd and anything else — use the manifest path directly
+    return os.path.join(install_dir, manifest_path)
+
+
 def is_iw4x_installed(install_dir: str) -> bool:
     """Returns True if iw4mp.exe.bak exists (meaning the mod rename is active)."""
     return os.path.exists(os.path.join(install_dir, "iw4mp.exe.bak"))
@@ -82,28 +110,24 @@ def is_iw4x_installed(install_dir: str) -> bool:
 
 def is_iw4x_dlc_installed(install_dir: str) -> bool:
     """Returns True if DLC content appears to be present."""
-    # Check for a few representative files from different DLC categories
     markers = [
-        os.path.join(install_dir, "iw4x", "iw_dlc3_00.iwd"),              # MW2 DLC
-        os.path.join(install_dir, "iw3", "zone", "dlc", "mp_backlot.ff"), # CoD4
-        os.path.join(install_dir, "t5", "zone", "dlc", "mp_nuked.ff"),    # BO1
+        os.path.join(install_dir, "iw4x", "iw_dlc3_00.iwd"),       # MW2 DLC iwd
+        os.path.join(install_dir, "zone", "dlc", "mp_backlot.ff"),  # CoD4 ff
+        os.path.join(install_dir, "zone", "dlc", "mp_nuked.ff"),    # BO1 ff
     ]
     return all(os.path.exists(m) for m in markers)
 
 
 # ── DLC install ──────────────────────────────────────────────────────────────
 
-# Directories that DLC files are downloaded into (relative to install_dir).
-# Used by both install and uninstall.
-_DLC_DIRS = ["iw3", "t5", "iw5", "codo"]
-
 def install_iw4x_dlc(install_dir: str, on_progress=None):
     """
     Download and install free DLC content from cdn.iw4x.io.
 
     Fetches the manifest (update.json), then downloads every file listed
-    in it to the correct relative path under install_dir. Files are
-    downloaded with up to 4 concurrent workers.
+    in it to the correct relative path under install_dir. All .ff files
+    are remapped into zone/dlc/ regardless of their manifest prefix.
+    Files are downloaded with up to 4 concurrent workers.
 
     on_progress — optional callback(percent: int, status: str)
     """
@@ -131,7 +155,7 @@ def install_iw4x_dlc(install_dir: str, on_progress=None):
     prog(2, "Creating DLC directories...")
     dirs_needed = set()
     for entry in files:
-        dest = os.path.join(install_dir, entry["path"])
+        dest = _remap_dlc_path(entry["path"], install_dir)
         dirs_needed.add(os.path.dirname(dest))
     for d in dirs_needed:
         os.makedirs(d, exist_ok=True)
@@ -144,7 +168,7 @@ def install_iw4x_dlc(install_dir: str, on_progress=None):
 
     def _dl_one(entry):
         rel_path = entry["path"]
-        dest     = os.path.join(install_dir, rel_path)
+        dest     = _remap_dlc_path(rel_path, install_dir)
         name     = entry.get("asset_name", os.path.basename(rel_path))
         url      = DLC_CDN_BASE + rel_path
 
@@ -258,9 +282,9 @@ def install_iw4x(game: dict, steam_root: str,
     #   iw4x/*.iwd        (iwd files)
     #   iw4x/html/        (server browser assets)
     #   iw4x/images/      (branding)
-    #   iw4x/video/        (intro video)
-    #   zone/patch/        (fastfile patches)
-    #   zonebuilder.exe    (modding tool)
+    #   iw4x/video/       (intro video)
+    #   zone/patch/       (fastfile patches)
+    #   zonebuilder.exe   (modding tool)
     prog(55, "Extracting release.zip...")
     zip_dest = os.path.join(install_dir, "release.zip")
     with zipfile.ZipFile(zip_dest) as zf:
@@ -322,16 +346,54 @@ def uninstall_iw4x(game: dict):
     zone_patch = os.path.join(install_dir, "zone", "patch")
     if os.path.exists(zone_patch):
         shutil.rmtree(zone_patch)
-        # Remove zone/ dir too if it's now empty
-        zone_dir = os.path.join(install_dir, "zone")
-        if os.path.isdir(zone_dir) and not os.listdir(zone_dir):
-            os.rmdir(zone_dir)
 
-    # Clean up DLC directories (iw3/, t5/, iw5/, codo/)
-    for dlc_dir in _DLC_DIRS:
-        p = os.path.join(install_dir, dlc_dir)
-        if os.path.exists(p):
-            shutil.rmtree(p)
+    # Remove DLC .ff files from zone/dlc/.
+    # Only delete filenames that come from the CDN manifest — the base game
+    # may have its own files in zone/dlc/ that we must not touch.
+    _DLC_FF_FILENAMES = {
+        # CoD4 (iw3)
+        "mp_convoy_load.ff", "mp_backlot_load.ff", "mp_broadcast_load.ff",
+        "mp_pipeline_load.ff", "mp_killhouse.ff", "mp_broadcast.ff",
+        "mp_countdown.ff", "mp_showdown_load.ff", "mp_carentan.ff",
+        "mp_citystreets_load.ff", "mp_convoy.ff", "mp_farm_load.ff",
+        "mp_cargoship_load.ff", "mp_cargoship.ff", "mp_backlot.ff",
+        "mp_carentan_load.ff", "mp_crash_snow.ff", "mp_cross_fire_load.ff",
+        "mp_countdown_load.ff", "mp_bloc.ff", "mp_killhouse_load.ff",
+        "mp_farm.ff", "mp_citystreets.ff", "mp_bloc_load.ff",
+        "mp_cross_fire.ff", "mp_showdown.ff", "mp_crash_snow_load.ff",
+        "mp_pipeline.ff",
+        # Black Ops (t5)
+        "mp_firingrange.ff", "mp_nuked_load.ff", "mp_firingrange_load.ff",
+        "mp_nuked.ff",
+        # MW3 (iw5)
+        "mp_village.ff", "mp_bravo.ff", "mp_paris.ff", "mp_underground_load.ff",
+        "mp_hardhat_load.ff", "mp_underground.ff", "mp_plaza2_load.ff",
+        "mp_bravo_load.ff", "mp_paris_load.ff", "mp_hardhat.ff",
+        "mp_plaza2.ff", "mp_seatown.ff", "mp_alpha_load.ff", "mp_dome.ff",
+        "mp_dome_load.ff", "mp_seatown_load.ff", "mp_village_load.ff",
+        "mp_alpha.ff",
+        # CoD Online (codo)
+        "mp_storm_spring_load.ff", "mp_fav_tropical.ff", "mp_estate_tropical.ff",
+        "mp_fav_tropical_load.ff", "mp_cargoship_sh_load.ff", "mp_bloc_sh_load.ff",
+        "mp_crash_tropical_load.ff", "mp_crash_tropical.ff", "mp_cargoship_sh.ff",
+        "mp_estate_tropical_load.ff", "mp_shipment_load.ff", "mp_rust_long_load.ff",
+        "mp_shipment_long_load.ff", "mp_rust_long.ff", "mp_storm_spring.ff",
+        "mp_shipment.ff", "mp_shipment_long.ff", "mp_bog_sh_load.ff",
+        "mp_bog_sh.ff", "mp_nuked_shaders.ff", "mp_bloc_sh.ff",
+    }
+
+    zone_dlc = os.path.join(install_dir, "zone", "dlc")
+    if os.path.isdir(zone_dlc):
+        for fname in _DLC_FF_FILENAMES:
+            p = os.path.join(zone_dlc, fname)
+            if os.path.exists(p):
+                os.remove(p)
+        # Remove zone/dlc/ if now empty, then zone/ if also empty
+        if not os.listdir(zone_dlc):
+            os.rmdir(zone_dlc)
+            zone_dir = os.path.join(install_dir, "zone")
+            if os.path.isdir(zone_dir) and not os.listdir(zone_dir):
+                os.rmdir(zone_dir)
 
     # Clean up old DeckOps metadata if upgrading from a previous install
     old_meta = os.path.join(install_dir, "iw4x-updoot")
