@@ -407,7 +407,7 @@ class IntroScreen(QWidget):
 
         lay.addWidget(_lbl("Which Steam Deck do you have?", 15, "#CCC"))
         brow = QHBoxLayout(); brow.setSpacing(20)
-        lcd  = _btn("Steam Deck LCD", C_DARK_BTN, h=56)
+        lcd  = _btn("Steam Deck LCD", C_IW, h=56)
         oled = _btn("Steam Deck OLED", C_IW, h=56)
         lcd.clicked.connect(lambda: self._pick_model("lcd"))
         oled.clicked.connect(lambda: self._pick_model("oled"))
