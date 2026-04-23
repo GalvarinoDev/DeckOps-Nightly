@@ -34,7 +34,8 @@ import json
 import shutil
 import zipfile
 import threading
-import urllib.request
+
+from net import download as _download
 
 # iw4x.dll comes from the client repo, everything else from rawfiles.
 # release.zip contains iw4x.exe, all iwd files, zone patches,
@@ -45,11 +46,6 @@ ZIP_URL = "https://github.com/iw4x/iw4x-rawfiles/releases/latest/download/releas
 # CDN manifest for free DLC content (maps from CoD4, BO1, MW3, CoD Online, MW2 DLC)
 DLC_MANIFEST_URL = "https://cdn.iw4x.io/update.json"
 DLC_CDN_BASE     = "https://cdn.iw4x.io/"
-
-_BROWSER_UA = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-}
 
 # Manifest path prefixes that contain .ff files, all remapped to zone/dlc/.
 _FF_PREFIXES = (
@@ -62,29 +58,7 @@ _FF_PREFIXES = (
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _download(url: str, dest: str, on_progress=None, label: str = ""):
-    """Download url to dest with optional progress callback. Retries up to 3 times."""
-    import time
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(url, headers=_BROWSER_UA)
-            with urllib.request.urlopen(req, timeout=120) as r:
-                total = int(r.headers.get("Content-Length", 0))
-                downloaded = 0
-                with open(dest, "wb") as f:
-                    while True:
-                        chunk = r.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if on_progress and total:
-                            on_progress(int(downloaded / total * 100), label)
-            return
-        except Exception as ex:
-            if attempt == 2:
-                raise
-            time.sleep(2 ** attempt)
+# _download imported from net.py; call sites pass timeout=120 for large files.
 
 
 def _remap_dlc_path(manifest_path: str, install_dir: str) -> str:
@@ -140,7 +114,7 @@ def install_iw4x_dlc(install_dir: str, on_progress=None):
     # ── Fetch manifest ────────────────────────────────────────────────────
     prog(0, "Fetching DLC manifest...")
     manifest_path = os.path.join(install_dir, "update.json")
-    _download(DLC_MANIFEST_URL, manifest_path, None, "DLC manifest")
+    _download(DLC_MANIFEST_URL, manifest_path, None, "DLC manifest", timeout=120)
 
     with open(manifest_path, "r", encoding="utf-8") as f:
         manifest = json.load(f)
@@ -186,7 +160,7 @@ def install_iw4x_dlc(install_dir: str, on_progress=None):
             except OSError:
                 pass
 
-        _download(url, dest, None, name)
+        _download(url, dest, None, name, timeout=120)
         with dl_lock:
             dl_done[0] += 1
             prog(2 + int(dl_done[0] / total_files * 96),
@@ -260,7 +234,7 @@ def install_iw4x(game: dict, steam_root: str,
     dl_lock   = threading.Lock()
 
     def _dl(url, dest, label):
-        _download(url, dest, None, f"Downloading {label}...")
+        _download(url, dest, None, f"Downloading {label}...", timeout=120)
         with dl_lock:
             dl_done[0] += 1
             prog(5 + int(dl_done[0] / len(dl_tasks) * 45), f"Downloaded {label}")
