@@ -1,19 +1,8 @@
-# Python
-src/__pycache__/
+__pycache__/
 *.pyc
-*.pyo
-
-# DeckOps runtime files
-deckops.json
-assets/images/headers/
-assets/images/own_art/
-assets/music/
-
-# Virtual environment
 .venv/
-
-# Temp files
-*.tmp
-*.log
-__pycache__/
-__pycache__/
+deckops.json
+logs/
+assets/music/background.mp3
+*.egg-info/
+.update/
