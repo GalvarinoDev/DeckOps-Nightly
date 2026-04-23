@@ -247,8 +247,8 @@ def mark_game_setup(game_key: str, client: str, source: str = "steam",
     wrapper_path     -- optional path to the online launcher wrapper script
                         (OLED own games, used by legacy callers)
     lan_wrapper_path -- optional path to the -lan bash script for offline
-                        mode. Used by DeckOps_Offline.exe for all sources and
-                        both hardware models.
+                        mode. Used by the offline launcher for all sources
+                        and both hardware models.
     """
     config = load()
     entry = {
