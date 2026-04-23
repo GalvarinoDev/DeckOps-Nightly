@@ -20,16 +20,13 @@ Progress is reported via a callback:
 import os
 import json
 import shutil
-import zipfile
 import urllib.request
+import zipfile
+
+from net import download as _download, BROWSER_UA as _BROWSER_UA
 
 GITEA_API     = "https://gitea.com/api/v1/repos/JerryALT/iw3sp_mod/releases?limit=5"
 METADATA_FILE = "deckops_iw3sp.json"
-
-_BROWSER_UA = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-}
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -69,29 +66,7 @@ def _get_latest_release():
     raise RuntimeError("No stable IW3SP-MOD release found on Gitea")
 
 
-def _download(url: str, dest: str, on_progress=None, label: str = ""):
-    """Download url to dest with progress callback. Retries up to 3 times."""
-    import time
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(url, headers=_BROWSER_UA)
-            with urllib.request.urlopen(req, timeout=60) as r:
-                total = int(r.headers.get("Content-Length", 0))
-                downloaded = 0
-                with open(dest, "wb") as f:
-                    while True:
-                        chunk = r.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if on_progress and total:
-                            on_progress(int(downloaded / total * 100), label)
-            return
-        except Exception as ex:
-            if attempt == 2:
-                raise
-            time.sleep(2 ** attempt)
+# _download and _BROWSER_UA imported from net.py.
 
 
 def is_iw3sp_installed(install_dir: str) -> bool:

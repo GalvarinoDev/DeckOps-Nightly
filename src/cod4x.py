@@ -30,20 +30,14 @@ import json
 import shutil
 import subprocess
 import tempfile
-import urllib.request
+
+from net import download as _download
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
 _SETUP_EXE_URL = "https://cod4x.ovh/uploads/short-url/2V3RsE0Pp5Jakc1VE9Yuh5yb4lE.exe"
 
 METADATA_FILE = "deckops_cod4x.json"
-
-_BROWSER_UA = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-}
 
 # The AppData subfolder name inside the Wine prefix. This is where the CoD4x
 # launcher expects to find its DLLs, zone files, and iwd assets.
@@ -72,29 +66,7 @@ _LOG_DIR = os.path.join(
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-def _download(url: str, dest: str, on_progress=None, label: str = ""):
-    """Download url to dest with browser-like headers. Retries up to 3 times."""
-    import time
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(url, headers=_BROWSER_UA)
-            with urllib.request.urlopen(req, timeout=120) as r:
-                total = int(r.headers.get("Content-Length", 0))
-                downloaded = 0
-                with open(dest, "wb") as f:
-                    while True:
-                        chunk = r.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if on_progress and total:
-                            on_progress(int(downloaded / total * 100), label)
-            return
-        except Exception:
-            if attempt == 2:
-                raise
-            time.sleep(2 ** attempt)
+# _download imported from net.py; call site passes timeout=120.
 
 
 def _write_metadata(install_dir: str, data: dict):
@@ -496,6 +468,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
             _SETUP_EXE_URL, setup_exe,
             on_progress=lambda pct, lbl: prog(10 + int(pct * 0.40), lbl),
             label="CoD4x installer",
+            timeout=120,
         )
     except Exception as e:
         shutil.rmtree(setup_dir, ignore_errors=True)

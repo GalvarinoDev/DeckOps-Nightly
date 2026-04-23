@@ -23,7 +23,8 @@ Progress is reported via a callback:
 
 import json
 import os
-import urllib.request
+
+from net import download as _download
 
 DLL_URL       = "https://raw.githubusercontent.com/notnightwolf/cleanopsT7/main/d3d11.dll"
 DLL_NAME      = "d3d11.dll"
@@ -31,39 +32,10 @@ METADATA_FILE = "deckops_cleanops.json"
 LAUNCH_OPTS   = 'WINEDLLOVERRIDES="d3d11=n,b" %command%'
 APPID         = "311210"
 
-_BROWSER_UA = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-}
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _download(url: str, dest: str, on_progress=None, label: str = ""):
-    """Download url to dest with progress callback. Retries up to 3 times."""
-    import time
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(url, headers=_BROWSER_UA)
-            with urllib.request.urlopen(req, timeout=60) as r:
-                total = int(r.headers.get("Content-Length", 0))
-                downloaded = 0
-                with open(dest, "wb") as f:
-                    while True:
-                        chunk = r.read(1024 * 1024)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if on_progress and total:
-                            on_progress(int(downloaded / total * 100), label)
-            return
-        except Exception as ex:
-            if attempt == 2:
-                raise
-            time.sleep(2 ** attempt)
+# _download imported from net.py (default timeout=60).
 
 
 def is_cleanops_installed(install_dir: str) -> bool:
