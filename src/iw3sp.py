@@ -23,7 +23,7 @@ import shutil
 import zipfile
 import urllib.request
 
-BASE_URL      = "https://gitea.com/JerryALT/iw3sp_mod/releases/download/v4.1.5/iw3sp_mod_v4.1.5.zip"
+GITEA_API     = "https://gitea.com/api/v1/repos/JerryALT/iw3sp_mod/releases?limit=5"
 METADATA_FILE = "deckops_iw3sp.json"
 
 _BROWSER_UA = {
@@ -33,6 +33,41 @@ _BROWSER_UA = {
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+def _get_latest_release():
+    """
+    Query the Gitea API for the latest stable IW3SP-MOD release.
+
+    Gitea doesn't have a /releases/latest endpoint like GitHub, so we
+    fetch the most recent releases and pick the first one that is not a
+    draft or prerelease.
+
+    Returns (version, zip_url) or raises on failure.
+    """
+    req = urllib.request.Request(GITEA_API, headers=_BROWSER_UA)
+    with urllib.request.urlopen(req, timeout=30) as r:
+        releases = json.loads(r.read().decode("utf-8"))
+
+    for release in releases:
+        if release.get("draft") or release.get("prerelease"):
+            continue
+
+        tag = release.get("tag_name", "")
+        version = tag.lstrip("v") if tag else "unknown"
+
+        # Find the .zip asset (not source code archives)
+        for asset in release.get("assets", []):
+            name = asset.get("name", "")
+            if name.endswith(".zip"):
+                return version, asset["browser_download_url"]
+
+        # No uploaded zip asset — fall back to the source zipball
+        zipball = release.get("zipball_url")
+        if zipball:
+            return version, zipball
+
+    raise RuntimeError("No stable IW3SP-MOD release found on Gitea")
+
 
 def _download(url: str, dest: str, on_progress=None, label: str = ""):
     """Download url to dest with progress callback. Retries up to 3 times."""
@@ -92,13 +127,20 @@ def install_iw3sp(game: dict, steam_root: str,
         if on_progress:
             on_progress(pct, msg)
 
+    # Fetch latest release info from Gitea API
+    prog(2, "Checking for latest IW3SP-MOD release...")
+    try:
+        version, zip_url = _get_latest_release()
+    except Exception as ex:
+        raise RuntimeError(f"Failed to fetch IW3SP-MOD release info: {ex}")
+
     # Download zip
-    prog(5, "Downloading IW3SP-MOD...")
+    prog(5, f"Downloading IW3SP-MOD v{version}...")
     _download(
-        BASE_URL,
+        zip_url,
         zip_dest,
         lambda p, m: prog(5 + int(p * 0.55), m),
-        "Downloading IW3SP-MOD...",
+        f"Downloading IW3SP-MOD v{version}...",
     )
 
     # Extract into CoD4 root
@@ -129,9 +171,9 @@ def install_iw3sp(game: dict, steam_root: str,
     prog(95, "Saving metadata...")
     meta_path = os.path.join(install_dir, METADATA_FILE)
     with open(meta_path, "w") as f:
-        json.dump({"version": "4.1.5"}, f, indent=2)
+        json.dump({"version": version}, f, indent=2)
 
-    prog(100, "IW3SP-MOD installation complete!")
+    prog(100, f"IW3SP-MOD v{version} installation complete!")
 
 
 def uninstall_iw3sp(game: dict):
