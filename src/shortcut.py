@@ -1432,12 +1432,14 @@ def apply_steam_artwork(selected_keys: list, on_progress=None):
 
     # Map game keys to Steam appids that have custom artwork
     KEY_TO_STEAM_APPID = {
-        "iw4mp":  "10190",
+        "iw4mp":     "10190",
         "iw5mp":     "42690",
         "iw5mp_ds":  "42750",
-        "t5mp":   "42710",
-        "t6mp":   "202990",
-        "t6zm":   "212910",
+        "t5mp":      "42710",
+        "t6mp":      "202990",
+        "t6zm":      "212910",
+        "iw6mp":     "209170",   # Ghosts MP
+        "s1mp":      "209660",   # AW MP
     }
 
     to_apply = []
