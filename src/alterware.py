@@ -8,12 +8,15 @@ the install step.
 
 For Steam games:
   - Backs up original exe (iw6mp64_ship.exe → iw6mp64_ship.exe.bak)
-  - Copies mod client exe (iw6-mod.exe → iw6mp64_ship.exe)
-  - Steam launches transparently via original shortcut
+  - Replaces original exe with a bash wrapper script that launches the
+    mod client exe with the correct mode flag (-multiplayer/-singleplayer)
+  - Wrapper is padded to original exe size so Steam file validation passes
+  - No localconfig.vdf launch options needed — mode flag is in the wrapper
 
 For own games:
   - Leaves mod client exe as-is (iw6-mod.exe, s1-mod.exe)
   - Non-Steam shortcut points to mod exe directly
+  - Mode flag baked into shortcut LaunchOptions by shortcut.py
   - CRC appid stable via (exe_path + shortcut_name)
 
 Both flows:
@@ -33,6 +36,7 @@ Progress is reported via a callback:
 import os
 import json
 import shutil
+import stat
 import subprocess
 import tarfile
 import tempfile
@@ -66,21 +70,13 @@ _GAME_CONFIG = {
 
 # The built-in launcher UI in iw6-mod and s1-mod crashes under Wine/Proton.
 # These flags bypass it and launch directly into the correct game mode.
-# Must be passed via Steam launch options (Steam installs) or shortcut
-# launch options (own installs).
+# For Steam installs the flag is baked into the wrapper script.
+# For own installs shortcut.py bakes it into LaunchOptions.
 _MODE_FLAGS = {
     "iw6mp": "-multiplayer",
     "iw6sp": "-singleplayer",
     "s1mp":  "-multiplayer",
     "s1sp":  "-singleplayer",
-}
-
-# Maps game_key to its Steam appid for launch option writing.
-_APPIDS = {
-    "iw6mp": "209170",
-    "iw6sp": "209160",
-    "s1mp":  "209660",
-    "s1sp":  "209650",
 }
 
 # Subdirectories inside data/ created by the AlterWare launcher.
@@ -239,42 +235,53 @@ def install_alterware(game: dict, game_key: str,
             f"in {install_dir}"
         )
 
-    # ── Step 5: Exe backup and replacement (Steam only) ───────────────────
+    # ── Step 5: Write wrapper script (Steam only) ──────────────────────────
+    # Replace the original exe with a bash wrapper that launches the mod
+    # client exe with the correct mode flag. The wrapper is padded to the
+    # original exe's size so Steam's file validation does not flag a change.
+    # This avoids writing to localconfig.vdf (which Steam can overwrite on
+    # restart) and keeps the mode flag self-contained in the game directory.
+    # Same pattern as plutonium_oled._write_wrapper.
+    mode_flag = _MODE_FLAGS.get(game_key, "")
     if source != "own":
         original_path = os.path.join(install_dir, original_exe)
         backup_path   = original_path + ".bak"
 
-        if os.path.exists(original_path):
-            prog(85, f"Backing up {original_exe}...")
-            if not os.path.exists(backup_path):
+        if os.path.exists(original_path) or os.path.exists(backup_path):
+            prog(85, f"Writing wrapper for {original_exe}...")
+
+            # Read original size before we overwrite
+            original_size = 0
+            if os.path.exists(original_path) and not os.path.exists(backup_path):
+                original_size = os.path.getsize(original_path)
                 shutil.copy2(original_path, backup_path)
-            shutil.copy2(client_exe_path, original_path)
+            elif os.path.exists(backup_path):
+                original_size = os.path.getsize(backup_path)
+
+            # Build wrapper script that launches the mod exe
+            script = (
+                "#!/bin/bash\n"
+                f'cd "$(dirname "$0")"\n'
+                f'"./{client_exe}" {mode_flag} "$@"\n'
+            )
+
+            script_bytes = script.encode("utf-8")
+            if original_size > len(script_bytes):
+                script_bytes += b"\x00" * (original_size - len(script_bytes))
+
+            with open(original_path, "wb") as f:
+                f.write(script_bytes)
+
+            os.chmod(original_path, os.stat(original_path).st_mode |
+                     stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
         else:
             # Original exe missing — own game mislabelled as steam,
-            # or partial install. Skip the swap, log a note.
-            prog(85, f"⚠ {original_exe} not found — skipping exe swap")
+            # or partial install. Skip the wrapper, log a note.
+            prog(85, f"⚠ {original_exe} not found — skipping wrapper")
     else:
-        prog(85, "Own game — skipping exe swap")
+        prog(85, "Own game — skipping wrapper")
 
-    # ── Step 6: Set launch options (Steam only) ──────────────────────────
-    # The built-in launcher UI in iw6-mod/s1-mod crashes under Proton.
-    # We set launch options to pass -multiplayer or -singleplayer so the
-    # game bypasses the launcher and loads directly into the correct mode.
-    # For own games, shortcut.py handles this via the shortcut's launch
-    # options field.
-    mode_flag = _MODE_FLAGS.get(game_key, "")
-    if source != "own" and steam_root and mode_flag:
-        prog(88, "Setting launch options...")
-        appid = _APPIDS.get(game_key)
-        if appid:
-            try:
-                from wrapper import set_launch_options
-                set_launch_options(steam_root, appid, f"%command% {mode_flag}")
-            except Exception:
-                # Non-fatal — user can set this manually in Steam properties
-                pass
-
-    # ── Step 7: Write metadata ────────────────────────────────────────────
+    # ── Step 6: Write metadata ────────────────────────────────────────────
     prog(90, "Saving metadata...")
     _write_metadata(install_dir, {
         "client": launcher_arg,
@@ -286,7 +293,7 @@ def install_alterware(game: dict, game_key: str,
         "mode_flag": mode_flag,
     })
 
-    # ── Step 8: Clean up temp dir ─────────────────────────────────────────
+    # ── Step 7: Clean up temp dir ─────────────────────────────────────────
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
     prog(100, f"{launcher_arg} installation complete!")
@@ -296,10 +303,10 @@ def uninstall_alterware(game: dict, game_key: str, steam_root: str = ""):
     """
     Remove AlterWare mod files and restore original exes.
 
-    Restores backed-up exes for Steam installs, removes the mod client
-    exe, launcher artifacts, and contents of the data/ subdirectories
-    created by the launcher. Leaves the data/ folder itself in place.
-    Clears launch options for Steam installs.
+    Restores backed-up exes for Steam installs (which removes the wrapper
+    script), removes the mod client exe, launcher artifacts, and contents
+    of the data/ subdirectories created by the launcher. Leaves the data/
+    folder itself in place.
 
     The launcher patches .ff and .bik files in-place during install.
     After uninstall, the user should verify integrity through Steam to
@@ -308,7 +315,7 @@ def uninstall_alterware(game: dict, game_key: str, steam_root: str = ""):
     Parameters:
       game       — dict from detect_games with install_dir
       game_key   — one of: iw6mp, iw6sp, s1mp, s1sp
-      steam_root — path to Steam root (for clearing launch options)
+      steam_root — path to Steam root (kept for API consistency)
     """
     install_dir = game["install_dir"]
 
@@ -349,15 +356,6 @@ def uninstall_alterware(game: dict, game_key: str, steam_root: str = ""):
         disclosure = os.path.join(data_dir, "open_source_software_disclosure.txt")
         if os.path.exists(disclosure):
             os.remove(disclosure)
-
-    # ── Clear launch options (Steam only) ─────────────────────────────────
-    appid = _APPIDS.get(game_key)
-    if steam_root and appid:
-        try:
-            from wrapper import clear_launch_options
-            clear_launch_options(steam_root, appid)
-        except Exception:
-            pass
 
     # ── Remove metadata ───────────────────────────────────────────────────
     meta_file = os.path.join(install_dir, METADATA_FILE)
