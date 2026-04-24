@@ -1,0 +1,260 @@
+.
+├── assets
+│   ├── configs
+│   │   ├── display
+│   │   │   ├── 1280x720
+│   │   │   │   ├── BO1
+│   │   │   │   │   ├── config.cfg
+│   │   │   │   │   └── config_mp.cfg
+│   │   │   │   ├── BO2
+│   │   │   │   │   ├── plutonium_mp.cfg
+│   │   │   │   │   └── plutonium_zm.cfg
+│   │   │   │   ├── MW1
+│   │   │   │   │   ├── config_mp.cfg
+│   │   │   │   │   └── iw3sp_mod_config.cfg
+│   │   │   │   ├── MW2
+│   │   │   │   │   ├── config.cfg
+│   │   │   │   │   └── iw4x_config.cfg
+│   │   │   │   ├── MW3
+│   │   │   │   │   ├── config.cfg
+│   │   │   │   │   └── config_mp.cfg
+│   │   │   │   └── WaW
+│   │   │   │       ├── config.cfg
+│   │   │   │       └── config_mp.cfg
+│   │   │   ├── 1280x800
+│   │   │   │   ├── BO1
+│   │   │   │   │   ├── config.cfg
+│   │   │   │   │   └── config_mp.cfg
+│   │   │   │   ├── BO2
+│   │   │   │   │   ├── plutonium_mp.cfg
+│   │   │   │   │   └── plutonium_zm.cfg
+│   │   │   │   ├── MW1
+│   │   │   │   │   ├── config_mp.cfg
+│   │   │   │   │   └── iw3sp_mod_config.cfg
+│   │   │   │   ├── MW2
+│   │   │   │   │   ├── config.cfg
+│   │   │   │   │   └── iw4x_config.cfg
+│   │   │   │   ├── MW3
+│   │   │   │   │   ├── config.cfg
+│   │   │   │   │   └── config_mp.cfg
+│   │   │   │   └── WaW
+│   │   │   │       ├── config.cfg
+│   │   │   │       └── config_mp.cfg
+│   │   │   ├── 1920x1080
+│   │   │   │   ├── BO1
+│   │   │   │   │   ├── config.cfg
+│   │   │   │   │   └── config_mp.cfg
+│   │   │   │   ├── BO2
+│   │   │   │   │   ├── plutonium_mp.cfg
+│   │   │   │   │   └── plutonium_zm.cfg
+│   │   │   │   ├── MW1
+│   │   │   │   │   ├── config_mp.cfg
+│   │   │   │   │   └── iw3sp_mod_config.cfg
+│   │   │   │   ├── MW2
+│   │   │   │   │   ├── config.cfg
+│   │   │   │   │   └── iw4x_config.cfg
+│   │   │   │   ├── MW3
+│   │   │   │   │   ├── config.cfg
+│   │   │   │   │   └── config_mp.cfg
+│   │   │   │   └── WaW
+│   │   │   │       ├── config.cfg
+│   │   │   │       └── config_mp.cfg
+│   │   │   └── 1920x1200
+│   │   │       ├── BO1
+│   │   │       │   ├── config.cfg
+│   │   │       │   └── config_mp.cfg
+│   │   │       ├── BO2
+│   │   │       │   ├── plutonium_mp.cfg
+│   │   │       │   └── plutonium_zm.cfg
+│   │   │       ├── MW1
+│   │   │       │   ├── config_mp.cfg
+│   │   │       │   └── iw3sp_mod_config.cfg
+│   │   │       ├── MW2
+│   │   │       │   ├── config.cfg
+│   │   │       │   └── iw4x_config.cfg
+│   │   │       ├── MW3
+│   │   │       │   ├── config.cfg
+│   │   │       │   └── config_mp.cfg
+│   │   │       └── WaW
+│   │   │           ├── config.cfg
+│   │   │           └── config_mp.cfg
+│   │   ├── LCD
+│   │   │   ├── BO1
+│   │   │   │   ├── config.cfg
+│   │   │   │   └── config_mp.cfg
+│   │   │   ├── BO2
+│   │   │   │   ├── plutonium_mp.cfg
+│   │   │   │   └── plutonium_zm.cfg
+│   │   │   ├── MW1
+│   │   │   │   ├── config_mp.cfg
+│   │   │   │   └── iw3sp_mod_config.cfg
+│   │   │   ├── MW2
+│   │   │   │   ├── config.cfg
+│   │   │   │   └── iw4x_config.cfg
+│   │   │   ├── MW3
+│   │   │   │   ├── config.cfg
+│   │   │   │   └── config_mp.cfg
+│   │   │   └── WaW
+│   │   │       ├── config.cfg
+│   │   │       └── config_mp.cfg
+│   │   └── OLED
+│   │       ├── BO1
+│   │       │   ├── config.cfg
+│   │       │   └── config_mp.cfg
+│   │       ├── BO2
+│   │       │   ├── plutonium_mp.cfg
+│   │       │   └── plutonium_zm.cfg
+│   │       ├── MW1
+│   │       │   ├── config_mp.cfg
+│   │       │   └── iw3sp_mod_config.cfg
+│   │       ├── MW2
+│   │       │   ├── config.cfg
+│   │       │   └── iw4x_config.cfg
+│   │       ├── MW3
+│   │       │   ├── config.cfg
+│   │       │   └── config_mp.cfg
+│   │       └── WaW
+│   │           ├── config.cfg
+│   │           └── config_mp.cfg
+│   ├── controllers
+│   │   ├── controller_generic_deckops_other.vdf
+│   │   ├── controller_generic_deckops.vdf
+│   │   ├── controller_neptune_deckops_ads.vdf
+│   │   ├── controller_neptune_deckops_hold.vdf
+│   │   ├── controller_neptune_deckops_other_ads.vdf
+│   │   ├── controller_neptune_deckops_other_hold.vdf
+│   │   ├── controller_neptune_deckops_other_toggle.vdf
+│   │   ├── controller_neptune_deckops_toggle.vdf
+│   │   ├── controller_ps4_deckops_ads.vdf
+│   │   ├── controller_ps4_deckops_other_ads.vdf
+│   │   ├── controller_ps4_deckops_other.vdf
+│   │   ├── controller_ps4_deckops.vdf
+│   │   ├── controller_ps5_deckops_ads.vdf
+│   │   ├── controller_ps5_deckops_other_ads.vdf
+│   │   ├── controller_ps5_deckops_other.vdf
+│   │   ├── controller_ps5_deckops.vdf
+│   │   ├── controller_xbox360_deckops_other.vdf
+│   │   ├── controller_xbox360_deckops.vdf
+│   │   ├── controller_xboxone_deckops_other.vdf
+│   │   ├── controller_xboxone_deckops.vdf
+│   │   └── files.zip
+│   ├── fonts
+│   │   └── RussoOne-Regular.ttf
+│   ├── images
+│   │   ├── DeckOps-banner.png
+│   │   ├── headers
+│   │   │   ├── 10090.jpg
+│   │   │   ├── 10180.jpg
+│   │   │   ├── 10190.jpg
+│   │   │   ├── 202970.jpg
+│   │   │   ├── 202990.jpg
+│   │   │   ├── 42680.jpg
+│   │   │   ├── 42690.jpg
+│   │   │   ├── 42700.jpg
+│   │   │   └── 7940.jpg
+│   │   ├── heroes
+│   │   │   ├── bo1-banner.png
+│   │   │   ├── bo2-banner.png
+│   │   │   ├── deckops_grid.png
+│   │   │   ├── deckops_hero.png
+│   │   │   ├── deckops_launcher_banner.png
+│   │   │   ├── deckops.png
+│   │   │   ├── mw3-banner.png
+│   │   │   └── waw-banner.png
+│   │   ├── icon.png
+│   │   └── launcher
+│   ├── LAN
+│   │   └── DeckOps_Offline.exe
+│   ├── mods
+│   │   ├── iw5mp
+│   │   │   └── main.lua
+│   │   └── t6
+│   │       ├── deckops_menu_lcd.iwd
+│   │       ├── t6mp
+│   │       │   └── deckops_menu.iwd
+│   │       └── t6zm
+│   │           └── deckops_menu_zm.iwd
+│   └── music
+├── DeckOps-Nightly.desktop
+├── DeckOpsTree.txt
+├── deckops_uninstall.sh
+├── DeckOps.zip
+├── decky
+│   ├── assets
+│   │   └── logo.png
+│   ├── backend
+│   │   ├── Dockerfile
+│   │   ├── entrypoint.sh
+│   │   ├── Makefile
+│   │   └── src
+│   │       └── main.c
+│   ├── decky.pyi
+│   ├── defaults
+│   │   └── defaults.txt
+│   ├── dist
+│   │   ├── index.js
+│   │   └── index.js.map
+│   ├── LICENSE
+│   ├── main.py
+│   ├── node_modules
+│   │   ├── @decky
+│   │   │   ├── api -> ../.pnpm/@decky+api@1.1.3/node_modules/@decky/api
+│   │   │   ├── rollup -> ../.pnpm/@decky+rollup@1.0.2/node_modules/@decky/rollup
+│   │   │   └── ui -> ../.pnpm/@decky+ui@4.11.0/node_modules/@decky/ui
+│   │   ├── eslint-scope -> .pnpm/eslint-scope@5.1.1/node_modules/eslint-scope
+│   │   ├── react-icons -> .pnpm/react-icons@5.3.0_react@18.3.1/node_modules/react-icons
+│   │   ├── @rollup
+│   │   │   └── rollup-linux-x64-musl -> ../.pnpm/@rollup+rollup-linux-x64-musl@4.53.3/node_modules/@rollup/rollup-linux-x64-musl
+│   │   ├── rollup -> .pnpm/rollup@4.53.3/node_modules/rollup
+│   │   ├── tslib -> .pnpm/tslib@2.7.0/node_modules/tslib
+│   │   ├── @types
+│   │   │   ├── react -> ../.pnpm/@types+react@19.1.1/node_modules/@types/react
+│   │   │   ├── react-dom -> ../.pnpm/@types+react-dom@19.1.1_@types+react@19.1.1/node_modules/@types/react-dom
+│   │   │   └── webpack -> ../.pnpm/@types+webpack@5.28.5/node_modules/@types/webpack
+│   │   └── typescript -> .pnpm/typescript@5.6.2/node_modules/typescript
+│   ├── package.json
+│   ├── plugin.json
+│   ├── pnpm-lock.yaml
+│   ├── py_modules
+│   ├── README.md
+│   ├── rollup.config.js
+│   ├── src
+│   │   ├── index.tsx
+│   │   └── types.d.ts
+│   └── tsconfig.json
+├── install.sh
+├── launcher.sh
+├── LICENSE
+├── nightly_README.md
+├── requirements.txt
+├── src
+│   ├── alterware.py
+│   ├── bootstrap.py
+│   ├── cache_cleanup.py
+│   ├── cleanops.py
+│   ├── cod4x.py
+│   ├── config.py
+│   ├── controller_profiles.py
+│   ├── detect_games.py
+│   ├── game_config.py
+│   ├── ge_proton.py
+│   ├── iw3sp.py
+│   ├── iw4x.py
+│   ├── launcher_plut_win.py
+│   ├── main.py
+│   ├── net.py
+│   ├── plutonium_lcd.py
+│   ├── plutonium_oled.py
+│   ├── __pycache__
+│   │   ├── bootstrap.cpython-313.pyc
+│   │   ├── config.cpython-313.pyc
+│   │   ├── detect_games.cpython-313.pyc
+│   │   ├── detect_shortcuts.cpython-313.pyc
+│   │   ├── iw3sp.cpython-313.pyc
+│   │   └── ui_qt.cpython-313.pyc
+│   ├── shortcut.py
+│   ├── ui_qt.py
+│   └── wrapper.py
+└── VERSION
+
+85 directories, 173 files
