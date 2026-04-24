@@ -233,6 +233,46 @@ OWN_SHORTCUTS = {
         "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/logo.png",
         "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
     },
+    "iw6sp": {
+        "name":           "Call of Duty: Ghosts - Singleplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/209160/634577eb0ac94ce620c328885961ed6756823474.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/library_hero.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/logo.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "iw6mp": {
+        "name":           "Call of Duty: Ghosts - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/209170/634577eb0ac94ce620c328885961ed6756823474.jpg",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/66820f8c84215725cac52e00587988fd.png",
+        "wide_url":       "https://cdn2.steamgriddb.com/grid/4f3244fc8b8787fe45c90c2a41c28478.png",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero/8c59fd6fbe0e9793ec2b27971221cace.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo/287e03db1d99e0ec2edb90d079e142f3.png",
+        "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "png", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "s1sp": {
+        "name":           "Call of Duty: Advanced Warfare - Singleplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/209650/aab8b39ef63c54af5497b55aa104d5c7ec860fd9.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/library_hero.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/logo.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "s1mp": {
+        "name":           "Call of Duty: Advanced Warfare - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/209660/aab8b39ef63c54af5497b55aa104d5c7ec860fd9.jpg",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/dfee5996d068e6bed170ff189ca2f193.png",
+        "wide_url":       "https://cdn2.steamgriddb.com/grid/d790c9e6c0b5e02c87b375e782ac01bc.png",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero/7070f9088e456682f0f84f815ebda761.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo/e243aa93e6b6e031797f86d0858f5e40.png",
+        "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "png", "hero_ext": "jpg", "logo_ext": "png",
+    },
 }
 
 
@@ -293,6 +333,22 @@ STEAM_ARTWORK = {
         "hero_url":  "https://cdn2.steamgriddb.com/hero_thumb/e5e63da79fcd2bebbd7cb8bf1c1d0274.jpg",
         "logo_url":  "https://cdn2.steamgriddb.com/logo_thumb/79514e888b8f2acacc68738d0cbb803e.png",
         "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "209170": {  # Ghosts MP
+        "icon_url":  "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/209170/634577eb0ac94ce620c328885961ed6756823474.jpg",
+        "grid_url":  "https://cdn2.steamgriddb.com/grid/66820f8c84215725cac52e00587988fd.png",
+        "wide_url":  "https://cdn2.steamgriddb.com/grid/4f3244fc8b8787fe45c90c2a41c28478.png",
+        "hero_url":  "https://cdn2.steamgriddb.com/hero/8c59fd6fbe0e9793ec2b27971221cace.jpg",
+        "logo_url":  "https://cdn2.steamgriddb.com/logo/287e03db1d99e0ec2edb90d079e142f3.png",
+        "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "png", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "209660": {  # AW MP
+        "icon_url":  "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/209660/aab8b39ef63c54af5497b55aa104d5c7ec860fd9.jpg",
+        "grid_url":  "https://cdn2.steamgriddb.com/grid/dfee5996d068e6bed170ff189ca2f193.png",
+        "wide_url":  "https://cdn2.steamgriddb.com/grid/d790c9e6c0b5e02c87b375e782ac01bc.png",
+        "hero_url":  "https://cdn2.steamgriddb.com/hero/7070f9088e456682f0f84f815ebda761.jpg",
+        "logo_url":  "https://cdn2.steamgriddb.com/logo/e243aa93e6b6e031797f86d0858f5e40.png",
+        "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "png", "hero_ext": "jpg", "logo_ext": "png",
     },
 }
 
@@ -1571,6 +1627,26 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 launch_options = (
                     f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
                     f'WINEDLLOVERRIDES="d3d11=n,b" %command%'
+                )
+
+            elif key in ("iw6mp", "iw6sp"):
+                # AlterWare Ghosts -- point at iw6-mod.exe, pass mode flag
+                # The built-in launcher UI crashes under Proton; the mode
+                # flag bypasses it and loads directly into the correct mode.
+                actual_exe = os.path.join(install_dir, "iw6-mod.exe")
+                mode_flag = "-multiplayer" if key == "iw6mp" else "-singleplayer"
+                launch_options = (
+                    f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                    f'%command% {mode_flag}'
+                )
+
+            elif key in ("s1mp", "s1sp"):
+                # AlterWare Advanced Warfare -- point at s1-mod.exe, pass mode flag
+                actual_exe = os.path.join(install_dir, "s1-mod.exe")
+                mode_flag = "-multiplayer" if key == "s1mp" else "-singleplayer"
+                launch_options = (
+                    f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                    f'%command% {mode_flag}'
                 )
 
             else:

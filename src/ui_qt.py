@@ -113,6 +113,10 @@ ALL_GAMES = [
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Black Ops III","keys":["t7"],"appid":311210,"dev":"trey","client":"cleanops",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"Call of Duty: Ghosts","keys":["iw6mp","iw6sp"],"appid":209160,"dev":"iw","client":"alterware",
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"Call of Duty: Advanced Warfare","keys":["s1mp","s1sp"],"appid":209650,"dev":"iw","client":"alterware",
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
 ]
 
 def _active_keys(gd):
@@ -149,6 +153,10 @@ KEY_CLIENT = {
     "t6mp":   "plutonium",
     "t6sp":   "steam",
     "t7":     "cleanops",
+    "iw6mp": "alterware",
+    "iw6sp": "alterware",
+    "s1mp":  "alterware",
+    "s1sp":  "alterware",
 }
 
 KEY_EXES = {
@@ -159,6 +167,8 @@ KEY_EXES = {
     "t5sp":"BlackOps.exe","t5mp":"BlackOpsMP.exe",
     "t6zm":"t6zm.exe","t6mp":"t6mp.exe","t6sp":"t6sp.exe",
     "t7":"BlackOps3.exe",
+    "iw6mp":"iw6mp64_ship.exe","iw6sp":"iw6sp64_ship.exe",
+    "s1mp":"s1_mp64_ship.exe","s1sp":"s1_sp64_ship.exe",
 }
 
 # Label shown beneath each per-key checkbox in SetupScreen.
@@ -170,6 +180,8 @@ KEY_MODE_LABEL = {
     "t5sp":   "S/Z",   "t5mp":   "MP",
     "t6sp":   "SP",    "t6zm":   "ZM",    "t6mp":   "MP",
     "t7":     "All",
+    "iw6mp":  "MP",    "iw6sp":  "SP",
+    "s1mp":   "MP",    "s1sp":   "SP",
 }
 
 
@@ -184,6 +196,8 @@ SP_IMAGE_URLS = {
     202970: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/header.jpg",
     202990: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/header.jpg",
     311210: "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/header.jpg",
+    209160: "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/header.jpg",
+    209650: "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/header.jpg",
 }
 
 IMG_RATIO = 215 / 460
@@ -1551,6 +1565,23 @@ class InstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
+        # ── AlterWare (Ghosts / Advanced Warfare) — Steam closed ──────────────
+        has_alterware = any(KEY_CLIENT.get(k) == "alterware" for k in selected_keys)
+        if has_alterware:
+            from alterware import install_alterware
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "alterware"]:
+                base_name = gd["base"]
+                self._s.progress.emit(91, f"Setting up {base_name}...")
+                def op_alterware(pct, msg): self._s.progress.emit(91 + int(pct / 100 * 4), msg)
+                try:
+                    install_alterware(game, key, self.steam_root, proton, "", op_alterware,
+                                     source="steam")
+                    cfg.mark_game_setup(key, "alterware", source="steam")
+                    self._s.log.emit(f"✓  {base_name} done")
+                    logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
         # ── Vanilla Steam games (no mod client, just configs + controllers) ──
         # Games like MW2 SP, MW3 SP, and BO2 SP run through Steam as-is.
         # No download or exe replacement needed. We just mark them as set up
@@ -2570,6 +2601,10 @@ class UpdateScreen(QWidget):
                 elif c == "cleanops":
                     install_cleanops(game, self.steam_root, proton, compat, op,
                                     source=source)
+                elif c == "alterware":
+                    from alterware import install_alterware
+                    install_alterware(game, key, self.steam_root, proton, compat, op,
+                                     source=source)
                 self._s.log.emit(f"✓  {base_name} ({key}) done")
             except Exception as ex:
                 self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
@@ -3070,6 +3105,25 @@ class OwnInstallScreen(QWidget):
                                                   game_install_dir=game.get("install_dir"))
                     install_cleanops(game, self.steam_root, proton, compat, op_cleanops, source=source)
                     cfg.mark_game_setup(key, "cleanops", source=source)
+                    self._s.log.emit(f"✓  {base_name} done")
+                    logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # ── Install AlterWare (Ghosts / Advanced Warfare) ─────────────────
+        _log_to_file("[BREADCRUMB] starting alterware install phase")
+        has_alterware = any(KEY_CLIENT.get(k) == "alterware" for k in selected_keys)
+        if has_alterware:
+            from alterware import install_alterware
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "alterware"]:
+                base_name = gd["base"]
+                self._s.progress.emit(76, f"Setting up {base_name}...")
+                def op_alterware(pct, msg): self._s.progress.emit(76 + int(pct / 100 * 4), msg)
+                try:
+                    source = "own" if key in self.own_selected else "steam"
+                    install_alterware(game, key, self.steam_root, proton, "", op_alterware,
+                                     source=source)
+                    cfg.mark_game_setup(key, "alterware", source=source)
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)
                 except Exception as ex:

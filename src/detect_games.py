@@ -82,6 +82,34 @@ GAMES = {
         "exe": "BlackOps3.exe",
         "protocol": "cleanops",
     },
+    "iw6mp": {
+        "name": "Call of Duty: Ghosts - Multiplayer",
+        "order": 8,
+        "appid": "209170",
+        "exe": "iw6mp64_ship.exe",
+        "protocol": "alterware",
+    },
+    "iw6sp": {
+        "name": "Call of Duty: Ghosts - Singleplayer",
+        "order": 8,
+        "appid": "209160",
+        "exe": "iw6sp64_ship.exe",
+        "protocol": "alterware",
+    },
+    "s1mp": {
+        "name": "Call of Duty: Advanced Warfare - Multiplayer",
+        "order": 9,
+        "appid": "209660",
+        "exe": "s1_mp64_ship.exe",
+        "protocol": "alterware",
+    },
+    "s1sp": {
+        "name": "Call of Duty: Advanced Warfare - Singleplayer",
+        "order": 9,
+        "appid": "209650",
+        "exe": "s1_sp64_ship.exe",
+        "protocol": "alterware",
+    },
     "iw5mp": {
         "name": "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
         "order": 5,
@@ -291,6 +319,8 @@ FOLDER_TO_KEYS = {
     "call of duty black ops":           ["t5sp",   "t5mp"],
     "call of duty black ops ii":        ["t6sp",   "t6mp",  "t6zm"],
     "call of duty black ops iii":       ["t7"],
+    "call of duty ghosts":              ["iw6sp",  "iw6mp"],
+    "call of duty advanced warfare":    ["s1sp",   "s1mp"],
 }
 
 # Keyword rules checked in order when exact match fails.
@@ -303,6 +333,10 @@ _KEYWORD_RULES = [
     (re.compile(r'\b(black\s*ops\s*(ii|2)|bo2|t6)\b', re.IGNORECASE), ["t6sp", "t6mp", "t6zm"]),
     # BO1
     (re.compile(r'\b(black\s*ops|bo1|t5)\b', re.IGNORECASE),          ["t5sp", "t5mp"]),
+    # AW - check before MW3/MW2 since "advanced warfare" is unambiguous
+    (re.compile(r'\b(advanced\s*warfare|aw|s1)\b', re.IGNORECASE),     ["s1sp", "s1mp"]),
+    # Ghosts
+    (re.compile(r'\b(ghosts|iw6)\b', re.IGNORECASE),                   ["iw6sp", "iw6mp"]),
     # MW3 - check before MW2 so "modern warfare 3" doesn't fall through to MW2
     (re.compile(r'\b(modern\s*warfare\s*(3|iii)|mw3|iw5)\b', re.IGNORECASE), ["iw5sp", "iw5mp"]),
     # MW2
@@ -350,6 +384,8 @@ GAME_SENTINELS = {
     "bo1":  "vorkuta.ff",            # case-insensitive search under zone/*/
     "bo2":  "zone/all/zm_transit.ff",
     "bo3":  "zone/core_common.ff",
+    "ghosts": "nml.ff",              # root-level SP mission fastfile
+    "aw":     "detroit.ff",          # root-level SP mission fastfile
 }
 
 # Maps each game key to its sentinel group. Multiple keys share a group
@@ -362,6 +398,8 @@ KEY_TO_SENTINEL = {
     "t5sp":   "bo1",  "t5mp":   "bo1",
     "t6sp":   "bo2",  "t6mp":   "bo2",  "t6zm": "bo2",
     "t7":     "bo3",
+    "iw6sp":  "ghosts", "iw6mp": "ghosts",
+    "s1sp":   "aw",     "s1mp":  "aw",
 }
 
 
