@@ -157,6 +157,8 @@ if [ -n "$STEAM_ROOT" ]; then
         [10090]="CoDWaW.exe CoDWaWmp.exe"
         [42700]="BlackOps.exe BlackOpsMP.exe"
         [202990]="t6mp.exe t6zm.exe"
+        [209160]="iw6sp64_ship.exe iw6mp64_ship.exe"
+        [209650]="s1_sp64_ship.exe s1_mp64_ship.exe"
     )
 
     for appid in "${!GAME_EXES[@]}"; do
@@ -197,6 +199,8 @@ KNOWN_EXES = [
     "BlackOps.exe", "BlackOpsMP.exe", "t6zm.exe", "t6mp.exe", "t6sp.exe",
     # Mod client exes (own shortcuts point at these, not original game exes)
     "iw4x.exe", "iw3sp_mod.exe",
+    # AlterWare mod client exes (own shortcuts point at these)
+    "iw6-mod.exe", "s1-mod.exe",
     # LCD own Plutonium wrapper exes (written by plutonium.py, not original game files)
     "t4plutsp.exe", "t4plutmp.exe", "t5plutsp.exe", "t5plutmp.exe",
     "t6plutmp.exe", "t6plutzm.exe", "iw5plutmp.exe",
@@ -322,6 +326,40 @@ if [ -n "$STEAM_ROOT" ]; then
 fi
 echo ""
 
+info "Removing AlterWare files from Ghosts and Advanced Warfare folders..."
+
+if [ -n "$STEAM_ROOT" ]; then
+    # Ghosts (appid 209160 covers both SP and MP install dir)
+    ghosts_dir=$(find_install_dir 209160) || true
+    if [ -n "$ghosts_dir" ]; then
+        for f in "iw6-mod.exe" "alterware-launcher.json" "awcache.json" "deckops_alterware.json"; do
+            [ -f "$ghosts_dir/$f" ] && rm -f "$ghosts_dir/$f" && success "Removed $f (Ghosts)" || skip "$f not found"
+        done
+        # Remove AlterWare data/ subdirectories (mod scripts, not base game)
+        for d in "data/dw" "data/maps" "data/scripts" "data/ui_scripts" "data/sound"; do
+            [ -d "$ghosts_dir/$d" ] && rm -rf "$ghosts_dir/$d" && success "Removed $d/ (Ghosts)"
+        done
+        [ -f "$ghosts_dir/data/open_source_software_disclosure.txt" ] && rm -f "$ghosts_dir/data/open_source_software_disclosure.txt"
+    else
+        skip "Ghosts install directory not found"
+    fi
+
+    # Advanced Warfare (appid 209650 covers both SP and MP install dir)
+    aw_dir=$(find_install_dir 209650) || true
+    if [ -n "$aw_dir" ]; then
+        for f in "s1-mod.exe" "alterware-launcher.json" "awcache.json" "deckops_alterware.json"; do
+            [ -f "$aw_dir/$f" ] && rm -f "$aw_dir/$f" && success "Removed $f (AW)" || skip "$f not found"
+        done
+        for d in "data/dw" "data/maps" "data/scripts" "data/ui_scripts" "data/sound"; do
+            [ -d "$aw_dir/$d" ] && rm -rf "$aw_dir/$d" && success "Removed $d/ (AW)"
+        done
+        [ -f "$aw_dir/data/open_source_software_disclosure.txt" ] && rm -f "$aw_dir/data/open_source_software_disclosure.txt"
+    else
+        skip "Advanced Warfare install directory not found"
+    fi
+fi
+echo ""
+
 info "Removing mod client files from non-Steam (My Own) game folders..."
 
 # For games added via the My Own flow, the install dir isnt in any Steam
@@ -363,6 +401,27 @@ OWN_CLEANUP = {
     "blackops3.exe": {
         "files": ["d3d11.dll", "deckops_cleanops.json"],
         "dirs":  [],
+    },
+    # AlterWare mod client exes (Ghosts / Advanced Warfare)
+    "iw6-mod.exe": {
+        "files": ["iw6-mod.exe", "alterware-launcher.json", "awcache.json",
+                  "deckops_alterware.json", "data/open_source_software_disclosure.txt"],
+        "dirs":  ["data/dw", "data/maps", "data/scripts", "data/ui_scripts", "data/sound"],
+    },
+    "iw6mp64_ship.exe": {
+        "files": ["iw6-mod.exe", "alterware-launcher.json", "awcache.json",
+                  "deckops_alterware.json", "data/open_source_software_disclosure.txt"],
+        "dirs":  ["data/dw", "data/maps", "data/scripts", "data/ui_scripts", "data/sound"],
+    },
+    "s1-mod.exe": {
+        "files": ["s1-mod.exe", "alterware-launcher.json", "awcache.json",
+                  "deckops_alterware.json", "data/open_source_software_disclosure.txt"],
+        "dirs":  ["data/dw", "data/maps", "data/scripts", "data/ui_scripts", "data/sound"],
+    },
+    "s1_mp64_ship.exe": {
+        "files": ["s1-mod.exe", "alterware-launcher.json", "awcache.json",
+                  "deckops_alterware.json", "data/open_source_software_disclosure.txt"],
+        "dirs":  ["data/dw", "data/maps", "data/scripts", "data/ui_scripts", "data/sound"],
     },
 }
 
@@ -1151,6 +1210,7 @@ STEAM_CONFIG = os.path.join(STEAM_DIR, "config", "config.vdf")
 MANAGED_STEAM_APPIDS = [
     "7940", "10090", "10180", "10190", "42680", "42690", "42750",
     "42700", "42710", "202970", "202990", "212910", "311210",
+    "209160", "209170", "209650", "209660",
 ]
 
 # Named game keys used in configset files — must match controller_profiles.py
@@ -1396,6 +1456,7 @@ SHORTCUTS = {
 MANAGED_STEAM_APPIDS = [
     "7940", "10090", "10180", "10190", "42680", "42690", "42750",
     "42700", "42710", "202970", "202990", "212910", "311210",
+    "209160", "209170", "209650", "209660",
 ]
 
 def find_install_dir(steam_root, appid):
