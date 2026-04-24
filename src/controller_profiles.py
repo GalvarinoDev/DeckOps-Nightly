@@ -90,6 +90,10 @@ APPID_PROFILE_MAP = {
     "202990": "standard",  # BO2 MP -- Plutonium
     "212910": "standard",  # BO2 ZM -- Plutonium
     "311210": "standard",  # BO3 -- CleanOps (native controller support)
+    "209160": "standard",  # Ghosts SP -- AlterWare (native controller + aim assist)
+    "209170": "standard",  # Ghosts MP -- AlterWare (native controller + aim assist)
+    "209650": "standard",  # AW SP -- AlterWare (native controller + aim assist)
+    "209660": "standard",  # AW MP -- AlterWare (native controller + aim assist)
 }
 
 # ── Named game keys used in configset VDFs ────────────────────────────────────
@@ -118,6 +122,10 @@ APPID_NAMED_KEYS = {
     "202990": ["call of duty black ops ii - multiplayer"],
     "212910": ["call of duty black ops ii - zombies"],
     "311210": ["call of duty black ops iii"],
+    "209160": ["call of duty ghosts"],
+    "209170": ["call of duty ghosts - multiplayer"],
+    "209650": ["call of duty advanced warfare"],
+    "209660": ["call of duty advanced warfare - multiplayer"],
 }
 
 # ── External controller configset filenames ───────────────────────────────────

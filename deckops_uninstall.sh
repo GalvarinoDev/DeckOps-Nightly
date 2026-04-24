@@ -1234,6 +1234,10 @@ APPID_NAMED_KEYS = {
     "202990": ["call of duty black ops ii - multiplayer"],
     "212910": ["call of duty black ops ii - zombies"],
     "311210": ["call of duty black ops iii"],
+    "209160": ["call of duty ghosts"],
+    "209170": ["call of duty ghosts - multiplayer"],
+    "209650": ["call of duty advanced warfare"],
+    "209660": ["call of duty advanced warfare - multiplayer"],
 }
 
 # Shortcut definitions — must match shortcut.py
