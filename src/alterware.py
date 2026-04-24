@@ -131,15 +131,16 @@ def install_alterware(game: dict, game_key: str,
     Install AlterWare mod client (IW6-Mod or S1-Mod).
 
     Downloads the native Linux AlterWare launcher, runs it to fetch the
-    mod client files, then performs exe backup/replacement for Steam
-    installs. The launcher runs natively — no Proton needed.
+    mod client files, then writes a Proton wrapper script for Steam
+    installs. The launcher runs natively — no Proton needed for the
+    download step.
 
     Parameters:
       game            — dict from detect_games with install_dir
       game_key        — one of: iw6mp, iw6sp, s1mp, s1sp
-      steam_root      — path to Steam root (kept for API consistency)
-      proton_path     — path to Proton exe (kept for API consistency)
-      compatdata_path — path to compatdata prefix (kept for API consistency)
+      steam_root      — path to Steam root (needed for wrapper script)
+      proton_path     — path to Proton binary (needed for wrapper script)
+      compatdata_path — path to compatdata prefix (needed for wrapper script)
       on_progress     — optional callback(percent: int, status: str)
       source          — "steam" or "own"
       download_bonus  — if True, download bonus content (extra maps/DLC)
@@ -237,17 +238,21 @@ def install_alterware(game: dict, game_key: str,
 
     # ── Step 5: Write wrapper script (Steam only) ──────────────────────────
     # Replace the original exe with a bash wrapper that launches the mod
-    # client exe with the correct mode flag. The wrapper is padded to the
-    # original exe's size so Steam's file validation does not flag a change.
-    # This avoids writing to localconfig.vdf (which Steam can overwrite on
-    # restart) and keeps the mode flag self-contained in the game directory.
-    # Same pattern as plutonium_oled._write_wrapper.
+    # client exe through Proton with the correct mode flag. The wrapper is
+    # padded to the original exe's size so Steam's file validation does not
+    # flag a change. Same pattern as plutonium_oled._write_wrapper.
+    #
+    # The wrapper must call Proton explicitly because Steam runs the bash
+    # script outside Wine — the shebang causes Proton to hand it to the
+    # host shell, which has no Wine context. Without an explicit Proton
+    # invocation the .exe would be launched as a native binary and fail.
     mode_flag = _MODE_FLAGS.get(game_key, "")
     if source != "own":
         original_path = os.path.join(install_dir, original_exe)
         backup_path   = original_path + ".bak"
 
-        if os.path.exists(original_path) or os.path.exists(backup_path):
+        if (os.path.exists(original_path) or os.path.exists(backup_path)) \
+                and proton_path and compatdata_path:
             prog(85, f"Writing wrapper for {original_exe}...")
 
             # Read original size before we overwrite
@@ -258,11 +263,19 @@ def install_alterware(game: dict, game_key: str,
             elif os.path.exists(backup_path):
                 original_size = os.path.getsize(backup_path)
 
-            # Build wrapper script that launches the mod exe
+            # Build wrapper script that launches the mod exe through Proton
+            mod_exe_path = os.path.join(install_dir, client_exe)
             script = (
                 "#!/bin/bash\n"
-                f'cd "$(dirname "$0")"\n'
-                f'"./{client_exe}" {mode_flag} "$@"\n'
+                f'export STEAM_COMPAT_DATA_PATH="{compatdata_path}"\n'
+                f'export STEAM_COMPAT_CLIENT_INSTALL_PATH="{steam_root}"\n'
+                f'"{proton_path}" run "{mod_exe_path}" {mode_flag} "$@" &\n'
+                "PROTON_PID=$!\n"
+                "sleep 8\n"
+                "while kill -0 $PROTON_PID 2>/dev/null || "
+                f'pgrep -fa wineserver | grep -q "{compatdata_path}"; do\n'
+                "  sleep 3\n"
+                "done\n"
             )
 
             script_bytes = script.encode("utf-8")
@@ -274,6 +287,8 @@ def install_alterware(game: dict, game_key: str,
 
             os.chmod(original_path, os.stat(original_path).st_mode |
                      stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        elif not proton_path or not compatdata_path:
+            prog(85, f"⚠ Missing proton or compatdata path — skipping wrapper")
         else:
             # Original exe missing — own game mislabelled as steam,
             # or partial install. Skip the wrapper, log a note.
