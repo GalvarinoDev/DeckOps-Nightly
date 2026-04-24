@@ -1578,7 +1578,9 @@ class InstallScreen(QWidget):
                 self._s.progress.emit(91, f"Setting up {base_name}...")
                 def op_alterware(pct, msg): self._s.progress.emit(91 + int(pct / 100 * 4), msg)
                 try:
-                    install_alterware(game, key, self.steam_root, proton, "", op_alterware,
+                    compat = find_compatdata(self.steam_root, gd["appid"],
+                                              game_install_dir=game["install_dir"] if game else None)
+                    install_alterware(game, key, self.steam_root, proton, compat, op_alterware,
                                      source="steam")
                     cfg.mark_game_setup(key, "alterware", source="steam")
                     self._s.log.emit(f"✓  {base_name} done")
@@ -3182,7 +3184,15 @@ class OwnInstallScreen(QWidget):
                 def op_alterware(pct, msg): self._s.progress.emit(76 + int(pct / 100 * 4), msg)
                 try:
                     source = "own" if key in self.own_selected else "steam"
-                    install_alterware(game, key, self.steam_root, proton, "", op_alterware,
+                    if source == "own":
+                        compat = game.get("compatdata_path", "")
+                        if not compat:
+                            compat = find_compatdata(self.steam_root, gd["appid"],
+                                                      game_install_dir=game.get("install_dir"))
+                    else:
+                        compat = find_compatdata(self.steam_root, gd["appid"],
+                                                  game_install_dir=game.get("install_dir"))
+                    install_alterware(game, key, self.steam_root, proton, compat, op_alterware,
                                      source=source)
                     cfg.mark_game_setup(key, "alterware", source=source)
                     self._s.log.emit(f"✓  {base_name} done")
