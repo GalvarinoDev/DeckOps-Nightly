@@ -23,6 +23,7 @@ import config as cfg
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FONTS_DIR    = os.path.join(PROJECT_ROOT, "assets", "fonts")
 HEADERS_DIR  = os.path.join(PROJECT_ROOT, "assets", "images", "headers")
+HEROES_DIR   = os.path.join(PROJECT_ROOT, "assets", "images", "heroes")
 MUSIC_PATH   = os.path.join(PROJECT_ROOT, "assets", "music", "background.mp3")
 LOG_DIR      = os.path.join(PROJECT_ROOT, "logs")
 LOG_PATH     = os.path.join(LOG_DIR, "install.log")
@@ -117,6 +118,8 @@ ALL_GAMES = [
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Advanced Warfare","keys":["s1mp","s1sp"],"appid":209650,"dev":"iw","client":"alterware",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"DeckOps: Plutonium Offline","keys":[],"appid":None,"dev":"trey","client":"lan",
+     "launch_note":"Re-adds the Plutonium offline launcher shortcut."},
 ]
 
 def _active_keys(gd):
@@ -186,23 +189,23 @@ KEY_MODE_LABEL = {
 
 
 SP_IMAGE_URLS = {
-    7940:   "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/header.jpg",
-    10180:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/header.jpg",
-    10190:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/header.jpg",
-    42680:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/header.jpg",
-    42690:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/header.jpg",
-    10090:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/header.jpg",
-    42700:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/header.jpg",
-    202970: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/header.jpg",
-    202990: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/header.jpg",
-    311210: "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/header.jpg",
-    209160: "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/header.jpg",
-    209650: "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/header.jpg",
+    7940:   "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/library_600x900_2x.jpg",
+    10180:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
+    10190:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
+    42680:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",
+    42690:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",
+    10090:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/library_600x900_2x.jpg",
+    42700:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_600x900_2x.jpg",
+    202970: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
+    202990: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
+    311210: "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/library_600x900_2x.jpg",
+    209160: "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/library_600x900_2x.jpg",
+    209650: "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/library_600x900_2x.jpg",
 }
 
-IMG_RATIO = 215 / 460
+IMG_RATIO = 3 / 2
 BTN_RATIO = 0.20
-CARD_COLS = 3
+CARD_COLS = 5
 
 MUSIC_URL = "https://archive.org/download/adrenaline-klickaud/Adrenaline_KLICKAUD.mp3"
 
@@ -1683,19 +1686,28 @@ class InstallScreen(QWidget):
 
 # ── ManagementCard ─────────────────────────────────────────────────────────────
 class ManagementCard(QFrame):
-    def __init__(self, gd, installed, on_setup, on_update, on_reinstall, parent=None):
+    def __init__(self, gd, installed, on_setup, on_update, on_reinstall,
+                 on_readd=None, parent=None):
         super().__init__(parent)
         color = C_IW if gd["dev"] == "iw" else C_TREY
         self._color  = color
         self._appid  = _active_appid(gd)
+        self._is_lan = gd.get("client") == "lan"
         self.setObjectName("MC")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
         keys       = _active_keys(gd)
         client     = _active_client(gd)
-        ik         = [k for k in keys if k in installed]
-        is_setup   = any(cfg.is_game_setup(k) for k in keys)
-        is_present = len(ik) > 0
+
+        if self._is_lan:
+            # DeckOps LAN card — always shown, no key-based detection
+            ik         = []
+            is_setup   = False
+            is_present = True
+        else:
+            ik         = [k for k in keys if k in installed]
+            is_setup   = any(cfg.is_game_setup(k) for k in keys)
+            is_present = len(ik) > 0
 
         border_color = color if is_setup else ("#445544" if is_present else "#333344")
         self.setStyleSheet(
@@ -1709,18 +1721,24 @@ class ManagementCard(QFrame):
         self._img = QLabel()
         self._img.setAlignment(Qt.AlignCenter)
         self._img.setStyleSheet("background:#0A0A10;border:none;")
-        if not is_setup:
+        if not is_setup and not self._is_lan:
             effect = QGraphicsOpacityEffect()
             effect.setOpacity(0.45 if is_present else 0.25)
             self._img.setGraphicsEffect(effect)
         lay.addWidget(self._img)
         self._raw_pixmap = None
 
-        cached = _header_path(self._appid)
-        if os.path.exists(cached):
-            self._raw_pixmap = QPixmap(cached)
+        if self._is_lan:
+            # Load local DeckOps grid image from assets/images/heroes/
+            local_img = os.path.join(HEROES_DIR, "deckops_grid.png")
+            if os.path.exists(local_img):
+                self._raw_pixmap = QPixmap(local_img)
         else:
-            threading.Thread(target=self._fetch, args=(self._appid,), daemon=True).start()
+            cached = _header_path(self._appid)
+            if os.path.exists(cached):
+                self._raw_pixmap = QPixmap(cached)
+            else:
+                threading.Thread(target=self._fetch, args=(self._appid,), daemon=True).start()
 
         badge_row = QWidget()
         badge_row.setStyleSheet(f"background:{C_CARD};border:none;")
@@ -1737,7 +1755,9 @@ class ManagementCard(QFrame):
         bl.addWidget(client_lbl)
         bl.addStretch()
 
-        if is_setup:
+        if self._is_lan:
+            status_lbl = _lbl("offline launcher", 10, C_DIM, align=Qt.AlignRight, wrap=False)
+        elif is_setup:
             status_lbl = _lbl("✓ installed", 10, C_IW, align=Qt.AlignRight, wrap=False)
         elif is_present:
             status_lbl = _lbl("not set up", 10, C_DIM, align=Qt.AlignRight, wrap=False)
@@ -1746,15 +1766,15 @@ class ManagementCard(QFrame):
         bl.addWidget(status_lbl)
         lay.addWidget(badge_row)
 
-        title = _lbl(gd["base"], 12, "#FFF" if is_present else "#444455",
-                     align=Qt.AlignLeft, wrap=False)
-        title.setContentsMargins(8, 4, 8, 0)
-        lay.addWidget(title)
-
         btn_row = QWidget(); btn_row.setStyleSheet(f"background:{C_CARD};border:none;")
         br = QHBoxLayout(btn_row); br.setContentsMargins(8, 6, 8, 8); br.setSpacing(6)
 
-        if not is_setup and is_present:
+        if self._is_lan:
+            readd_btn = _btn("Re-Add", C_TREY, size=10, h=32)
+            if on_readd:
+                readd_btn.clicked.connect(lambda: on_readd(gd))
+            br.addWidget(readd_btn); br.addStretch()
+        elif not is_setup and is_present:
             setup_btn = _btn("Set Up", C_IW, size=10, h=32)
             setup_btn.clicked.connect(lambda: on_setup(gd))
             br.addWidget(setup_btn); br.addStretch()
@@ -1867,7 +1887,8 @@ class ManagementScreen(QWidget):
             item = self._grid.takeAt(0)
             if item.widget(): item.widget().deleteLater()
 
-        games = [g for g in ALL_GAMES if _active_keys(g)]
+        games = [g for g in ALL_GAMES
+                 if _active_keys(g) or g.get("client") == "lan"]
 
         for idx, gd in enumerate(games):
             row = idx // CARD_COLS
@@ -1877,6 +1898,7 @@ class ManagementScreen(QWidget):
                 on_setup     = self._setup,
                 on_update    = self._update,
                 on_reinstall = self._reinstall,
+                on_readd     = self._readd,
             )
             self._grid.addWidget(card, row, col)
 
@@ -1885,6 +1907,22 @@ class ManagementScreen(QWidget):
         if remainder:
             for col in range(remainder, CARD_COLS):
                 self._grid.addWidget(QWidget(), total // CARD_COLS, col)
+
+    def _readd(self, gd):
+        """Re-add the Plutonium offline launcher shortcut."""
+        from shortcut import create_launcher_shortcut
+        self._status.setText("Re-adding Plutonium offline launcher...")
+
+        def _on_progress(msg):
+            self._status.setText(msg)
+
+        def _run():
+            create_launcher_shortcut(on_progress=_on_progress)
+            QTimer.singleShot(0, lambda: self._status.setText(
+                "Plutonium offline launcher shortcut re-added."
+            ))
+
+        threading.Thread(target=_run, daemon=True).start()
 
     def _setup(self, gd):
         """Route a single card's keys through the install flow."""
