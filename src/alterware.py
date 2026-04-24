@@ -276,7 +276,16 @@ def install_alterware(game: dict, game_key: str,
             )
 
             from wrapper import write_wrapper_script
-            write_wrapper_script(original_path, script)
+            # Read original exe size so the wrapper can be padded to match.
+            # Steam's file validation checks size — without padding it will
+            # overwrite the wrapper on the next integrity check.
+            # Matches the pattern used by plutonium_oled._write_wrapper().
+            original_size = game.get("exe_size")
+            if not original_size and os.path.exists(original_path):
+                original_size = os.path.getsize(original_path)
+            elif not original_size and os.path.exists(original_path + ".bak"):
+                original_size = os.path.getsize(original_path + ".bak")
+            write_wrapper_script(original_path, script, original_size=original_size)
         else:
             # Original exe missing — own game mislabelled as steam,
             # or partial install. Skip the wrapper, log a note.
