@@ -113,8 +113,8 @@ def run(on_progress=None, on_complete=None):
 
     for appid in HEADER_APPIDS:
         url  = _HEADER_OVERRIDES.get(appid, _STEAM_CDN.format(appid=appid))
-        dest = os.path.join(HEADERS_DIR, f"{appid}.jpg")
-        tasks.append((url, dest, f"Header: {appid}.jpg"))
+        dest = os.path.join(HEADERS_DIR, f"{appid}_grid.jpg")
+        tasks.append((url, dest, f"Grid: {appid}_grid.jpg"))
 
     total     = len(tasks)
     failed    = 0
@@ -148,7 +148,7 @@ def fonts_ready() -> bool:
 
 def headers_ready() -> bool:
     return all(
-        os.path.exists(os.path.join(HEADERS_DIR, f"{appid}.jpg"))
+        os.path.exists(os.path.join(HEADERS_DIR, f"{appid}_grid.jpg"))
         for appid in HEADER_APPIDS
     )
 

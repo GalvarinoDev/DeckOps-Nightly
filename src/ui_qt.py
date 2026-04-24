@@ -203,7 +203,7 @@ SP_IMAGE_URLS = {
     209650: "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/library_600x900_2x.jpg",
 }
 
-IMG_RATIO = 3 / 2
+IMG_RATIO = 1.2
 BTN_RATIO = 0.20
 CARD_COLS = 5
 
@@ -266,7 +266,7 @@ def _set_audio_enabled(enabled: bool):
     cfg.set_music_enabled(enabled)
 
 def _header_path(appid: int) -> str:
-    return os.path.join(HEADERS_DIR, f"{appid}.jpg")
+    return os.path.join(HEADERS_DIR, f"{appid}_grid.jpg")
 
 def _btn(text, color, size=13, h=44):
     b = QPushButton(text); b.setFont(font(size, True)); b.setFixedHeight(h)
