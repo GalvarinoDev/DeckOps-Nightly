@@ -1,3649 +1,2130 @@
 """
-ui_qt.py — DeckOps PyQt5 UI
+shortcut.py — DeckOps non-Steam shortcut creator
+
+Creates non-Steam game shortcuts in Steam for CoD4 Multiplayer (CoD4x) and
+World at War Multiplayer. These shortcuts point to the original game exes
+in the Steam library and use the original compatdata prefixes.
+
+Shortcuts include:
+  - Proper artwork (icon, grid, wide, hero, logo) from SteamGridDB
+  - Correct compatdata prefix via launch options
+  - Controller template assignment based on gyro mode
+  - GE-Proton compat tool assignment
+  - Steam Input enabled (AllowDesktopConfig)
+
+Called at the end of InstallScreen._run() after client installation completes.
+Must be called while Steam is closed.
 """
 
-import sys, os, subprocess, threading
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import binascii
+import os
+import re
+import shutil
+import struct
+import threading
+import time
+import urllib.request
 
-from PyQt5.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QStackedWidget,
-    QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
-    QLabel, QPushButton, QCheckBox, QProgressBar,
-    QFrame, QSizePolicy, QMessageBox, QPlainTextEdit,
-    QFileDialog, QLineEdit,
-)
-from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
-from PyQt5.QtGui import QFont, QFontDatabase, QPixmap
-from PyQt5.QtWidgets import QGraphicsOpacityEffect
+# ── Paths ─────────────────────────────────────────────────────────────────────
 
-import bootstrap as _bootstrap
-from detect_games import find_steam_root, parse_library_folders, find_installed_games
-import config as cfg
+STEAM_ROOT     = os.path.expanduser("~/.local/share/Steam")
+USERDATA_DIR   = os.path.join(STEAM_ROOT, "userdata")
+COMPAT_ROOT    = os.path.join(STEAM_ROOT, "steamapps", "compatdata")
+STEAM_CONFIG   = os.path.join(STEAM_ROOT, "config", "config.vdf")
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FONTS_DIR    = os.path.join(PROJECT_ROOT, "assets", "fonts")
-HEADERS_DIR  = os.path.join(PROJECT_ROOT, "assets", "images", "headers")
-HEROES_DIR   = os.path.join(PROJECT_ROOT, "assets", "images", "heroes")
-MUSIC_PATH   = os.path.join(PROJECT_ROOT, "assets", "music", "background.mp3")
-LOG_DIR      = os.path.join(PROJECT_ROOT, "logs")
-LOG_PATH     = os.path.join(LOG_DIR, "install.log")
+_HERE          = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT   = os.path.dirname(_HERE)
+ASSETS_DIR     = os.path.join(PROJECT_ROOT, "assets", "controllers")
 
-os.makedirs(HEADERS_DIR, exist_ok=True)
-os.makedirs(LOG_DIR, exist_ok=True)
+MIN_UID = 10000
+
+_BROWSER_UA = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+}
 
 
-def _log_to_file(text: str):
-    """Append a timestamped line to the install log file."""
-    from datetime import datetime
+# ── Shortcut definitions ──────────────────────────────────────────────────────
+
+SHORTCUTS = {
+    "cod4mp": {
+        "name":            "Call of Duty 4: Modern Warfare - Multiplayer",
+        "exe_name":        "iw3mp.exe",
+        "game_appid":      "7940",
+        "template_type":   "other",
+        "icon_url":        "https://cdn2.steamgriddb.com/icon/59b109c700b500daa9ef3a6769bc8c6f.png",
+        "grid_url":        "https://cdn2.steamgriddb.com/thumb/7a22b900577a6edbffd53153cea2999c.jpg",
+        "wide_url":        "https://cdn2.steamgriddb.com/thumb/69a24bf40cd265fb00ae685cdaa040c7.jpg",
+        "hero_url":        "https://cdn2.steamgriddb.com/hero_thumb/95bc8e097e09212ec0160a7bc0b46fd6.jpg",
+        "logo_url":        "https://cdn2.steamgriddb.com/logo_thumb/0440169a43de927753429dd69ca8c735.png",
+        "icon_ext":        "png",
+        "grid_ext":        "jpg",
+        "wide_ext":        "jpg",
+        "hero_ext":        "jpg",
+        "logo_ext":        "png",
+    },
+    "t4mp": {
+        "name":            "Call of Duty: World at War - Multiplayer",
+        "exe_name":        "CoDWaWmp.exe",
+        "game_appid":      "10090",
+        "template_type":   "standard",
+        "icon_url":        "https://cdn2.steamgriddb.com/icon/854d6fae5ee42911677c739ee1734486.png",
+        "grid_url":        "https://cdn2.steamgriddb.com/grid/bb933c55afc6987ae406e48ff58786d6.png",
+        "wide_url":        "https://cdn2.steamgriddb.com/thumb/a6a0076c7e1907a4555b17cc2a6ebc85.jpg",
+        "hero_url":        "https://cdn2.steamgriddb.com/hero_thumb/e369853df766fa44e1ed0ff613f563bd.jpg",
+        "logo_url":        "https://cdn2.steamgriddb.com/logo_thumb/0a32bfcf5c87aa42d2a0367c1f6bb17c.png",
+        "icon_ext":        "png",
+        "grid_ext":        "png",
+        "wide_ext":        "jpg",
+        "hero_ext":        "jpg",
+        "logo_ext":        "png",
+    },
+}
+
+
+# ── Own game shortcut definitions ─────────────────────────────────────────────
+#
+# Used when the user selects "My Own" on the source screen. DeckOps creates
+# non-Steam shortcuts for games installed outside of Steam (CD, GOG, etc.)
+# with canonical names so the appid is deterministic and controllable.
+#
+# Artwork credits (SteamGridDB): see README.md
+
+OWN_SHORTCUTS = {
+    "cod4sp": {
+        "name":           "Call of Duty 4: Modern Warfare - Singleplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/7940/b40c43b0b14b7e124553e0220581a1b9ef8e38bf.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/library_hero_2x.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "cod4mp": {
+        "name":           "Call of Duty 4: Modern Warfare - Multiplayer",
+        "template_type":  "other",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon/59b109c700b500daa9ef3a6769bc8c6f.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/7a22b900577a6edbffd53153cea2999c.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/69a24bf40cd265fb00ae685cdaa040c7.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/95bc8e097e09212ec0160a7bc0b46fd6.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/0440169a43de927753429dd69ca8c735.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "iw4sp": {
+        "name":           "Call of Duty: Modern Warfare 2 (2009) - Singleplayer",
+        "template_type":  "other",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10180/ad502494f1658220f9166c7e17ac90422bf6a479.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_hero_2x.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "iw4mp": {
+        "name":           "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10190/7dd7c2d5bce2413131762d7cbee3f059614ed69d.jpg",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/4f4ecc161b18f07dcf2c8296fad55709.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10190/header.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/1fc214004c9481e4c8073e85323bfd4b.png",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/d79aac075930c83c2f1e369a511148fe.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
+    "iw5sp": {
+        "name":           "Call of Duty: Modern Warfare 3 (2011) - Singleplayer",
+        "template_type":  "other",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42680/c3330a875925437d8216949b6571f6e941ba0679.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_hero_2x.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "iw5mp": {
+        "name":           "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon_thumb/67b48cc32ab9f04633bd50656a4a26fc.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/54726e7600c9c297610f6ed9d7d19ca7.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/ce65f40e3a20ad19fe352c52ce3bcf51.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/51770b1e6f66ba5d45e58a76e6a73dc2.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/4a64d913220fca4c33c140c6952688a8.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "t4sp": {
+        "name":           "Call of Duty: World at War",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10090/2bfb85222af4a01842baa5c3a16a080eb27ac6c3.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/library_hero_2x.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "t4mp": {
+        "name":           "Call of Duty: World at War - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon/854d6fae5ee42911677c739ee1734486.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/bb933c55afc6987ae406e48ff58786d6.png",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/a6a0076c7e1907a4555b17cc2a6ebc85.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/e369853df766fa44e1ed0ff613f563bd.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/0a32bfcf5c87aa42d2a0367c1f6bb17c.png",
+        "icon_ext": "png", "grid_ext": "png", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "t5sp": {
+        "name":           "Call of Duty: Black Ops",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42700/ea744d59efded3feaeebcafed224be9eadde90ac.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_hero.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "t5mp": {
+        "name":           "Call of Duty: Black Ops - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42710/d595fb4b01201cade09e1232f2c41c0866840628.jpg",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/978f9d25644371a4c4b8df8c994cd880.png",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/a6330e9317a50ccf2d79c295dd18046f.png",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/dc82d632c9fcecb0778afbc7924494a6.png",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/dfb84a11f431c62436cfb760e30a34fe.png",
+        "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
+    },
+    "t6sp": {
+        "name":           "Call of Duty: Black Ops II - Singleplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/202970/0a23d78ade8c8d7b4cfa15bf71c9dd535b2998ca.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_hero.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "t6zm": {
+        "name":           "Call of Duty: Black Ops II - Zombies",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon_thumb/743c11a9f3cb65cda4994bbdfb66c398.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/3d9ffc992e48d2aeb4b06f05471f619d.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/b87c4d009662bc436961d8f753a8de78.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/e5e63da79fcd2bebbd7cb8bf1c1d0274.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/79514e888b8f2acacc68738d0cbb803e.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "t6mp": {
+        "name":           "Call of Duty: Black Ops II - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon_thumb/715eb56d3f3b71792e230102d1da496d.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/thumb/7d3695ac5fbf55fb65ea261dd3a8577c.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/thumb/d841ee63e07b28f94920b81d2e4c21c9.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/731c83db8d2ff01bdc000083fd3c3740.png",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/6271faadeedd7626d661856b7a004e27.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
+    "t7": {
+        "name":           "Call of Duty: Black Ops III",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/311210/bd3e3a9516b480164df25d16e49ae4ce4a063cb4.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/library_hero.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/logo.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "iw6sp": {
+        "name":           "Call of Duty: Ghosts - Singleplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/209160/634577eb0ac94ce620c328885961ed6756823474.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/library_hero.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/logo.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "iw6mp": {
+        "name":           "Call of Duty: Ghosts - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/209170/634577eb0ac94ce620c328885961ed6756823474.jpg",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/66820f8c84215725cac52e00587988fd.png",
+        "wide_url":       "https://cdn2.steamgriddb.com/grid/4f3244fc8b8787fe45c90c2a41c28478.png",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero/8c59fd6fbe0e9793ec2b27971221cace.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo/287e03db1d99e0ec2edb90d079e142f3.png",
+        "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "png", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "s1sp": {
+        "name":           "Call of Duty: Advanced Warfare - Singleplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/209650/aab8b39ef63c54af5497b55aa104d5c7ec860fd9.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/library_hero.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/logo.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "s1mp": {
+        "name":           "Call of Duty: Advanced Warfare - Multiplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/209660/aab8b39ef63c54af5497b55aa104d5c7ec860fd9.jpg",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/dfee5996d068e6bed170ff189ca2f193.png",
+        "wide_url":       "https://cdn2.steamgriddb.com/grid/d790c9e6c0b5e02c87b375e782ac01bc.png",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero/7070f9088e456682f0f84f815ebda761.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo/e243aa93e6b6e031797f86d0858f5e40.png",
+        "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "png", "hero_ext": "jpg", "logo_ext": "png",
+    },
+}
+
+
+# ── Steam game artwork ────────────────────────────────────────────────────────
+#
+# Custom artwork applied to Steam-owned MP and ZM titles that share a store
+# page with their SP counterpart. Without this, all modes show the same
+# generic header in the library.
+#
+# SP titles (7940, 10180, 42680, 42700, 202970) are left alone — Steam's
+# default artwork is fine for those.
+
+STEAM_ARTWORK = {
+    "10190": {  # MW2 MP
+        "icon_url":  "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10190/7dd7c2d5bce2413131762d7cbee3f059614ed69d.jpg",
+        "grid_url":  "https://cdn2.steamgriddb.com/thumb/4f4ecc161b18f07dcf2c8296fad55709.jpg",
+        "wide_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/10190/header.jpg",
+        "hero_url":  "https://cdn2.steamgriddb.com/hero_thumb/1fc214004c9481e4c8073e85323bfd4b.png",
+        "logo_url":  "https://cdn2.steamgriddb.com/logo_thumb/d79aac075930c83c2f1e369a511148fe.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
+    "42690": {  # MW3 MP
+        "icon_url":  "https://cdn2.steamgriddb.com/icon_thumb/67b48cc32ab9f04633bd50656a4a26fc.png",
+        "grid_url":  "https://cdn2.steamgriddb.com/thumb/54726e7600c9c297610f6ed9d7d19ca7.jpg",
+        "wide_url":  "https://cdn2.steamgriddb.com/thumb/ce65f40e3a20ad19fe352c52ce3bcf51.jpg",
+        "hero_url":  "https://cdn2.steamgriddb.com/hero_thumb/51770b1e6f66ba5d45e58a76e6a73dc2.jpg",
+        "logo_url":  "https://cdn2.steamgriddb.com/logo_thumb/4a64d913220fca4c33c140c6952688a8.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "42750": {  # MW3 Dedicated Server (same art as MW3 MP)
+        "icon_url":  "https://cdn2.steamgriddb.com/icon_thumb/67b48cc32ab9f04633bd50656a4a26fc.png",
+        "grid_url":  "https://cdn2.steamgriddb.com/thumb/54726e7600c9c297610f6ed9d7d19ca7.jpg",
+        "wide_url":  "https://cdn2.steamgriddb.com/thumb/ce65f40e3a20ad19fe352c52ce3bcf51.jpg",
+        "hero_url":  "https://cdn2.steamgriddb.com/hero_thumb/51770b1e6f66ba5d45e58a76e6a73dc2.jpg",
+        "logo_url":  "https://cdn2.steamgriddb.com/logo_thumb/4a64d913220fca4c33c140c6952688a8.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "42710": {  # BO1 MP
+        "icon_url":  "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42710/d595fb4b01201cade09e1232f2c41c0866840628.jpg",
+        "grid_url":  "https://cdn2.steamgriddb.com/thumb/978f9d25644371a4c4b8df8c994cd880.png",
+        "wide_url":  "https://cdn2.steamgriddb.com/thumb/a6330e9317a50ccf2d79c295dd18046f.png",
+        "hero_url":  "https://cdn2.steamgriddb.com/hero_thumb/dc82d632c9fcecb0778afbc7924494a6.png",
+        "logo_url":  "https://cdn2.steamgriddb.com/logo_thumb/dfb84a11f431c62436cfb760e30a34fe.png",
+        "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
+    },
+    "202990": {  # BO2 MP
+        "icon_url":  "https://cdn2.steamgriddb.com/icon_thumb/715eb56d3f3b71792e230102d1da496d.png",
+        "grid_url":  "https://cdn2.steamgriddb.com/thumb/7d3695ac5fbf55fb65ea261dd3a8577c.jpg",
+        "wide_url":  "https://cdn2.steamgriddb.com/thumb/d841ee63e07b28f94920b81d2e4c21c9.jpg",
+        "hero_url":  "https://cdn2.steamgriddb.com/hero_thumb/731c83db8d2ff01bdc000083fd3c3740.png",
+        "logo_url":  "https://cdn2.steamgriddb.com/logo_thumb/6271faadeedd7626d661856b7a004e27.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
+    "212910": {  # BO2 ZM
+        "icon_url":  "https://cdn2.steamgriddb.com/icon_thumb/743c11a9f3cb65cda4994bbdfb66c398.png",
+        "grid_url":  "https://cdn2.steamgriddb.com/thumb/3d9ffc992e48d2aeb4b06f05471f619d.jpg",
+        "wide_url":  "https://cdn2.steamgriddb.com/thumb/b87c4d009662bc436961d8f753a8de78.jpg",
+        "hero_url":  "https://cdn2.steamgriddb.com/hero_thumb/e5e63da79fcd2bebbd7cb8bf1c1d0274.jpg",
+        "logo_url":  "https://cdn2.steamgriddb.com/logo_thumb/79514e888b8f2acacc68738d0cbb803e.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "209170": {  # Ghosts MP
+        "icon_url":  "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/209170/634577eb0ac94ce620c328885961ed6756823474.jpg",
+        "grid_url":  "https://cdn2.steamgriddb.com/grid/66820f8c84215725cac52e00587988fd.png",
+        "wide_url":  "https://cdn2.steamgriddb.com/grid/4f3244fc8b8787fe45c90c2a41c28478.png",
+        "hero_url":  "https://cdn2.steamgriddb.com/hero/8c59fd6fbe0e9793ec2b27971221cace.jpg",
+        "logo_url":  "https://cdn2.steamgriddb.com/logo/287e03db1d99e0ec2edb90d079e142f3.png",
+        "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "png", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "209660": {  # AW MP
+        "icon_url":  "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/209660/aab8b39ef63c54af5497b55aa104d5c7ec860fd9.jpg",
+        "grid_url":  "https://cdn2.steamgriddb.com/grid/dfee5996d068e6bed170ff189ca2f193.png",
+        "wide_url":  "https://cdn2.steamgriddb.com/grid/d790c9e6c0b5e02c87b375e782ac01bc.png",
+        "hero_url":  "https://cdn2.steamgriddb.com/hero/7070f9088e456682f0f84f815ebda761.jpg",
+        "logo_url":  "https://cdn2.steamgriddb.com/logo/e243aa93e6b6e031797f86d0858f5e40.png",
+        "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "png", "hero_ext": "jpg", "logo_ext": "png",
+    },
+}
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _find_all_steam_uids():
+    """Return all valid Steam user ID folders from userdata/."""
+    if not os.path.isdir(USERDATA_DIR):
+        return []
+    seen, uids = set(), []
+    for entry in os.listdir(USERDATA_DIR):
+        if not entry.isdigit() or int(entry) < MIN_UID:
+            continue
+        real = os.path.realpath(os.path.join(USERDATA_DIR, entry))
+        if real in seen:
+            continue
+        seen.add(real)
+        uids.append(entry)
+    return uids
+
+
+def _get_deck_serial() -> str | None:
+    """Read the Steam Deck serial number from Steam's config.vdf."""
+    if not os.path.exists(STEAM_CONFIG):
+        return None
     try:
-        with open(LOG_PATH, "a", encoding="utf-8") as f:
-            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            f.write(f"[{ts}] {text}\n")
+        with open(STEAM_CONFIG, "r", encoding="utf-8", errors="replace") as f:
+            content = f.read()
+        match = re.search(r'"SteamDeckRegisteredSerialNumber"\s+"([^"]+)"', content)
+        if match:
+            return match.group(1)
     except Exception:
         pass
+    return None
 
-C_BG       = "#141416"
-C_CARD     = "#1E1E26"
-C_IW       = "#6DC62B"
-C_TREY     = "#F47B20"
-C_DIM      = "#888899"
-C_DARK_BTN = "#33333F"
-C_RED_BTN  = "#7A1515"
-C_BLUE_BTN = "#1A5FAA"
 
-_FONT_FAMILY      = "Sans Serif"
-_FONT_FAMILY_DISP = "Sans Serif"
-_FONT_LOADED      = False
+def _calc_shortcut_appid(exe_path: str, name: str) -> int:
+    """
+    Calculate the Steam shortcut appid from exe path and name.
+    This must match Steam's internal algorithm exactly. If the CRC or
+    bitmask changes, shortcuts will not resolve and artwork/controller
+    configs will point to the wrong appid. Do not modify.
+    """
+    key = (exe_path + name).encode("utf-8")
+    crc = binascii.crc32(key) & 0xFFFFFFFF
+    return (crc | 0x80000000) & 0xFFFFFFFF
 
-def _load_font():
-    global _FONT_FAMILY, _FONT_FAMILY_DISP, _FONT_LOADED
-    if _FONT_LOADED:
+
+def _to_signed32(n):
+    """Convert unsigned int32 appid to signed int32 for vdf binary format."""
+    return n if n <= 2147483647 else n - 2**32
+
+
+def _download(url: str, dest: str) -> bool:
+    """Download a file from URL to dest path. Returns True on success."""
+    try:
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        req = urllib.request.Request(url, headers=_BROWSER_UA)
+        with urllib.request.urlopen(req, timeout=30) as r:
+            with open(dest, "wb") as f:
+                f.write(r.read())
+        return True
+    except Exception:
+        return False
+
+
+# ── Binary VDF helpers ────────────────────────────────────────────────────────
+
+def _vdf_string(key: str, val: str) -> bytes:
+    """Encode a string field for binary VDF."""
+    return b'\x01' + key.encode('utf-8') + b'\x00' + val.encode('utf-8') + b'\x00'
+
+
+def _vdf_int32(key: str, val: int) -> bytes:
+    """Encode an int32 field for binary VDF."""
+    return b'\x02' + key.encode('utf-8') + b'\x00' + struct.pack('<i', val)
+
+
+def _make_shortcut_entry(idx: int, fields: dict) -> bytes:
+    """Build a single shortcut entry in binary VDF format."""
+    data = b'\x00' + str(idx).encode('utf-8') + b'\x00'
+    
+    for key, value in fields.items():
+        if key == "tags":
+            # Tags is a sub-dict
+            data += b'\x00' + b'tags' + b'\x00'
+            for tk, tv in value.items():
+                data += _vdf_string(tk, tv)
+            data += b'\x08'
+        elif isinstance(value, str):
+            data += _vdf_string(key, value)
+        elif isinstance(value, int):
+            data += _vdf_int32(key, value)
+    
+    data += b'\x08'
+    return data
+
+
+def _read_existing_shortcuts(path: str) -> list:
+    """Return list of existing shortcut names from shortcuts.vdf."""
+    if not os.path.exists(path):
+        return []
+    
+    try:
+        with open(path, 'rb') as f:
+            data = f.read()
+    except Exception:
+        return []
+    
+    # Extract AppName values
+    existing = []
+    for match in re.finditer(b'\x01[Aa]pp[Nn]ame\x00([^\x00]+)\x00', data):
+        existing.append(match.group(1).decode('utf-8', errors='replace'))
+    
+    return existing
+
+
+def _read_shortcuts_raw(path: str) -> bytes:
+    """Read the raw shortcuts.vdf content, stripping header/footer."""
+    if not os.path.exists(path):
+        return b''
+    
+    try:
+        with open(path, 'rb') as f:
+            data = f.read()
+    except Exception:
+        return b''
+    
+    # Strip header (b'\x00shortcuts\x00') and footer (b'\x08\x08')
+    header = b'\x00shortcuts\x00'
+    if data.startswith(header):
+        data = data[len(header):]
+    if data.endswith(b'\x08\x08'):
+        data = data[:-2]
+    elif data.endswith(b'\x08'):
+        data = data[:-1]
+    
+    return data
+
+
+def _get_next_index(raw_data: bytes) -> int:
+    """
+    Find the next available shortcut index from raw shortcut entry data.
+
+    Shortcut entries start with the byte sequence: 0x00 <index_str> 0x00
+    immediately followed by 0x02 (the appid int field marker). This two-byte
+    lookahead distinguishes real entry headers from the many other 0x00...0x00
+    numeric sequences present in binary VDF data (string lengths, field values, etc.).
+    """
+    if not raw_data:
+        return 0
+
+    indices = []
+    i = 0
+    while i < len(raw_data) - 2:
+        if raw_data[i] == 0x00:
+            end = raw_data.find(b'\x00', i + 1)
+            if end != -1 and end > i + 1:
+                # Only treat as an entry index if immediately followed by
+                # 0x02 (int32 field type byte for the 'appid' field header)
+                if end + 1 < len(raw_data) and raw_data[end + 1] == 0x02:
+                    try:
+                        idx_str = raw_data[i + 1:end].decode('utf-8')
+                        if idx_str.isdigit():
+                            indices.append(int(idx_str))
+                    except (UnicodeDecodeError, ValueError):
+                        pass
+                i = end + 1
+            else:
+                i += 1
+        else:
+            i += 1
+
+    return max(indices, default=-1) + 1
+
+
+def _backup_file(path: str):
+    """Write a .bak copy before modifying a Steam config file."""
+    if os.path.exists(path):
+        try:
+            shutil.copy2(path, path + ".bak")
+        except OSError:
+            pass
+
+
+def _write_shortcuts_vdf(path: str, existing_raw: bytes, new_entries: list):
+    """Write shortcuts.vdf with existing entries preserved and new ones appended."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _backup_file(path)
+    
+    data = b'\x00shortcuts\x00'
+    
+    if existing_raw:
+        data += existing_raw
+    
+    for entry_bytes in new_entries:
+        data += entry_bytes
+    
+    data += b'\x08\x08'
+    
+    with open(path, 'wb') as f:
+        f.write(data)
+
+
+# ── Artwork download ──────────────────────────────────────────────────────────
+
+def _download_artwork(grid_dir: str, appid: int, shortcut_def: dict, prog,
+                      force: bool = False):
+    """Download all artwork for a shortcut to the grid directory (concurrent).
+
+    force — if True, re-download even if the file already exists on disk.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    appid_str = str(appid)
+    os.makedirs(grid_dir, exist_ok=True)
+    
+    artwork_map = [
+        ("icon_url",  f"{appid_str}_icon.{shortcut_def['icon_ext']}",  "icon"),
+        ("grid_url",  f"{appid_str}p.{shortcut_def['grid_ext']}",      "grid"),
+        ("wide_url",  f"{appid_str}.{shortcut_def['wide_ext']}",       "wide"),
+        ("hero_url",  f"{appid_str}_hero.{shortcut_def['hero_ext']}",  "hero"),
+        ("logo_url",  f"{appid_str}_logo.{shortcut_def['logo_ext']}",  "logo"),
+    ]
+
+    # Collect items that actually need downloading
+    to_download = []
+    for url_key, filename, label in artwork_map:
+        url = shortcut_def.get(url_key)
+        if not url:
+            continue
+        dest = os.path.join(grid_dir, filename)
+        if not force and os.path.exists(dest):
+            prog(f"    ✓ {label} (cached)")
+            continue
+        to_download.append((url, dest, label))
+
+    if not to_download:
         return
-    russo = os.path.join(FONTS_DIR, "RussoOne-Regular.ttf")
-    if not os.path.exists(russo):
-        raise FileNotFoundError(
-            f"Required font not found: {russo}\n"
-            f"Ensure assets/fonts/RussoOne-Regular.ttf is present in the repo."
-        )
-    fid = QFontDatabase.addApplicationFont(russo)
-    fams = QFontDatabase.applicationFontFamilies(fid)
-    if fams:
-        _FONT_FAMILY      = fams[0]
-        _FONT_FAMILY_DISP = fams[0]
-    _FONT_LOADED = True
 
-def font(size=13, bold=False, weight=None, display=False):
-    family = _FONT_FAMILY_DISP if display else _FONT_FAMILY
-    f = QFont(family, size)
-    if weight is not None:
-        f.setWeight(weight)
+    # Download up to 5 images concurrently
+    results_lock = threading.Lock()
+
+    def _dl(url, dest, label):
+        ok = _download(url, dest)
+        with results_lock:
+            if ok:
+                prog(f"    ✓ {label}")
+            else:
+                prog(f"    ⚠ {label} failed")
+
+    with ThreadPoolExecutor(max_workers=min(5, len(to_download))) as ex:
+        futs = [ex.submit(_dl, url, dest, label) for url, dest, label in to_download]
+        for fut in as_completed(futs):
+            # Exceptions are logged inside _dl, but catch anything unexpected
+            try:
+                fut.result()
+            except Exception:
+                pass
+
+
+# ── Controller template assignment ────────────────────────────────────────────
+
+def _get_template_filename(template_type: str, gyro_mode: str) -> str:
+    """Return the controller template filename based on type and gyro mode."""
+    if template_type == "other":
+        return f"controller_neptune_deckops_other_{gyro_mode}.vdf"
     else:
-        f.setBold(bold)
-    return f
+        return f"controller_neptune_deckops_{gyro_mode}.vdf"
 
-# ── Game card definitions ─────────────────────────────────────────────────────
-#
-# Each entry is one card in the UI. Always 6 cards, but what each card shows
-# depends on the Deck model. OLED users get the full key list. LCD users get
-# a reduced set via the lcd_* overrides:
-#
-#   lcd_keys   — which game keys this card includes on LCD (empty = card hidden)
-#   lcd_client — client badge label on LCD (e.g. "steam" instead of "plutonium")
-#   lcd_appid  — appid used for the header image and Steam store link on LCD
-#
-# If an lcd_* field is missing, the card uses the default (OLED) value.
-# The _active_keys(), _active_client(), _active_appid() helpers below
-# resolve the correct value based on the user's saved deck_model config.
 
-ALL_GAMES = [
-    {"base":"Call of Duty 4: Modern Warfare","keys":["cod4mp","cod4sp"],"appid":7940,"dev":"iw","client":"cod4x + iw3sp",
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Modern Warfare 2","keys":["iw4mp","iw4sp"],"appid":10190,"dev":"iw","client":"iw4x",
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Modern Warfare 3","keys":["iw5mp","iw5sp","iw5mp_ds"],"appid":42690,"dev":"iw","client":"plutonium",
-     "lcd_keys":["iw5mp","iw5sp","iw5mp_ds"],"lcd_client":"plutonium + steam","lcd_appid":42680,
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: World at War","keys":["t4mp","t4sp"],"appid":10090,"dev":"trey","client":"plutonium",
-     "lcd_keys":["t4mp","t4sp"],"lcd_client":"plutonium",
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Black Ops","keys":["t5mp","t5sp"],"appid":42700,"dev":"trey","client":"plutonium",
-     "lcd_keys":["t5mp","t5sp"],"lcd_client":"plutonium",
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Black Ops II","keys":["t6mp","t6sp","t6zm"],"appid":202990,"dev":"trey","client":"plutonium",
-     "lcd_keys":["t6mp","t6sp","t6zm"],"lcd_client":"plutonium + steam","lcd_appid":202970,
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Black Ops III","keys":["t7"],"appid":311210,"dev":"trey","client":"cleanops",
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Ghosts","keys":["iw6mp","iw6sp"],"appid":209160,"dev":"iw","client":"alterware",
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Advanced Warfare","keys":["s1mp","s1sp"],"appid":209650,"dev":"iw","client":"alterware",
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"DeckOps: Plutonium Offline","keys":[],"appid":None,"dev":"trey","client":"lan",
-     "launch_note":"Re-adds the Plutonium offline launcher shortcut."},
+def _assign_controller_config(uid: str, appid: int, shortcut_def: dict,
+                               gyro_mode: str, prog):
+    """
+    Assign controller template for a non-Steam shortcut.
+
+    We write to both configset_controller_neptune.vdf and the Deck's
+    serial-specific configset. SteamOS in Game Mode reads from the serial
+    file, so without it the profile only works in Desktop Mode.
+    This mirrors what controller_profiles.py does for regular Steam games.
+    """
+    template_type = shortcut_def["template_type"]
+    template_filename = _get_template_filename(template_type, gyro_mode)
+    
+    src_template = os.path.join(ASSETS_DIR, template_filename)
+    if not os.path.exists(src_template):
+        prog(f"    ⚠ Template not found: {template_filename}")
+        return
+    
+    appid_str = str(appid)
+    
+    # Path: Steam Controller Configs/<uid>/config/<appid>/
+    steam_cfg_root = os.path.join(
+        STEAM_ROOT, "steamapps", "common",
+        "Steam Controller Configs", uid, "config"
+    )
+    cfg_dir = os.path.join(steam_cfg_root, appid_str)
+    os.makedirs(cfg_dir, exist_ok=True)
+    shutil.copy2(src_template, os.path.join(cfg_dir, "controller_neptune.vdf"))
+    
+    # Patch configset_controller_neptune.vdf
+    configset_path = os.path.join(steam_cfg_root, "configset_controller_neptune.vdf")
+    _patch_configset(configset_path, appid_str, template_filename)
+    
+    # Patch configset_{serial}.vdf — SteamOS on Deck reads from this file
+    serial = _get_deck_serial()
+    if serial:
+        configset_serial = os.path.join(steam_cfg_root, f"configset_{serial}.vdf")
+        _patch_configset(configset_serial, appid_str, template_filename)
+    
+    prog(f"    ✓ Controller: {template_filename}")
+
+
+def _patch_configset(configset_path: str, key: str, template_name: str):
+    """
+    Patch configset_controller_neptune.vdf to set our template as default.
+    Duplicated from controller_profiles.py because shortcut.py runs
+    standalone and should not import from the controller module.
+    """
+    entry = f'\t"{key}"\n\t{{\n\t\t"template"\t\t"{template_name}"\n\t}}\n'
+
+    if not os.path.exists(configset_path):
+        os.makedirs(os.path.dirname(configset_path), exist_ok=True)
+        with open(configset_path, "w", encoding="utf-8") as f:
+            f.write('"controller_config"\n{\n' + entry + '}\n')
+        return
+
+    with open(configset_path, "r", encoding="utf-8", errors="replace") as f:
+        content = f.read()
+
+    pattern = rf'\t"{re.escape(key)}"\n\t\{{[^}}]*\}}\n?'
+    if re.search(pattern, content, re.MULTILINE | re.DOTALL):
+        content = re.sub(pattern, entry, content, flags=re.MULTILINE | re.DOTALL)
+    else:
+        content = content.rstrip()
+        if content.endswith("}"):
+            content = content[:-1].rstrip() + "\n" + entry + "}\n"
+
+    with open(configset_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def _clear_compat_tool(appid_str: str):
+    """
+    Remove any CompatToolMapping entry for the given appid from config.vdf.
+
+    Used for shortcuts that must NOT have a Steam compat tool — e.g. HGL
+    shortcuts where Steam's compat tool sandboxes flatpak away from the host.
+    """
+    steam_config = os.path.join(STEAM_ROOT, "config", "config.vdf")
+    if not os.path.exists(steam_config):
+        return
+    with open(steam_config, "r", encoding="utf-8") as f:
+        data = f.read()
+    pattern = rf'\t+"{re.escape(appid_str)}"\n\t+\{{[^}}]*\}}\n?'
+    if re.search(pattern, data, re.MULTILINE | re.DOTALL):
+        data = re.sub(pattern, "", data, flags=re.MULTILINE | re.DOTALL)
+        _backup_file(steam_config)
+        with open(steam_config, "w", encoding="utf-8") as f:
+            f.write(data)
+
+
+# ── Shortcut appid lookup ────────────────────────────────────────────────────
+
+def get_shortcut_appid(name: str) -> int | None:
+    """
+    Look up the actual appid of a non-Steam shortcut by its display name.
+
+    Reads shortcuts.vdf for all Steam user accounts and returns the unsigned
+    appid if a matching entry is found. Returns None if the shortcut doesn't
+    exist yet.
+
+    This is more reliable than recalculating the CRC because the appid in
+    shortcuts.vdf is the one Steam actually uses for the prefix, artwork,
+    and controller config — even if the exe path has changed since creation.
+    """
+    uids = _find_all_steam_uids()
+    name_bytes = name.encode("utf-8")
+
+    for uid in uids:
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        if not os.path.exists(shortcuts_path):
+            continue
+
+        try:
+            with open(shortcuts_path, "rb") as f:
+                data = f.read()
+        except Exception:
+            continue
+
+        idx = data.find(name_bytes)
+        if idx == -1:
+            continue
+
+        # The appid int32 field is before the AppName field.
+        # Search backward from the name for the appid marker.
+        # Binary VDF: \x02appid\x00<4 bytes signed int32>
+        search_start = max(0, idx - 80)
+        chunk = data[search_start:idx]
+        marker = b'\x02appid\x00'
+        marker_pos = chunk.rfind(marker)
+        if marker_pos == -1:
+            continue
+
+        appid_offset = marker_pos + len(marker)
+        if appid_offset + 4 > len(chunk):
+            continue
+
+        signed = struct.unpack_from("<i", chunk, appid_offset)[0]
+        unsigned = signed if signed >= 0 else signed + 2**32
+        return unsigned
+
+    return None
+
+
+# ── Entry-stripping helper (rewrite-on-collision support) ────────────────────
+#
+# When a shortcut with a matching AppName already exists, we strip the stale
+# entry from the raw VDF body and re-index the remaining entries so the new
+# write can append a fresh entry with correct Exe / LaunchOptions / StartDir.
+#
+# Prior behavior (before this was added): name collisions caused a no-op and
+# left whatever LaunchOptions the stale entry had. That meant reinstalls
+# could not correct a broken LaunchOptions field. For LCD Own installs in
+# particular this broke every reinstall after Steam touched shortcuts.vdf.
+#
+# This helper uses the same \x00\d+\x00 entry-boundary regex that
+# remove_shortcut and cleanup_orphan_shortcuts already use for consistency.
+
+def _strip_entries_by_name(raw_body: bytes, names_to_strip: set) -> tuple:
+    """
+    Remove entries from raw_body whose AppName matches any name in
+    names_to_strip. raw_body is the shortcut body with header/footer
+    already stripped (as returned by _read_shortcuts_raw).
+
+    Returns (new_body, stripped_names) where stripped_names is a set of
+    names that were actually found and removed. Re-indexes remaining
+    entries to contiguous numeric indices starting at 0.
+
+    If no matching entries are found, returns (raw_body, set()) unchanged.
+    """
+    if not raw_body or not names_to_strip:
+        return raw_body, set()
+
+    # Find entry boundaries. Same pattern as remove_shortcut/cleanup_orphan.
+    entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', raw_body)]
+    if not entry_starts:
+        return raw_body, set()
+
+    entries = []
+    for i, start in enumerate(entry_starts):
+        end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(raw_body)
+        entries.append(raw_body[start:end])
+
+    kept = []
+    stripped = set()
+    for entry in entries:
+        # Check if this entry's AppName (or appname) matches anything we
+        # want to strip. Match the full "\x01AppName\x00NAME\x00" sequence
+        # so partial substring matches do not trigger a false strip.
+        matched_name = None
+        for name in names_to_strip:
+            name_bytes = name.encode("utf-8")
+            if (b'\x01AppName\x00' + name_bytes + b'\x00' in entry or
+                b'\x01appname\x00' + name_bytes + b'\x00' in entry):
+                matched_name = name
+                break
+        if matched_name is not None:
+            stripped.add(matched_name)
+            continue
+        kept.append(entry)
+
+    if not stripped:
+        return raw_body, set()
+
+    # Re-index remaining entries so Steam sees contiguous indices starting at 0
+    reindexed = []
+    for new_idx, entry in enumerate(kept):
+        entry = re.sub(
+            rb'^\x00\d+\x00',
+            f'\x00{new_idx}\x00'.encode(),
+            entry,
+        )
+        reindexed.append(entry)
+
+    return b''.join(reindexed), stripped
+
+
+# ── Generic shortcut API ─────────────────────────────────────────────────────
+#
+# add_shortcut / remove_shortcut are the single-shortcut building blocks.
+# Higher-level functions like create_shortcuts and create_own_shortcuts batch
+# multiple shortcuts per VDF write. These generic functions write one shortcut
+# at a time, which is appropriate for callers that create shortcuts one by one
+# (e.g. heroic.py's per-game HGL shortcut creation).
+
+def add_shortcut(
+    name: str,
+    exe_path: str,
+    start_dir: str,
+    launch_options: str,
+    artwork_def: dict,
+    template_type: str,
+    gyro_mode: str,
+    on_progress=None,
+    compat_tool: str = None,
+    clear_compat_tool: bool = False,
+    force_artwork: bool = False,
+    appid_exe_path: str = None,
+) -> int:
+    """
+    Create a single non-Steam shortcut across all Steam UIDs.
+
+    Returns the unsigned shortcut appid.
+
+    name             — display name (AppName in shortcuts.vdf)
+    exe_path         — quoted exe path for the shortcut entry
+    start_dir        — quoted StartDir for the shortcut entry
+    launch_options   — LaunchOptions string
+    artwork_def      — dict with icon_url, grid_url, wide_url, hero_url,
+                        logo_url and corresponding *_ext keys
+    template_type    — "standard" or "other" for controller config
+    gyro_mode        — "hold", "ads", or "toggle"
+    on_progress      — optional callback(msg: str)
+    compat_tool      — GE-Proton version to set, or None to skip
+    clear_compat_tool— if True, remove any existing compat tool entry
+                        (needed for HGL shortcuts where Steam's compat tool
+                        sandboxes flatpak away from the host)
+    force_artwork    — re-download even if cached
+    appid_exe_path   — if provided, use this instead of exe_path for the
+                        appid CRC calculation (for stable appids when the
+                        actual exe differs from the original shortcut exe)
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    appid_key = appid_exe_path if appid_exe_path else exe_path
+    shortcut_appid = _calc_shortcut_appid(appid_key, name)
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        prog("  No Steam user accounts found — shortcut skipped.")
+        return shortcut_appid
+
+    for uid in uids:
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+
+        existing_names = _read_existing_shortcuts(shortcuts_path)
+        existing_raw = _read_shortcuts_raw(shortcuts_path)
+
+        # If a shortcut with this name already exists, strip its entry from
+        # the raw body so we can write a fresh one with current Exe /
+        # StartDir / LaunchOptions. Prior behavior was a no-op on name
+        # match, which left stale LaunchOptions in place across reinstalls.
+        replaced = False
+        if name in existing_names:
+            existing_raw, stripped = _strip_entries_by_name(
+                existing_raw, {name}
+            )
+            if stripped:
+                replaced = True
+
+        next_idx = _get_next_index(existing_raw)
+
+        icon_path = os.path.join(
+            grid_dir,
+            f"{shortcut_appid}_icon.{artwork_def.get('icon_ext', 'png')}",
+        )
+
+        entry = {
+            "appid":               _to_signed32(shortcut_appid),
+            "AppName":             name,
+            "Exe":                 exe_path,
+            "StartDir":            start_dir,
+            "icon":                icon_path,
+            "ShortcutPath":        "",
+            "LaunchOptions":       launch_options,
+            "IsHidden":            0,
+            "AllowDesktopConfig":  1,
+            "AllowOverlay":        1,
+            "OpenVR":              0,
+            "Devkit":              0,
+            "DevkitGameID":        "",
+            "DevkitOverrideAppID": 0,
+            "LastPlayTime":        0,
+            "FlatpakAppID":        "",
+            "tags":                {"0": "DeckOps"},
+        }
+
+        entry_bytes = _make_shortcut_entry(next_idx, entry)
+        try:
+            _write_shortcuts_vdf(shortcuts_path, existing_raw, [entry_bytes])
+            if replaced:
+                prog(f"    ✓ Shortcut replaced: {name}")
+            else:
+                prog(f"    ✓ Shortcut created: {name}")
+        except Exception as e:
+            prog(f"    ⚠ Failed to write shortcut: {e}")
+
+        # Artwork
+        _download_artwork(grid_dir, shortcut_appid, artwork_def, prog,
+                          force=force_artwork)
+
+        # Controller config
+        _assign_controller_config(uid, shortcut_appid,
+                                  {"template_type": template_type},
+                                  gyro_mode, prog)
+
+    # Compat tool handling (config.vdf is global, outside UID loop)
+    if clear_compat_tool:
+        try:
+            _clear_compat_tool(str(shortcut_appid))
+            prog(f"    Cleared compat tool for shortcut")
+        except Exception as ex:
+            prog(f"    Could not clear compat tool: {ex}")
+    elif compat_tool:
+        try:
+            from wrapper import set_compat_tool as _set_compat
+            _set_compat([str(shortcut_appid)], compat_tool)
+            prog(f"    ✓ GE-Proton {compat_tool} set")
+        except Exception as ex:
+            prog(f"    ⚠ Could not set compat tool: {ex}")
+
+    prog(f"  Shortcut appid: {shortcut_appid}")
+    return shortcut_appid
+
+
+def remove_shortcut(name: str, exe_path: str, artwork_def: dict = None,
+                    on_progress=None):
+    """
+    Remove a non-Steam shortcut by name from shortcuts.vdf for all UIDs.
+    Also removes associated artwork from the grid directory.
+
+    name        — AppName to match in shortcuts.vdf
+    exe_path    — quoted exe path used for appid CRC (needed for artwork
+                   file cleanup — artwork filenames are keyed on appid)
+    artwork_def — dict with *_ext keys for artwork file removal;
+                   if None, artwork files are left in place
+    on_progress — optional callback(msg: str)
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    shortcut_appid = _calc_shortcut_appid(exe_path, name)
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        return
+
+    for uid in uids:
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+
+        if not os.path.exists(shortcuts_path):
+            continue
+
+        try:
+            with open(shortcuts_path, "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
+
+        header = b'\x00shortcuts\x00'
+        footer = b'\x08\x08'
+
+        body = data
+        if body.startswith(header):
+            body = body[len(header):]
+        if body.endswith(footer):
+            body = body[:-2]
+        elif body.endswith(b'\x08'):
+            body = body[:-1]
+
+        entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', body)]
+        if not entry_starts:
+            continue
+
+        entries = []
+        for i, start in enumerate(entry_starts):
+            end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(body)
+            entries.append(body[start:end])
+
+        title_bytes = name.encode("utf-8")
+        filtered = [
+            e for e in entries
+            if b'\x01AppName\x00' + title_bytes + b'\x00' not in e
+            and b'\x01appname\x00' + title_bytes + b'\x00' not in e
+        ]
+
+        if len(filtered) < len(entries):
+            reindexed = []
+            for new_idx, entry in enumerate(filtered):
+                entry = re.sub(
+                    rb'^\x00\d+\x00',
+                    f'\x00{new_idx}\x00'.encode(),
+                    entry,
+                )
+                reindexed.append(entry)
+            new_data = header + b''.join(reindexed) + footer
+            try:
+                _backup_file(shortcuts_path)
+                with open(shortcuts_path, "wb") as f:
+                    f.write(new_data)
+                prog(f"  Removed shortcut '{name}' for uid {uid}")
+            except OSError as ex:
+                prog(f"  Could not write shortcuts.vdf: {ex}")
+
+        # Remove artwork
+        if artwork_def:
+            artwork_suffixes = [
+                f"_icon.{artwork_def.get('icon_ext', 'png')}",
+                f"p.{artwork_def.get('grid_ext', 'jpg')}",
+                f".{artwork_def.get('wide_ext', 'jpg')}",
+                f"_hero.{artwork_def.get('hero_ext', 'jpg')}",
+                f"_logo.{artwork_def.get('logo_ext', 'png')}",
+            ]
+            for suffix in artwork_suffixes:
+                art_path = os.path.join(grid_dir, f"{shortcut_appid}{suffix}")
+                if os.path.exists(art_path):
+                    try:
+                        os.remove(art_path)
+                    except OSError:
+                        pass
+
+
+# ── Orphan shortcut cleanup ──────────────────────────────────────────────────
+#
+# When DeckOps changes the exe_path in a shortcut pattern, the CRC-based
+# appid changes. The old shortcut entry, artwork, and shader cache become
+# orphaned. This cleanup removes known orphan patterns automatically.
+#
+# To add a new orphan pattern: append (old_exe_path, title) to the list.
+# The exe_path must include quotes if the original shortcut entry did.
+
+# Known orphan patterns: old "flatpak" exe_path (before we switched to
+# "/usr/bin/flatpak"). These are the 7 LCD Plutonium game titles.
+_ORPHAN_PATTERNS = [
+    ('"flatpak"', "Call of Duty: World at War"),
+    ('"flatpak"', "Call of Duty: World at War - Multiplayer"),
+    ('"flatpak"', "Call of Duty: Black Ops"),
+    ('"flatpak"', "Call of Duty: Black Ops - Multiplayer"),
+    ('"flatpak"', "Call of Duty: Black Ops II - Multiplayer"),
+    ('"flatpak"', "Call of Duty: Black Ops II - Zombies"),
+    ('"flatpak"', "Call of Duty: Modern Warfare 3 (2011) - Multiplayer"),
 ]
 
-def _active_keys(gd):
-    """Return the keys to show for this card based on the user's Deck model."""
-    if cfg.is_oled():
-        return gd["keys"]
-    return gd.get("lcd_keys", gd["keys"])
 
-def _active_client(gd):
-    """Return the client label for this card based on the user's Deck model."""
-    if cfg.is_oled():
-        return gd["client"]
-    return gd.get("lcd_client", gd["client"])
+def cleanup_orphan_shortcuts(on_progress=None):
+    """
+    Remove orphaned DeckOps shortcuts left by older builds that used a
+    different exe_path pattern. Also cleans associated artwork and shader
+    caches. Safe to call multiple times -- no-ops if no orphans exist.
 
-def _active_appid(gd):
-    """Return the display appid for this card based on the user's Deck model."""
-    if cfg.is_oled():
-        return gd["appid"]
-    return gd.get("lcd_appid", gd["appid"])
+    Called automatically at the top of create_own_shortcuts() before new
+    entries are written.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
 
-KEY_CLIENT = {
-    "cod4mp": "cod4x",
-    "cod4sp": "iw3sp",
-    "iw4mp":  "iw4x",
-    "iw4sp":  "steam",
-    "iw5mp":    "plutonium",
-    "iw5mp_ds": "plutonium",
-    "iw5sp":  "steam",
-    "t4sp":   "plutonium",
-    "t4mp":   "plutonium",
-    "t5sp":   "plutonium",
-    "t5mp":   "plutonium",
-    "t6zm":   "plutonium",
-    "t6mp":   "plutonium",
-    "t6sp":   "steam",
-    "t7":     "cleanops",
-    "iw6mp": "alterware",
-    "iw6sp": "alterware",
-    "s1mp":  "alterware",
-    "s1sp":  "alterware",
-}
+    # Build set of orphan appids from known stale (exe_path, name) pairs
+    orphan_appids = set()
+    orphan_names = {}  # appid -> name, for logging
+    for exe_path, name in _ORPHAN_PATTERNS:
+        appid = _calc_shortcut_appid(exe_path, name)
+        orphan_appids.add(appid)
+        orphan_names[appid] = name
 
-KEY_EXES = {
-    "cod4mp":"iw3mp.exe","cod4sp":"iw3sp.exe",
-    "iw4mp":"iw4mp.exe","iw4sp":"iw4sp.exe",
-    "iw5mp":"iw5mp.exe","iw5mp_ds":"iw5mp_server.exe","iw5sp":"iw5sp.exe",
-    "t4sp":"CoDWaW.exe","t4mp":"CoDWaWmp.exe",
-    "t5sp":"BlackOps.exe","t5mp":"BlackOpsMP.exe",
-    "t6zm":"t6zm.exe","t6mp":"t6mp.exe","t6sp":"t6sp.exe",
-    "t7":"BlackOps3.exe",
-    "iw6mp":"iw6mp64_ship.exe","iw6sp":"iw6sp64_ship.exe",
-    "s1mp":"s1_mp64_ship.exe","s1sp":"s1_sp64_ship.exe",
-}
-
-# Label shown beneath each per-key checkbox in SetupScreen.
-KEY_MODE_LABEL = {
-    "cod4mp": "MP",    "cod4sp": "SP",
-    "iw4mp":  "MP",    "iw4sp":  "SP",
-    "iw5mp":  "MP",    "iw5mp_ds": "DS",    "iw5sp":  "SP",
-    "t4sp":   "S/Z",   "t4mp":   "MP",
-    "t5sp":   "S/Z",   "t5mp":   "MP",
-    "t6sp":   "SP",    "t6zm":   "ZM",    "t6mp":   "MP",
-    "t7":     "All",
-    "iw6mp":  "MP",    "iw6sp":  "SP",
-    "s1mp":   "MP",    "s1sp":   "SP",
-}
-
-
-SP_IMAGE_URLS = {
-    7940:   "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/library_600x900_2x.jpg",
-    10180:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
-    10190:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
-    42680:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",
-    42690:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",
-    10090:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/library_600x900_2x.jpg",
-    42700:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_600x900_2x.jpg",
-    202970: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
-    202990: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
-    311210: "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/library_600x900_2x.jpg",
-    209160: "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/library_600x900_2x.jpg",
-    209650: "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/library_600x900_2x.jpg",
-}
-
-IMG_RATIO = 1.5
-BTN_RATIO = 0.20
-CARD_COLS  = 5
-CARD_MAX_W = 187
-
-MUSIC_URL = "https://archive.org/download/adrenaline-klickaud/Adrenaline_KLICKAUD.mp3"
-
-_music_volume  = cfg.get_music_volume()
-_music_enabled = cfg.get_music_enabled()
-
-def _pygame_available():
-    try:
-        import pygame
-        return True
-    except ImportError:
-        return False
-
-def _kill_audio():
-    if not _pygame_available():
+    if not orphan_appids:
         return
-    try:
-        import pygame
-        if pygame.mixer.get_init():
-            pygame.mixer.music.stop()
-            pygame.mixer.quit()
-    except Exception:
-        pass
 
-def _start_audio():
-    if not _music_enabled or not _pygame_available():
+    uids = _find_all_steam_uids()
+    if not uids:
         return
-    try:
-        import pygame
-        if not pygame.mixer.get_init():
-            pygame.mixer.init()
-        if not pygame.mixer.music.get_busy():
-            if os.path.exists(MUSIC_PATH):
-                pygame.mixer.music.load(MUSIC_PATH)
-            else:
-                return
-            pygame.mixer.music.set_volume(_music_volume)
-            pygame.mixer.music.play(-1)
-    except Exception:
-        pass
 
-def _set_audio_volume(vol: float):
-    global _music_volume
-    _music_volume = vol
-    cfg.set_music_volume(vol)
-    if not _pygame_available():
-        return
-    try:
-        import pygame
-        if pygame.mixer.get_init():
-            pygame.mixer.music.set_volume(vol)
-    except Exception:
-        pass
+    total_removed = 0
 
-def _set_audio_enabled(enabled: bool):
-    global _music_enabled
-    _music_enabled = enabled
-    cfg.set_music_enabled(enabled)
+    for uid in uids:
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
 
-def _header_path(appid: int) -> str:
-    return os.path.join(HEADERS_DIR, f"{appid}_grid.jpg")
+        if not os.path.exists(shortcuts_path):
+            continue
 
-def _btn(text, color, size=13, h=44):
-    b = QPushButton(text); b.setFont(font(size, True)); b.setFixedHeight(h)
-    b.setStyleSheet(
-        f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:8px;padding:0 18px;}}"
-        f"QPushButton:hover{{background:{color}CC;}}"
-        f"QPushButton:pressed{{background:{color}99;}}"
-        f"QPushButton:disabled{{background:#333344;color:#666677;}}"
-    )
-    return b
-
-def _lbl(text, size=14, color="#FFF", bold=False, align=Qt.AlignCenter, wrap=True):
-    w = QLabel(text); w.setFont(font(size,bold)); w.setAlignment(align)
-    w.setWordWrap(wrap); w.setStyleSheet(f"color:{color};background:transparent;")
-    return w
-
-def _hdiv():
-    d = QFrame(); d.setFrameShape(QFrame.HLine); d.setFixedHeight(1)
-    d.setStyleSheet("background:#252530;border:none;"); return d
-
-def _ask_iw4x_dlc(parent, selected) -> bool:
-    """
-    Show a dialog asking whether to install free IW4x DLC maps.
-    Returns True if the user wants DLC, False otherwise.
-    Only shows the dialog if iw4x is in the selected games.
-    """
-    has_iw4x = any(KEY_CLIENT.get(k) == "iw4x" for k, _, _ in selected)
-    if not has_iw4x:
-        return False
-    reply = QMessageBox.question(
-        parent,
-        "Free DLC Maps",
-        "Install free DLC maps for Modern Warfare 2?\n\n"
-        "Includes CoD4, MW3, Black Ops, and CoD Online maps.\n"
-        "Recommended for joining most servers.\n\n"
-        "Download size: ~3 GB",
-        QMessageBox.Yes | QMessageBox.No,
-        QMessageBox.Yes,
-    )
-    return reply == QMessageBox.Yes
-
-def _title_block(lay, main_size=56):
-    t = QLabel("DECKOPS")
-    t.setFont(font(main_size, display=True))
-    t.setAlignment(Qt.AlignCenter)
-    t.setStyleSheet("color:#FFFFFF; background:transparent;")
-    lay.addWidget(t)
-    sub = QLabel()
-    sub.setTextFormat(Qt.RichText)
-    sub.setAlignment(Qt.AlignCenter)
-    sub.setStyleSheet(f"color:{C_TREY}; background:transparent;")
-    sub.setText(
-        f'<span style="font-family:\'{_FONT_FAMILY_DISP}\'; font-size:28pt; color:{C_TREY};">'
-        f'COMBAT'
-        f'<span style="font-size:16pt;">on</span>'
-        f'DECK'
-        f'</span>'
-    )
-    lay.addWidget(sub)
-    # Nightly build badge — shown on every screen so users always know
-    # they are running the experimental build and not the stable release.
-    nightly = QLabel("NIGHTLY BUILD")
-    nightly.setFont(font(10, bold=True))
-    nightly.setAlignment(Qt.AlignCenter)
-    nightly.setStyleSheet(
-        "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
-        "border-radius:4px;padding:2px 10px;"
-    )
-    nw = QHBoxLayout(); nw.addStretch(); nw.addWidget(nightly); nw.addStretch()
-    lay.addLayout(nw)
-
-class _Sigs(QObject):
-    progress    = pyqtSignal(int, str)
-    log         = pyqtSignal(str)
-    done        = pyqtSignal(bool)
-    plut_wait   = pyqtSignal()
-    plut_go     = pyqtSignal()
-    pulse_start = pyqtSignal(str)
-    pulse_stop  = pyqtSignal()
-
-# ── BootstrapScreen ────────────────────────────────────────────────────────────
-class BootstrapScreen(QWidget):
-    def __init__(self, stack):
-        super().__init__(); self.stack = stack; self.screen_name = "BootstrapScreen"
-        lay = QVBoxLayout(self); lay.setContentsMargins(80,80,80,80); lay.setSpacing(14)
-        lay.addStretch()
-        _title_block(lay)
-        lay.addStretch()
-        self.status = _lbl("Preparing...", 13, C_DIM)
-        lay.addWidget(self.status)
-        self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(14)
-        bw = QHBoxLayout(); bw.addStretch(); bw.addWidget(self.bar,6); bw.addStretch()
-        lay.addLayout(bw); lay.addSpacing(50)
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        _start_audio()
-        if _bootstrap.all_ready():
-            QTimer.singleShot(300, self._proceed); return
-        self._s = _Sigs()
-        self._s.progress.connect(lambda p,m: (self.bar.setValue(p), self.status.setText(m)))
-        self._s.done.connect(lambda _: QTimer.singleShot(300, self._proceed))
-        threading.Thread(target=lambda: _bootstrap.run(
-            on_progress=lambda p,m: self._s.progress.emit(p,m),
-            on_complete=lambda ok: self._s.done.emit(ok),
-        ), daemon=True).start()
-
-    def _proceed(self):
-        # Re-load font and re-apply stylesheet now that bootstrap has completed.
-        # This is a no-op if the font was already loaded at startup, but ensures
-        # the correct font is applied even on a fresh install where bootstrap
-        # runs for the first time.
         try:
-            _load_font()
-            QApplication.instance().setStyleSheet(_app_style())
-        except FileNotFoundError:
-            pass  # Font missing — fall back gracefully, app still works
-
-        if cfg.is_first_run():
-            self.stack.setCurrentIndex(9)
-        else:
-            root = find_steam_root()
-            self.stack.widget(5).set_installed(find_installed_games(parse_library_folders(root)))
-            self.stack.setCurrentIndex(5)
-
-# ── IntroScreen ────────────────────────────────────────────────────────────────
-class IntroScreen(QWidget):
-    def __init__(self, stack):
-        super().__init__(); self.stack = stack; self.screen_name = "IntroScreen"
-        self._selected_model = ""
-
-        main_lay = QVBoxLayout(self); main_lay.setContentsMargins(0,0,0,0)
-
-        # ── Model section (first screen) ──────────────────────────────────────
-        self._model_section = QWidget()
-        lay = QVBoxLayout(self._model_section); lay.setContentsMargins(80,60,80,60); lay.setSpacing(16)
-        _title_block(lay)
-        lay.addSpacing(8)
-        lay.addWidget(_lbl(
-            "DeckOps sets up community multiplayer clients for your Call of Duty games "
-            "on Steam Deck, so you can play online with the best possible performance "
-            "and shader cache benefits.", 14, "#CCCCCC"))
-        lay.addSpacing(6)
-        for warn in [
-            "⚠   DeckOps will automatically create Proton prefixes for your games. "
-            "You do NOT need to launch each game through Steam first. "
-            "If you have already launched your games, DeckOps will detect the existing prefixes "
-            "and skip this step.",
-            "⚠   If you plan to play Plutonium titles online (WaW, BO1, BO2, MW3), "
-            "create a free Plutonium account at plutonium.pw before continuing.",
-        ]:
-            lay.addWidget(_lbl(warn, 13, C_TREY, align=Qt.AlignLeft))
-        lay.addSpacing(16)
-
-        lay.addWidget(_lbl("Which Steam Deck do you have?", 15, "#CCC"))
-        brow = QHBoxLayout(); brow.setSpacing(20)
-        lcd  = _btn("Steam Deck LCD", C_IW, h=56)
-        oled = _btn("Steam Deck OLED", C_IW, h=56)
-        lcd.clicked.connect(lambda: self._pick_model("lcd"))
-        oled.clicked.connect(lambda: self._pick_model("oled"))
-        brow.addWidget(lcd); brow.addWidget(oled)
-        lay.addLayout(brow)
-        main_lay.addWidget(self._model_section)
-
-        # ── Gyro section (second screen, replaces model section) ──────────────
-        self._gyro_section = QWidget(); self._gyro_section.setVisible(False)
-        gl = QVBoxLayout(self._gyro_section); gl.setContentsMargins(80,60,80,60); gl.setSpacing(16)
-
-        # Back button top-left showing which model was picked
-        self._back_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_btn.setFixedWidth(80)
-        self._back_btn.clicked.connect(self._back_to_model)
-        back_row = QHBoxLayout()
-        back_row.addWidget(self._back_btn); back_row.addStretch()
-        gl.addLayout(back_row)
-
-        gl.addStretch()
-        _title_block(gl)
-        gl.addSpacing(16)
-        gl.addWidget(_lbl("How do you want to activate gyro aiming?", 15, "#CCC"))
-        gl.addSpacing(4)
-        gl.addWidget(_lbl(
-            "Hold  —  gyro is active while R5 (right grip) is held down.\n"
-            "ADS  —  gyro activates when you aim down sights.\n"
-            "Toggle  —  press R5 once to turn gyro on, press again to turn it off.",
-            13, C_DIM, align=Qt.AlignLeft))
-        gl.addSpacing(12)
-        grow = QHBoxLayout(); grow.setSpacing(20)
-        hold_btn   = _btn("Hold",   C_DARK_BTN, h=56)
-        ads_btn    = _btn("ADS",    C_DARK_BTN, h=56)
-        toggle_btn = _btn("Toggle", C_DARK_BTN, h=56)
-        hold_btn.clicked.connect(lambda: self._pick_gyro("hold"))
-        ads_btn.clicked.connect(lambda: self._pick_gyro("ads"))
-        toggle_btn.clicked.connect(lambda: self._pick_gyro("toggle"))
-        grow.addWidget(hold_btn); grow.addWidget(ads_btn); grow.addWidget(toggle_btn)
-        gl.addLayout(grow)
-        gl.addStretch()
-        main_lay.addWidget(self._gyro_section)
-
-        # ── Player name section (after gyro, before play mode) ────────────────
-        self._name_section = QWidget(); self._name_section.setVisible(False)
-        nl = QVBoxLayout(self._name_section); nl.setContentsMargins(80,60,80,60); nl.setSpacing(16)
-
-        self._back_gyro_name_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_gyro_name_btn.setFixedWidth(80)
-        self._back_gyro_name_btn.clicked.connect(self._back_to_gyro_from_name)
-        back_row_name = QHBoxLayout()
-        back_row_name.addWidget(self._back_gyro_name_btn); back_row_name.addStretch()
-        nl.addLayout(back_row_name)
-
-        nl.addStretch()
-        _title_block(nl)
-        nl.addSpacing(16)
-        nl.addWidget(_lbl("What's your player name?", 15, "#CCC"))
-        nl.addSpacing(4)
-        nl.addWidget(_lbl(
-            "This name will be used in CoD4x, IW4x, and Plutonium (LCD offline mode). "
-            "Your Steam display name is filled in by default — change it to whatever you want.",
-            13, C_DIM, align=Qt.AlignLeft))
-        nl.addSpacing(12)
-
-        self._name_input = QLineEdit()
-        self._name_input.setPlaceholderText("Player")
-        self._name_input.setMaxLength(24)
-        self._name_input.setFixedHeight(48)
-        self._name_input.setFont(font(14))
-        self._name_input.setStyleSheet(
-            f"QLineEdit{{background:{C_CARD};color:#FFF;border:2px solid #33333F;"
-            f"border-radius:8px;padding:0 16px;}}"
-            f"QLineEdit:focus{{border-color:{C_IW};}}"
-        )
-        nl.addWidget(self._name_input)
-        nl.addSpacing(16)
-
-        name_continue = _btn("Continue >>", C_IW, h=52)
-        name_continue.setFixedWidth(260)
-        name_continue.clicked.connect(self._save_player_name)
-        nc_row = QHBoxLayout(); nc_row.addStretch(); nc_row.addWidget(name_continue); nc_row.addStretch()
-        nl.addLayout(nc_row)
-        nl.addStretch()
-        main_lay.addWidget(self._name_section)
-
-        # ── Play mode section (third screen, replaces gyro section) ──────────
-        self._play_section = QWidget(); self._play_section.setVisible(False)
-        pl = QVBoxLayout(self._play_section); pl.setContentsMargins(80,60,80,60); pl.setSpacing(16)
-
-        self._back_gyro_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_gyro_btn.setFixedWidth(80)
-        self._back_gyro_btn.clicked.connect(self._back_to_gyro)
-        back_row2 = QHBoxLayout()
-        back_row2.addWidget(self._back_gyro_btn); back_row2.addStretch()
-        pl.addLayout(back_row2)
-
-        pl.addStretch()
-        _title_block(pl)
-        pl.addSpacing(16)
-        pl.addWidget(_lbl("How do you play?", 15, "#CCC"))
-        pl.addSpacing(4)
-        pl.addWidget(_lbl(
-            "Handheld Only  --  you play exclusively on the Steam Deck screen.\n"
-            "Also Docked  --  you also connect to a TV or monitor with an external controller.\n"
-            "Choosing Docked will install the DeckOps Decky plugin. "
-            "Decky Loader is required — you can install it after setup from decky.xyz.",
-            13, C_DIM, align=Qt.AlignLeft))
-        pl.addSpacing(12)
-        prow = QHBoxLayout(); prow.setSpacing(20)
-        handheld_btn = _btn("Handheld Only", C_DARK_BTN, h=56)
-        docked_btn   = _btn("Also Docked",   C_DARK_BTN, h=56)
-        handheld_btn.clicked.connect(lambda: self._pick_play_mode("handheld"))
-        docked_btn.clicked.connect(lambda: self._pick_play_mode("docked"))
-        prow.addWidget(handheld_btn); prow.addWidget(docked_btn)
-        pl.addLayout(prow)
-        pl.addStretch()
-        main_lay.addWidget(self._play_section)
-
-        # ── Decky install section (docked users only, shown while plugin downloads) ──
-        self._decky_section = QWidget(); self._decky_section.setVisible(False)
-        dl = QVBoxLayout(self._decky_section); dl.setContentsMargins(80,60,80,60); dl.setSpacing(16)
-
-        self._back_decky_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_decky_btn.setFixedWidth(80)
-        self._back_decky_btn.clicked.connect(self._back_to_play_from_decky)
-        back_row_decky = QHBoxLayout()
-        back_row_decky.addWidget(self._back_decky_btn); back_row_decky.addStretch()
-        dl.addLayout(back_row_decky)
-
-        dl.addStretch()
-        _title_block(dl)
-        dl.addSpacing(8)
-        self._decky_status_lbl = _lbl("Installing DeckOps Decky plugin...", 15, "#CCC")
-        dl.addWidget(self._decky_status_lbl)
-        dl.addSpacing(4)
-
-        self._decky_log = QPlainTextEdit()
-        self._decky_log.setReadOnly(True)
-        self._decky_log.setFont(font(11))
-        self._decky_log.setStyleSheet(
-            "QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}"
-        )
-        self._decky_log.setFixedHeight(180)
-        dl.addWidget(self._decky_log)
-
-        self._decky_cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
-        self._decky_cont_btn.setFixedWidth(320)
-        self._decky_cont_btn.setVisible(False)
-        self._decky_cont_btn.clicked.connect(self._decky_continue)
-        dcw = QHBoxLayout(); dcw.addStretch(); dcw.addWidget(self._decky_cont_btn); dcw.addStretch()
-        dl.addLayout(dcw)
-
-        self._decky_retry_btn = _btn("Retry", C_TREY, size=13, h=52)
-        self._decky_retry_btn.setFixedWidth(320)
-        self._decky_retry_btn.setVisible(False)
-        self._decky_retry_btn.clicked.connect(self._start_decky_install)
-        drw = QHBoxLayout(); drw.addStretch(); drw.addWidget(self._decky_retry_btn); drw.addStretch()
-        dl.addLayout(drw)
-
-        dl.addStretch()
-        main_lay.addWidget(self._decky_section)
-
-        self._decky_sigs = _Sigs()
-        self._decky_sigs.log.connect(self._decky_append_log)
-        self._decky_sigs.done.connect(self._decky_on_done)
-
-        # ── Resolution section (docked users only, between play mode and controller) ──
-        # NOTE: this will also be used for future Bazzite, Steam Box, and
-        # other handheld support on SteamOS where the native screen isn't 1280x800.
-        self._resolution_section = QWidget(); self._resolution_section.setVisible(False)
-        rl = QVBoxLayout(self._resolution_section); rl.setContentsMargins(80,60,80,60); rl.setSpacing(16)
-
-        self._back_play_btn2 = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_play_btn2.setFixedWidth(80)
-        self._back_play_btn2.clicked.connect(self._back_to_play_from_res)
-        back_row_res = QHBoxLayout()
-        back_row_res.addWidget(self._back_play_btn2); back_row_res.addStretch()
-        rl.addLayout(back_row_res)
-
-        rl.addStretch()
-        _title_block(rl)
-        rl.addSpacing(16)
-        rl.addWidget(_lbl("What resolution is your external display?", 15, "#CCC"))
-        rl.addSpacing(4)
-        rl.addWidget(_lbl(
-            "Default is 1280x800 (Steam Deck screen). Pick the resolution that matches "
-            "your TV or monitor, or choose My Own to set it yourself in-game.",
-            13, C_DIM, align=Qt.AlignLeft))
-        rl.addSpacing(12)
-
-        res_cols = QHBoxLayout(); res_cols.setSpacing(20)
-
-        # Left column: 16:10
-        col_1610 = QVBoxLayout(); col_1610.setSpacing(10)
-        col_1610.addWidget(_lbl("16:10", 13, C_IW, bold=True))
-        res_800 = _btn("1280 x 800", C_DARK_BTN, h=52)
-        res_1200 = _btn("1920 x 1200", C_DARK_BTN, h=52)
-        res_800.clicked.connect(lambda: self._pick_resolution("1280x800"))
-        res_1200.clicked.connect(lambda: self._pick_resolution("1920x1200"))
-        col_1610.addWidget(res_800); col_1610.addWidget(res_1200)
-        res_cols.addLayout(col_1610)
-
-        # Right column: 16:9
-        col_169 = QVBoxLayout(); col_169.setSpacing(10)
-        col_169.addWidget(_lbl("16:9", 13, C_IW, bold=True))
-        res_720 = _btn("1280 x 720", C_DARK_BTN, h=52)
-        res_1080 = _btn("1920 x 1080", C_DARK_BTN, h=52)
-        res_720.clicked.connect(lambda: self._pick_resolution("1280x720"))
-        res_1080.clicked.connect(lambda: self._pick_resolution("1920x1080"))
-        col_169.addWidget(res_720); col_169.addWidget(res_1080)
-        res_cols.addLayout(col_169)
-
-        rl.addLayout(res_cols)
-        rl.addSpacing(8)
-
-        # Centered "My Own" button
-        own_res_btn = _btn("My Own", C_DARK_BTN, h=44)
-        own_res_btn.setFixedWidth(200)
-        own_res_btn.clicked.connect(lambda: self._pick_resolution("own"))
-        own_row = QHBoxLayout(); own_row.addStretch(); own_row.addWidget(own_res_btn); own_row.addStretch()
-        rl.addLayout(own_row)
-
-        rl.addStretch()
-        main_lay.addWidget(self._resolution_section)
-
-        # ── Controller type section (docked users only, after resolution) ─────
-        self._controller_section = QWidget(); self._controller_section.setVisible(False)
-        cl = QVBoxLayout(self._controller_section); cl.setContentsMargins(80,60,80,60); cl.setSpacing(16)
-
-        self._back_res_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_res_btn.setFixedWidth(80)
-        self._back_res_btn.clicked.connect(self._back_to_resolution)
-        back_row3 = QHBoxLayout()
-        back_row3.addWidget(self._back_res_btn); back_row3.addStretch()
-        cl.addLayout(back_row3)
-
-        cl.addStretch()
-        _title_block(cl)
-        cl.addSpacing(16)
-        cl.addWidget(_lbl("What external controller do you use?", 15, "#CCC"))
-        cl.addSpacing(4)
-        cl.addWidget(_lbl(
-            "PlayStation  --  PS5 or PS4 DualShock/DualSense. Includes gyro aiming.\n"
-            "Xbox  --  Xbox 360 or Xbox One controller. Standard layout, no gyro.\n"
-            "Other  --  Generic or 8BitDo controller. Standard layout, no gyro.",
-            13, C_DIM, align=Qt.AlignLeft))
-        cl.addSpacing(12)
-        crow = QHBoxLayout(); crow.setSpacing(20)
-        ps_btn      = _btn("PlayStation", C_DARK_BTN, h=56)
-        xbox_btn    = _btn("Xbox",        C_DARK_BTN, h=56)
-        other_btn   = _btn("Other",       C_DARK_BTN, h=56)
-        ps_btn.clicked.connect(lambda: self._pick_controller("playstation"))
-        xbox_btn.clicked.connect(lambda: self._pick_controller("xbox"))
-        other_btn.clicked.connect(lambda: self._pick_controller("other"))
-        crow.addWidget(ps_btn); crow.addWidget(xbox_btn); crow.addWidget(other_btn)
-        cl.addLayout(crow)
-        cl.addStretch()
-        main_lay.addWidget(self._controller_section)
-
-    def _back_to_model(self):
-        self._gyro_section.setVisible(False)
-        self._model_section.setVisible(True)
-
-    def _back_to_gyro(self):
-        self._play_section.setVisible(False)
-        self._name_section.setVisible(True)
-
-    def _back_to_gyro_from_name(self):
-        self._name_section.setVisible(False)
-        self._gyro_section.setVisible(True)
-
-    def _show_name_section(self):
-        """Show the player name input, pre-filled with Steam display name."""
-        # Pre-fill with Steam name if the field is empty and no name saved yet
-        if not self._name_input.text():
-            saved = cfg.get_player_name()
-            if saved:
-                self._name_input.setText(saved)
-            else:
-                steam_name = cfg.get_steam_display_name()
-                if steam_name:
-                    self._name_input.setText(steam_name)
-        self._gyro_section.setVisible(False)
-        self._name_section.setVisible(True)
-
-    def _save_player_name(self):
-        """Save the player name and proceed to the next step."""
-        name = self._name_input.text().strip()
-        if name:
-            cfg.set_player_name(name)
-        else:
-            cfg.set_player_name("Player")
-        # Continue to play mode (advanced) or next screen (standard)
-        self._name_section.setVisible(False)
-        source = cfg.get_game_source() or "steam"
-        if source == "steam":
-            self._next_screen()
-        else:
-            # Advanced flow: check if play mode already set
-            play_mode = cfg.get_play_mode()
-            if play_mode:
-                if play_mode == "handheld":
-                    self._next_screen()
-                elif cfg.get_docked_resolution() and cfg.get_external_controller():
-                    self._next_screen()
-                elif cfg.get_docked_resolution():
-                    self._controller_section.setVisible(True)
-                else:
-                    self._resolution_section.setVisible(True)
-            else:
-                self._play_section.setVisible(True)
-
-    def _back_to_play_from_res(self):
-        self._resolution_section.setVisible(False)
-        self._play_section.setVisible(True)
-
-    def _back_to_resolution(self):
-        self._controller_section.setVisible(False)
-        self._resolution_section.setVisible(True)
-
-    def _pick_model(self, model):
-        cfg.set_deck_model(model)
-        self._model_section.setVisible(False)
-        self._gyro_section.setVisible(True)
-
-    def _next_screen(self):
-        """Route to the correct next screen based on game_source."""
-        source = cfg.get_game_source() or "steam"
-        if source == "own":
-            self.stack.setCurrentIndex(11)   # OwnScanScreen
-        else:
-            self.stack.setCurrentIndex(2)    # WelcomeScreen (standard)
-
-    def _pick_gyro(self, mode):
-        cfg.set_gyro_mode(mode)
-        self._show_name_section()
-
-    def _pick_play_mode(self, mode):
-        cfg.set_play_mode(mode)
-        if mode == "docked":
-            self._play_section.setVisible(False)
-            self._decky_section.setVisible(True)
-            self._decky_log.clear()
-            self._decky_cont_btn.setVisible(False)
-            self._decky_retry_btn.setVisible(False)
-            self._decky_status_lbl.setText("Installing DeckOps Decky plugin...")
-            self._decky_back_btn_set_enabled(False)
-            self._start_decky_install()
-        else:
-            self._next_screen()
-
-    def _decky_back_btn_set_enabled(self, enabled):
-        self._back_decky_btn.setEnabled(enabled)
-
-    def _back_to_play_from_decky(self):
-        self._decky_section.setVisible(False)
-        self._play_section.setVisible(True)
-
-    def _decky_append_log(self, text):
-        self._decky_log.appendPlainText(text)
-        self._decky_log.verticalScrollBar().setValue(
-            self._decky_log.verticalScrollBar().maximum()
-        )
-
-    def _decky_on_done(self, ok):
-        self._decky_back_btn_set_enabled(True)
-        if ok:
-            self._decky_status_lbl.setText("✓  Decky plugin installed.")
-            self._decky_cont_btn.setVisible(True)
-        else:
-            self._decky_status_lbl.setText("✗  Install failed. Check your connection and retry.")
-            self._decky_retry_btn.setVisible(True)
-
-    def _decky_continue(self):
-        self._decky_section.setVisible(False)
-        self._resolution_section.setVisible(True)
-
-    def _start_decky_install(self):
-        self._decky_cont_btn.setVisible(False)
-        self._decky_retry_btn.setVisible(False)
-        self._decky_back_btn_set_enabled(False)
-        self._decky_status_lbl.setText("Installing DeckOps Decky plugin...")
-        s = self._decky_sigs
-
-        def _run():
-            import urllib.request
-            ZIP_URL  = "https://github.com/GalvarinoDev/DeckOps-Nightly/raw/main/DeckOps.zip"
-            dl_dir   = os.path.expanduser("~/Downloads")
-            zip_path = os.path.join(dl_dir, "DeckOps.zip")
-            try:
-                os.makedirs(dl_dir, exist_ok=True)
-                s.log.emit("→  Downloading DeckOps.zip...")
-                urllib.request.urlretrieve(ZIP_URL, zip_path)
-                s.log.emit(f"   ✓  Saved to {zip_path}")
-                s.log.emit("   Install via Decky → Install from zip.")
-                s.done.emit(True)
-            except Exception as ex:
-                s.log.emit(f"✗  {ex}")
-                s.done.emit(False)
-
-        threading.Thread(target=_run, daemon=True).start()
-
-    def _pick_resolution(self, resolution):
-        cfg.set_docked_resolution(resolution)
-        if not cfg.get_external_controller():
-            # Still need to pick controller type
-            self._resolution_section.setVisible(False)
-            self._controller_section.setVisible(True)
-        else:
-            self._next_screen()
-
-    def _pick_controller(self, controller_type):
-        cfg.set_external_controller(controller_type)
-        self._next_screen()
-
-# ── WelcomeScreen ──────────────────────────────────────────────────────────────
-class WelcomeScreen(QWidget):
-    def __init__(self, stack):
-        super().__init__(); self.stack=stack; self.installed={}; self.screen_name = "WelcomeScreen"
-        self.steam_installed={}; self.own_installed={}; self.steam_root=""
-        self._steam_only = False  # set by OwnScanScreen skip or advanced flow
-        lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(14)
-        _title_block(lay)
-        lay.addSpacing(12)
-        self.status = _lbl("Scanning for Steam...", 14, C_DIM)
-        lay.addWidget(self.status)
-        self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(14)
-        bw = QHBoxLayout(); bw.addStretch(); bw.addWidget(self.bar,6); bw.addStretch()
-        lay.addLayout(bw)
-        lay.addSpacing(10)
-        self.results = _lbl("", 13, C_IW)
-        self.results.setTextFormat(Qt.RichText)
-        lay.addWidget(self.results)
-        lay.addStretch()
-        self.cont = _btn("Continue >>", C_IW, h=52)
-        self.cont.setFixedWidth(260); self.cont.setVisible(False)
-        self.cont.clicked.connect(self._go_next)
-        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont); cw.addStretch()
-        lay.addLayout(cw)
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self.bar.setValue(0); self.results.setText(""); self.cont.setVisible(False)
-        QTimer.singleShot(200, self._scan_steam)
-
-    def _scan_steam(self):
-        self.status.setText("Scanning for Steam..."); self.bar.setValue(20)
-        self.steam_root = find_steam_root()
-        if not self.steam_root:
-            self.status.setText("Steam not found. Is it installed?")
-            self.status.setStyleSheet(f"color:{C_TREY};background:transparent;")
-            self.bar.setValue(100); return
-        self.status.setText(f"Found Steam at {self.steam_root}"); self.bar.setValue(40)
-        QTimer.singleShot(200, self._scan_games)
-
-    def _scan_games(self):
-        self.status.setText("Scanning for games..."); self.bar.setValue(70)
-        source = cfg.get_game_source() or "steam"
-        libs = parse_library_folders(self.steam_root)
-        steam_found = find_installed_games(libs)
-        self.steam_installed = steam_found
-        if source == "own" and not self._steam_only:
-            from detect_games import find_own_installed
-            own_found = find_own_installed()
-            self.own_installed = own_found
-            self.installed = {**own_found, **steam_found}
-        else:
-            self.own_installed = {}
-            self.installed = steam_found
-        if not cfg.is_oled():
-            lcd_allowed = set()
-            for g in ALL_GAMES:
-                lcd_allowed.update(g.get("lcd_keys", g["keys"]))
-            self.installed = {k:v for k,v in self.installed.items() if k in lcd_allowed}
-            self.steam_installed = {k:v for k,v in self.steam_installed.items() if k in lcd_allowed}
-            self.own_installed = {k:v for k,v in self.own_installed.items() if k in lcd_allowed}
-        QTimer.singleShot(200, self._show_results)
-
-    def _show_results(self):
-        self.bar.setValue(100)
-        if not self.installed:
-            # Advanced flow with own games already parked: no Steam games is OK,
-            # skip straight to SetupScreen which will route to OwnInstallScreen.
-            if self._steam_only and cfg.get_game_source() == "own":
-                own_screen = self.stack.widget(10)
-                if own_screen.own_selected:
-                    self.status.setText("No Steam games found — continuing with your non-Steam games.")
-                    self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
-                    self.cont.setVisible(True)
-                    return
-            self.status.setText("No supported games found.")
-            self.status.setStyleSheet(f"color:{C_TREY};background:transparent;"); return
-        unique = len({g["name"].split(" - ")[0].split(" (")[0] for g in self.installed.values()})
-        self.status.setText(f"Found {unique} supported game(s)!")
-        self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
-        lines = []
-        # Steam games
-        seen_steam = set()
-        for g in sorted(self.steam_installed.values(), key=lambda x: x.get("order",99)):
-            base = g["name"].split(" - ")[0].split(" (")[0]
-            if base not in seen_steam:
-                seen_steam.add(base)
-                lines.append(f'<span style="color:{C_IW}">{base} (Steam)</span>')
-        # Own games
-        seen_own = set()
-        for g in sorted(self.own_installed.values(), key=lambda x: x.get("order",99)):
-            base = g["name"].split(" - ")[0].split(" (")[0]
-            if base not in seen_own:
-                seen_own.add(base)
-                lines.append(f'<span style="color:{C_TREY}">{base} (Non-Steam)</span>')
-        self.results.setText("\n".join(lines)); self.cont.setVisible(True)
-
-    def _go_next(self):
-        if cfg.is_first_run():
-            s = self.stack.widget(3)
-            s.steam_installed = self.steam_installed
-            s.own_installed   = self.own_installed
-            s.steam_root      = self.steam_root
-            self.stack.setCurrentIndex(3)
-        else:
-            self.stack.widget(5).set_installed(self.installed); self.stack.setCurrentIndex(5)
-
-# ── SetupScreen ────────────────────────────────────────────────────────────────
-class SetupScreen(QWidget):
-    """
-    Steam game selection. Shows detected Steam games with checkboxes.
-    In the advanced flow, routes to OwnInstallScreen instead of InstallScreen
-    so both Steam and own games are handled in one pass.
-    """
-    def __init__(self, stack):
-        super().__init__(); self.stack=stack; self.screen_name = "SetupScreen"
-        self.steam_installed={}; self.own_installed={}; self.steam_root=""
-        self._checks={}
-
-        lay = QVBoxLayout(self); lay.setContentsMargins(60,40,60,40); lay.setSpacing(14)
-        t = QLabel("SETUP"); t.setFont(font(36,True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
-        lay.addWidget(_lbl(
-            "Choose which games to set up. "
-            "DeckOps will create Proton prefixes automatically.", 13, C_DIM))
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._lw = QWidget(); self._ll = QVBoxLayout(self._lw)
-        self._ll.setSpacing(0); self._ll.addStretch()
-        scroll.setWidget(self._lw); lay.addWidget(scroll, stretch=1)
-
-        self.warning = _lbl("", 12, C_TREY, align=Qt.AlignLeft)
-        self.warning.setVisible(False); lay.addWidget(self.warning)
-        brow = QHBoxLayout(); brow.setSpacing(16)
-        back = _btn("<< Back", C_DARK_BTN, h=52); back.setFixedWidth(180)
-        back.clicked.connect(lambda: self.stack.setCurrentIndex(2))
-        self.inst_btn = _btn("Install Selected >>", C_IW, h=52)
-        self.inst_btn.clicked.connect(self._go_install)
-        brow.addWidget(back); brow.addWidget(self.inst_btn, stretch=1); lay.addLayout(brow)
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self.warning.setVisible(False)
-        self._build()
-
-    def _build(self):
-        while self._ll.count() > 1:
-            item = self._ll.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
-        self._checks.clear()
-
-        MAX_SLOTS  = 3
-        SLOT_W     = 28
-        SLOT_GAP   = 8
-        CHECKS_W   = MAX_SLOTS * SLOT_W + (MAX_SLOTS - 1) * SLOT_GAP
-
-        for gd in ALL_GAMES:
-            keys = _active_keys(gd)
-            if not keys: continue
-            ik = [k for k in keys if k in self.steam_installed]
-            # Priority: hide iw5mp_ds (free DS) when iw5mp (full game) is present
-            if "iw5mp" in ik and "iw5mp_ds" in ik:
-                ik = [k for k in ik if k != "iw5mp_ds"]
-                keys = [k for k in keys if k != "iw5mp_ds"]
-            if not ik: continue
-
-            color  = C_IW if gd["dev"] == "iw" else C_TREY
-            client = _active_client(gd)
-
-            row = QHBoxLayout()
-            row.setSpacing(12)
-            row.setContentsMargins(8, 8, 8, 8)
-
-            # ── Per-key checkbox column ────────────────────────────────────
-            checks_widget = QWidget()
-            checks_widget.setFixedWidth(CHECKS_W)
-            checks_layout = QHBoxLayout(checks_widget)
-            checks_layout.setContentsMargins(0, 0, 0, 0)
-            checks_layout.setSpacing(SLOT_GAP)
-
-            for key in keys:
-                installed   = key in self.steam_installed
-                already_done = cfg.is_game_setup_for_source(key, "steam")
-
-                slot = QWidget()
-                slot.setFixedWidth(SLOT_W)
-                slot_lay = QVBoxLayout(slot)
-                slot_lay.setContentsMargins(0, 0, 0, 0)
-                slot_lay.setSpacing(2)
-                slot_lay.setAlignment(Qt.AlignHCenter)
-
-                cb = QCheckBox()
-                if not installed:
-                    cb.setChecked(False)
-                    cb.setEnabled(False)
-                elif already_done:
-                    cb.setChecked(False)
-                else:
-                    cb.setChecked(True)
-
-                mode_color = C_TREY if not installed else "#666677"
-                mode_lbl = _lbl(KEY_MODE_LABEL.get(key, key), 9, mode_color,
-                                 align=Qt.AlignHCenter, wrap=False)
-
-                slot_lay.addWidget(cb, alignment=Qt.AlignHCenter)
-                slot_lay.addWidget(mode_lbl)
-                checks_layout.addWidget(slot)
-
-                self._checks[key] = (cb, gd)
-
-            # Fill remaining slots with transparent spacers for alignment
-            for _ in range(MAX_SLOTS - len(keys)):
-                spacer = QWidget()
-                spacer.setFixedSize(SLOT_W, 38)
-                spacer.setStyleSheet("background: transparent;")
-                checks_layout.addWidget(spacer)
-
-            row.addWidget(checks_widget)
-
-            # ── Game name + optional offline note ──────────────────────────
-            name_wrap = QWidget()
-            name_wrap_lay = QVBoxLayout(name_wrap)
-            name_wrap_lay.setContentsMargins(0, 0, 0, 0)
-            name_wrap_lay.setSpacing(2)
-
-            any_installed = len(ik) > 0
-            name_color = "#FFF" if any_installed else "#555566"
-            name_lbl = _lbl(gd["base"], 14, name_color, align=Qt.AlignLeft, wrap=False)
-            name_wrap_lay.addWidget(name_lbl)
-
-            row.addWidget(name_wrap, stretch=1)
-
-            # ── Client badge ───────────────────────────────────────────────
-            badge = QPushButton(client.upper())
-            badge.setFont(font(10, True))
-            badge.setFixedSize(160, 30)
-            badge.setEnabled(False)
-            badge.setStyleSheet(
-                f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:6px;}}"
-                f"QPushButton:disabled{{background:{color};color:#FFF;}}"
-            )
-            row.addWidget(badge)
-
-            cw = QWidget()
-            cw.setLayout(row)
-            self._ll.insertWidget(self._ll.count() - 1, cw)
-
-    def _go_install(self):
-        selected = []
-        for key, (cb, gd) in self._checks.items():
-            if not cb.isChecked(): continue
-            if key not in self.steam_installed: continue
-            selected.append((key, gd, self.steam_installed[key]))
-        if not selected:
-            # Advanced flow: own games are already queued on OwnInstallScreen,
-            # so zero Steam games is valid. Route straight through.
-            if cfg.get_game_source() == "own":
-                own_screen = self.stack.widget(10)
-                own_screen.steam_selected = []
-                own_screen.steam_root = self.steam_root
-                # Build a temporary list to check for iw4x in own games
-                _own_sel = own_screen.own_selected or {}
-                _own_tmp = []
-                for _k, _g in _own_sel.items():
-                    for _gd in ALL_GAMES:
-                        if _k in _active_keys(_gd):
-                            _own_tmp.append((_k, _gd, _g)); break
-                own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, _own_tmp)
-                self.stack.setCurrentIndex(10)
-                return
-            self.warning.setText("Select at least one game to continue.")
-            self.warning.setVisible(True); return
-
-        # Advanced flow -- OwnInstallScreen handles both Steam + own games
-        if cfg.get_game_source() == "own":
-            own_screen = self.stack.widget(10)
-            own_screen.steam_selected = selected
-            own_screen.steam_root = self.steam_root
-            # Merge steam + own selections for DLC prompt check
-            _own_sel = own_screen.own_selected or {}
-            _own_tmp = []
-            for _k, _g in _own_sel.items():
-                for _gd in ALL_GAMES:
-                    if _k in _active_keys(_gd):
-                        _own_tmp.append((_k, _gd, _g)); break
-            own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, selected + _own_tmp)
-            self.stack.setCurrentIndex(10)
-            return
-
-        # Standard flow -- InstallScreen handles Steam games only
-        s = self.stack.widget(4)
-        s.selected   = selected
-        s.steam_root = self.steam_root
-        s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
-        self.stack.setCurrentIndex(4)
-
-# ── InstallScreen ──────────────────────────────────────────────────────────────
-class InstallScreen(QWidget):
-    def __init__(self, stack):
-        super().__init__(); self.stack=stack; self.selected=[]; self.steam_root=""; self.screen_name = "InstallScreen"
-        self._plut_event = threading.Event()
-        self._return_to_management = False
-
-        lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
-        t = QLabel("INSTALLING"); t.setFont(font(36,True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
-        self.cur = _lbl("Preparing...", 16, "#CCC"); lay.addWidget(self.cur)
-        self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(22)
-        bw = QHBoxLayout(); bw.setContentsMargins(60,0,60,0); bw.addWidget(self.bar)
-        lay.addLayout(bw)
-        self.stat = _lbl("", 13, C_IW); lay.addWidget(self.stat)
-        self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setFont(font(11))
-        self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
-        lay.addWidget(self.log, stretch=1)
-
-        self.plut_warn = _lbl(
-            "⚠  LCD: Plutonium takes time to download and launch.\n"
-            "     Please be patient — do NOT click the button below until\n"
-            "     Plutonium has fully loaded, you have logged in, and closed the window.",
-            12, C_TREY, align=Qt.AlignCenter,
-        )
-        self.plut_warn.setStyleSheet(
-            f"color:{C_TREY};background:#2A1A08;border:1px solid {C_TREY};"
-            "border-radius:8px;padding:10px 16px;"
-        )
-        self.plut_warn.setVisible(False)
-        lay.addWidget(self.plut_warn)
-
-        self.plut_btn = _btn("I've closed Plutonium  ✓", C_TREY, size=13, h=52)
-        self.plut_btn.setFixedWidth(460); self.plut_btn.setVisible(False)
-        self.plut_btn.clicked.connect(self._confirm_plut)
-        pw = QHBoxLayout(); pw.addStretch(); pw.addWidget(self.plut_btn); pw.addStretch()
-        lay.addLayout(pw)
-
-        self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
-        self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
-        self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
-        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont_btn); cw.addStretch()
-        lay.addLayout(cw)
-
-        self._s = _Sigs()
-        self._s.progress.connect(lambda p,m: (self.bar.setValue(p), self.cur.setText(m)))
-        self._s.log.connect(self._append_log)
-        self._s.done.connect(self._on_done)
-        self._s.plut_wait.connect(self._show_plut_wait)
-        self._s.plut_go.connect(self._hide_plut_wait)
-        self._s.pulse_start.connect(self._start_pulse)
-        self._s.pulse_stop.connect(self._stop_pulse)
-
-        self._pulse_timer = QTimer()
-        self._pulse_timer.timeout.connect(self._do_pulse)
-        self._pulse_msg   = ""
-        self._pulse_count = 0
-
-    def _start_pulse(self, base_msg):
-        self._pulse_msg   = base_msg
-        self._pulse_count = 0
-        self._pulse_timer.start(500)
-
-    def _do_pulse(self):
-        dots = "." * (self._pulse_count % 4)
-        self.cur.setText(f"{self._pulse_msg}{dots}")
-        self._pulse_count += 1
-
-    def _stop_pulse(self):
-        self._pulse_timer.stop()
-
-    def _show_plut_wait(self):
-        is_lcd = not cfg.is_oled()
-        self.plut_warn.setVisible(is_lcd)
-        self.plut_btn.setVisible(True)
-
-    def _hide_plut_wait(self):
-        self.plut_warn.setVisible(False)
-        self.plut_btn.setVisible(False)
-
-    def _append_log(self, text):
-        self.log.appendPlainText(text)
-        self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
-        _log_to_file(text)
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self.bar.setValue(0); self.log.clear()
-        self.plut_btn.setVisible(False)
-        self.plut_warn.setVisible(False)
-        self._stop_pulse()
-        self._plut_event.clear()
-        # Route the continue button based on whether this was triggered
-        # from ManagementScreen (return to My Games) or the first-run
-        # wizard (go to ControllerInfoScreen).
-        try:
-            self.cont_btn.clicked.disconnect()
-        except Exception:
-            pass
-        if self._return_to_management:
-            self.cont_btn.setText("Back to My Games  >>")
-            self.cont_btn.clicked.connect(self._go_management)
-            self._return_to_management = False
-        else:
-            self.cont_btn.setText("Continue  >>")
-            self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
-        _log_to_file("── Install started ──")
-        QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
-
-    def _confirm_plut(self):
-        self._plut_event.set()
-
-    def _on_done(self, _):
-        self._stop_pulse()
-        self.cur.setText("Installation complete!")
-        self.cont_btn.setVisible(True)
-
-    def _go_management(self):
-        root = find_steam_root()
-        self.stack.widget(5).set_installed(find_installed_games(parse_library_folders(root)))
-        self.stack.setCurrentIndex(5)
-
-    def _run(self):
-        from wrapper import get_proton_path, find_compatdata, kill_steam
-        from plutonium_oled import launch_bootstrapper, is_plutonium_ready, install_plutonium
-        from cod4x import install_cod4x
-        from iw4x import install_iw4x
-        from iw3sp import install_iw3sp
-        from cleanops import install_cleanops
-        from ge_proton import install_ge_proton, set_compat_tool, MANAGED_APPIDS
-
-        selected_keys   = [key for key, _, _ in self.selected]
-        has_plut        = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
-        has_cod4        = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k in selected_keys)
-        has_iw4x        = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
-        has_cleanops    = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
-        logged_bases    = set()
-        ge_version      = None
-        _compat_applied = False
-        _steam_killed   = False
-
-        def _kill_steam_once():
-            nonlocal _steam_killed
-            if not _steam_killed:
-                self._s.progress.emit(28, "Closing Steam...")
-                self._s.log.emit("Closing Steam...")
-                try:
-                    kill_steam()
-                    self._s.log.emit("  ✓ Steam closed.")
-                except Exception as ex:
-                    self._s.log.emit(f"  Could not close Steam: {ex}")
-                _steam_killed = True
-
-        def _apply_compat():
-            nonlocal _compat_applied
-            if ge_version and not _compat_applied:
-                try:
-                    set_compat_tool(MANAGED_APPIDS, ge_version)
-                    self._s.log.emit(f"✓  GE-Proton {ge_version} set for all games")
-                    cfg.set_ge_proton_version(ge_version)
-                    _compat_applied = True
-                except Exception as ex:
-                    self._s.log.emit(f"  CompatToolMapping skipped: {ex}")
-        _launch_defaults_set = False
-        def _set_launch_defaults():
-            nonlocal _launch_defaults_set
-            if _launch_defaults_set:
-                return
-            defaults = {}
-            if has_cod4:
-                defaults["7940"] = ("7a722f97", "1")   # CoD4 → Singleplayer
-            if any(k in ("t4sp", "t4mp") for k in selected_keys):
-                defaults["10090"] = ("9aa5e05f", "0") # WaW → Campaign
-            if not defaults:
-                return
-            try:
-                from wrapper import set_default_launch_option
-                set_default_launch_option(self.steam_root, defaults)
-                self._s.log.emit("✓  Default launch options set (SP mode)")
-                _launch_defaults_set = True
-            except Exception as ex:
-                self._s.log.emit(f"  Launch options skipped: {ex}")
-
-        # ── GE-Proton download + extract (Steam still running) ────────────────
-        try:
-            self._s.pulse_start.emit("Installing GE-Proton")
-            self._s.log.emit("Installing GE-Proton...")
-            ge_version = install_ge_proton(
-                on_progress=lambda pct, msg: self._s.progress.emit(2 + int(pct * 0.08), msg)
-            )
-            self._s.pulse_stop.emit()
-            self._s.log.emit(f"✓  {ge_version} downloaded")
-        except Exception as ex:
-            self._s.pulse_stop.emit()
-            self._s.log.emit(f"  GE-Proton setup skipped: {ex}")
-
-        # ── Copy deps from GE-Proton default_pfx into all game prefixes ──────
-        # Every selected game gets its prefix preloaded — no exceptions.
-        # ensure_all_prefix_deps handles deduplication and skips prefixes
-        # that are already initialized.
-        proton = get_proton_path(self.steam_root)
-
-        if ge_version:
-            from ge_proton import ensure_all_prefix_deps
-            from detect_games import GAMES as _GAMES_MAP
-            self._s.log.emit("Installing prefix dependencies...")
-            self._s.pulse_start.emit("Installing prefix dependencies")
-            dep_targets = []
-            for key, gd, game in self.selected:
-                # Use per-key appid from GAMES, not card-level gd["appid"].
-                # Card-level appid is wrong for keys that have their own appid
-                # (e.g. t6zm=212910, t6sp=202970 vs card appid 202990).
-                appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
-                _install_dir = game["install_dir"] if game else None
-                compat = find_compatdata(self.steam_root, appid,
-                                         game_install_dir=_install_dir)
-                if not compat and game and game.get("install_dir"):
-                    # Prefix doesn't exist yet — build the path from the game's
-                    # steamapps dir so ensure_prefix_deps can create it
-                    steamapps = os.path.dirname(os.path.dirname(game["install_dir"]))
-                    compat = os.path.join(steamapps, "compatdata", str(appid))
-                if compat:
-                    dep_targets.append((key, compat))
-            if dep_targets:
-                done = ensure_all_prefix_deps(
-                    ge_version, dep_targets,
-                    on_progress=lambda msg: self._s.log.emit(msg),
-                    proton_path=proton,
-                    steam_root=self.steam_root,
+            with open(shortcuts_path, "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
+
+        header = b'\x00shortcuts\x00'
+        footer = b'\x08\x08'
+
+        body = data
+        if body.startswith(header):
+            body = body[len(header):]
+        if body.endswith(footer):
+            body = body[:-2]
+        elif body.endswith(b'\x08'):
+            body = body[:-1]
+
+        # Split into entries
+        entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', body)]
+        if not entry_starts:
+            continue
+
+        entries = []
+        for i, start in enumerate(entry_starts):
+            end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(body)
+            entries.append(body[start:end])
+
+        # Filter out orphans by checking their stored appid against our set
+        keep = []
+        removed_here = 0
+        for entry in entries:
+            appid_match = re.search(rb'\x02appid\x00(.{4})', entry)
+            if appid_match:
+                stored_appid = struct.unpack('<I', appid_match.group(1))[0]
+                if stored_appid in orphan_appids:
+                    label = orphan_names.get(stored_appid, str(stored_appid))
+                    prog(f"  Removed orphan shortcut: {label} (uid {uid})")
+                    removed_here += 1
+                    continue
+            keep.append(entry)
+
+        if removed_here > 0:
+            # Reindex remaining entries
+            reindexed = []
+            for new_idx, entry in enumerate(keep):
+                entry = re.sub(
+                    rb'^\x00\d+\x00',
+                    f'\x00{new_idx}\x00'.encode(),
+                    entry,
                 )
-                self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
-            self._s.pulse_stop.emit()
+                reindexed.append(entry)
+            new_data = header + b''.join(reindexed) + footer
+            try:
+                _backup_file(shortcuts_path)
+                with open(shortcuts_path, "wb") as f:
+                    f.write(new_data)
+            except OSError as ex:
+                prog(f"  Could not write shortcuts.vdf: {ex}")
+            total_removed += removed_here
 
-        # ── Plutonium bootstrapper (Steam still running) ──────────────────────
-        if has_plut:
-            is_lcd = not cfg.is_oled()
+        # Remove artwork for orphan appids
+        if os.path.isdir(grid_dir):
+            for appid in orphan_appids:
+                appid_str = str(appid)
+                try:
+                    for f in os.listdir(grid_dir):
+                        if f.startswith(appid_str):
+                            os.remove(os.path.join(grid_dir, f))
+                except OSError:
+                    pass
 
-            # LCD and OLED both require the user to log in, just in different
-            # prefixes. LCD logs in inside HGL's shared default prefix so
-            # the auth state is bound to the exact Wine prefix that will
-            # later launch the games. OLED logs in inside the dedicated
-            # DeckOps prefix at ~/.local/share/deckops/plutonium_prefix/.
-            if is_lcd:
-                from plutonium_lcd import (launch_bootstrapper_lcd,
-                                    is_plutonium_ready_lcd)
-                plut_ready = is_plutonium_ready_lcd()
-            else:
-                plut_ready = is_plutonium_ready()
+    # Remove shader caches for orphan appids
+    shadercache_dir = os.path.join(STEAM_ROOT, "steamapps", "shadercache")
+    if os.path.isdir(shadercache_dir):
+        for appid in orphan_appids:
+            cache_dir = os.path.join(shadercache_dir, str(appid))
+            if os.path.isdir(cache_dir):
+                try:
+                    shutil.rmtree(cache_dir)
+                    prog(f"  Removed shader cache for orphan appid {appid}")
+                except OSError:
+                    pass
 
-            if not plut_ready:
-                if is_lcd:
-                    self._s.progress.emit(12, "Setting up Plutonium through HGL...")
-                    self._s.log.emit(
-                        "Setting up Plutonium through HGL...\n"
-                        "  1. HGL will download and launch Plutonium (this may take a few minutes)\n"
-                        "  2. Log in with your Plutonium account\n"
-                        "  3. Close the Plutonium window\n"
-                        "  4. Click the button below to continue"
+    if total_removed > 0:
+        prog(f"Cleaned {total_removed} orphan shortcut(s)")
+    else:
+        prog("No orphan shortcuts found")
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def create_shortcuts(installed_games: dict, selected_keys: list,
+                     gyro_mode: str, on_progress=None, steam_root: str = None):
+    """
+    Create non-Steam shortcuts for CoD4 MP and WaW MP if they were selected
+    and installed. Creates shortcuts for ALL Steam user accounts.
+
+    steam_root -- path to Steam root, used to dynamically resolve the game's
+                  compatdata prefix (internal or SD card). Falls back to
+                  STEAM_ROOT if not provided.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+    
+    to_create = []
+    for key, shortcut_def in SHORTCUTS.items():
+        if key not in selected_keys:
+            continue
+        if key not in installed_games:
+            continue
+        game = installed_games[key]
+        install_dir = game.get("install_dir") or game.get("path")
+        if not install_dir:
+            continue
+        to_create.append((key, shortcut_def, install_dir))
+    
+    if not to_create:
+        prog("No shortcuts to create.")
+        return
+    
+    uids = _find_all_steam_uids()
+    if not uids:
+        prog("⚠ No Steam user accounts found — shortcuts skipped.")
+        return
+    
+    for uid in uids:
+        prog(f"Creating shortcuts for user {uid}...")
+        
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+        
+        existing_names = _read_existing_shortcuts(shortcuts_path)
+        existing_raw = _read_shortcuts_raw(shortcuts_path)
+        next_idx = _get_next_index(existing_raw)
+        
+        new_entries = []
+        
+        for key, shortcut_def, install_dir in to_create:
+            name = shortcut_def["name"]
+            exe_path = os.path.join(install_dir, shortcut_def["exe_name"])
+            game_appid = shortcut_def["game_appid"]
+
+            # ── Resolve the game's actual compatdata prefix ───────────────
+            # Dynamically find the prefix so it works whether the game is
+            # on the internal NVME or an SD card. The shortcut reuses the
+            # game's prefix (no separate prefix needed).
+            from wrapper import find_compatdata
+            _sr = steam_root or STEAM_ROOT
+            game_data = installed_games.get(key, {})
+            compatdata_path = find_compatdata(
+                _sr, game_appid,
+                game_install_dir=game_data.get("install_dir"),
+            )
+            if not compatdata_path:
+                # Prefix doesn't exist yet - fall back to same library as game
+                steamapps = os.path.dirname(os.path.dirname(install_dir))
+                compatdata_path = os.path.join(steamapps, "compatdata", game_appid)
+
+            # For t4mp (WaW Multiplayer), plutonium.py has replaced CoDWaWmp.exe
+            # with a bash wrapper -- Proton cannot run it as a Windows binary.
+            # OLED: point at the launcher with a protocol URL for online play.
+            # LCD: create a Heroic flatpak shortcut for online play. Uses the
+            #      same LD_PRELOAD pattern as Steam library launch options to
+            #      work around Steam's pinned libcurl conflict with flatpak.
+            # exe_path (CoDWaWmp.exe) is still used for appid calculation so any
+            # existing shortcut entry in Steam is not invalidated.
+            if key == "t4mp":
+                import config as _cfg
+                if _cfg.is_oled():
+                    plut_dir = os.path.join(
+                        compatdata_path,
+                        "pfx", "drive_c", "users", "steamuser",
+                        "AppData", "Local", "Plutonium",
+                    )
+                    plut_launcher  = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
+                    actual_exe     = plut_launcher
+                    start_dir      = install_dir
+                    launch_options = (
+                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                        f'%command% "plutonium://play/t4mp"'
                     )
                 else:
-                    self._s.progress.emit(12, "Launching Plutonium — please log in...")
-                    self._s.log.emit(
-                        "Plutonium is launching now.\n"
-                        "  1. Wait for it to finish downloading\n"
-                        "  2. Log in with your Plutonium account\n"
-                        "  3. Close the Plutonium window\n"
-                        "  4. Click the button below to continue"
+                    # LCD: non-Steam shortcut for online play via cache_cleanup.py.
+                    # t4mp shares appid 10090 with t4sp so it can't use
+                    # set_launch_options on the Steam library entry — it
+                    # gets its own non-Steam shortcut instead.
+                    # cache_cleanup.py cleans the Fossilize shader cache and
+                    # then execs the Heroic flatpak launch.
+                    _cleanup_script = os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)), "cache_cleanup.py"
                     )
-                try:
-                    if is_lcd:
-                        launch_bootstrapper_lcd(
-                            on_progress=lambda p, m: self._s.progress.emit(p, m)
-                        )
+                    _venv_python = os.path.join(
+                        os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3"
+                    )
+                    actual_exe     = _venv_python
+                    start_dir      = os.path.dirname(_cleanup_script)
+                    launch_options = f'"{_cleanup_script}" t4mp steam'
+            else:
+                actual_exe     = exe_path
+                start_dir      = install_dir
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+
+            shortcut_appid = _calc_shortcut_appid(exe_path, name)
+
+            prog(f"  → {name}")
+            prog(f"    appid: {shortcut_appid}")
+
+            if name in existing_names:
+                prog(f"    ✓ Shortcut exists")
+            else:
+                icon_path = os.path.join(grid_dir, f"{shortcut_appid}_icon.{shortcut_def['icon_ext']}")
+
+                entry = {
+                    "appid":               _to_signed32(shortcut_appid),
+                    "AppName":             name,
+                    "Exe":                 f'"{actual_exe}"',
+                    "StartDir":            f'"{start_dir}"',
+                    "icon":                icon_path,
+                    "ShortcutPath":        "",
+                    "LaunchOptions":       launch_options,
+                    "IsHidden":            0,
+                    "AllowDesktopConfig":  1,
+                    "AllowOverlay":        1,
+                    "OpenVR":              0,
+                    "Devkit":              0,
+                    "DevkitGameID":        "",
+                    "DevkitOverrideAppID": 0,
+                    "LastPlayTime":        int(time.time()),
+                    "FlatpakAppID":        "",
+                    "tags":                {"0": "DeckOps"},
+                }
+
+                entry_bytes = _make_shortcut_entry(next_idx, entry)
+                new_entries.append(entry_bytes)
+                next_idx += 1
+                prog(f"    ✓ Shortcut created")
+
+            # Set GE-Proton as the compat tool for this shortcut's appid,
+            # the same way it is set for regular Steam games in ge_proton.py.
+            # We use the shortcut_appid (not game_appid) because config.vdf
+            # CompatToolMapping is keyed on the appid Steam actually launches.
+            #
+            # Exception: t4mp on LCD uses a Heroic flatpak shortcut — setting
+            # a compat tool would sandbox flatpak inside SLR and break it.
+            try:
+                import config as cfg
+                if key == "t4mp" and not cfg.is_oled():
+                    _clear_compat_tool(str(shortcut_appid))
+                    prog(f"    ✓ Cleared compat tool (LCD Heroic shortcut)")
+                else:
+                    from wrapper import set_compat_tool
+                    ge_version = cfg.get_ge_proton_version()
+                    if ge_version:
+                        set_compat_tool([str(shortcut_appid)], ge_version)
+                        prog(f"    ✓ GE-Proton {ge_version} set")
                     else:
-                        launch_bootstrapper(
-                            proton,
-                            on_progress=lambda p, m: self._s.progress.emit(p, m),
-                            steam_root=self.steam_root,
-                        )
-                except Exception as ex:
-                    self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
-                    self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
-
-                if is_lcd:
-                    self._s.log.emit(
-                        "⏳  HGL is launching Plutonium. This may take a minute on first run\n"
-                        "   while HGL sets up the Wine prefix."
-                    )
-                    self._s.pulse_start.emit("Waiting for Plutonium login")
-
-                self._s.plut_wait.emit()
-                self._plut_event.wait()
-                self._s.plut_go.emit()
-
-                if is_lcd:
-                    self._s.pulse_stop.emit()
-
-                # Verify Plutonium is ready after the user closed the window
-                ready_check = is_plutonium_ready_lcd() if is_lcd else is_plutonium_ready()
-                if not ready_check:
-                    self._s.log.emit(
-                        "✗  Plutonium does not appear to be fully set up.\n"
-                        "   Make sure you logged in and let it finish downloading."
-                    )
-                    self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
-
-                self._s.log.emit("✓  Plutonium ready.")
-            else:
-                self._s.progress.emit(12, "Waiting for Plutonium...")
-                self._s.log.emit(
-                    "Wait for Plutonium to finish updating, sign in, then close Plutonium."
-                )
-                self._s.plut_wait.emit()
-                self._plut_event.wait()
-                self._s.plut_go.emit()
-
-        # ── Kill Steam once — everything from here runs with Steam closed ─────
-        _kill_steam_once()
-
-        # ── Clean slate: clear ALL launch options and compat tools ─────────
-        # Previous installs (LCD→OLED switch, older DeckOps versions) can
-        # leave stale launch options and compat tool entries that conflict
-        # with the current install. Wipe everything for MANAGED_APPIDS
-        # first, then re-apply what's needed via _apply_compat below.
-        try:
-            from wrapper import clear_launch_options, clear_compat_tool
-            for appid in MANAGED_APPIDS:
-                clear_launch_options(self.steam_root, appid)
-            clear_compat_tool(MANAGED_APPIDS)
-            self._s.log.emit("✓  Cleared all launch options and compat tools")
-        except Exception as ex:
-            self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
-
-        _apply_compat()
-        _set_launch_defaults()
-
-        # ── Plutonium games ───────────────────────────────────────────────────
-        if has_plut:
-            # Create the launcher shortcut FIRST so the appid/prefix exist
-            # before per-game installs mirror configs into it.
-            try:
-                from shortcut import create_launcher_shortcut
-                create_launcher_shortcut(
-                    on_progress=lambda m: self._s.log.emit(m)
-                )
+                        prog(f"    ⚠ GE-Proton version unknown — compat tool not set")
             except Exception as ex:
-                self._s.log.emit(f"  Launcher shortcut failed: {ex}")
+                prog(f"    ⚠ Could not set compat tool for shortcut: {ex}")
 
-            plut_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "plutonium"]
-            total_plut = len(plut_selected)
-            for idx, (key, gd, game) in enumerate(plut_selected):
-                bp = 30 + int(idx / max(total_plut, 1) * 30)
-                base_name = gd["base"]
-                if base_name not in logged_bases:
-                    self._s.progress.emit(bp, f"Setting up {base_name}...")
-                def op_plut(pct, msg, _b=bp): self._s.progress.emit(_b + int(pct / 100 * 8), msg)
-                try:
-                    from plutonium_oled import GAME_META as _PLUT_META
-                    _plut_appid = _PLUT_META[key][0] if key in _PLUT_META else gd["appid"]
-                    compat = find_compatdata(self.steam_root, _plut_appid,
-                                              game_install_dir=game["install_dir"] if game else None)
-                    install_plutonium(game, key, self.steam_root, proton, compat, op_plut)
-                    # plutonium installer (plutonium_oled.py / plutonium_lcd.py)
-                    # owns its own mark_game_setup call so lan_wrapper_path
-                    # and other install-side metadata are preserved.
-                    if base_name not in logged_bases:
-                        self._s.log.emit(f"✓  {base_name} done")
-                        logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── iw4x (Steam closed) ───────────────────────────────────────────────
-        if has_iw4x:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "iw4x"]:
-                base_name = gd["base"]
-                self._s.progress.emit(62, f"Setting up {base_name}...")
-                def op_iw4x(pct, msg): self._s.progress.emit(62 + int(pct / 100 * 8), msg)
-                try:
-                    compat = find_compatdata(self.steam_root, gd["appid"],
-                                              game_install_dir=game["install_dir"] if game else None)
-                    install_iw4x(game, self.steam_root, proton, compat, op_iw4x,
-                                 install_dlc=getattr(self, 'install_iw4x_dlc', False))
-                    cfg.mark_game_setup(key, "iw4x", source="steam")
-                    self._s.log.emit(f"✓  {base_name} done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── CoD4 (iw3sp + cod4x) — Steam closed ──────────────────────────────
-        if has_cod4:
-            cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4x", "iw3sp")]
-            for key, gd, game in cod4_selected:
-                base_name = gd["base"]
-                self._s.progress.emit(75, f"Setting up {base_name}...")
-                def op_cod4(pct, msg): self._s.progress.emit(75 + int(pct / 100 * 10), msg)
-                try:
-                    _install_dir = game["install_dir"] if game else None
-                    compat = find_compatdata(self.steam_root, gd["appid"],
-                                             game_install_dir=_install_dir)
-                    c = KEY_CLIENT.get(key, gd["client"])
-                    if c == "cod4x":
-                        install_cod4x(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=gd["appid"])
-                    elif c == "iw3sp":
-                        install_iw3sp(game, self.steam_root, proton, compat, op_cod4)
-                    cfg.mark_game_setup(key, c, source="steam")
-                    if base_name not in logged_bases:
-                        self._s.log.emit(f"✓  {base_name} done")
-                        logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── CleanOps (BO3) — Steam closed ─────────────────────────────────────
-        if has_cleanops:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "cleanops"]:
-                base_name = gd["base"]
-                self._s.progress.emit(86, f"Setting up {base_name}...")
-                def op_cleanops(pct, msg): self._s.progress.emit(86 + int(pct / 100 * 4), msg)
-                try:
-                    compat = find_compatdata(self.steam_root, gd["appid"],
-                                              game_install_dir=game["install_dir"] if game else None)
-                    install_cleanops(game, self.steam_root, proton, compat, op_cleanops)
-                    cfg.mark_game_setup(key, "cleanops", source="steam")
-                    self._s.log.emit(f"✓  {base_name} done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── AlterWare (Ghosts / Advanced Warfare) — Steam closed ──────────────
-        has_alterware = any(KEY_CLIENT.get(k) == "alterware" for k in selected_keys)
-        if has_alterware:
-            from alterware import install_alterware
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "alterware"]:
-                base_name = gd["base"]
-                self._s.progress.emit(91, f"Setting up {base_name}...")
-                def op_alterware(pct, msg): self._s.progress.emit(91 + int(pct / 100 * 4), msg)
-                try:
-                    install_alterware(game, key, self.steam_root, proton, "", op_alterware,
-                                     source="steam")
-                    cfg.mark_game_setup(key, "alterware", source="steam")
-                    self._s.log.emit(f"✓  {base_name} done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── Vanilla Steam games (no mod client, just configs + controllers) ──
-        # Games like MW2 SP, MW3 SP, and BO2 SP run through Steam as-is.
-        # No download or exe replacement needed. We just mark them as set up
-        # so they show as installed on the My Games screen and get their
-        # display configs and controller profiles applied below.
-        for key, gd, game in self.selected:
-            c = KEY_CLIENT.get(key, "")
-            if c == "steam" and not cfg.is_game_setup_for_source(key, "steam"):
-                cfg.mark_game_setup(key, "steam", source="steam")
-                self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
-
-        # ── game display configs ──────────────────────────────────────────────
-        try:
-            from game_config import apply_game_configs
-            applied, skipped, failed = apply_game_configs(
-                selected_keys=selected_keys,
-                installed_games={k: g for k, gd, g in self.selected if g},
-                steam_root=self.steam_root,
-                deck_model=cfg.get_deck_model() or "oled",
-                on_progress=lambda msg: self._s.log.emit(msg),
-            )
-            if applied > 0:
-                self._s.log.emit(f"✓  Game display configs: {applied} written"
-                                 + (f", {skipped} skipped" if skipped else "")
-                                 + (f", {failed} failed" if failed else ""))
-            elif skipped > 0:
-                self._s.log.emit(f"⚠  Game display configs: none applied ({skipped} skipped)")
-            else:
-                self._s.log.emit("⚠  Game display configs: no eligible configs found")
-        except Exception as ex:
-            self._s.log.emit(f"  Game configs skipped: {ex}")
-
-        # ── Controller templates + profiles (after all games) ─────────────────
-        self._s.progress.emit(90, "Installing controller templates...")
-        self._s.log.emit("Installing controller templates...")
-        try:
-            from controller_profiles import install_controller_templates, assign_controller_profiles, assign_external_controller_profiles
-            install_controller_templates(
-                on_progress=lambda msg: self._s.log.emit(f"  {msg}")
-            )
-            gyro_mode = cfg.get_gyro_mode() or "hold"
-            # Neptune profiles always assigned - user may play handheld too
-            assign_controller_profiles(
-                gyro_mode,
-                on_progress=lambda msg: self._s.log.emit(f"  {msg}")
-            )
-            self._s.log.emit(f"✓  Neptune controller profiles assigned ({gyro_mode} mode)")
-            # Docked users also get external controller profiles
-            if cfg.is_docked():
-                controller_type = cfg.get_external_controller() or "playstation"
-                assign_external_controller_profiles(
-                    controller_type,
-                    gyro_mode,
-                    on_progress=lambda msg: self._s.log.emit(f"  {msg}")
-                )
-                self._s.log.emit(f"✓  External controller profiles assigned ({controller_type})")
-        except Exception as ex:
-            self._s.log.emit(f"  Templates skipped: {ex}")
-
-        try:
-            from wrapper import set_steam_input_enabled
-            set_steam_input_enabled(self.steam_root)
-            self._s.log.emit("✓  Steam Input enabled for all games")
-        except Exception as ex:
-            self._s.log.emit(f"  Steam Input setup skipped: {ex}")
-
-        # ── Non-Steam shortcuts ───────────────────────────────────────────────
-        try:
-            from shortcut import create_shortcuts
-            self._s.log.emit("Creating non-Steam shortcuts...")
-            installed_for_shortcuts = {k: g for k, gd, g in self.selected if g}
-            create_shortcuts(
-                installed_games=installed_for_shortcuts,
-                selected_keys=selected_keys,
-                gyro_mode=cfg.get_gyro_mode() or "hold",
-                on_progress=lambda msg: self._s.log.emit(msg),
-                steam_root=self.steam_root,
-            )
-        except Exception as ex:
-            self._s.log.emit(f"  Shortcuts skipped: {ex}")
-
-        # ── Custom artwork for Steam MP/ZM games ─────────────────────────────
-        try:
-            from shortcut import apply_steam_artwork
-            self._s.log.emit("Applying custom artwork for multiplayer games...")
-            apply_steam_artwork(
-                selected_keys=selected_keys,
-                on_progress=lambda msg: self._s.log.emit(msg)
-            )
-        except Exception as ex:
-            self._s.log.emit(f"  Steam artwork skipped: {ex}")
-
-        # Standard flow always finishes here. Advanced flow uses
-        # OwnInstallScreen instead and never reaches this screen.
-        cfg.complete_first_run(self.steam_root)
-        self._s.progress.emit(100, "All done!")
-        self._s.done.emit(True)
-
-
-# ── ManagementCard ─────────────────────────────────────────────────────────────
-class ManagementCard(QFrame):
-    def __init__(self, gd, installed, on_setup, on_update, on_reinstall,
-                 on_readd=None, parent=None):
-        super().__init__(parent)
-        color = C_IW if gd["dev"] == "iw" else C_TREY
-        self._color  = color
-        self._appid  = _active_appid(gd)
-        self._is_lan = gd.get("client") == "lan"
-        self.setObjectName("MC")
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        self.setMaximumWidth(CARD_MAX_W)
-
-        keys       = _active_keys(gd)
-        client     = _active_client(gd)
-
-        if self._is_lan:
-            # DeckOps LAN card — always shown, no key-based detection
-            ik         = []
-            is_setup   = False
-            is_present = True
+            _download_artwork(grid_dir, shortcut_appid, shortcut_def, prog)
+            _assign_controller_config(uid, shortcut_appid, shortcut_def, gyro_mode, prog)
+        
+        if new_entries:
+            try:
+                _write_shortcuts_vdf(shortcuts_path, existing_raw, new_entries)
+                prog(f"  ✓ shortcuts.vdf saved")
+            except Exception as e:
+                prog(f"  ⚠ Failed to write shortcuts.vdf: {e}")
         else:
-            ik         = [k for k in keys if k in installed]
-            is_setup   = any(cfg.is_game_setup(k) for k in keys)
-            is_present = len(ik) > 0
+            prog(f"  ✓ No new shortcuts needed")
+    
+    prog("✓ Non-Steam shortcuts created.")
 
-        border_color = color if is_setup else ("#445544" if is_present else "#333344")
-        self.setStyleSheet(
-            f"QFrame#MC{{background:{C_CARD};border-top:3px solid {border_color};border-radius:8px;}}"
-        )
 
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
-
-        # ── Image container with overlaid badge and buttons ───────────────
-        img_container = QWidget()
-        img_container.setStyleSheet("background:#0A0A10;border:none;")
-        img_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-        self._img = QLabel(img_container)
-        self._img.setAlignment(Qt.AlignCenter)
-        self._img.setStyleSheet("background:transparent;border:none;")
-        if not is_setup and not self._is_lan:
-            effect = QGraphicsOpacityEffect()
-            effect.setOpacity(0.45 if is_present else 0.25)
-            self._img.setGraphicsEffect(effect)
-
-        # Client badge — overlaid top-left on the image
-        self._client_badge = QPushButton(client.upper(), img_container)
-        self._client_badge.setFont(font(8, True)); self._client_badge.setEnabled(False)
-        self._client_badge.setStyleSheet(
-            f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:3px;padding:2px 6px;}}"
-            f"QPushButton:disabled{{background:{color};color:#FFF;}}"
-        )
-        self._client_badge.adjustSize()
-        self._client_badge.raise_()
-
-        # Buttons — overlaid bottom-center on the image
-        self._btn_bar = QWidget(img_container)
-        self._btn_bar.setStyleSheet("background:transparent;border:none;")
-        bb = QHBoxLayout(self._btn_bar)
-        bb.setContentsMargins(6, 0, 6, 0); bb.setSpacing(4)
-
-        if self._is_lan:
-            readd_btn = _btn("Re-Add", C_TREY, size=9, h=26)
-            if on_readd:
-                readd_btn.clicked.connect(lambda: on_readd(gd))
-            readd_btn.setStyleSheet(
-                f"QPushButton{{background:{C_TREY};color:#FFF;border:none;"
-                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
-            )
-            bb.addStretch(); bb.addWidget(readd_btn); bb.addStretch()
-        elif not is_setup and is_present:
-            setup_btn = _btn("Set Up", C_IW, size=9, h=26)
-            setup_btn.clicked.connect(lambda: on_setup(gd))
-            setup_btn.setStyleSheet(
-                f"QPushButton{{background:{C_IW};color:#FFF;border:none;"
-                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
-            )
-            bb.addStretch(); bb.addWidget(setup_btn); bb.addStretch()
-        elif is_setup:
-            has_mod = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in ik)
-            bb.addStretch()
-            if has_mod:
-                upd_btn = _btn("Update", C_DARK_BTN, size=9, h=26)
-                upd_btn.clicked.connect(lambda: on_update(gd, ik))
-                upd_btn.setStyleSheet(
-                    f"QPushButton{{background:rgba(51,51,63,200);color:#CCC;border:none;"
-                    f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
-                )
-                bb.addWidget(upd_btn)
-            rei_btn = _btn("Reinstall", C_DARK_BTN, size=9, h=26)
-            rei_btn.clicked.connect(lambda: on_reinstall(gd))
-            rei_btn.setStyleSheet(
-                f"QPushButton{{background:rgba(51,51,63,200);color:#CCC;border:none;"
-                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
-            )
-            bb.addWidget(rei_btn)
-            bb.addStretch()
-        else:
-            setup_btn = _btn("Set Up", C_DARK_BTN, size=9, h=26)
-            setup_btn.setEnabled(False)
-            setup_btn.setStyleSheet(
-                f"QPushButton{{background:rgba(37,37,53,200);color:#555568;border:none;"
-                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
-                f"QPushButton:disabled{{background:rgba(37,37,53,200);color:#555568;}}"
-            )
-            bb.addStretch(); bb.addWidget(setup_btn); bb.addStretch()
-
-        self._btn_bar.adjustSize()
-        self._btn_bar.raise_()
-
-        self._img_container = img_container
-        lay.addWidget(img_container)
-        self._raw_pixmap = None
-
-        if self._is_lan:
-            local_img = os.path.join(HEROES_DIR, "deckops_grid.png")
-            if os.path.exists(local_img):
-                self._raw_pixmap = QPixmap(local_img)
-        else:
-            cached = _header_path(self._appid)
-            if os.path.exists(cached):
-                self._raw_pixmap = QPixmap(cached)
-            else:
-                threading.Thread(target=self._fetch, args=(self._appid,), daemon=True).start()
-
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        self._scale_image()
-
-    def _scale_image(self):
-        w = self.width()
-        h = int(w * IMG_RATIO)
-        self._img_container.setFixedSize(w, h)
-        self._img.setFixedSize(w, h)
-        if self._raw_pixmap:
-            self._img.setPixmap(
-                self._raw_pixmap.scaled(w, h, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-            )
-        # Position client badge — top-left with 4px margin
-        self._client_badge.move(4, 4)
-        # Position button bar — bottom, full width
-        self._btn_bar.setFixedWidth(w)
-        bh = self._btn_bar.sizeHint().height()
-        self._btn_bar.move(0, h - bh - 4)
-
-    def _fetch(self, appid):
-        url = SP_IMAGE_URLS.get(appid)
-        if not url:
-            return
-        try:
-            import urllib.request
-            dest = _header_path(appid)
-            urllib.request.urlretrieve(url, dest)
-            pix = QPixmap(dest)
-            if not pix.isNull():
-                self._raw_pixmap = pix
-                QTimer.singleShot(0, self._scale_image)
-        except Exception:
-            pass
-
-# ── ManagementScreen ───────────────────────────────────────────────────────────
-class ManagementScreen(QWidget):
-    def __init__(self, stack):
-        super().__init__(); self.stack=stack; self.installed={}; self.screen_name = "ManagementScreen"
-        lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
-
-        hdr = QWidget(); hdr.setFixedHeight(60)
-        hdr.setStyleSheet(f"background:{C_CARD};")
-        hl = QHBoxLayout(hdr); hl.setContentsMargins(20,0,20,0)
-        title = QLabel("DECKOPS"); title.setFont(font(22, display=True))
-        title.setStyleSheet("color:#FFF;background:transparent;")
-        hl.addWidget(title)
-        nightly_lbl = QLabel("NIGHTLY"); nightly_lbl.setFont(font(9, bold=True))
-        nightly_lbl.setStyleSheet(
-            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
-            "border-radius:4px;padding:1px 6px;"
-        )
-        hl.addWidget(nightly_lbl)
-        hl.addStretch()
-        guide_btn = _btn("📋  Guide", C_BLUE_BTN, size=11, h=36); guide_btn.setFixedWidth(100)
-        guide_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
-        hl.addWidget(guide_btn)
-        hl.addSpacing(8)
-        cfg_btn = _btn("⚙  Settings", C_DARK_BTN, size=11, h=36); cfg_btn.setFixedWidth(120)
-        cfg_btn.clicked.connect(lambda: self.stack.setCurrentIndex(6))
-        hl.addWidget(cfg_btn)
-        lay.addWidget(hdr)
-
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        inner = QWidget(); self._grid = QGridLayout(inner)
-        self._grid.setContentsMargins(16,16,16,16); self._grid.setSpacing(12)
-        self._grid.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
-        scroll.setWidget(inner); lay.addWidget(scroll, stretch=1)
-
-        self._status = _lbl("", 12, C_DIM)
-        self._status.setContentsMargins(16,4,16,4)
-        lay.addWidget(self._status)
-
-    def set_installed(self, installed):
-        self.installed = installed
-        self._rebuild()
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        root = find_steam_root()
-        merged = find_installed_games(parse_library_folders(root))
-        # Merge own games so cards show regardless of install source
-        if cfg.get_game_source() == "own":
-            from detect_games import find_own_installed
-            own = find_own_installed()
-            # Own games take priority only for keys not already in Steam
-            for k, v in own.items():
-                if k not in merged:
-                    merged[k] = v
-        self.installed = merged
-        self._rebuild()
-
-    def _rebuild(self):
-        while self._grid.count():
-            item = self._grid.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
-
-        games = [g for g in ALL_GAMES
-                 if _active_keys(g) or g.get("client") == "lan"]
-
-        for idx, gd in enumerate(games):
-            row = idx // CARD_COLS
-            col = idx  % CARD_COLS
-            card = ManagementCard(
-                gd, self.installed,
-                on_setup     = self._setup,
-                on_update    = self._update,
-                on_reinstall = self._reinstall,
-                on_readd     = self._readd,
-            )
-            self._grid.addWidget(card, row, col)
-
-        total = len(games)
-        remainder = total % CARD_COLS
-        if remainder:
-            for col in range(remainder, CARD_COLS):
-                self._grid.addWidget(QWidget(), total // CARD_COLS, col)
-
-    def _readd(self, gd):
-        """Re-add the Plutonium offline launcher shortcut."""
-        from shortcut import create_launcher_shortcut
-        self._status.setText("Re-adding Plutonium offline launcher...")
-
-        def _on_progress(msg):
-            self._status.setText(msg)
-
-        def _run():
-            create_launcher_shortcut(on_progress=_on_progress)
-            QTimer.singleShot(0, lambda: self._status.setText(
-                "Plutonium offline launcher shortcut re-added."
-            ))
-
-        threading.Thread(target=_run, daemon=True).start()
-
-    def _setup(self, gd):
-        """Route a single card's keys through the install flow."""
-        root = find_steam_root()
-        keys = _active_keys(gd)
-        # Find which keys are present in the merged installed dict
-        present_keys = [k for k in keys if k in self.installed]
-        if not present_keys:
-            self._status.setText("Game files not found.")
-            return
-
-        source = cfg.get_game_source() or "steam"
-
-        # Build selected tuples for the install screen
-        selected = [(k, gd, self.installed[k]) for k in present_keys]
-
-        if source == "own":
-            # Determine which are own vs Steam
-            own_selected = {}
-            steam_selected = []
-            for k, g_gd, game in selected:
-                if game.get("source") == "own":
-                    own_selected[k] = game
-                else:
-                    steam_selected.append((k, g_gd, game))
-
-            s = self.stack.widget(10)  # OwnInstallScreen
-            s.own_selected = own_selected
-            s.steam_selected = steam_selected
-            s.steam_root = root
-            s._return_to_management = True
-            s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
-            self.stack.setCurrentIndex(10)
-        else:
-            # Standard Steam flow
-            s = self.stack.widget(4)  # InstallScreen
-            s.selected = selected
-            s.steam_root = root
-            s._return_to_management = True
-            s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
-            self.stack.setCurrentIndex(4)
-
-    def _update(self, gd, keys):
-        """Route a single card's installed keys through the update flow."""
-        root = find_steam_root()
-        # Use the merged installed dict (already built in showEvent)
-        selected = [(k, gd, self.installed.get(k, {})) for k in keys
-                     if self.installed.get(k)]
-        if not selected:
-            self._status.setText("Game not found.")
-            return
-        s = self.stack.widget(8)  # UpdateScreen
-        s.selected   = selected
-        s.steam_root = root
-        self.stack.setCurrentIndex(8)
-
-    def _reinstall(self, gd):
-        """Unmark game keys as set up, then route through the install flow."""
-        keys = _active_keys(gd)
-        cfg.unmark_game_setup(keys)
-        self._status.setText(f"Cleared setup state for {gd['base']}. Running clean install...")
-        # Route through the same path as "Set Up"
-        self._setup(gd)
-
-
-# ── ControllerInfoScreen ───────────────────────────────────────────────────────
-class ControllerInfoScreen(QWidget):
-    def __init__(self, stack):
-        super().__init__(); self.stack = stack; self.screen_name = "ControllerInfoScreen"
-        lay = QVBoxLayout(self); lay.setContentsMargins(60,30,60,30); lay.setSpacing(8)
-
-        t = QLabel("SETUP COMPLETE"); t.setFont(font(32, True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
-        lay.addWidget(_lbl(
-            "DeckOps has configured your games with controller profiles, GE-Proton, "
-            "and display settings. You're ready to play.",
-            13, C_DIM))
-        lay.addWidget(_hdiv())
-
-        # ── Cloud saves ───────────────────────────────────────────────────────
-        lay.addWidget(_lbl("⚠  Steam Cloud Saves", 13, C_TREY, bold=True, align=Qt.AlignLeft))
-        lay.addWidget(_lbl(
-            "If Steam asks about cloud saves, choose Keep Local. "
-            "If a game asks for Safe Mode, choose No.",
-            11, C_DIM, align=Qt.AlignLeft))
-        lay.addWidget(_hdiv())
-
-        # ── MW1 / WaW shortcuts ───────────────────────────────────────────────
-        lay.addWidget(_lbl("🎮  Modern Warfare 1 & World at War", 13, C_IW, bold=True, align=Qt.AlignLeft))
-        lay.addWidget(_lbl(
-            "MW1 and WaW each have a separate multiplayer shortcut in your Steam library "
-            "created by DeckOps. Launch the main game entry for singleplayer/campaign. "
-            "Launch the DeckOps shortcut for multiplayer.",
-            11, C_DIM, align=Qt.AlignLeft))
-        lay.addWidget(_lbl(
-            "MW1 Singleplayer (IW3SP-MOD): On your first launch, "
-            "the game will ask you to select a profile. Choose \"Player\" -- "
-            "this is the profile DeckOps created with your display settings. "
-            "Creating a new profile will use default settings instead.",
-            11, C_DIM, align=Qt.AlignLeft))
-
-        lay.addWidget(_hdiv())
-
-        # ── BO2 encrypted config note ──────────────────────────────────────────
-        lay.addWidget(_lbl("⚠  Black Ops II - Manual Setup Required", 13, "#5B9BD5", bold=True, align=Qt.AlignLeft))
-        lay.addWidget(_lbl(
-            "BO2 Multiplayer and Zombies config files are handled automatically by DeckOps. "
-            "Singleplayer config files are encrypted and cannot be written by DeckOps. "
-            "Set your resolution and display settings manually in-game after launching for the first time.",
-            11, C_DIM, align=Qt.AlignLeft))
-
-        lay.addWidget(_hdiv())
-
-        # ── LCD launch delay note (LCD users only) ────────────────────────────
-        self._lcd_div = _hdiv()
-        self._lcd_hdr = _lbl("⚠  LCD Steam Deck - Important Notes", 13, C_TREY, bold=True, align=Qt.AlignLeft)
-        self._lcd_body = _lbl(
-            "• Launch delay: Plutonium games on LCD may take a moment to launch. "
-            "A cleanup script runs before each launch to clear the shader cache. "
-            "If the game doesn't start right away, please be patient or try launching again.\n\n"
-            "• Vulkan shaders: If Steam tries to compile Vulkan shaders before launching, "
-            "skip it — these shaders are not used by LCD Plutonium games and just waste time.\n\n"
-            "• Closing games: When you're done playing, quit from the in-game menu instead of "
-            "using the Steam overlay. Closing through Steam can be slow and buggy on LCD "
-            "(it won't break anything, but quitting in-game is much faster).",
-            11, C_DIM, align=Qt.AlignLeft)
-        lay.addWidget(self._lcd_div)
-        lay.addWidget(self._lcd_hdr)
-        lay.addWidget(self._lcd_body)
-
-        lay.addWidget(_hdiv())
-
-        # ── Controller Profiles & GE-Proton ───────────────────────────────────
-        lay.addWidget(_lbl("🎮  Controller Profiles & GE-Proton", 13, C_IW, bold=True, align=Qt.AlignLeft))
-        # gyro_desc is set dynamically in showEvent so it always reflects the
-        # user's actual choice, not whatever was in config at construction time.
-        self._gyro_lbl = _lbl("", 11, C_DIM, align=Qt.AlignLeft)
-        lay.addWidget(self._gyro_lbl)
-        lay.addWidget(_lbl(
-            "Newest GE-Proton installed and set for all games. "
-            "Change Hold, ADS, or Toggle anytime in Settings — Re-apply Controller Profiles.",
-            11, "#666", align=Qt.AlignLeft))
-
-        # ── Decky Loader note (docked users only) ─────────────────────────────
-        self._decky_div  = _hdiv()
-        self._decky_hdr  = _lbl("🖥  Enable Docked Display Switching", 13, C_IW, bold=True, align=Qt.AlignLeft)
-        self._decky_body = _lbl(
-            "The DeckOps Decky plugin automatically switches your display settings when you "
-            "connect or disconnect a monitor. Decky Loader is required to use it.",
-            11, C_DIM, align=Qt.AlignLeft)
-        self._decky_btn  = _btn("Get Decky Loader  →  decky.xyz", C_BLUE_BTN, size=12, h=40)
-        self._decky_btn.setFixedWidth(320)
-        self._decky_btn.clicked.connect(lambda: __import__("subprocess").Popen(
-            ["xdg-open", "https://decky.xyz/"], start_new_session=True
-        ))
-        dbw = QHBoxLayout(); dbw.addWidget(self._decky_btn); dbw.addStretch()
-        lay.addWidget(self._decky_div)
-        lay.addWidget(self._decky_hdr)
-        lay.addWidget(self._decky_body)
-        lay.addLayout(dbw)
-
-        lay.addStretch()
-        lay.addSpacing(4)
-
-        self._safe_lbl = _lbl("✅  It is now safe to open Steam.", 13, C_IW, bold=True)
-        self._safe_lbl.setVisible(False)
-        lay.addWidget(self._safe_lbl)
-        lay.addSpacing(4)
-
-        cont = _btn("Continue  >>", C_IW, h=52)
-        cont.clicked.connect(self._go_management)
-        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(cont, stretch=1); cw.addStretch()
-        lay.addLayout(cw)
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self._safe_lbl.setVisible(True)
-        gyro_mode = cfg.get_gyro_mode() or "hold"
-        if gyro_mode == "hold":
-            gyro_desc = "R5 held"
-        elif gyro_mode == "ads":
-            gyro_desc = "aim down sights"
-        else:
-            gyro_desc = "R5 toggles"
-        self._gyro_lbl.setText(
-            f"Standard gamepad layout with gyro aiming ({gyro_desc}) assigned to all games. "
-        )
-        # Only show the Decky section for docked users
-        is_docked = cfg.is_docked()
-        self._decky_div.setVisible(is_docked)
-        self._decky_hdr.setVisible(is_docked)
-        self._decky_body.setVisible(is_docked)
-        self._decky_btn.setVisible(is_docked)
-        # Only show the LCD launch delay note for LCD users
-        is_lcd = not cfg.is_oled()
-        self._lcd_div.setVisible(is_lcd)
-        self._lcd_hdr.setVisible(is_lcd)
-        self._lcd_body.setVisible(is_lcd)
-
-    def _go_management(self):
-        root = find_steam_root()
-        self.stack.widget(5).set_installed(find_installed_games(parse_library_folders(root)))
-        self.stack.setCurrentIndex(5)
-
-
-def _reopen_steam_bg(steam_root=None):
-    """Reopen Steam in the background after a settings operation."""
-    try:
-        if not steam_root:
-            steam_root = find_steam_root()
-        steam_sh = os.path.join(steam_root, "steam.sh") if steam_root else None
-        if steam_sh and os.path.exists(steam_sh):
-            subprocess.Popen([steam_sh], start_new_session=True)
-        else:
-            subprocess.Popen(["steam"], start_new_session=True)
-    except Exception:
-        pass
-
-# ── ConfigureScreen ────────────────────────────────────────────────────────────
-class ConfigureScreen(QWidget):
-    def __init__(self, stack):
-        super().__init__(); self.stack=stack; self.screen_name = "ConfigureScreen"
-        lay = QVBoxLayout(self); lay.setContentsMargins(60,40,60,40); lay.setSpacing(14)
-        t = QLabel("SETTINGS"); t.setFont(font(36,True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
-        lay.addWidget(_hdiv())
-
-        # ── Background Music ──────────────────────────────────────────────
-        lay.addWidget(_lbl("Background Music", 14, "#CCC", align=Qt.AlignLeft))
-        mr = QHBoxLayout(); mr.setSpacing(12)
-        self._music_on = _music_enabled
-        self._music_toggle = _btn(
-            "Music: ON" if self._music_on else "Music: OFF",
-            C_IW if self._music_on else C_DARK_BTN,
-            size=12, h=40,
-        )
-        self._music_toggle.setFixedWidth(160)
-        self._music_toggle.clicked.connect(self._toggle_music)
-        from PyQt5.QtWidgets import QSlider
-        self._vol_slider = QSlider(Qt.Horizontal); self._vol_slider.setRange(0,100)
-        self._vol_slider.setValue(int(_music_volume*100))
-        self._vol_label = _lbl(f"{int(_music_volume*100)}%", 12, C_DIM, wrap=False)
-        self._vol_label.setFixedWidth(40)
-        self._vol_slider.valueChanged.connect(self._set_volume)
-        mr.addWidget(self._music_toggle); mr.addWidget(self._vol_slider,stretch=1); mr.addWidget(self._vol_label)
-        lay.addLayout(mr)
-        lay.addWidget(_hdiv())
-
-        # ── Controller Profiles ───────────────────────────────────────────
-        lay.addWidget(_lbl("Controller Profiles", 14, "#CCC", align=Qt.AlignLeft))
-        gr = QHBoxLayout(); gr.setSpacing(8)
-        gr.addWidget(_lbl("Gyro:", 12, "#AAA", wrap=False))
-        self._gyro_btns = {}
-        for mode in ("hold", "toggle", "ads"):
-            b = _btn(mode.upper(), C_DARK_BTN, size=11, h=36)
-            b.setFixedWidth(90)
-            b.clicked.connect(lambda checked, m=mode: self._set_gyro(m))
-            gr.addWidget(b)
-            self._gyro_btns[mode] = b
-        gr.addSpacing(16)
-        ctrl_btn = _btn("Re-apply Templates", C_DARK_BTN, size=12, h=36)
-        ctrl_btn.clicked.connect(self._apply_controller_profiles)
-        gr.addWidget(ctrl_btn)
-        gr.addStretch()
-        lay.addLayout(gr)
-        lay.addWidget(_hdiv())
-
-        # ── Player Name ───────────────────────────────────────────────────
-        lay.addWidget(_lbl("Player Name", 14, "#CCC", align=Qt.AlignLeft))
-        nr = QHBoxLayout(); nr.setSpacing(12)
-        from PyQt5.QtWidgets import QLineEdit
-        self._name_input = QLineEdit()
-        self._name_input.setPlaceholderText("Enter player name...")
-        self._name_input.setFixedHeight(36)
-        self._name_input.setMaxLength(32)
-        self._name_input.setStyleSheet(
-            "QLineEdit{background:#2A2A3A;color:#FFF;border:1px solid #444;"
-            "border-radius:6px;padding:0 10px;font-size:13px;}"
-            "QLineEdit:focus{border:1px solid #888;}"
-        )
-        save_btn = _btn("Save", C_IW, size=12, h=36)
-        save_btn.setFixedWidth(80)
-        save_btn.clicked.connect(self._save_name)
-        nr.addWidget(self._name_input, stretch=1); nr.addWidget(save_btn)
-        lay.addLayout(nr)
-        self._name_note = _lbl("Does not affect Plutonium online play", 10, C_DIM, align=Qt.AlignLeft)
-        lay.addWidget(self._name_note)
-        lay.addWidget(_hdiv())
-
-        # ── Shader Cache (LCD only) ───────────────────────────────────────
-        self._shader_row = QWidget()
-        sr_lay = QVBoxLayout(self._shader_row); sr_lay.setContentsMargins(0,0,0,0); sr_lay.setSpacing(8)
-        sr_lay.addWidget(_lbl("Shader Cache", 14, "#CCC", align=Qt.AlignLeft))
-        sc_btn = _btn("Clear Shader Cache", C_DARK_BTN, size=12, h=36)
-        sc_btn.setFixedWidth(220)
-        sc_btn.clicked.connect(self._clear_shader_cache)
-        sr_h = QHBoxLayout(); sr_h.addWidget(sc_btn); sr_h.addStretch()
-        sr_lay.addLayout(sr_h)
-        lay.addWidget(self._shader_row)
-        self._shader_hdiv = _hdiv()
-        lay.addWidget(self._shader_hdiv)
-
-        # ── Links ─────────────────────────────────────────────────────────
-        lay.addWidget(_lbl("Links", 14, "#CCC", align=Qt.AlignLeft))
-        lr = QHBoxLayout(); lr.setSpacing(12)
-        discord_btn = _btn("Discord", "#5865F2", size=12, h=36)
-        discord_btn.setFixedWidth(100)
-        discord_btn.clicked.connect(lambda: self._open_url("https://discord.gg/bkSQeq5Azk"))
-        stable_btn = _btn("Stable", C_DARK_BTN, size=12, h=36)
-        stable_btn.setFixedWidth(100)
-        stable_btn.clicked.connect(lambda: self._open_url("https://github.com/GalvarinoDev/DeckOps"))
-        nightly_btn = _btn("Nightly", C_DARK_BTN, size=12, h=36)
-        nightly_btn.setFixedWidth(100)
-        nightly_btn.clicked.connect(lambda: self._open_url("https://github.com/GalvarinoDev/DeckOps-Nightly"))
-        lr.addWidget(discord_btn); lr.addWidget(stable_btn); lr.addWidget(nightly_btn); lr.addStretch()
-        lay.addLayout(lr)
-        lay.addWidget(_hdiv())
-
-        # ── Danger Zone ──────────────────────────────────────────────────
-        lay.addWidget(_lbl("Danger Zone", 14, C_TREY, align=Qt.AlignLeft))
-        dr = QHBoxLayout(); dr.setSpacing(12)
-        uninstall_btn = _btn("Full Uninstall", C_RED_BTN, size=12, h=40)
-        reset_cfg_btn = _btn("Reset DeckOps Config", C_RED_BTN, size=12, h=40)
-        uninstall_btn.clicked.connect(self._confirm_uninstall)
-        reset_cfg_btn.clicked.connect(self._confirm_reset)
-        dr.addWidget(uninstall_btn); dr.addWidget(reset_cfg_btn); dr.addStretch()
-        lay.addLayout(dr)
-        lay.addWidget(_hdiv())
-
-        # ── About ─────────────────────────────────────────────────────────
-        self._about_label = _lbl("", 11, C_DIM, align=Qt.AlignLeft)
-        lay.addWidget(self._about_label)
-
-        lay.addStretch()
-        self.status = _lbl("", 12, C_DIM)
-        lay.addWidget(self.status)
-        back = _btn("<< Back", C_DARK_BTN, h=48); back.setFixedWidth(160)
-        back.clicked.connect(lambda: self.stack.setCurrentIndex(5))
-        bw = QHBoxLayout(); bw.addWidget(back); bw.addStretch()
-        lay.addLayout(bw)
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        # Refresh dynamic state
-        model = cfg.get_deck_model() or "unknown"
-        source = cfg.get_game_source() or "steam"
-        source_label = "Steam" if source == "steam" else "Steam & Non-Steam"
-        player = cfg.get_player_name() or "Player"
-        self._name_input.setText(player if player != "Player" else "")
-
-        # Gyro highlight
-        gyro = cfg.get_gyro_mode() or "hold"
-        for mode, btn in self._gyro_btns.items():
-            if mode == gyro:
-                btn.setStyleSheet(btn.styleSheet().replace(C_DARK_BTN, C_IW))
-            else:
-                btn.setStyleSheet(btn.styleSheet().replace(C_IW, C_DARK_BTN))
-
-        # LCD-only shader cache section
-        is_lcd = (model == "lcd")
-        self._shader_row.setVisible(is_lcd)
-        self._shader_hdiv.setVisible(is_lcd)
-
-        # Build info
-        build = "dev"
-        build_path = os.path.join(PROJECT_ROOT, "BUILD")
-        if os.path.exists(build_path):
-            try:
-                with open(build_path, "r") as f:
-                    build = f.read().strip() or "dev"
-            except Exception:
-                pass
-
-        self._about_label.setText(
-            f"Steam Deck: {model.upper()}  |  Source: {source_label}  |  "
-            f"Player: {player}\n"
-            f"Build: {build}"
-        )
-
-    def _toggle_music(self):
-        self._music_on = not self._music_on
-        _set_audio_enabled(self._music_on)
-        if self._music_on:
-            _start_audio()
-            self._music_toggle.setText("Music: ON")
-            self._music_toggle.setStyleSheet(
-                self._music_toggle.styleSheet().replace(C_DARK_BTN, C_IW))
-        else:
-            _kill_audio()
-            self._music_toggle.setText("Music: OFF")
-            self._music_toggle.setStyleSheet(
-                self._music_toggle.styleSheet().replace(C_IW, C_DARK_BTN))
-
-    def _set_volume(self, val):
-        self._vol_label.setText(f"{val}%")
-        _set_audio_volume(val / 100.0)
-
-    def _set_gyro(self, mode):
-        cfg.set_gyro_mode(mode)
-        # Update button highlights
-        for m, btn in self._gyro_btns.items():
-            if m == mode:
-                btn.setStyleSheet(btn.styleSheet().replace(C_DARK_BTN, C_IW))
-            else:
-                btn.setStyleSheet(btn.styleSheet().replace(C_IW, C_DARK_BTN))
-        self.status.setText(f"Gyro mode set to {mode.upper()}. Hit Re-apply Templates to update controller profiles.")
-
-    def _apply_controller_profiles(self):
-        self.status.setText("Re-applying controller profiles...")
-        s = _Sigs()
-        s.log.connect(lambda msg: self.status.setText(msg))
-        s.done.connect(lambda ok: self.status.setText(
-            "✓  Controller profiles applied." if ok else "✗  Failed — check that Steam is closed."
-        ))
-        def _run():
-            try:
-                from controller_profiles import install_controller_templates, assign_controller_profiles, assign_external_controller_profiles
-                from wrapper import kill_steam, set_steam_input_enabled
-                s.log.emit("Closing Steam...")
-                kill_steam()
-                install_controller_templates(
-                    on_progress=lambda msg: s.log.emit(msg)
-                )
-                gyro_mode = cfg.get_gyro_mode() or "hold"
-                assign_controller_profiles(
-                    gyro_mode,
-                    on_progress=lambda msg: s.log.emit(msg)
-                )
-                if cfg.is_docked():
-                    controller_type = cfg.get_external_controller() or "playstation"
-                    assign_external_controller_profiles(
-                        controller_type,
-                        gyro_mode,
-                        on_progress=lambda msg: s.log.emit(msg)
-                    )
-                sr = cfg.load().get("steam_root", "")
-                if sr:
-                    set_steam_input_enabled(sr)
-                s.done.emit(True)
-                _reopen_steam_bg(sr)
-            except Exception as ex:
-                s.log.emit(f"✗  Failed: {ex}")
-                s.done.emit(False)
-        threading.Thread(target=_run, daemon=True).start()
-
-    def _save_name(self):
-        name = self._name_input.text().strip()
-        if not name:
-            self.status.setText("Please enter a name.")
-            return
-        cfg.set_player_name(name)
-        self.status.setText(f"Updating player name to \"{name}\"...")
-        s = _Sigs()
-        s.log.connect(lambda msg: self.status.setText(msg))
-        def _run():
-            try:
-                from game_config import rename_player
-                from detect_games import find_installed_games, parse_library_folders
-                steam_root = cfg.load().get("steam_root", "") or find_steam_root()
-                installed = {}
-                if steam_root:
-                    installed = find_installed_games(parse_library_folders(steam_root))
-                count = rename_player(
-                    name, steam_root, installed_games=installed,
-                    on_progress=lambda msg: s.log.emit(msg),
-                )
-                s.log.emit(f"✓  Player name set to \"{name}\" ({count} config(s) updated).")
-            except Exception as ex:
-                s.log.emit(f"✗  Failed: {ex}")
-        threading.Thread(target=_run, daemon=True).start()
-
-    def _clear_shader_cache(self):
-        self.status.setText("Clearing shader cache...")
-        s = _Sigs()
-        s.log.connect(lambda msg: self.status.setText(msg))
-        def _run():
-            try:
-                from cache_cleanup import cleanup_shader_cache, STEAM_APPIDS
-                setup = cfg.get_setup_games()
-                cleared = 0
-                for key in STEAM_APPIDS:
-                    if key in setup:
-                        source = setup[key].get("source", "steam")
-                        cleanup_shader_cache(key, source)
-                        cleared += 1
-                s.log.emit(f"✓  Shader cache cleared for {cleared} game(s).")
-            except Exception as ex:
-                s.log.emit(f"✗  Failed: {ex}")
-        threading.Thread(target=_run, daemon=True).start()
-
-    def _open_url(self, url):
-        try:
-            from PyQt5.QtCore import QUrl
-            from PyQt5.QtGui import QDesktopServices
-            QDesktopServices.openUrl(QUrl(url))
-        except Exception:
-            try:
-                subprocess.Popen(["xdg-open", url], start_new_session=True)
-            except Exception:
-                self.status.setText("Could not open browser.")
-
-    def _confirm_uninstall(self):
-        reply = QMessageBox.warning(
-            self, "Full Uninstall",
-            "This will remove all DeckOps files, shortcuts, controller profiles, "
-            "and mod client installations. Your Steam games will NOT be deleted.\n\n"
-            "DeckOps will close and the uninstaller will run in a terminal window.\n\n"
-            "Are you sure?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if reply == QMessageBox.Yes:
-            self._run_uninstaller()
-
-    def _run_uninstaller(self):
-        uninstall_script = os.path.join(PROJECT_ROOT, "deckops_uninstall.sh")
-        if not os.path.exists(uninstall_script):
-            self.status.setText("✗  Uninstall script not found.")
-            return
-        self.status.setText("Launching uninstaller...")
-        try:
-            # Launch in Konsole so the user can see progress
-            subprocess.Popen(
-                ["konsole", "-e", "bash", uninstall_script],
-                start_new_session=True,
-            )
-            # Close DeckOps — the uninstaller will remove our files
-            _kill_audio()
-            QApplication.instance().quit()
-        except Exception:
-            # Konsole not available (shouldn't happen on SteamOS)
-            try:
-                subprocess.Popen(
-                    ["xterm", "-e", "bash", uninstall_script],
-                    start_new_session=True,
-                )
-                _kill_audio()
-                QApplication.instance().quit()
-            except Exception as ex:
-                self.status.setText(f"✗  Could not launch uninstaller: {ex}")
-
-    def _confirm_reset(self):
-        reply = QMessageBox.warning(
-            self, "Reset Config",
-            "This will wipe the DeckOps configuration file (deckops.json). "
-            "DeckOps will restart and run the setup flow again.\n\n"
-            "Your game files and Steam games are not affected.\n\n"
-            "Are you sure?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if reply == QMessageBox.Yes:
-            self._reset_deckops()
-
-    def _reset_deckops(self):
-        cfg.reset()
-        self.status.setText("Config wiped. Restarting setup...")
-        QTimer.singleShot(1500, lambda: self.stack.setCurrentIndex(0))
-
-
-
-# ── UpdateScreen ───────────────────────────────────────────────────────────────
-class UpdateScreen(QWidget):
-    """Handles Update from ManagementScreen."""
-
-    def __init__(self, stack):
-        super().__init__(); self.stack = stack; self.screen_name = "UpdateScreen"
-        self.selected   = []
-        self.steam_root = ""
-        self._steam_closed = threading.Event()
-
-        lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
-        self.title = QLabel("UPDATE"); self.title.setFont(font(36, True))
-        self.title.setAlignment(Qt.AlignCenter)
-        self.title.setStyleSheet("color:#FFF;background:transparent;")
-        lay.addWidget(self.title)
-
-        self.cur = _lbl("Preparing...", 16, "#CCC"); lay.addWidget(self.cur)
-        self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(22)
-        bw = QHBoxLayout(); bw.setContentsMargins(60,0,60,0); bw.addWidget(self.bar)
-        lay.addLayout(bw)
-
-        self.log = QPlainTextEdit(); self.log.setReadOnly(True)
-        self.log.setFont(font(11))
-        self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
-        lay.addWidget(self.log, stretch=1)
-
-        self.steam_btn = _btn("Steam is closed  ✓", C_TREY, size=13, h=52)
-        self.steam_btn.setFixedWidth(360); self.steam_btn.setVisible(False)
-        self.steam_btn.clicked.connect(lambda: self._steam_closed.set())
-        sw = QHBoxLayout(); sw.addStretch(); sw.addWidget(self.steam_btn); sw.addStretch()
-        lay.addLayout(sw)
-
-        self.back_btn = _btn("<< Back to My Games", C_DARK_BTN, h=48)
-        self.back_btn.setFixedWidth(220); self.back_btn.setVisible(False)
-        self.back_btn.clicked.connect(self._go_back)
-        bk = QHBoxLayout(); bk.addStretch(); bk.addWidget(self.back_btn); bk.addStretch()
-        lay.addLayout(bk)
-
-        self._s = _Sigs()
-        self._s.progress.connect(lambda p,m: (self.bar.setValue(p), self.cur.setText(m)))
-        self._s.log.connect(self._append_log)
-        self._s.done.connect(self._on_done)
-        self._s.plut_wait.connect(lambda: self.steam_btn.setVisible(True))
-        self._s.plut_go.connect(lambda: self.steam_btn.setVisible(False))
-
-    def _append_log(self, text):
-        self.log.appendPlainText(text)
-        self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
-        _log_to_file(text)
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self.bar.setValue(0); self.log.clear()
-        self.steam_btn.setVisible(False); self.back_btn.setVisible(False)
-        self._steam_closed.clear()
-        _log_to_file("── Update started ──")
-        QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
-
-    def _on_done(self, _):
-        self.cur.setText("Done! It is now safe to open Steam.")
-        self.back_btn.setVisible(True)
-
-    def _go_back(self):
-        root = find_steam_root()
-        self.stack.widget(5).set_installed(find_installed_games(parse_library_folders(root)))
-        self.stack.setCurrentIndex(5)
-
-    def _run(self):
-        from wrapper import get_proton_path, find_compatdata, kill_steam
-        from iw4x import install_iw4x
-        from cod4x import install_cod4x
-        from iw3sp import install_iw3sp
-        from cleanops import install_cleanops
-        from plutonium_oled import install_plutonium
-
-        has_cod4  = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k, _, _ in self.selected)
-        has_iw4x  = any(KEY_CLIENT.get(k) == "iw4x" for k, _, _ in self.selected)
-        has_plut  = any(KEY_CLIENT.get(k) == "plutonium" for k, _, _ in self.selected)
-        proton    = get_proton_path(self.steam_root)
-        total     = len(self.selected)
-
-        # Read setup_games to determine source for each key
-        setup_games = cfg.get_setup_games()
-
-        if not has_plut:
-            self._s.progress.emit(5, "Closing Steam...")
-            self._s.log.emit("Closing Steam...")
-            try:
-                kill_steam()
-                self._s.log.emit("  ✓ Steam closed.")
-            except Exception as ex:
-                self._s.log.emit(f"  Could not close Steam: {ex}")
-
-        # ── Clean slate: clear launch options and compat tools ─────────
-        # Same clean-slate approach as InstallScreen / OwnInstallScreen.
-        # Prevents stale entries from previous installs (LCD→OLED, older
-        # DeckOps versions) interfering with the update.
-        try:
-            from wrapper import clear_launch_options, clear_compat_tool
-            from ge_proton import MANAGED_APPIDS
-            for appid in MANAGED_APPIDS:
-                clear_launch_options(self.steam_root, appid)
-            clear_compat_tool(MANAGED_APPIDS)
-            self._s.log.emit("✓  Cleared all launch options and compat tools")
-        except Exception as ex:
-            self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
-
-        # Build installed_games dict for Plutonium sibling key resolution
-        installed_for_plut = {k: g for k, _, g in self.selected if g}
-
-        for idx, (key, gd, game) in enumerate(self.selected):
-            if not game:
-                continue
-            base_name = gd["base"]
-            bp = int(idx / total * 90)
-            self._s.progress.emit(bp, f"Updating {base_name}...")
-            def op(pct, msg, _b=bp): self._s.progress.emit(_b + int(pct / 100 * (90 // total)), msg)
-            c = KEY_CLIENT.get(key, gd.get("client", ""))
-
-            # Determine source from setup_games config entry
-            entry = setup_games.get(key, {})
-            source = entry.get("source", "steam")
-
-            try:
-                from plutonium_oled import GAME_META as _PLUT_META
-                _appid = _PLUT_META[key][0] if (c == "plutonium" and key in _PLUT_META) else gd["appid"]
-
-                # Resolve compatdata - own games may have CRC-based prefix
-                if source == "own":
-                    compat = game.get("compatdata_path", "")
-                    if not compat:
-                        compat = find_compatdata(self.steam_root, _appid,
-                                                  game_install_dir=game.get("install_dir"))
-                else:
-                    compat = find_compatdata(self.steam_root, _appid,
-                                              game_install_dir=game.get("install_dir"))
-
-                if c == "cod4x":
-                    install_cod4x(game, self.steam_root, proton, compat, op,
-                                  appid=gd["appid"])
-                elif c == "iw3sp":
-                    install_iw3sp(game, self.steam_root, proton, compat, op,
-                                  source=source)
-                elif c == "iw4x":
-                    install_iw4x(game, self.steam_root, proton, compat, op,
-                                 source=source, install_dlc=False)
-                elif c == "plutonium":
-                    install_plutonium(game, key, self.steam_root, proton, compat,
-                                     on_progress=op,
-                                     installed_games=installed_for_plut,
-                                     source=source)
-                elif c == "cleanops":
-                    install_cleanops(game, self.steam_root, proton, compat, op,
-                                    source=source)
-                elif c == "alterware":
-                    from alterware import install_alterware
-                    install_alterware(game, key, self.steam_root, proton, compat, op,
-                                     source=source)
-                self._s.log.emit(f"✓  {base_name} ({key}) done")
-            except Exception as ex:
-                self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        self._s.progress.emit(100, "All done!")
-        self._s.done.emit(True)
-
-
-# ── OwnInstallScreen ──────────────────────────────────────────────────────────
-class OwnInstallScreen(QWidget):
+def apply_steam_artwork(selected_keys: list, on_progress=None):
     """
-    Install flow for the advanced ("Steam or Other") path.
+    Download and apply custom artwork for Steam-owned MP/ZM games.
 
-    Handles both Steam-selected games (passed from SetupScreen as
-    steam_selected) and own-detected games (parked by OwnScanScreen as
-    own_selected) in a single pass.
+    Uses the Steam appid directly as the grid filename prefix, so files
+    like 10190p.jpg, 10190_hero.png end up in the grid folder and Steam
+    picks them up on next launch.
 
-    Creates non-Steam shortcuts for own games, copies GE-Proton's
-    default_pfx to build each own game's compatdata prefix automatically,
-    sets GE-Proton compat for MANAGED_APPIDS and own shortcut appids,
-    then installs mod clients. No manual game launch step required.
+    selected_keys — list of game keys the user selected (e.g. ["iw4mp", "t6zm"])
+    on_progress   — optional callback(msg: str)
     """
+    from detect_games import GAMES
 
-    def __init__(self, stack):
-        super().__init__(); self.stack = stack; self.screen_name = "OwnInstallScreen"
-        self.own_selected    = {}   # dict of key -> game, set by OwnScanScreen
-        self.steam_selected  = []   # list of (key, gd, game), set by SetupScreen
-        self.steam_root = ""
-        self._plut_event = threading.Event()
-        self._return_to_management = False
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
 
-        lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
-        t = QLabel("INSTALLING"); t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
-        self.cur = _lbl("Preparing...", 16, "#CCC"); lay.addWidget(self.cur)
-        self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(22)
-        bw = QHBoxLayout(); bw.setContentsMargins(60,0,60,0); bw.addWidget(self.bar)
-        lay.addLayout(bw)
-        self.stat = _lbl("", 13, C_IW); lay.addWidget(self.stat)
-        self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setFont(font(11))
-        self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
-        lay.addWidget(self.log, stretch=1)
+    # Map game keys to Steam appids that have custom artwork
+    KEY_TO_STEAM_APPID = {
+        "iw4mp":     "10190",
+        "iw5mp":     "42690",
+        "iw5mp_ds":  "42750",
+        "t5mp":      "42710",
+        "t6mp":      "202990",
+        "t6zm":      "212910",
+        "iw6mp":     "209170",   # Ghosts MP
+        "s1mp":      "209660",   # AW MP
+    }
 
-        self.plut_warn = _lbl(
-            "⚠  LCD: Plutonium takes time to download and launch.\n"
-            "     Please be patient — do NOT click the button below until\n"
-            "     Plutonium has fully loaded, you have logged in, and closed the window.",
-            12, C_TREY, align=Qt.AlignCenter,
+    to_apply = []
+    for key in selected_keys:
+        steam_appid = KEY_TO_STEAM_APPID.get(key)
+        if not steam_appid:
+            continue
+        art_def = STEAM_ARTWORK.get(steam_appid)
+        if not art_def:
+            continue
+        to_apply.append((key, steam_appid, art_def))
+
+    if not to_apply:
+        return
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        prog("⚠ No Steam user accounts found — artwork skipped.")
+        return
+
+    for uid in uids:
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+        os.makedirs(grid_dir, exist_ok=True)
+
+        for key, steam_appid, art_def in to_apply:
+            prog(f"  Downloading artwork for {key} (appid {steam_appid})...")
+            _download_artwork(grid_dir, int(steam_appid), art_def, prog)
+
+    prog(f"✓ Steam artwork applied for {len(to_apply)} game(s).")
+
+
+def create_own_shortcuts(own_games: dict, selected_keys: list,
+                        gyro_mode: str, on_progress=None, steam_root: str = None):
+    """
+    Create non-Steam shortcuts for games detected via find_own_installed().
+
+    DeckOps controls the shortcut name and exe path, so the appid is
+    deterministic and artwork, controller configs, and compat tools all
+    land in the right place from the start. No rename step needed.
+
+    own_games     — dict from detect_games.find_own_installed()
+    selected_keys — list of game keys the user selected
+    gyro_mode     — "hold", "ads", or "toggle"
+    on_progress   — optional callback(msg: str)
+
+    Returns own_games dict enriched with shortcut_appid, compatdata_path,
+    and source fields so the install flow can use them directly.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    # Clean up orphaned shortcuts from older DeckOps builds before
+    # writing new entries. Safe to call every time -- no-ops if clean.
+    cleanup_orphan_shortcuts(on_progress=on_progress)
+
+    # Plutonium keys that use the Plutonium launcher/bootstrapper instead
+    # of the original game exe. The shortcut points at the Plutonium binary.
+    _PLUT_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp",
+                  "iw5mp"}
+
+    to_create = {}
+    for key in selected_keys:
+        if key not in OWN_SHORTCUTS:
+            continue
+        if key not in own_games:
+            continue
+        game = own_games[key]
+        install_dir = game.get("install_dir")
+        if not install_dir:
+            continue
+        to_create[key] = (OWN_SHORTCUTS[key], game)
+
+    if not to_create:
+        prog("No non-Steam game shortcuts to create.")
+        return own_games
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        prog("⚠ No Steam user accounts found — own shortcuts skipped.")
+        return own_games
+
+    for uid in uids:
+        prog(f"Creating own game shortcuts for user {uid}...")
+
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+
+        existing_raw = _read_shortcuts_raw(shortcuts_path)
+
+        # Strip any existing entries whose AppName matches a shortcut we're
+        # about to write. Without this, name collisions were a no-op and
+        # left stale Exe / LaunchOptions / StartDir fields in place across
+        # reinstalls. For LCD Plutonium keys (which skip the write below
+        # and are handled later by _create_heroic_steam_shortcut), the
+        # strip is still correct -- add_shortcut will see a clean slate
+        # and write fresh.
+        names_to_write = {d["name"] for d, _ in to_create.values()}
+        existing_raw, stripped = _strip_entries_by_name(
+            existing_raw, names_to_write
         )
-        self.plut_warn.setStyleSheet(
-            f"color:{C_TREY};background:#2A1A08;border:1px solid {C_TREY};"
-            "border-radius:8px;padding:10px 16px;"
-        )
-        self.plut_warn.setVisible(False)
-        lay.addWidget(self.plut_warn)
+        if stripped:
+            prog(f"  Replacing {len(stripped)} stale shortcut(s)...")
 
-        self.plut_btn = _btn("I've closed Plutonium  ✓", C_TREY, size=13, h=52)
-        self.plut_btn.setFixedWidth(460); self.plut_btn.setVisible(False)
-        self.plut_btn.clicked.connect(self._confirm_plut)
-        pw = QHBoxLayout(); pw.addStretch(); pw.addWidget(self.plut_btn); pw.addStretch()
-        lay.addLayout(pw)
-
-        self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
-        self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
-        self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
-        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont_btn); cw.addStretch()
-        lay.addLayout(cw)
-
-        self._s = _Sigs()
-        self._s.progress.connect(lambda p, m: (self.bar.setValue(p), self.cur.setText(m)))
-        self._s.log.connect(self._append_log)
-        self._s.done.connect(self._on_done)
-        self._s.plut_wait.connect(self._show_plut_wait)
-        self._s.plut_go.connect(self._hide_plut_wait)
-        self._s.pulse_start.connect(self._start_pulse)
-        self._s.pulse_stop.connect(self._stop_pulse)
-
-        self._pulse_timer = QTimer()
-        self._pulse_timer.timeout.connect(self._do_pulse)
-        self._pulse_msg   = ""
-        self._pulse_count = 0
-
-    def _start_pulse(self, base_msg):
-        self._pulse_msg   = base_msg
-        self._pulse_count = 0
-        self._pulse_timer.start(500)
-
-    def _do_pulse(self):
-        dots = "." * (self._pulse_count % 4)
-        self.cur.setText(f"{self._pulse_msg}{dots}")
-        self._pulse_count += 1
-
-    def _stop_pulse(self):
-        self._pulse_timer.stop()
-
-    def _show_plut_wait(self):
-        is_lcd = not cfg.is_oled()
-        self.plut_warn.setVisible(is_lcd)
-        self.plut_btn.setVisible(True)
-
-    def _hide_plut_wait(self):
-        self.plut_warn.setVisible(False)
-        self.plut_btn.setVisible(False)
-
-    def _append_log(self, text):
-        _log_to_file(text)
-        self.log.appendPlainText(text)
-        self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self.bar.setValue(0); self.log.clear()
-        self.plut_btn.setVisible(False)
-        self.plut_warn.setVisible(False)
-        self.cont_btn.setVisible(False)
-        self._plut_event.clear()
-        self._stop_pulse()
-        # Route the continue button based on whether this was triggered
-        # from ManagementScreen (return to My Games) or the first-run
-        # wizard (go to ControllerInfoScreen).
-        try:
-            self.cont_btn.clicked.disconnect()
-        except Exception:
-            pass
-        if self._return_to_management:
-            self.cont_btn.setText("Back to My Games  >>")
-            self.cont_btn.clicked.connect(lambda: (
-                self.stack.widget(5).set_installed(
-                    find_installed_games(parse_library_folders(find_steam_root()))
-                ),
-                self.stack.setCurrentIndex(5),
-            ))
-            self._return_to_management = False
-        else:
-            self.cont_btn.setText("Continue  >>")
-            self.cont_btn.clicked.connect(lambda: self.stack.setCurrentIndex(7))
-        _log_to_file("── Own Install started ──")
-        QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
-
-    def _confirm_plut(self):
-        self._plut_event.set()
-
-    def _on_done(self, _):
-        self._stop_pulse()
-        self.cur.setText("Installation complete!")
-        self.cont_btn.setVisible(True)
-
-    def _run(self):
-        import traceback as _tb
-        try:
-            self._run_inner()
-        except Exception:
-            err = _tb.format_exc()
-            _log_to_file(f"[FATAL] OwnInstallScreen._run crashed:\n{err}")
-            try:
-                self._s.log.emit(f"✗ Install failed with error:\n{err}")
-                self._s.progress.emit(100, "Install failed — see log.")
-                self._s.done.emit(True)
-            except Exception:
-                pass
-
-    def _run_inner(self):
-        from wrapper import get_proton_path, find_compatdata, kill_steam, set_compat_tool
-        from shortcut import create_own_shortcuts
-        from cod4x import install_cod4x
-        from iw4x import install_iw4x
-        from iw3sp import install_iw3sp
-        from cleanops import install_cleanops
-        from ge_proton import install_ge_proton, MANAGED_APPIDS
-
-        # Build the combined selected list from both Steam and own sources.
-        # own_selected is a dict {key: game_dict} from OwnScanScreen.
-        # steam_selected is a list [(key, gd, game)] from SetupScreen.
-        # We need to merge them into self.selected as [(key, gd, game)].
-        own_as_tuples = []
-        for k, g in self.own_selected.items():
-            for gd in ALL_GAMES:
-                if k in _active_keys(gd):
-                    own_as_tuples.append((k, gd, g)); break
-        self.selected = list(self.steam_selected) + own_as_tuples
-
-        selected_keys = [key for key, _, _ in self.selected]
-        logged_bases  = set()
-        has_plut      = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
-        has_cod4      = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k in selected_keys)
-
-        # ── GE-Proton download (Steam still running) ─────────────────────
-        ge_version = None
-        try:
-            self._s.pulse_start.emit("Installing GE-Proton")
-            self._s.log.emit("Installing GE-Proton...")
-            ge_version = install_ge_proton(
-                on_progress=lambda pct, msg: self._s.progress.emit(2 + int(pct * 0.06), msg)
-            )
-            self._s.pulse_stop.emit()
-            self._s.log.emit(f"✓  {ge_version} downloaded")
-            cfg.set_ge_proton_version(ge_version)
-        except Exception as ex:
-            self._s.pulse_stop.emit()
-            self._s.log.emit(f"  GE-Proton setup skipped: {ex}")
-
-        proton = get_proton_path(self.steam_root)
-
-        # ── Plutonium bootstrapper (Steam still running) ─────────────────
-        # Downloads Plutonium and launches it so the user can log in. LCD
-        # routes through HGL (shared default prefix); OLED uses the
-        # dedicated DeckOps prefix via Proton directly.
-        if has_plut:
-            from plutonium_oled import (launch_bootstrapper, is_plutonium_ready,
-                                   install_plutonium)
-            from plutonium_oled import GAME_META as _PLUT_META
-            is_lcd = not cfg.is_oled()
-
-            if is_lcd:
-                from plutonium_lcd import (launch_bootstrapper_lcd,
-                                    is_plutonium_ready_lcd)
-                plut_ready = is_plutonium_ready_lcd()
-            else:
-                plut_ready = is_plutonium_ready()
-
-            if not plut_ready:
-                if is_lcd:
-                    self._s.progress.emit(10, "Setting up Plutonium through HGL...")
-                    self._s.log.emit(
-                        "Setting up Plutonium through HGL...\n"
-                        "  1. HGL will download and launch Plutonium (this may take a few minutes)\n"
-                        "  2. Log in with your Plutonium account\n"
-                        "  3. Close the Plutonium window\n"
-                        "  4. Click the button below to continue"
-                    )
-                else:
-                    self._s.progress.emit(10, "Launching Plutonium — please log in...")
-                    self._s.log.emit(
-                        "Plutonium is launching now.\n"
-                        "  1. Wait for it to finish downloading\n"
-                        "  2. Log in with your Plutonium account\n"
-                        "  3. Close the Plutonium window\n"
-                        "  4. Click the button below to continue"
-                    )
-                try:
-                    if is_lcd:
-                        launch_bootstrapper_lcd(
-                            on_progress=lambda p, m: self._s.progress.emit(p, m)
-                        )
-                    else:
-                        launch_bootstrapper(
-                            proton,
-                            on_progress=lambda p, m: self._s.progress.emit(p, m),
-                            steam_root=self.steam_root,
-                        )
-                except Exception as ex:
-                    self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
-                    self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
-
-                if is_lcd:
-                    self._s.log.emit(
-                        "⏳  HGL is launching Plutonium. This may take a minute on first run\n"
-                        "   while HGL sets up the Wine prefix."
-                    )
-                    self._s.pulse_start.emit("Waiting for Plutonium login")
-
-                self._s.plut_wait.emit()
-                self._plut_event.wait()
-                self._s.plut_go.emit()
-
-                if is_lcd:
-                    self._s.pulse_stop.emit()
-
-                ready_check = is_plutonium_ready_lcd() if is_lcd else is_plutonium_ready()
-                if not ready_check:
-                    self._s.log.emit(
-                        "✗  Plutonium does not appear to be fully set up.\n"
-                        "   Make sure you logged in and let it finish downloading."
-                    )
-                    self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
-
-                self._s.log.emit("✓  Plutonium ready.")
-            else:
-                self._s.log.emit("✓  Plutonium already set up.")
-
-        # ── Kill Steam ────────────────────────────────────────────────────
-        self._s.progress.emit(18, "Closing Steam...")
-        self._s.log.emit("Closing Steam...")
-        try:
-            kill_steam()
-            self._s.log.emit("  ✓ Steam closed.")
-        except Exception as ex:
-            self._s.log.emit(f"  Could not close Steam: {ex}")
-
-        # ── Clean slate: clear ALL launch options and compat tools ─────
-        # Previous installs (LCD→OLED switch, older DeckOps versions) can
-        # leave stale launch options and compat tool entries that conflict
-        # with the current install. Wipe everything for MANAGED_APPIDS
-        # first, then re-apply what's needed below.
-        try:
-            from wrapper import clear_launch_options, clear_compat_tool
-            for appid in MANAGED_APPIDS:
-                clear_launch_options(self.steam_root, appid)
-            clear_compat_tool(MANAGED_APPIDS)
-            self._s.log.emit("✓  Cleared all launch options and compat tools")
-        except Exception as ex:
-            self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
-
-        # ── Set GE-Proton compat for MANAGED_APPIDS ──────────────────────
-        # Must run AFTER kill_steam - Steam overwrites config.vdf on exit.
-        # Only write for Steam appids if the user actually has Steam games
-        # selected - otherwise this may trigger Steam to re-download games.
-        if ge_version and self.steam_selected:
-            try:
-                set_compat_tool(MANAGED_APPIDS, ge_version)
-                self._s.log.emit(f"✓  {ge_version} set for Steam game appids")
-            except Exception as ex:
-                self._s.log.emit(f"  CompatToolMapping for Steam appids skipped: {ex}")
-
-        # ── Create shortcuts with artwork + controller configs ────────────
-        self._s.progress.emit(22, "Creating shortcuts and downloading artwork...")
-        self._s.log.emit("Creating non-Steam shortcuts...")
-        gyro_mode = cfg.get_gyro_mode() or "hold"
-        own_games_dict = {k: g for k, g in self.own_selected.items()}
-        own_games_dict = create_own_shortcuts(
-            own_games=own_games_dict,
-            selected_keys=[k for k in self.own_selected],
-            gyro_mode=gyro_mode,
-            on_progress=lambda msg: self._s.log.emit(msg),
-            steam_root=self.steam_root,
-        )
-        _log_to_file("[BREADCRUMB] create_own_shortcuts returned")
-
-        # Update self.selected with enriched own game dicts (shortcut_appid etc)
-        self.selected = [
-            (k, gd, own_games_dict.get(k, g)) for k, gd, g in self.selected
+        # Re-read names after the strip so the defensive fallback below
+        # reflects the post-strip state of the file.
+        existing_names = [
+            n for n in _read_existing_shortcuts(shortcuts_path)
+            if n not in stripped
         ]
-        # Rebuild own_games with enriched dicts for compat tool mapping later.
-        # Only include own-selected keys - Steam games don't have shortcut_appid.
-        own_games = {k: g for k, gd, g in self.selected if g and k in self.own_selected}
-        _log_to_file("[BREADCRUMB] own_games rebuilt, starting prefix init")
 
-        # ── Create prefixes + install deps from GE-Proton default_pfx ─────
-        # Every selected game gets its prefix preloaded — no exceptions.
-        # Own games use their CRC-based prefix (set by create_own_shortcuts).
-        # Steam games use their Steam appid prefix.
-        # LCD Plutonium games still get a prefix for offline mode; HGL
-        # manages its own prefix separately for online mode.
-        # ensure_all_prefix_deps handles deduplication and skips prefixes
-        # that are already initialized, so passing everything in is safe.
-        self._s.progress.emit(30, "Creating Proton prefixes...")
-        self._s.log.emit("Creating Proton prefixes and installing dependencies...")
-        self._s.pulse_start.emit("Installing prefix dependencies")
-        from ge_proton import ensure_all_prefix_deps
-        from detect_games import GAMES as _GAMES_MAP
-        from wrapper import find_compatdata
-        dep_targets = []
-        for key, gd, game in self.selected:
-            if not game:
-                continue
-            if key in self.own_selected:
-                # Own games always use their CRC-based prefix
-                compat = game.get("compatdata_path", "")
+        next_idx = _get_next_index(existing_raw)
+
+        new_entries = []
+
+        for key, (shortcut_def, game) in to_create.items():
+            name        = shortcut_def["name"]
+            install_dir = game["install_dir"]
+            exe_path    = game["exe_path"]
+
+            # Calculate appid from quoted exe + canonical name.
+            # We control both, so this is deterministic.
+            quoted_exe     = f'"{exe_path}"'
+            shortcut_appid = _calc_shortcut_appid(quoted_exe, name)
+            icon_path      = os.path.join(grid_dir, f"{shortcut_appid}_icon.{shortcut_def['icon_ext']}")
+
+            # ── Resolve compatdata path ───────────────────────────────────
+            # Own games always get their own CRC-based prefix keyed on the
+            # shortcut appid. Never reuse a Steam game prefix — the user
+            # may not own the game on Steam, and each shortcut should have
+            # an independently preloaded prefix.
+            compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
+
+            # Enrich the game dict so downstream code has the appid and paths
+            game["shortcut_appid"]  = shortcut_appid
+            game["compatdata_path"] = compatdata_path
+            game["source"]          = "own"
+            game["current_name"]    = name
+
+            # ── Resolve the actual exe and launch options per client type ──
+            # Own games may be missing original exes (e.g. MS Store copies,
+            # old installs where the user replaced exes with Plutonium).
+            # Plutonium games point at the Plutonium client directly.
+            # iw4x/iw3sp point at the client exe dropped by the installer.
+            # cod4x and vanilla keys still need the original game exe.
+
+            if key in _PLUT_KEYS:
+                import config as _cfg
+                # LCD Plutonium games are handled by the LCD launch path
+                # (heroic.py setup_heroic_game) during install_plutonium().
+                # That module creates the Steam shortcut, downloads artwork,
+                # assigns the controller profile, and sets the compat tool.
+                # Nothing to do here -- the game dict has already been
+                # enriched with shortcut_appid and compatdata_path above,
+                # which install_plutonium needs to copy Plutonium files
+                # into the prefix.
+                if not _cfg.is_oled():
+                    prog(f"  → {name}")
+                    prog(f"    LCD path - shortcut handled separately")
+                    continue
+
+                # OLED: point at the Plutonium launcher directly
+                plut_dir = os.path.join(
+                    compatdata_path,
+                    "pfx", "drive_c", "users", "steamuser",
+                    "AppData", "Local", "Plutonium",
+                )
+                actual_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
+                launch_options = (
+                    f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                    f'%command% "plutonium://play/{key}"'
+                )
+
+            elif key == "iw4mp":
+                # iw4x -- point at iw4x.exe (dropped by installer, no rename)
+                actual_exe = os.path.join(install_dir, "iw4x.exe")
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+
+            elif key == "cod4sp":
+                # iw3sp-mod -- point at iw3sp_mod.exe (dropped by installer, no rename)
+                actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+
+            elif key == "t7":
+                # CleanOps -- uses original exe with Wine DLL override for d3d11.dll
+                actual_exe = exe_path
+                launch_options = (
+                    f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                    f'WINEDLLOVERRIDES="d3d11=n,b" %command%'
+                )
+
+            elif key in ("iw6mp", "iw6sp"):
+                # AlterWare Ghosts -- point at iw6-mod.exe, pass mode flag
+                # The built-in launcher UI crashes under Proton; the mode
+                # flag bypasses it and loads directly into the correct mode.
+                actual_exe = os.path.join(install_dir, "iw6-mod.exe")
+                mode_flag = "-multiplayer" if key == "iw6mp" else "-singleplayer"
+                launch_options = (
+                    f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                    f'%command% {mode_flag}'
+                )
+
+            elif key in ("s1mp", "s1sp"):
+                # AlterWare Advanced Warfare -- point at s1-mod.exe, pass mode flag
+                actual_exe = os.path.join(install_dir, "s1-mod.exe")
+                mode_flag = "-multiplayer" if key == "s1mp" else "-singleplayer"
+                launch_options = (
+                    f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                    f'%command% {mode_flag}'
+                )
+
             else:
-                # Steam games use the per-key appid, not card-level gd["appid"].
-                # Card-level appid is wrong for keys like t6zm (212910 vs 202990).
-                appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
-                compat = find_compatdata(self.steam_root, appid,
-                                         game_install_dir=game.get("install_dir"))
-                if not compat and game.get("install_dir"):
-                    steamapps = os.path.dirname(os.path.dirname(game["install_dir"]))
-                    compat = os.path.join(steamapps, "compatdata", str(appid))
-            if compat:
-                dep_targets.append((key, compat))
-        if dep_targets:
-            _log_to_file(f"[BREADCRUMB] calling ensure_all_prefix_deps with {len(dep_targets)} targets: {[k for k,_ in dep_targets]}")
-            done = ensure_all_prefix_deps(
-                ge_version, dep_targets,
-                on_progress=lambda msg: self._s.log.emit(msg),
-                proton_path=proton,
-                steam_root=self.steam_root,
-            )
-            self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
-        self._s.pulse_stop.emit()
-        _log_to_file("[BREADCRUMB] prefix deps done")
+                # cod4mp (cod4x patches iw3mp.exe in place), iw4sp, iw5sp, t6sp
+                # -- these use the original game exe with no mod client
+                actual_exe = exe_path
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
 
-        # ── Plutonium games ───────────────────────────────────────────────
-        if has_plut:
-            # Create the launcher shortcut FIRST so the appid/prefix exist
-            # before per-game installs mirror configs into it.
+            # For non-Plutonium keys, warn if the target exe is missing.
+            # Plutonium exes won't exist yet -- they get created when the
+            # bootstrapper runs for the first time inside the prefix.
+            # We still create the shortcut either way so artwork, controller
+            # configs, and compat tools are in place. The user can drop the
+            # exe in later and it will just work.
+            if key not in _PLUT_KEYS and not os.path.exists(actual_exe):
+                prog(f"  → {name}")
+                prog(f"    ⚠ {os.path.basename(actual_exe)} not found -- shortcut will be created anyway")
+            else:
+                prog(f"  → {name}")
+            prog(f"    appid: {shortcut_appid}")
+
+            if name in existing_names:
+                # names_to_write already stripped all matching entries from
+                # existing_raw at the top of the UID loop, so this branch
+                # is unreachable in practice. Kept as a defensive fallback
+                # in case the strip helper ever fails to match an entry.
+                prog(f"    ⚠ Unexpected name collision after strip")
+            entry = {
+                "appid":               _to_signed32(shortcut_appid),
+                "AppName":             name,
+                "Exe":                 f'"{actual_exe}"',
+                "StartDir":            f'"{install_dir}"',
+                "icon":                icon_path,
+                "ShortcutPath":        "",
+                "LaunchOptions":       launch_options,
+                "IsHidden":            0,
+                "AllowDesktopConfig":  1,
+                "AllowOverlay":        1,
+                "OpenVR":              0,
+                "Devkit":              0,
+                "DevkitGameID":        "",
+                "DevkitOverrideAppID": 0,
+                "LastPlayTime":        0,
+                "FlatpakAppID":        "",
+                "tags":                {"0": "DeckOps"},
+            }
+
+            entry_bytes = _make_shortcut_entry(next_idx, entry)
+            new_entries.append(entry_bytes)
+            next_idx += 1
+            prog(f"    ✓ Shortcut created")
+
+            # Download artwork
+            _download_artwork(grid_dir, shortcut_appid, shortcut_def, prog)
+
+            # Assign controller config
+            _assign_controller_config(uid, shortcut_appid, shortcut_def, gyro_mode, prog)
+
+            # Set GE-Proton compat tool
             try:
-                from shortcut import create_launcher_shortcut
-                create_launcher_shortcut(
-                    on_progress=lambda m: self._s.log.emit(m)
-                )
+                import config as _cfg
+                from wrapper import set_compat_tool
+                ge_version = _cfg.get_ge_proton_version()
+                if ge_version:
+                    set_compat_tool([str(shortcut_appid)], ge_version)
+                    prog(f"    ✓ GE-Proton {ge_version} set")
             except Exception as ex:
-                self._s.log.emit(f"  Launcher shortcut failed: {ex}")
+                prog(f"    ⚠ Could not set GE-Proton: {ex}")
 
-            # Per-game Plutonium install: copy Plutonium into each prefix,
-            # write config.json with game paths. Own games skip the wrapper
-            # (shortcuts point at Plutonium directly). Steam games in the
-            # mixed flow get the full wrapper treatment.
-            plut_selected = [(k, gd, g) for k, gd, g in self.selected
-                             if KEY_CLIENT.get(k) == "plutonium"]
-            installed_for_plut = {k: g for k, gd, g in self.selected if g}
-            total_plut = len(plut_selected)
-            for idx, (key, gd, game) in enumerate(plut_selected):
-                bp = 40 + int(idx / max(total_plut, 1) * 12)
-                base_name = gd["base"]
-                if base_name not in logged_bases:
-                    self._s.progress.emit(bp, f"Setting up {base_name}...")
-                def op_plut(pct, msg, _b=bp): self._s.progress.emit(_b + int(pct / 100 * 6), msg)
-                try:
-                    source = "own" if key in self.own_selected else "steam"
-                    if source == "own":
-                        compat = game.get("compatdata_path", "")
-                    else:
-                        _plut_appid = _PLUT_META[key][0] if key in _PLUT_META else gd["appid"]
-                        compat = find_compatdata(self.steam_root, _plut_appid,
-                                                  game_install_dir=game.get("install_dir"))
-                    wp = install_plutonium(game, key, self.steam_root, proton, compat,
-                                     on_progress=op_plut,
-                                     installed_games=installed_for_plut,
-                                     source=source)
-                    # plutonium installer (plutonium_oled.py / plutonium_lcd.py)
-                    # owns its own mark_game_setup call so lan_wrapper_path
-                    # and other install-side metadata are preserved. wp is
-                    # discarded here -- the installer already persisted it.
-                    if base_name not in logged_bases:
-                        self._s.log.emit(f"✓  {base_name} done")
-                        logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── Install iw4x ─────────────────────────────────────────────────
-        _log_to_file("[BREADCRUMB] starting iw4x install phase")
-        has_iw4x = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
-        if has_iw4x:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "iw4x"]:
-                base_name = gd["base"]
-                self._s.progress.emit(55, f"Setting up {base_name}...")
-                def op_iw4x(pct, msg): self._s.progress.emit(55 + int(pct / 100 * 7), msg)
-                try:
-                    source = "own" if key in self.own_selected else "steam"
-                    if source == "own":
-                        compat = game.get("compatdata_path", "")
-                    else:
-                        compat = find_compatdata(self.steam_root, gd["appid"],
-                                                  game_install_dir=game.get("install_dir"))
-                    install_iw4x(game, self.steam_root, proton, compat, op_iw4x, source=source,
-                                 install_dlc=getattr(self, 'install_iw4x_dlc', False))
-                    cfg.mark_game_setup(key, "iw4x", source=source)
-                    self._s.log.emit(f"✓  {base_name} done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── Install CoD4 (iw3sp + cod4x) ─────────────────────────────────
-        _log_to_file("[BREADCRUMB] starting cod4 install phase")
-        if has_cod4:
-            cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4x", "iw3sp")]
-            for key, gd, game in cod4_selected:
-                base_name = gd["base"]
-                self._s.progress.emit(65, f"Setting up {base_name}...")
-                def op_cod4(pct, msg): self._s.progress.emit(65 + int(pct / 100 * 10), msg)
-                try:
-                    source = "own" if key in self.own_selected else "steam"
-                    c = KEY_CLIENT.get(key, gd["client"])
-                    if source == "own":
-                        compat = game.get("compatdata_path", "")
-                        cod4x_appid = game.get("shortcut_appid", 7940)
-                    else:
-                        compat = find_compatdata(self.steam_root, gd["appid"],
-                                                  game_install_dir=game.get("install_dir"))
-                        cod4x_appid = gd["appid"]
-                    if c == "cod4x":
-                        install_cod4x(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=cod4x_appid)
-                    elif c == "iw3sp":
-                        install_iw3sp(game, self.steam_root, proton, compat, op_cod4, source=source)
-                    cfg.mark_game_setup(key, c, source=source)
-                    if base_name not in logged_bases:
-                        self._s.log.emit(f"✓  {base_name} done")
-                        logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── Install CleanOps (BO3) ────────────────────────────────────────
-        _log_to_file("[BREADCRUMB] starting cleanops install phase")
-        has_cleanops = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
-        if has_cleanops:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "cleanops"]:
-                base_name = gd["base"]
-                self._s.progress.emit(76, f"Setting up {base_name}...")
-                def op_cleanops(pct, msg): self._s.progress.emit(76 + int(pct / 100 * 4), msg)
-                try:
-                    source = "own" if key in self.own_selected else "steam"
-                    if source == "own":
-                        compat = game.get("compatdata_path", "")
-                    else:
-                        compat = find_compatdata(self.steam_root, gd["appid"],
-                                                  game_install_dir=game.get("install_dir"))
-                    install_cleanops(game, self.steam_root, proton, compat, op_cleanops, source=source)
-                    cfg.mark_game_setup(key, "cleanops", source=source)
-                    self._s.log.emit(f"✓  {base_name} done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── Install AlterWare (Ghosts / Advanced Warfare) ─────────────────
-        _log_to_file("[BREADCRUMB] starting alterware install phase")
-        has_alterware = any(KEY_CLIENT.get(k) == "alterware" for k in selected_keys)
-        if has_alterware:
-            from alterware import install_alterware
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "alterware"]:
-                base_name = gd["base"]
-                self._s.progress.emit(76, f"Setting up {base_name}...")
-                def op_alterware(pct, msg): self._s.progress.emit(76 + int(pct / 100 * 4), msg)
-                try:
-                    source = "own" if key in self.own_selected else "steam"
-                    install_alterware(game, key, self.steam_root, proton, "", op_alterware,
-                                     source=source)
-                    cfg.mark_game_setup(key, "alterware", source=source)
-                    self._s.log.emit(f"✓  {base_name} done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── Mark vanilla games ────────────────────────────────────────────
-        for key, gd, game in self.selected:
-            c = KEY_CLIENT.get(key, "")
-            source = "own" if key in self.own_selected else "steam"
-            if c == "steam" and not cfg.is_game_setup_for_source(key, source):
-                cfg.mark_game_setup(key, "steam", source=source)
-                self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
-
-        # ── Game display configs ──────────────────────────────────────────
-        self._s.progress.emit(78, "Applying game configs...")
-        try:
-            from game_config import apply_game_configs
-            applied, skipped, failed = apply_game_configs(
-                selected_keys=selected_keys,
-                installed_games={k: g for k, gd, g in self.selected if g},
-                steam_root=self.steam_root,
-                deck_model=cfg.get_deck_model() or "oled",
-                on_progress=lambda msg: self._s.log.emit(msg),
-            )
-            if applied > 0:
-                self._s.log.emit(f"✓  Game display configs: {applied} written"
-                                 + (f", {skipped} skipped" if skipped else "")
-                                 + (f", {failed} failed" if failed else ""))
-        except Exception as ex:
-            self._s.log.emit(f"  Game configs skipped: {ex}")
-
-        # ── Controller templates ──────────────────────────────────────────
-        self._s.progress.emit(88, "Installing controller templates...")
-        try:
-            from controller_profiles import install_controller_templates, assign_controller_profiles, assign_external_controller_profiles
-            install_controller_templates(
-                on_progress=lambda msg: self._s.log.emit(f"  {msg}")
-            )
-            gyro_mode = cfg.get_gyro_mode() or "hold"
-            # Neptune profiles always assigned - user may play handheld too
-            assign_controller_profiles(
-                gyro_mode,
-                on_progress=lambda msg: self._s.log.emit(f"  {msg}")
-            )
-            self._s.log.emit(f"✓  Neptune controller profiles assigned ({gyro_mode} mode)")
-            # Docked users also get external controller profiles
-            if cfg.is_docked():
-                controller_type = cfg.get_external_controller() or "playstation"
-                assign_external_controller_profiles(
-                    controller_type,
-                    gyro_mode,
-                    on_progress=lambda msg: self._s.log.emit(f"  {msg}")
-                )
-                self._s.log.emit(f"✓  External controller profiles assigned ({controller_type})")
-        except Exception as ex:
-            self._s.log.emit(f"  Templates skipped: {ex}")
-
-        try:
-            from wrapper import set_steam_input_enabled
-            set_steam_input_enabled(self.steam_root)
-            self._s.log.emit("✓  Steam Input enabled for all games")
-        except Exception as ex:
-            self._s.log.emit(f"  Steam Input setup skipped: {ex}")
-
-        # ── Ensure newest GE-Proton is set for own shortcut appids ─────────
-        if ge_version:
+        if new_entries:
             try:
-                shortcut_appids = [
-                    str(g.get("shortcut_appid", ""))
-                    for g in own_games.values()
-                    if g.get("shortcut_appid")
-                ]
-                if shortcut_appids:
-                    set_compat_tool(shortcut_appids, ge_version)
-                    self._s.log.emit(f"✓  {ge_version} set for non-Steam game shortcuts")
-            except Exception as ex:
-                self._s.log.emit(f"  GE-Proton compat mapping skipped: {ex}")
-
-        # ── Non-Steam shortcuts for Steam games (mixed flow) ─────────────
-        # OwnInstallScreen calls create_own_shortcuts() for own games above,
-        # but Steam games also need their non-Steam shortcuts (e.g. WaW MP,
-        # CoD4 MP) created via create_shortcuts(). Without this, Steam games
-        # in the mixed flow don't get their mod client shortcuts.
-        if self.steam_selected:
-            try:
-                from shortcut import create_shortcuts
-                steam_installed = {k: g for k, gd, g in self.steam_selected if g}
-                steam_keys = [k for k, _, _ in self.steam_selected]
-                create_shortcuts(
-                    installed_games=steam_installed,
-                    selected_keys=steam_keys,
-                    gyro_mode=gyro_mode,
-                    on_progress=lambda msg: self._s.log.emit(msg),
-                    steam_root=self.steam_root,
-                )
-            except Exception as ex:
-                self._s.log.emit(f"  Steam shortcuts skipped: {ex}")
-
-            # Set default launch option so Steam Deck skips the mode picker
-            has_cod4_steam = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp")
-                                for k, _, _ in self.steam_selected)
-            has_waw_steam = any(k in ("t4sp", "t4mp")
-                               for k, _, _ in self.steam_selected)
-            defaults = {}
-            if has_cod4_steam:
-                defaults["7940"] = ("7a722f97", "1")   # CoD4 -> Singleplayer
-            if has_waw_steam:
-                defaults["10090"] = ("9aa5e05f", "0")   # WaW -> Campaign
-            if defaults:
-                try:
-                    from wrapper import set_default_launch_option
-                    set_default_launch_option(self.steam_root, defaults)
-                    self._s.log.emit("✓  Default launch options set (SP mode)")
-                except Exception as ex:
-                    self._s.log.emit(f"  Launch options skipped: {ex}")
-
-        # ── Steam artwork for Steam-sourced games ─────────────────────────
-        if self.steam_selected:
-            self._s.progress.emit(95, "Applying Steam artwork...")
-            try:
-                from shortcut import apply_steam_artwork
-                steam_keys = [k for k, _, _ in self.steam_selected]
-                apply_steam_artwork(
-                    selected_keys=steam_keys,
-                    on_progress=lambda msg: self._s.log.emit(msg)
-                )
-            except Exception as ex:
-                self._s.log.emit(f"  Steam artwork skipped: {ex}")
-
-        # ── Done ──────────────────────────────────────────────────────────
-        _log_to_file("[BREADCRUMB] all phases complete, finishing up")
-        cfg.complete_first_run(self.steam_root)
-        self._s.progress.emit(100, "All done!")
-        self._s.done.emit(True)
-
-
-# ── OwnScanScreen ─────────────────────────────────────────────────────────────
-class OwnScanScreen(QWidget):
-    """
-    Advanced flow step 1: scan for non-Steam games in ~/Games, ~/games,
-    SD card, or a user-chosen folder. Shows detected games with checkboxes
-    (all pre-checked). User can uncheck games they don't want, pick a custom
-    folder if nothing was found, or skip to Steam-only setup.
-    """
-    def __init__(self, stack):
-        super().__init__(); self.stack = stack; self.screen_name = "OwnScanScreen"
-        self._own_found = {}       # full scan results
-        self._checks = {}          # key -> QCheckBox
-        self._extra_paths = []     # user-chosen folders
-
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(60, 40, 60, 40); lay.setSpacing(14)
-
-        # Back button
-        back = _btn("\u2190 Back", C_DARK_BTN, size=10, h=30)
-        back.setFixedWidth(80)
-        back.clicked.connect(lambda: self.stack.setCurrentIndex(1))
-        back_row = QHBoxLayout()
-        back_row.addWidget(back); back_row.addStretch()
-        lay.addLayout(back_row)
-
-        t = QLabel("NON-STEAM GAMES")
-        t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;")
-        lay.addWidget(t)
-
-        self.status = _lbl("Scanning for non-Steam games...", 13, C_DIM)
-        lay.addWidget(self.status)
-
-        self.bar = QProgressBar()
-        self.bar.setMaximum(100); self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(14)
-        bw = QHBoxLayout(); bw.addStretch(); bw.addWidget(self.bar, 6); bw.addStretch()
-        lay.addLayout(bw)
-        lay.addSpacing(6)
-
-        # Scrollable game list
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._list_widget = QWidget()
-        self._list_layout = QVBoxLayout(self._list_widget)
-        self._list_layout.setSpacing(6)
-        self._list_layout.addStretch()
-        scroll.setWidget(self._list_widget)
-        lay.addWidget(scroll, stretch=1)
-
-        # No-games message (hidden by default)
-        self._no_games_msg = _lbl(
-            "No supported games found in the default locations.\n"
-            "Use \"Choose Folder\" to pick where your games are installed.",
-            13, C_TREY, align=Qt.AlignCenter)
-        self._no_games_msg.setVisible(False)
-        lay.addWidget(self._no_games_msg)
-
-        # Button row
-        btn_row = QHBoxLayout(); btn_row.setSpacing(16)
-
-        self._folder_btn = _btn("Choose Folder", C_DARK_BTN, h=52)
-        self._folder_btn.setFixedWidth(200)
-        self._folder_btn.clicked.connect(self._pick_folder)
-
-        self._skip_btn = _btn("Skip >>", C_DARK_BTN, h=52)
-        self._skip_btn.setFixedWidth(140)
-        self._skip_btn.setVisible(False)
-        self._skip_btn.clicked.connect(self._skip)
-
-        self._cont_btn = _btn("Continue >>", C_IW, h=52)
-        self._cont_btn.setVisible(False)
-        self._cont_btn.clicked.connect(self._continue)
-
-        btn_row.addWidget(self._folder_btn)
-        btn_row.addWidget(self._skip_btn)
-        btn_row.addWidget(self._cont_btn, stretch=1)
-        lay.addLayout(btn_row)
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self._own_found.clear()
-        self._checks.clear()
-        self._extra_paths.clear()
-        self._no_games_msg.setVisible(False)
-        self._skip_btn.setVisible(False)
-        self._cont_btn.setVisible(False)
-        self.bar.setValue(0)
-        self.status.setText("Scanning for non-Steam games...")
-        # Clear previous game rows
-        while self._list_layout.count() > 1:
-            item = self._list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        QTimer.singleShot(200, self._scan)
-
-    def _scan(self):
-        self.bar.setValue(30)
-        self.status.setText("Scanning game folders...")
-        self._s = _Sigs()
-        self._s.progress.connect(lambda p, m: (self.bar.setValue(p), self.status.setText(m)))
-        self._s.done.connect(lambda _: self._show_results())
-        threading.Thread(target=self._do_scan, daemon=True).start()
-
-    def _do_scan(self):
-        from detect_games import find_own_installed
-        results = find_own_installed(
-            extra_paths=self._extra_paths if self._extra_paths else None,
-            on_progress=lambda msg: self._s.progress.emit(60, msg),
-        )
-        self._own_found = results
-        self._s.progress.emit(100, "Scan complete.")
-        self._s.done.emit(True)
-
-    def _show_results(self):
-        self.bar.setValue(100)
-        self._checks.clear()
-
-        # Clear previous game rows (keep the trailing stretch)
-        while self._list_layout.count() > 1:
-            item = self._list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        if not self._own_found:
-            self.status.setText("No supported games found.")
-            self.status.setStyleSheet(f"color:{C_TREY};background:transparent;")
-            self._no_games_msg.setVisible(True)
-            self._skip_btn.setVisible(True)
-            self._cont_btn.setVisible(False)
-            return
-
-        self._no_games_msg.setVisible(False)
-        self._skip_btn.setVisible(False)
-        count = len(self._own_found)
-        self.status.setText(f"Found {count} game(s)!")
-        self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
-
-        # Build game rows sorted by order
-        for key in sorted(self._own_found, key=lambda k: self._own_found[k].get("order", 99)):
-            game = self._own_found[key]
-            row = QHBoxLayout(); row.setSpacing(12); row.setContentsMargins(8, 6, 8, 6)
-
-            cb = QCheckBox()
-            cb.setChecked(True)
-            cb.toggled.connect(self._update_continue)
-            self._checks[key] = cb
-            row.addWidget(cb)
-
-            name_lbl = _lbl(game["name"], 13, "#FFF", align=Qt.AlignLeft, wrap=False)
-            row.addWidget(name_lbl, stretch=1)
-
-            path_lbl = _lbl(game["install_dir"], 10, C_DIM, align=Qt.AlignRight, wrap=False)
-            row.addWidget(path_lbl)
-
-            cw = QWidget(); cw.setLayout(row)
-            cw.setStyleSheet(f"background:{C_CARD};border-radius:6px;")
-            self._list_layout.insertWidget(self._list_layout.count() - 1, cw)
-
-        self._cont_btn.setVisible(True)
-
-    def _update_continue(self):
-        """Show Continue only if at least one game is checked."""
-        any_checked = any(cb.isChecked() for cb in self._checks.values())
-        self._cont_btn.setVisible(any_checked)
-        if not any_checked:
-            self._skip_btn.setVisible(True)
+                _write_shortcuts_vdf(shortcuts_path, existing_raw, new_entries)
+                prog(f"  ✓ shortcuts.vdf saved")
+            except Exception as e:
+                prog(f"  ⚠ Failed to write shortcuts.vdf: {e}")
         else:
-            self._skip_btn.setVisible(False)
+            prog(f"  ✓ No new shortcuts needed")
 
-    def _pick_folder(self):
-        folder = QFileDialog.getExistingDirectory(
-            self, "Select your games folder", os.path.expanduser("~"),
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
-        if folder:
-            if folder not in self._extra_paths:
-                self._extra_paths.append(folder)
-            # Re-scan with the new path included
-            self.status.setText(f"Scanning {folder}...")
-            self.bar.setValue(0)
-            self._no_games_msg.setVisible(False)
-            self._skip_btn.setVisible(False)
-            self._cont_btn.setVisible(False)
-            QTimer.singleShot(200, self._scan)
-
-    def _skip(self):
-        """Skip own games, go straight to Steam detection."""
-        # Set a flag so WelcomeScreen knows to skip own scanning
-        ws = self.stack.widget(2)
-        ws._steam_only = True
-        self.stack.setCurrentIndex(2)
-
-    def _continue(self):
-        """Store selected own games on OwnInstallScreen and advance to WelcomeScreen."""
-        selected = {}
-        for key, cb in self._checks.items():
-            if cb.isChecked() and key in self._own_found:
-                selected[key] = self._own_found[key]
-        # Park own games on OwnInstallScreen - SetupScreen will route there
-        # after the user picks their Steam games
-        own_screen = self.stack.widget(10)
-        own_screen.own_selected = selected
-        # Advance to WelcomeScreen for Steam game detection
-        ws = self.stack.widget(2)
-        ws._steam_only = True
-        self.stack.setCurrentIndex(2)
+    prog("✓ Own game shortcuts created.")
+    return own_games
 
 
-# ── SourceScreen ──────────────────────────────────────────────────────────────
-class SourceScreen(QWidget):
+# ── DeckOps Plutonium Offline Launcher shortcut ──────────────────────────────
+# The launcher is a Windows exe (DeckOps_Offline.exe) built with PyInstaller
+# that runs inside GE-Proton as a non-Steam shortcut. It shows installed
+# Plutonium games and lets users pick a mode to launch. The bootstrapper
+# runs as a direct Windows-to-Windows subprocess inside the same Wine/Proton
+# session, so all games (including T4/T5) work in Game Mode.
+#
+# Both OLED and LCD Decks get this shortcut — it's the unified Plutonium
+# offline entry point.
+
+LAUNCHER_TITLE = "DeckOps: Plutonium Offline"
+
+# Path to the Windows exe relative to the DeckOps install directory.
+# install.sh pulls the repo to ~/DeckOps-Nightly, so the exe lands at:
+#   ~/DeckOps-Nightly/assets/LAN/DeckOps_Offline.exe
+_LAUNCHER_EXE_REL = os.path.join("assets", "LAN", "DeckOps_Offline.exe")
+
+# Custom DeckOps Plutonium launcher artwork. Hosted in the DeckOps-Nightly
+# repo so updates ship with the source. _download_artwork below always
+# re-downloads on install so URL/asset changes propagate to existing setups.
+LAUNCHER_ART = {
+    "icon_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/icon.png",
+    "grid_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/deckops_grid.png",
+    "wide_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/deckops_launcher_banner.png",
+    "hero_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/deckops_hero.png",
+    "logo_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/deckops.png",
+    "icon_ext": "png", "grid_ext": "png", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
+}
+
+# Old exe path used by the python3-based launcher. Needed so migration can
+# calculate the old appid and strip stale artwork / compat tool entries.
+_OLD_LAUNCHER_EXE = os.path.join(
+    os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3"
+)
+
+
+def get_launcher_appid() -> int:
     """
-    Shown on first run before IntroScreen. Asks how the user installed their
-    games. Steam path uses the standard detection flow. Steam or Other detects
-    both Steam games and games installed via CD, GOG, Microsoft Store, etc.
+    Return the Steam shortcut appid for the offline launcher exe.
+
+    Other modules (plutonium_oled, plutonium_lcd, game_config) use this
+    to locate the launcher's compatdata prefix and copy configs into it
+    so the offline launcher can see all installed games.
     """
-    def __init__(self, stack):
-        super().__init__(); self.stack = stack; self.screen_name = "SourceScreen"
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(80, 60, 80, 60); lay.setSpacing(20)
-        lay.addStretch()
-        _title_block(lay)
-        lay.addSpacing(8)
-        lay.addWidget(_lbl("How did you install your games?", 15, "#CCC"))
-        lay.addSpacing(8)
-
-        cards = QHBoxLayout(); cards.setSpacing(20)
-
-        steam_card = QFrame()
-        steam_card.setStyleSheet(f"QFrame{{background:{C_CARD};border:2px solid #33333F;border-radius:10px;}}QLabel{{background:transparent;}}")
-        sc = QVBoxLayout(steam_card); sc.setContentsMargins(24, 24, 24, 24); sc.setSpacing(10)
-        rec = QPushButton("RECOMMENDED"); rec.setFont(font(9, True)); rec.setFixedHeight(24); rec.setEnabled(False)
-        rec.setStyleSheet(f"QPushButton{{background:{C_IW};color:#FFF;border:none;border-radius:5px;padding:0 10px;}}QPushButton:disabled{{background:{C_IW};color:#FFF;}}")
-        sc.addWidget(rec, alignment=Qt.AlignLeft)
-        sc.addWidget(_lbl("Steam", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
-        sc.addWidget(_lbl("Your games were purchased and installed through Steam. DeckOps will detect them automatically.", 12, C_DIM, align=Qt.AlignLeft))
-        sc.addWidget(_lbl("Works with games on internal storage or SD card.", 11, "#555568", align=Qt.AlignLeft))
-        sc.addStretch()
-        steam_btn = _btn("Select Steam >>", C_IW, h=44)
-        steam_btn.clicked.connect(lambda: self._pick("steam"))
-        sc.addWidget(steam_btn)
-        cards.addWidget(steam_card)
-
-        own_card = QFrame()
-        own_card.setStyleSheet(f"QFrame{{background:{C_CARD};border:2px solid #33333F;border-radius:10px;}}QLabel{{background:transparent;}}")
-        oc = QVBoxLayout(own_card); oc.setContentsMargins(24, 24, 24, 24); oc.setSpacing(10)
-        adv = QPushButton("ADVANCED"); adv.setFont(font(9, True)); adv.setFixedHeight(24); adv.setEnabled(False)
-        adv.setStyleSheet(f"QPushButton{{background:{C_TREY};color:#FFF;border:none;border-radius:5px;padding:0 10px;}}QPushButton:disabled{{background:{C_TREY};color:#FFF;}}")
-        oc.addWidget(adv, alignment=Qt.AlignLeft)
-        oc.addWidget(_lbl("Steam & Non-Steam", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
-        oc.addWidget(_lbl("You have games from the Microsoft Store, CD, GOG, or other storefronts. Steam games are also detected automatically.", 12, C_DIM, align=Qt.AlignLeft))
-        oc.addWidget(_lbl("Make sure your non-Steam games are in /home/deck/games before continuing.", 11, "#555568", align=Qt.AlignLeft))
-        oc.addStretch()
-        own_btn = _btn("Select Steam & Non-Steam >>", C_TREY, h=44)
-        own_btn.clicked.connect(lambda: self._pick("own"))
-        oc.addWidget(own_btn)
-        cards.addWidget(own_card)
-
-        lay.addLayout(cards)
-        lay.addStretch()
-
-    def _pick(self, source: str):
-        cfg.set_game_source(source)
-        self.stack.setCurrentIndex(1)
+    deckops_dir = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly")
+    launcher_exe = os.path.join(deckops_dir, _LAUNCHER_EXE_REL)
+    exe_path = f'"{launcher_exe}"'
+    return _calc_shortcut_appid(exe_path, LAUNCHER_TITLE)
 
 
-# ── App ────────────────────────────────────────────────────────────────────────
-def _app_style():
-    return f"""
-* {{ font-family: "{_FONT_FAMILY}"; }}
-QWidget {{ background-color:{C_BG}; color:#FFF; }}
-QScrollArea, QScrollArea > QWidget > QWidget {{ background:{C_BG}; border:none; }}
-QScrollBar:vertical {{ background:#1E1E28; width:8px; border-radius:4px; }}
-QScrollBar::handle:vertical {{ background:#44445A; border-radius:4px; min-height:30px; }}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height:0; }}
-QProgressBar {{ background:#252535; border-radius:7px; border:none; }}
-QProgressBar::chunk {{ background:{C_TREY}; border-radius:7px; }}
-QCheckBox::indicator {{ width:22px; height:22px; border:2px solid #555568; border-radius:4px; background:#252535; }}
-QCheckBox::indicator:checked {{ background:{C_IW}; border-color:{C_IW}; }}
-"""
+def get_launcher_plut_dir() -> str:
+    """
+    Return the Plutonium directory inside the launcher's compatdata prefix.
 
-class DeckOpsWindow(QMainWindow):
-    def __init__(self):
-        super().__init__(); self.setWindowTitle("DeckOps Nightly"); self.resize(1280,800); self.setMinimumSize(800,500)
-        self.stack = QStackedWidget(); self.setCentralWidget(self.stack)
-        for cls in [BootstrapScreen,IntroScreen,WelcomeScreen,SetupScreen,InstallScreen,ManagementScreen,ConfigureScreen,ControllerInfoScreen,UpdateScreen,SourceScreen,OwnInstallScreen,OwnScanScreen]:
-            self.stack.addWidget(cls(self.stack))
-        self.stack.setCurrentIndex(0)
+    This is where Plutonium bins, storage/, config.json, and mods must be
+    placed so the offline launcher exe (running inside this prefix via
+    GE-Proton) can find them.
 
-        # Debug label - shows current screen name and index in bottom-left
-        self._dbg_label = QLabel(self)
-        self._dbg_label.setStyleSheet(
-            "color:#444455;background:transparent;padding:4px 8px;"
+    Path: ~/.local/share/Steam/steamapps/compatdata/<appid>/pfx/drive_c/
+          users/steamuser/AppData/Local/Plutonium
+    """
+    appid = get_launcher_appid()
+    return os.path.join(
+        COMPAT_ROOT, str(appid),
+        "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Local", "Plutonium",
+    )
+
+
+def _launcher_cache_cleanup_opts(shortcut_appid: int) -> str:
+    """
+    Return launch options that nuke the shader cache directory for the
+    offline launcher's shortcut appid before launching the exe.
+
+    The offline launcher is a PyQt5 app (DeckOps_Offline.exe) that runs
+    inside GE-Proton as a non-Steam shortcut. Steam's Fossilize pipeline
+    records shader cache for the launcher process, but since it's a Qt
+    UI — not a game — the cache is useless junk that accumulates on
+    every launch. Same root cause as the LCD online shader cache bug.
+
+    The bash one-liner deletes the shadercache/<appid>/ directory, then
+    exec's %command% so the normal Proton → exe launch proceeds unchanged.
+    Steam recreates the directory structure on next launch.
+
+    Applies to both LCD and OLED — both use this shortcut for offline play.
+    """
+    return (
+        f"bash -c 'rm -rf ~/.local/share/Steam/steamapps/shadercache/"
+        f"{shortcut_appid}; exec \"$@\"' _ %command%"
+    )
+
+
+def create_launcher_shortcut(on_progress=None):
+    """
+    Create a non-Steam shortcut for the DeckOps Plutonium Offline Launcher.
+
+    The launcher is a Windows exe (DeckOps_Offline.exe) that runs inside
+    GE-Proton. Called once after Plutonium games are set up — both OLED
+    and LCD.
+
+    The shortcut runs:  GE-Proton → DeckOps_Offline.exe
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    deckops_dir = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly")
+    launcher_exe = os.path.join(deckops_dir, _LAUNCHER_EXE_REL)
+
+    if not os.path.exists(launcher_exe):
+        prog(f"  Launcher exe not found: {launcher_exe}")
+        return
+
+    exe_path  = f'"{launcher_exe}"'
+    start_dir = f'"{os.path.dirname(launcher_exe)}"'
+
+    shortcut_appid = _calc_shortcut_appid(exe_path, LAUNCHER_TITLE)
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        prog("  No Steam user accounts found - launcher shortcut skipped.")
+        return
+
+    for uid in uids:
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+
+        existing_names = _read_existing_shortcuts(shortcuts_path)
+        existing_raw = _read_shortcuts_raw(shortcuts_path)
+
+        # ── Migration ────────────────────────────────────────────────────
+        # Remove stale launcher shortcuts from prior versions so users
+        # don't end up with duplicates.
+        _stale_names = set()
+
+        # 1) Very old name: "DeckOps: Plutonium Launcher"
+        _OLD_LAUNCHER_TITLE = "DeckOps: Plutonium Launcher"
+        if _OLD_LAUNCHER_TITLE in existing_names:
+            _stale_names.add(_OLD_LAUNCHER_TITLE)
+
+        # 2) Same name but old python3-based exe path — different appid
+        #    because exe_path changed. Strip by name so the new entry
+        #    (with the exe path) can be written fresh.
+        _old_py_exe = f'"{_OLD_LAUNCHER_EXE}"'
+        _old_py_appid = _calc_shortcut_appid(_old_py_exe, LAUNCHER_TITLE)
+        if _old_py_appid != shortcut_appid and LAUNCHER_TITLE in existing_names:
+            _stale_names.add(LAUNCHER_TITLE)
+
+        if _stale_names:
+            existing_raw, _stripped = _strip_entries_by_name(
+                existing_raw, _stale_names
+            )
+            if _stripped:
+                for _sn in _stripped:
+                    prog(f"  Removed stale launcher shortcut: {_sn}")
+            existing_names = [n for n in existing_names if n not in _stale_names]
+
+            # Clean up artwork for the old python3-based appid
+            if _old_py_appid != shortcut_appid:
+                try:
+                    import glob as _glob
+                    for _f in _glob.glob(os.path.join(grid_dir, f"{_old_py_appid}*")):
+                        try:
+                            os.remove(_f)
+                        except OSError:
+                            pass
+                    prog(f"  Cleaned old launcher artwork (appid {_old_py_appid})")
+                except Exception:
+                    pass
+
+            # Clear stale compat tool entry for old appid
+            try:
+                _clear_compat_tool(str(_old_py_appid))
+                prog(f"  Cleared old compat tool entry (appid {_old_py_appid})")
+            except Exception:
+                pass
+
+        next_idx = _get_next_index(existing_raw)
+
+        icon_path = os.path.join(
+            grid_dir, f"{shortcut_appid}_icon.{LAUNCHER_ART['icon_ext']}"
         )
-        self._dbg_label.setFont(font(9))
-        self._dbg_label.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self._dbg_label.raise_()
-        self.stack.currentChanged.connect(self._update_dbg_label)
-        self._update_dbg_label(0)
 
-    def _update_dbg_label(self, idx):
-        w = self.stack.widget(idx)
-        name = getattr(w, "screen_name", w.__class__.__name__)
-        self._dbg_label.setText(f"[{idx}] {name}")
-        self._dbg_label.adjustSize()
+        if LAUNCHER_TITLE in existing_names:
+            prog(f"  Launcher shortcut already exists")
+        else:
+            entry = {
+                "appid":               _to_signed32(shortcut_appid),
+                "AppName":             LAUNCHER_TITLE,
+                "Exe":                 exe_path,
+                "StartDir":            start_dir,
+                "icon":                icon_path,
+                "ShortcutPath":        "",
+                "LaunchOptions":       _launcher_cache_cleanup_opts(shortcut_appid),
+                "IsHidden":            0,
+                "AllowDesktopConfig":  1,
+                "AllowOverlay":        1,
+                "OpenVR":              0,
+                "Devkit":              0,
+                "DevkitGameID":        "",
+                "DevkitOverrideAppID": 0,
+                "LastPlayTime":        0,
+                "FlatpakAppID":        "",
+                "tags":                {"0": "DeckOps"},
+            }
 
-    def resizeEvent(self, e):
-        super().resizeEvent(e)
-        # Keep debug label pinned to bottom-left
-        self._dbg_label.move(8, self.height() - self._dbg_label.height() - 8)
-        self._dbg_label.raise_()
+            entry_bytes = _make_shortcut_entry(next_idx, entry)
+            try:
+                _write_shortcuts_vdf(shortcuts_path, existing_raw, [entry_bytes])
+                prog(f"  Launcher shortcut created: {LAUNCHER_TITLE}")
+            except Exception as e:
+                prog(f"  Failed to write launcher shortcut: {e}")
 
-    def closeEvent(self, e):
-        _kill_audio()
-        super().closeEvent(e)
+        # Always re-download launcher artwork (URLs may change between versions).
+        # Before downloading, delete any pre-existing files for this appid so
+        # stale artwork from prior installs doesn't outrank the new files.
+        # Steam reads whichever file it finds first when both .jpg and .png
+        # variants exist for the same appid -- previous installs that used
+        # different file extensions (e.g. steamgriddb served .jpg) leave
+        # orphans that hide the new .png artwork.
+        try:
+            import glob as _glob
+            stale = _glob.glob(os.path.join(grid_dir, f"{shortcut_appid}*"))
+            for f in stale:
+                try:
+                    os.remove(f)
+                    prog(f"  Removed stale launcher artwork: {os.path.basename(f)}")
+                except OSError as _ex:
+                    prog(f"  Could not remove stale artwork {os.path.basename(f)}: {_ex}")
+        except Exception as _ex:
+            prog(f"  Stale artwork cleanup skipped: {_ex}")
 
-def run():
-    app = QApplication(sys.argv)
-    app.setStyle("Fusion")
-    _load_font()
-    app.setStyleSheet(_app_style())
-    win = DeckOpsWindow()
-    win.show()
-    sys.exit(app.exec_())
+        _download_artwork(grid_dir, shortcut_appid, LAUNCHER_ART, prog,
+                          force=True)
+
+        # Assign the user's chosen controller template so games launched
+        # from the launcher inherit the correct gamepad layout. The launcher
+        # runs as a non-Steam shortcut and Steam applies its controller
+        # config to all child processes — so the template here is what the
+        # actual game will use. "standard" is correct for most Plutonium
+        # games (the majority are Treyarch titles using standard layout).
+        try:
+            import config as _cfg
+            _gyro = _cfg.get_gyro_mode() or "hold"
+        except Exception:
+            _gyro = "hold"
+        _assign_controller_config(uid, shortcut_appid,
+                                  {"template_type": "standard"},
+                                  _gyro, prog)
+
+        # Set GE-Proton as compat tool — the exe runs inside Proton.
+        try:
+            import config as _cfg
+            from wrapper import set_compat_tool
+            ge_version = _cfg.get_ge_proton_version()
+            if ge_version:
+                set_compat_tool([str(shortcut_appid)], ge_version)
+                prog(f"    ✓ GE-Proton {ge_version} set for launcher")
+            else:
+                prog(f"    ⚠ No GE-Proton version found — compat tool not set")
+        except Exception as ex:
+            prog(f"    ⚠ Could not set GE-Proton: {ex}")
+
+    prog(f"  Launcher shortcut appid: {shortcut_appid}")
+
+
+def remove_launcher_shortcut(on_progress=None):
+    """
+    Remove the DeckOps Plutonium Offline Launcher shortcut from shortcuts.vdf
+    for all discovered Steam UIDs. Also removes associated artwork.
+
+    Handles both the current exe-based shortcut and the old python3-based
+    shortcut (different appids due to different exe paths).
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    # Current exe-based appid
+    deckops_dir = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly")
+    launcher_exe = os.path.join(deckops_dir, _LAUNCHER_EXE_REL)
+    exe_path_new = f'"{launcher_exe}"'
+    appid_new = _calc_shortcut_appid(exe_path_new, LAUNCHER_TITLE)
+
+    # Old python3-based appid
+    exe_path_old = f'"{_OLD_LAUNCHER_EXE}"'
+    appid_old = _calc_shortcut_appid(exe_path_old, LAUNCHER_TITLE)
+
+    appids_to_clean = {appid_new, appid_old}
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        return
+
+    for uid in uids:
+        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
+        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
+
+        if not os.path.exists(shortcuts_path):
+            continue
+
+        try:
+            with open(shortcuts_path, "rb") as f:
+                data = f.read()
+        except OSError:
+            continue
+
+        header = b'\x00shortcuts\x00'
+        footer = b'\x08\x08'
+
+        body = data
+        if body.startswith(header):
+            body = body[len(header):]
+        if body.endswith(footer):
+            body = body[:-2]
+        elif body.endswith(b'\x08'):
+            body = body[:-1]
+
+        entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', body)]
+        if not entry_starts:
+            continue
+
+        entries = []
+        for i, start in enumerate(entry_starts):
+            end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(body)
+            entries.append(body[start:end])
+
+        title_bytes = LAUNCHER_TITLE.encode("utf-8")
+        filtered = [
+            e for e in entries
+            if b'\x01AppName\x00' + title_bytes + b'\x00' not in e
+            and b'\x01appname\x00' + title_bytes + b'\x00' not in e
+        ]
+
+        if len(filtered) < len(entries):
+            reindexed = []
+            for new_idx, entry in enumerate(filtered):
+                entry = re.sub(rb'^\x00\d+\x00', f'\x00{new_idx}\x00'.encode(), entry)
+                reindexed.append(entry)
+            new_data = header + b''.join(reindexed) + footer
+            try:
+                _backup_file(shortcuts_path)
+                with open(shortcuts_path, "wb") as f:
+                    f.write(new_data)
+                prog(f"  Removed launcher shortcut for uid {uid}")
+            except OSError as ex:
+                prog(f"  Could not write shortcuts.vdf: {ex}")
+
+        # Remove artwork for both old and new appids
+        artwork_suffixes = [
+            f"_icon.{LAUNCHER_ART['icon_ext']}",
+            f"p.{LAUNCHER_ART['grid_ext']}",
+            f".{LAUNCHER_ART['wide_ext']}",
+            f"_hero.{LAUNCHER_ART['hero_ext']}",
+            f"_logo.{LAUNCHER_ART['logo_ext']}",
+        ]
+        for appid in appids_to_clean:
+            for suffix in artwork_suffixes:
+                art_path = os.path.join(grid_dir, f"{appid}{suffix}")
+                if os.path.exists(art_path):
+                    try:
+                        os.remove(art_path)
+                    except OSError:
+                        pass
+
+
+# ── CLI for testing ───────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    run()
+    import sys
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    
+    from detect_games import find_steam_root, parse_library_folders, find_installed_games
+    
+    print("Finding installed games...")
+    steam_root = find_steam_root()
+    if not steam_root:
+        print("Steam not found.")
+        sys.exit(1)
+    
+    libs = parse_library_folders(steam_root)
+    installed = find_installed_games(libs)
+    
+    print(f"Found {len(installed)} games")
+    for key in SHORTCUTS:
+        if key in installed:
+            print(f"  ✓ {key}: {installed[key].get('install_dir', installed[key].get('path'))}")
+        else:
+            print(f"  ✗ {key}: not installed")
+    
+    print("\nCreating shortcuts (test mode)...")
+    create_shortcuts(
+        installed_games=installed,
+        selected_keys=list(SHORTCUTS.keys()),
+        gyro_mode="hold",
+        on_progress=lambda msg: print(msg)
+    )
