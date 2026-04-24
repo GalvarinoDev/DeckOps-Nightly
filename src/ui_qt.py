@@ -1578,8 +1578,13 @@ class InstallScreen(QWidget):
                 self._s.progress.emit(91, f"Setting up {base_name}...")
                 def op_alterware(pct, msg): self._s.progress.emit(91 + int(pct / 100 * 4), msg)
                 try:
-                    compat = find_compatdata(self.steam_root, gd["appid"],
-                                              game_install_dir=game["install_dir"] if game else None)
+                    _appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
+                    _install_dir = game["install_dir"] if game else None
+                    compat = find_compatdata(self.steam_root, _appid,
+                                              game_install_dir=_install_dir)
+                    if not compat and _install_dir:
+                        steamapps = os.path.dirname(os.path.dirname(_install_dir))
+                        compat = os.path.join(steamapps, "compatdata", str(_appid))
                     install_alterware(game, key, self.steam_root, proton, compat, op_alterware,
                                      source="steam")
                     cfg.mark_game_setup(key, "alterware", source="steam")
@@ -2635,7 +2640,13 @@ class UpdateScreen(QWidget):
 
             try:
                 from plutonium_oled import GAME_META as _PLUT_META
-                _appid = _PLUT_META[key][0] if (c == "plutonium" and key in _PLUT_META) else gd["appid"]
+                from detect_games import GAMES as _GAMES_MAP
+                if c == "plutonium" and key in _PLUT_META:
+                    _appid = _PLUT_META[key][0]
+                elif c == "alterware" and key in _GAMES_MAP:
+                    _appid = _GAMES_MAP[key]["appid"]
+                else:
+                    _appid = gd["appid"]
 
                 # Resolve compatdata - own games may have CRC-based prefix
                 if source == "own":
@@ -2646,6 +2657,9 @@ class UpdateScreen(QWidget):
                 else:
                     compat = find_compatdata(self.steam_root, _appid,
                                               game_install_dir=game.get("install_dir"))
+                if not compat and game.get("install_dir"):
+                    steamapps = os.path.dirname(os.path.dirname(game["install_dir"]))
+                    compat = os.path.join(steamapps, "compatdata", str(_appid))
 
                 if c == "cod4x":
                     install_cod4x(game, self.steam_root, proton, compat, op,
@@ -3184,14 +3198,19 @@ class OwnInstallScreen(QWidget):
                 def op_alterware(pct, msg): self._s.progress.emit(76 + int(pct / 100 * 4), msg)
                 try:
                     source = "own" if key in self.own_selected else "steam"
+                    _appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
+                    _install_dir = game.get("install_dir")
                     if source == "own":
                         compat = game.get("compatdata_path", "")
                         if not compat:
-                            compat = find_compatdata(self.steam_root, gd["appid"],
-                                                      game_install_dir=game.get("install_dir"))
+                            compat = find_compatdata(self.steam_root, _appid,
+                                                      game_install_dir=_install_dir)
                     else:
-                        compat = find_compatdata(self.steam_root, gd["appid"],
-                                                  game_install_dir=game.get("install_dir"))
+                        compat = find_compatdata(self.steam_root, _appid,
+                                                  game_install_dir=_install_dir)
+                    if not compat and _install_dir:
+                        steamapps = os.path.dirname(os.path.dirname(_install_dir))
+                        compat = os.path.join(steamapps, "compatdata", str(_appid))
                     install_alterware(game, key, self.steam_root, proton, compat, op_alterware,
                                      source=source)
                     cfg.mark_game_setup(key, "alterware", source=source)
