@@ -203,7 +203,7 @@ SP_IMAGE_URLS = {
     209650: "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/library_600x900_2x.jpg",
 }
 
-IMG_RATIO = 1.2
+IMG_RATIO = 1.0
 BTN_RATIO = 0.20
 CARD_COLS = 5
 
@@ -1789,7 +1789,14 @@ class ManagementCard(QFrame):
             br.addWidget(rei_btn)
             br.addStretch()
         else:
-            br.addStretch()
+            setup_btn = _btn("Set Up", C_DARK_BTN, size=10, h=32)
+            setup_btn.setEnabled(False)
+            setup_btn.setStyleSheet(
+                f"QPushButton{{background:#252535;color:#555568;border:none;"
+                f"border-radius:6px;font-weight:bold;}}"
+                f"QPushButton:disabled{{background:#252535;color:#555568;}}"
+            )
+            br.addWidget(setup_btn); br.addStretch()
 
         lay.addWidget(btn_row)
 
