@@ -203,9 +203,10 @@ SP_IMAGE_URLS = {
     209650: "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/library_600x900_2x.jpg",
 }
 
-IMG_RATIO = 1.0
+IMG_RATIO = 1.5
 BTN_RATIO = 0.20
-CARD_COLS = 5
+CARD_COLS  = 5
+CARD_MAX_W = 187
 
 MUSIC_URL = "https://archive.org/download/adrenaline-klickaud/Adrenaline_KLICKAUD.mp3"
 
@@ -1694,7 +1695,8 @@ class ManagementCard(QFrame):
         self._appid  = _active_appid(gd)
         self._is_lan = gd.get("client") == "lan"
         self.setObjectName("MC")
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.setMaximumWidth(CARD_MAX_W)
 
         keys       = _active_keys(gd)
         client     = _active_client(gd)
@@ -1862,8 +1864,7 @@ class ManagementScreen(QWidget):
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
         inner = QWidget(); self._grid = QGridLayout(inner)
         self._grid.setContentsMargins(16,16,16,16); self._grid.setSpacing(12)
-        for c in range(CARD_COLS):
-            self._grid.setColumnStretch(c, 1)
+        self._grid.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
         scroll.setWidget(inner); lay.addWidget(scroll, stretch=1)
 
         self._status = _lbl("", 12, C_DIM)
