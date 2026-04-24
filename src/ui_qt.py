@@ -1720,18 +1720,89 @@ class ManagementCard(QFrame):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
 
-        self._img = QLabel()
+        # ── Image container with overlaid badge and buttons ───────────────
+        img_container = QWidget()
+        img_container.setStyleSheet("background:#0A0A10;border:none;")
+        img_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+        self._img = QLabel(img_container)
         self._img.setAlignment(Qt.AlignCenter)
-        self._img.setStyleSheet("background:#0A0A10;border:none;")
+        self._img.setStyleSheet("background:transparent;border:none;")
         if not is_setup and not self._is_lan:
             effect = QGraphicsOpacityEffect()
             effect.setOpacity(0.45 if is_present else 0.25)
             self._img.setGraphicsEffect(effect)
-        lay.addWidget(self._img)
+
+        # Client badge — overlaid top-left on the image
+        self._client_badge = QPushButton(client.upper(), img_container)
+        self._client_badge.setFont(font(8, True)); self._client_badge.setEnabled(False)
+        self._client_badge.setStyleSheet(
+            f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:3px;padding:2px 6px;}}"
+            f"QPushButton:disabled{{background:{color};color:#FFF;}}"
+        )
+        self._client_badge.adjustSize()
+        self._client_badge.raise_()
+
+        # Buttons — overlaid bottom-center on the image
+        self._btn_bar = QWidget(img_container)
+        self._btn_bar.setStyleSheet("background:transparent;border:none;")
+        bb = QHBoxLayout(self._btn_bar)
+        bb.setContentsMargins(6, 0, 6, 0); bb.setSpacing(4)
+
+        if self._is_lan:
+            readd_btn = _btn("Re-Add", C_TREY, size=9, h=26)
+            if on_readd:
+                readd_btn.clicked.connect(lambda: on_readd(gd))
+            readd_btn.setStyleSheet(
+                f"QPushButton{{background:{C_TREY};color:#FFF;border:none;"
+                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
+            )
+            bb.addStretch(); bb.addWidget(readd_btn); bb.addStretch()
+        elif not is_setup and is_present:
+            setup_btn = _btn("Set Up", C_IW, size=9, h=26)
+            setup_btn.clicked.connect(lambda: on_setup(gd))
+            setup_btn.setStyleSheet(
+                f"QPushButton{{background:{C_IW};color:#FFF;border:none;"
+                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
+            )
+            bb.addStretch(); bb.addWidget(setup_btn); bb.addStretch()
+        elif is_setup:
+            has_mod = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in ik)
+            bb.addStretch()
+            if has_mod:
+                upd_btn = _btn("Update", C_DARK_BTN, size=9, h=26)
+                upd_btn.clicked.connect(lambda: on_update(gd, ik))
+                upd_btn.setStyleSheet(
+                    f"QPushButton{{background:rgba(51,51,63,200);color:#CCC;border:none;"
+                    f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
+                )
+                bb.addWidget(upd_btn)
+            rei_btn = _btn("Reinstall", C_DARK_BTN, size=9, h=26)
+            rei_btn.clicked.connect(lambda: on_reinstall(gd))
+            rei_btn.setStyleSheet(
+                f"QPushButton{{background:rgba(51,51,63,200);color:#CCC;border:none;"
+                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
+            )
+            bb.addWidget(rei_btn)
+            bb.addStretch()
+        else:
+            setup_btn = _btn("Set Up", C_DARK_BTN, size=9, h=26)
+            setup_btn.setEnabled(False)
+            setup_btn.setStyleSheet(
+                f"QPushButton{{background:rgba(37,37,53,200);color:#555568;border:none;"
+                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
+                f"QPushButton:disabled{{background:rgba(37,37,53,200);color:#555568;}}"
+            )
+            bb.addStretch(); bb.addWidget(setup_btn); bb.addStretch()
+
+        self._btn_bar.adjustSize()
+        self._btn_bar.raise_()
+
+        self._img_container = img_container
+        lay.addWidget(img_container)
         self._raw_pixmap = None
 
         if self._is_lan:
-            # Load local DeckOps grid image from assets/images/heroes/
             local_img = os.path.join(HEROES_DIR, "deckops_grid.png")
             if os.path.exists(local_img):
                 self._raw_pixmap = QPixmap(local_img)
@@ -1742,81 +1813,25 @@ class ManagementCard(QFrame):
             else:
                 threading.Thread(target=self._fetch, args=(self._appid,), daemon=True).start()
 
-        badge_row = QWidget()
-        badge_row.setStyleSheet(f"background:{C_CARD};border:none;")
-        bl = QHBoxLayout(badge_row)
-        bl.setContentsMargins(8, 4, 8, 4); bl.setSpacing(6)
-
-        client_lbl = QPushButton(client.upper())
-        client_lbl.setFont(font(9, True)); client_lbl.setFixedHeight(22)
-        client_lbl.setEnabled(False)
-        client_lbl.setStyleSheet(
-            f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:4px;padding:0 8px;}}"
-            f"QPushButton:disabled{{background:{color};color:#FFF;}}"
-        )
-        bl.addWidget(client_lbl)
-        bl.addStretch()
-
-        if self._is_lan:
-            status_lbl = _lbl("offline launcher", 10, C_DIM, align=Qt.AlignRight, wrap=False)
-        elif is_setup:
-            status_lbl = _lbl("✓ installed", 10, C_IW, align=Qt.AlignRight, wrap=False)
-        elif is_present:
-            status_lbl = _lbl("not set up", 10, C_DIM, align=Qt.AlignRight, wrap=False)
-        else:
-            status_lbl = _lbl("not installed", 10, "#554444", align=Qt.AlignRight, wrap=False)
-        bl.addWidget(status_lbl)
-        lay.addWidget(badge_row)
-
-        btn_row = QWidget(); btn_row.setStyleSheet(f"background:{C_CARD};border:none;")
-        br = QHBoxLayout(btn_row); br.setContentsMargins(8, 6, 8, 8); br.setSpacing(6)
-
-        if self._is_lan:
-            readd_btn = _btn("Re-Add", C_TREY, size=10, h=32)
-            if on_readd:
-                readd_btn.clicked.connect(lambda: on_readd(gd))
-            br.addWidget(readd_btn); br.addStretch()
-        elif not is_setup and is_present:
-            setup_btn = _btn("Set Up", C_IW, size=10, h=32)
-            setup_btn.clicked.connect(lambda: on_setup(gd))
-            br.addWidget(setup_btn); br.addStretch()
-        elif is_setup:
-            has_mod = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in ik)
-            if has_mod:
-                upd_btn = _btn("Update", C_DARK_BTN, size=10, h=32)
-                upd_btn.clicked.connect(lambda: on_update(gd, ik))
-                br.addWidget(upd_btn)
-            rei_btn = _btn("Reinstall", C_DARK_BTN, size=10, h=32)
-            rei_btn.clicked.connect(lambda: on_reinstall(gd))
-            br.addWidget(rei_btn)
-            br.addStretch()
-        else:
-            setup_btn = _btn("Set Up", C_DARK_BTN, size=10, h=32)
-            setup_btn.setEnabled(False)
-            setup_btn.setStyleSheet(
-                f"QPushButton{{background:#252535;color:#555568;border:none;"
-                f"border-radius:6px;font-weight:bold;}}"
-                f"QPushButton:disabled{{background:#252535;color:#555568;}}"
-            )
-            br.addWidget(setup_btn); br.addStretch()
-
-        lay.addWidget(btn_row)
-
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._scale_image()
 
     def _scale_image(self):
+        w = self.width()
+        h = int(w * IMG_RATIO)
+        self._img_container.setFixedSize(w, h)
+        self._img.setFixedSize(w, h)
         if self._raw_pixmap:
-            w = self.width()
-            h = int(w * IMG_RATIO)
-            self._img.setFixedSize(w, h)
             self._img.setPixmap(
                 self._raw_pixmap.scaled(w, h, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
             )
-        else:
-            w = self.width()
-            self._img.setFixedSize(w, int(w * IMG_RATIO))
+        # Position client badge — top-left with 4px margin
+        self._client_badge.move(4, 4)
+        # Position button bar — bottom, full width
+        self._btn_bar.setFixedWidth(w)
+        bh = self._btn_bar.sizeHint().height()
+        self._btn_bar.move(0, h - bh - 4)
 
     def _fetch(self, appid):
         url = SP_IMAGE_URLS.get(appid)
