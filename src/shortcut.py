@@ -1663,6 +1663,46 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
             # We still create the shortcut either way so artwork, controller
             # configs, and compat tools are in place. The user can drop the
             # exe in later and it will just work.
+
+            # ── Recalculate appid from actual_exe ─────────────────────────
+            # The preliminary appid above used the original game exe, but
+            # the shortcut Exe field uses actual_exe (which may be a mod
+            # client like iw6-mod.exe or s1-mod.exe). Steam derives the
+            # shortcut's internal appid from the Exe field, so the CRC
+            # must match. Recalculate and update all dependent state.
+            quoted_actual   = f'"{actual_exe}"'
+            final_appid     = _calc_shortcut_appid(quoted_actual, name)
+            if final_appid != shortcut_appid:
+                shortcut_appid  = final_appid
+                icon_path       = os.path.join(grid_dir, f"{shortcut_appid}_icon.{shortcut_def['icon_ext']}")
+                compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
+                game["shortcut_appid"]  = shortcut_appid
+                game["compatdata_path"] = compatdata_path
+                # Re-resolve launch options with updated compatdata_path
+                if key in ("iw6mp", "iw6sp"):
+                    mode_flag = "-multiplayer" if key == "iw6mp" else "-singleplayer"
+                    launch_options = (
+                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                        f'%command% {mode_flag}'
+                    )
+                elif key in ("s1mp", "s1sp"):
+                    mode_flag = "-multiplayer" if key == "s1mp" else "-singleplayer"
+                    launch_options = (
+                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                        f'%command% {mode_flag}'
+                    )
+                elif key == "iw4mp":
+                    launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                elif key == "cod4sp":
+                    launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                elif key == "t7":
+                    launch_options = (
+                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                        f'WINEDLLOVERRIDES="d3d11=n,b" %command%'
+                    )
+                else:
+                    launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+
             if key not in _PLUT_KEYS and not os.path.exists(actual_exe):
                 prog(f"  → {name}")
                 prog(f"    ⚠ {os.path.basename(actual_exe)} not found -- shortcut will be created anyway")
