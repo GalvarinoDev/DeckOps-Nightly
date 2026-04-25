@@ -465,6 +465,10 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
     # For users who installed via CD/GOG/etc, DeckOps created the shortcuts
     # with canonical names. We recalculate the appid the same way
     # create_own_shortcuts() does and assign profiles to it.
+    #
+    # Some mod clients replace the exe in the shortcut (e.g. iw6-mod.exe
+    # instead of iw6mp64_ship.exe). The CRC must use the same exe path
+    # that was written into the shortcut's Exe field.
     try:
         import config as cfg
         if cfg.get_game_source() == "own":
@@ -479,8 +483,23 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
                 exe_path = game.get("exe_path", "")
                 if not exe_path:
                     continue
+                install_dir = game.get("install_dir", "")
+
+                # Resolve the actual exe that was used in the shortcut.
+                # Must match create_own_game_shortcuts per-key logic.
+                if key == "iw4mp" and install_dir:
+                    actual_exe = os.path.join(install_dir, "iw4x.exe")
+                elif key == "cod4sp" and install_dir:
+                    actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
+                elif key in ("iw6mp", "iw6sp") and install_dir:
+                    actual_exe = os.path.join(install_dir, "iw6-mod.exe")
+                elif key in ("s1mp", "s1sp") and install_dir:
+                    actual_exe = os.path.join(install_dir, "s1-mod.exe")
+                else:
+                    actual_exe = exe_path
+
                 # Must match create_own_shortcuts: quoted exe + canonical name
-                quoted_exe = f'"{exe_path}"'
+                quoted_exe = f'"{actual_exe}"'
                 shortcut_appid = _calc_shortcut_appid(quoted_exe, canonical_name)
 
                 steam_appid = game.get("appid", "")
@@ -662,7 +681,22 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
                 exe_path = game.get("exe_path", "")
                 if not exe_path:
                     continue
-                quoted_exe = f'"{exe_path}"'
+                install_dir = game.get("install_dir", "")
+
+                # Resolve the actual exe that was used in the shortcut.
+                # Must match create_own_game_shortcuts per-key logic.
+                if key == "iw4mp" and install_dir:
+                    actual_exe = os.path.join(install_dir, "iw4x.exe")
+                elif key == "cod4sp" and install_dir:
+                    actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
+                elif key in ("iw6mp", "iw6sp") and install_dir:
+                    actual_exe = os.path.join(install_dir, "iw6-mod.exe")
+                elif key in ("s1mp", "s1sp") and install_dir:
+                    actual_exe = os.path.join(install_dir, "s1-mod.exe")
+                else:
+                    actual_exe = exe_path
+
+                quoted_exe = f'"{actual_exe}"'
                 shortcut_appid = _calc_shortcut_appid(quoted_exe, canonical_name)
 
                 steam_appid  = game.get("appid", "")
