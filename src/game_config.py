@@ -8,8 +8,8 @@ currently there.
 After copying, replaces the default player name ("Player") with the user's
 chosen name from deckops.json in any config that has `seta name "Player"`.
 
-LCD users receive MW1, MW2, and MW3 SP configs.
-OLED users receive MW1, MW2, WaW, BO1, MW3, and BO2 configs.
+LCD users receive MW1, MW2, MW3 SP, Ghosts, and AW configs.
+OLED users receive MW1, MW2, WaW, BO1, MW3, BO2, Ghosts, and AW configs.
 
 LCD Plutonium games are additionally mirrored into the Heroic shared default
 prefix (~/Games/Heroic/Prefixes/default), because LCD online play routes
@@ -143,8 +143,8 @@ def _launcher_mirror_path(compatdata_dest):
 # The config map is built inside apply_game_configs so steam_root is available.
 # Keys that are absent for a given model are simply not included.
 
-_LCD_KEYS  = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "iw5sp", "iw5mp", "iw5mp_ds", "t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp"}
-_OLED_KEYS = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "t4sp", "t4mp", "t5sp", "t5mp", "iw5sp", "iw5mp", "iw5mp_ds", "t6zm", "t6mp"}
+_LCD_KEYS  = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "iw5sp", "iw5mp", "iw5mp_ds", "t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "iw6sp", "iw6mp", "s1sp", "s1mp"}
+_OLED_KEYS = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "t4sp", "t4mp", "t5sp", "t5mp", "iw5sp", "iw5mp", "iw5mp_ds", "t6zm", "t6mp", "iw6sp", "iw6mp", "s1sp", "s1mp"}
 
 
 def _build_config_map(steam_root, installed_games=None):
@@ -282,6 +282,26 @@ def _build_config_map(steam_root, installed_games=None):
                 ),
             ),
         ],
+
+        # ── Ghosts SP (AlterWare iw6, appid 209160) ──────────────────────────
+        "iw6sp": [
+            ("Ghosts/config.cfg", None),
+        ],
+
+        # ── Ghosts MP (AlterWare iw6, appid 209170) ──────────────────────────
+        "iw6mp": [
+            ("Ghosts/config_mp.cfg", None),
+        ],
+
+        # ── AW SP (AlterWare s1, appid 209650) ───────────────────────────────
+        "s1sp": [
+            ("AW/config.cfg", None),
+        ],
+
+        # ── AW MP (AlterWare s1, appid 209660) ───────────────────────────────
+        "s1mp": [
+            ("AW/config_mp.cfg", None),
+        ],
     }
 
 
@@ -298,6 +318,8 @@ def _dest_from_install(game_key, install_dir):
     if game_key in ("iw4sp", "iw4mp"):
         return os.path.join(install_dir, "players")
     if game_key == "iw5sp":
+        return os.path.join(install_dir, "players2")
+    if game_key in ("iw6sp", "iw6mp", "s1sp", "s1mp"):
         return os.path.join(install_dir, "players2")
     return None
 
@@ -386,6 +408,8 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
         "iw4mp": "iw4sp",      # MW2 MP  → MW2 SP
         "iw5mp": "iw5sp",      # MW3 MP  → MW3 SP
         "iw5mp_ds": "iw5sp",   # MW3 DS  → MW3 SP
+        "iw6mp": "iw6sp",      # Ghosts MP → Ghosts SP
+        "s1mp":  "s1sp",       # AW MP    → AW SP
     }
     expanded_keys = list(selected_keys)
     for mp_key, sp_key in _SIBLING_MAP.items():
