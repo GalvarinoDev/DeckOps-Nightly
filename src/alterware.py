@@ -132,7 +132,7 @@ def install_alterware(game: dict, game_key: str,
                       steam_root: str = "", proton_path: str = "",
                       compatdata_path: str = "",
                       on_progress=None, source: str = "steam",
-                      download_bonus: bool = False):
+                      download_bonus: bool = True):
     """
     Install AlterWare mod client (IW6-Mod or S1-Mod).
 
