@@ -2027,7 +2027,7 @@ class ManagementScreen(QWidget):
 
     def _configure(self, gd, installed_keys):
         """Show configure dialog with Mods, Update, and Reinstall options."""
-        _MOD_CLIENTS = ("cod4x", "iw4x", "plutonium")
+        _MOD_CLIENTS = ("cod4x", "iw4x", "plutonium", "alterware", "cleanops")
         has_mods_support = any(KEY_CLIENT.get(k, "") in _MOD_CLIENTS for k in installed_keys)
         has_mod_client = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in installed_keys)
 
@@ -2077,8 +2077,9 @@ class ManagementScreen(QWidget):
 
     def _mods(self, gd, installed_keys):
         """Open the mod folder for a game. Shows a chooser for games with
-        both mods/ and usermaps/ directories (CoD4x, IW4x), or for OLED
-        Plutonium games whose SP/MP modes live in separate prefixes."""
+        both mods/ and usermaps/ directories (CoD4x, IW4x, CleanOps), for
+        AlterWare games with data/scripts/mp and data/scripts/sp, or for
+        OLED Plutonium games whose SP/MP modes live in separate prefixes."""
 
         # ── Plutonium storage name mapping ────────────────────────────────
         _PLUT_STORAGE = {
@@ -2147,11 +2148,18 @@ class ManagementScreen(QWidget):
         # Determine which client we're dealing with from the installed keys
         client = None
         plut_keys = []
+        alterware_keys = []
         for k in installed_keys:
             c = KEY_CLIENT.get(k, "")
             if c in ("cod4x", "iw4x"):
                 client = c
                 break
+            elif c == "cleanops":
+                client = "cleanops"
+                break
+            elif c == "alterware":
+                client = "alterware"
+                alterware_keys.append(k)
             elif c == "plutonium" and k in _PLUT_STORAGE:
                 client = "plutonium"
                 plut_keys.append(k)
@@ -2180,6 +2188,60 @@ class ManagementScreen(QWidget):
                 _open_folder(os.path.join(install_dir, "mods"))
             elif clicked == usermaps_btn:
                 _open_folder(os.path.join(install_dir, "usermaps"))
+
+        elif client == "cleanops":
+            mod_key = installed_keys[0]
+            game = self.installed.get(mod_key, {})
+            install_dir = game.get("install_dir", "")
+            if not install_dir:
+                self._status.setText("Game install directory not found.")
+                return
+            # Two folders — ask user which one
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Open Mod Folder")
+            msg.setText(f"Which folder would you like to open for {gd['base']}?")
+            mods_btn = msg.addButton("Mods", QMessageBox.AcceptRole)
+            usermaps_btn = msg.addButton("User Maps", QMessageBox.AcceptRole)
+            msg.addButton("Cancel", QMessageBox.RejectRole)
+            msg.exec_()
+            clicked = msg.clickedButton()
+            if clicked == mods_btn:
+                _open_folder(os.path.join(install_dir, "mods"))
+            elif clicked == usermaps_btn:
+                _open_folder(os.path.join(install_dir, "usermaps"))
+
+        elif client == "alterware":
+            if not alterware_keys:
+                self._status.setText("No AlterWare mod keys found.")
+                return
+            mod_key = alterware_keys[0]
+            game = self.installed.get(mod_key, {})
+            install_dir = game.get("install_dir", "")
+            if not install_dir:
+                self._status.setText("Game install directory not found.")
+                return
+
+            # Determine which mode buttons to show based on installed keys
+            has_mp = any(k.endswith("mp") for k in alterware_keys)
+            has_sp = any(k.endswith("sp") for k in alterware_keys)
+
+            if has_mp and has_sp:
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Open Scripts Folder")
+                msg.setText(f"Which scripts folder for {gd['base']}?")
+                mp_btn = msg.addButton("MP Scripts", QMessageBox.AcceptRole)
+                sp_btn = msg.addButton("SP Scripts", QMessageBox.AcceptRole)
+                msg.addButton("Cancel", QMessageBox.RejectRole)
+                msg.exec_()
+                clicked = msg.clickedButton()
+                if clicked == mp_btn:
+                    _open_folder(os.path.join(install_dir, "data", "scripts", "mp"))
+                elif clicked == sp_btn:
+                    _open_folder(os.path.join(install_dir, "data", "scripts", "sp"))
+            elif has_mp:
+                _open_folder(os.path.join(install_dir, "data", "scripts", "mp"))
+            elif has_sp:
+                _open_folder(os.path.join(install_dir, "data", "scripts", "sp"))
 
         elif client == "plutonium":
             if not plut_keys:
