@@ -104,10 +104,15 @@ def _resolve_plut_dir() -> str:
     """Determine the primary Plutonium directory (where the bootstrapper lives).
 
     LCD: Heroic shared prefix.
-    OLED: prefer LOCALAPPDATA first — this is the launcher's own prefix,
-    which has all Plutonium files mirrored into it during install. Falls
-    back to scanning per-game prefixes if the launcher prefix doesn't
-    have the bootstrapper (e.g. first run before any game is installed).
+    OLED: prefer the launcher's own prefix (via LOCALAPPDATA) but return
+    the equivalent Z: drive path. The bootstrapper and game engine expect
+    Z: paths for file access — using a C: path causes issues with
+    Demonware authentication and WAD file loading in some games (notably
+    BO1). The Z: path points at the same physical directory, just through
+    Wine's root filesystem mapping.
+
+    Falls back to scanning per-game prefixes if the launcher prefix
+    doesn't have the bootstrapper.
     """
     try:
         with open(_DECKOPS_JSON, "r") as f:
@@ -120,17 +125,38 @@ def _resolve_plut_dir() -> str:
     if model == "lcd":
         return _LCD_PLUT_DIR
 
-    # OLED: try LOCALAPPDATA first — this is the launcher's own prefix.
-    # The launcher exe runs inside this prefix via Proton, so LOCALAPPDATA
-    # points to the correct AppData/Local. Using it ensures the bootstrapper
-    # runs from the same prefix as the launcher, with matching Wine
-    # environment, registry, and DLL configuration.
+    # OLED: check if the launcher's own prefix has the bootstrapper.
+    # LOCALAPPDATA is a C: path (e.g. C:\users\steamuser\AppData\Local).
+    # If it has the bootstrapper, resolve the same directory as a Z: path
+    # so the bootstrapper runs with Z: drive paths throughout.
     local_plut = os.path.join(
         os.environ.get("LOCALAPPDATA", ""), "Plutonium",
     )
     if local_plut and os.path.exists(
         os.path.join(local_plut, "bin", "plutonium-bootstrapper-win32.exe")
     ):
+        # Convert C:\users\steamuser\AppData\Local\Plutonium to the
+        # equivalent Z: path by finding this prefix in compatdata.
+        # The launcher prefix's compatdata dir contains pfx/drive_c/...
+        # which is what LOCALAPPDATA resolves to inside Wine.
+        try:
+            # Walk up from LOCALAPPDATA to find the compatdata root
+            # C:\users\steamuser\AppData\Local → pfx\drive_c\users\steamuser\AppData\Local
+            # We need the compatdata appid directory above pfx/
+            local_app_data = os.environ.get("LOCALAPPDATA", "")
+            # Find the pfx/drive_c boundary in the real filesystem path
+            # by resolving the C: drive to its Linux path
+            c_drive = os.path.realpath(os.path.join(local_app_data, "..", "..", "..", ".."))
+            pfx_dir = os.path.dirname(c_drive)  # pfx/
+            compat_dir = os.path.dirname(pfx_dir)  # compatdata/<appid>/
+            appid = os.path.basename(compat_dir)
+            z_path = os.path.join(_OLED_COMPATDATA_BASE, appid, _OLED_PLUT_SUFFIX)
+            if os.path.exists(os.path.join(z_path, "bin",
+                                            "plutonium-bootstrapper-win32.exe")):
+                return z_path
+        except Exception:
+            pass
+        # If Z: conversion fails, still use LOCALAPPDATA as fallback
         return local_plut
 
     # Fallback: scan per-game prefixes for a bootstrapper
