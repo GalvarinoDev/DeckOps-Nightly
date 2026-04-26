@@ -104,15 +104,8 @@ def _resolve_plut_dir() -> str:
     """Determine the primary Plutonium directory (where the bootstrapper lives).
 
     LCD: Heroic shared prefix.
-    OLED: prefer the launcher's own prefix (via LOCALAPPDATA) but return
-    the equivalent Z: drive path. The bootstrapper and game engine expect
-    Z: paths for file access — using a C: path causes issues with
-    Demonware authentication and WAD file loading in some games (notably
-    BO1). The Z: path points at the same physical directory, just through
-    Wine's root filesystem mapping.
-
-    Falls back to scanning per-game prefixes if the launcher prefix
-    doesn't have the bootstrapper.
+    OLED: first prefix found with a bootstrapper exe. Falls back to
+    first prefix with config.json, then LOCALAPPDATA.
     """
     try:
         with open(_DECKOPS_JSON, "r") as f:
@@ -125,41 +118,7 @@ def _resolve_plut_dir() -> str:
     if model == "lcd":
         return _LCD_PLUT_DIR
 
-    # OLED: check if the launcher's own prefix has the bootstrapper.
-    # LOCALAPPDATA is a C: path (e.g. C:\users\steamuser\AppData\Local).
-    # If it has the bootstrapper, resolve the same directory as a Z: path
-    # so the bootstrapper runs with Z: drive paths throughout.
-    local_plut = os.path.join(
-        os.environ.get("LOCALAPPDATA", ""), "Plutonium",
-    )
-    if local_plut and os.path.exists(
-        os.path.join(local_plut, "bin", "plutonium-bootstrapper-win32.exe")
-    ):
-        # Convert C:\users\steamuser\AppData\Local\Plutonium to the
-        # equivalent Z: path by finding this prefix in compatdata.
-        # The launcher prefix's compatdata dir contains pfx/drive_c/...
-        # which is what LOCALAPPDATA resolves to inside Wine.
-        try:
-            # Walk up from LOCALAPPDATA to find the compatdata root
-            # C:\users\steamuser\AppData\Local → pfx\drive_c\users\steamuser\AppData\Local
-            # We need the compatdata appid directory above pfx/
-            local_app_data = os.environ.get("LOCALAPPDATA", "")
-            # Find the pfx/drive_c boundary in the real filesystem path
-            # by resolving the C: drive to its Linux path
-            c_drive = os.path.realpath(os.path.join(local_app_data, "..", "..", "..", ".."))
-            pfx_dir = os.path.dirname(c_drive)  # pfx/
-            compat_dir = os.path.dirname(pfx_dir)  # compatdata/<appid>/
-            appid = os.path.basename(compat_dir)
-            z_path = os.path.join(_OLED_COMPATDATA_BASE, appid, _OLED_PLUT_SUFFIX)
-            if os.path.exists(os.path.join(z_path, "bin",
-                                            "plutonium-bootstrapper-win32.exe")):
-                return z_path
-        except Exception:
-            pass
-        # If Z: conversion fails, still use LOCALAPPDATA as fallback
-        return local_plut
-
-    # Fallback: scan per-game prefixes for a bootstrapper
+    # OLED: find a prefix that has the bootstrapper
     all_dirs = _find_all_plut_dirs()
     for d in all_dirs:
         if os.path.exists(os.path.join(d, "bin",
@@ -170,10 +129,8 @@ def _resolve_plut_dir() -> str:
     if all_dirs:
         return all_dirs[0]
 
-    # Last resort — LOCALAPPDATA even without bootstrapper
-    return local_plut or os.path.join(
-        os.environ.get("LOCALAPPDATA", ""), "Plutonium",
-    )
+    # Fallback to LOCALAPPDATA (whatever prefix this exe is running in)
+    return os.path.join(os.environ.get("LOCALAPPDATA", ""), "Plutonium")
 
 
 # Resolved at import time
@@ -188,6 +145,56 @@ _PLUT_KEY_MAP = {
 
 def _plut_key(game_key: str) -> str:
     return _PLUT_KEY_MAP.get(game_key, game_key)
+
+
+# ── per-game prefix resolution (OLED only) ───────────────────────────────────
+# Maps game keys to the Steam appid whose compatdata prefix should be used
+# for launching that game. Each game runs from its own prefix, ensuring
+# the correct DLLs, registry, and Proton state are available.
+# LCD is unaffected — it uses the Heroic shared prefix for everything.
+
+_GAME_KEY_APPIDS = {
+    "t4sp":     "10090",
+    "t4mp":     "10090",
+    "t5sp":     "42700",
+    "t5mp":     "42710",
+    "t6mp":     "202990",
+    "t6zm":     "212910",
+    "iw5mp":    "42690",
+    "iw5mp_ds": "42690",
+}
+
+
+def _resolve_game_plut_dir(game_key: str) -> tuple:
+    """
+    Resolve the Plutonium directory and bootstrapper path for a specific
+    game key. On OLED, uses the game's own compatdata prefix. On LCD,
+    returns the global _PLUT_DIR.
+
+    Returns (plut_dir, bootstrapper_path).
+    Falls back to the global _PLUT_DIR if the per-game prefix doesn't
+    have a bootstrapper.
+    """
+    # LCD: always use global (Heroic shared prefix)
+    try:
+        with open(_DECKOPS_JSON, "r") as f:
+            cfg = json.load(f)
+        if cfg.get("deck_model") == "lcd":
+            return _PLUT_DIR, _BOOTSTRAPPER
+    except Exception:
+        pass
+
+    # OLED: try the game's own prefix first
+    appid = _GAME_KEY_APPIDS.get(game_key)
+    if appid:
+        candidate = os.path.join(_OLED_COMPATDATA_BASE, appid, _OLED_PLUT_SUFFIX)
+        bootstrapper = os.path.join(candidate, "bin",
+                                     "plutonium-bootstrapper-win32.exe")
+        if os.path.exists(bootstrapper):
+            return candidate, bootstrapper
+
+    # Fall back to global (original behavior)
+    return _PLUT_DIR, _BOOTSTRAPPER
 
 
 # ── colors (match DeckOps ui_qt.py) ──────────────────────────────────────────
@@ -515,6 +522,10 @@ def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
     This is a direct Windows-to-Windows process call inside the same
     Proton prefix. No bash, no second Proton instance, no environment
     stripping needed.
+
+    On OLED, resolves the correct per-game prefix so the bootstrapper
+    runs from the same prefix that Steam/Proton initialized for that
+    game, with matching DLLs and Proton state.
     """
     global _LAUNCH_FIRED
     if _LAUNCH_FIRED:
@@ -523,21 +534,24 @@ def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
 
     _fadeout_audio()
 
+    plut_dir, bootstrapper = _resolve_game_plut_dir(game_key)
+
     _log(f"_launch_lan: game_key={game_key}")
     _log(f"_launch_lan: game_dir={game_dir_wine}")
-    _log(f"_launch_lan: bootstrapper={_BOOTSTRAPPER}")
-    _log(f"_launch_lan: bootstrapper exists={os.path.exists(_BOOTSTRAPPER)}")
+    _log(f"_launch_lan: plut_dir={plut_dir}")
+    _log(f"_launch_lan: bootstrapper={bootstrapper}")
+    _log(f"_launch_lan: bootstrapper exists={os.path.exists(bootstrapper)}")
 
     try:
         subprocess.Popen(
             [
-                _BOOTSTRAPPER,
+                bootstrapper,
                 _plut_key(game_key),
                 game_dir_wine,
                 "+name", player_name,
                 "-lan",
             ],
-            cwd=_PLUT_DIR,
+            cwd=plut_dir,
         )
         _log("_launch_lan: Popen succeeded")
     except Exception as ex:
