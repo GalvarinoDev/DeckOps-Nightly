@@ -1723,6 +1723,13 @@ def install_plutonium_lcd(game: dict, game_key: str,
         prog(70, "Writing game path config...")
         _write_lcd_config(dest_plut_dir, game_key, installed_games)
 
+        # Apply DeckOps game configs (resolution, FOV, sensitivity, name)
+        # into the per-game prefix BEFORE copying to the launcher prefix.
+        # This way the tuned configs propagate automatically to every prefix
+        # that receives a copy of storage/ — no separate mirror step needed.
+        _apply_launcher_game_configs(dest_plut_dir, game_key,
+                                      on_progress=lambda m: prog(71, m))
+
         # 6b. Mirror Plutonium into the offline launcher's prefix.
         #     The launcher exe runs in its own Proton prefix (based on the
         #     non-Steam shortcut appid). We copy bins (symlinks), storage/,

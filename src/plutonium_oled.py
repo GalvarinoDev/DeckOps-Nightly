@@ -881,6 +881,13 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     keys_for_appid = [k for k, v in GAME_META.items() if v[0] == appid]
     _write_config(dest_plut_dir, keys_for_appid, installed_games)
 
+    # Apply DeckOps game configs (resolution, FOV, sensitivity, name)
+    # into the per-game prefix BEFORE copying to the launcher prefix.
+    # This way the tuned configs propagate automatically to every prefix
+    # that receives a copy of storage/ — no separate mirror step needed.
+    _apply_launcher_game_configs(dest_plut_dir, game_key,
+                                  on_progress=lambda msg: prog(62, msg))
+
     # Install DeckOps client-side menu mod (e.g. mainlobby.lua for T6 MP).
     # OLED only -- LCD handles its own setup in plutonium_lcd.py.
     prog(65, "Installing menu mod...")
