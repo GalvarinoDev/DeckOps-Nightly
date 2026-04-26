@@ -1512,6 +1512,25 @@ class InstallScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"  Launcher prefix deps skipped: {ex}")
 
+            # LCD: also preheat Heroic's shared prefix. Heroic initializes
+            # it during Plutonium login, but may not include the full d3dx9
+            # set needed for all games. ensure_prefix_deps only copies
+            # missing DLLs so it won't overwrite Heroic's own files.
+            if not cfg.is_oled():
+                try:
+                    from ge_proton import ensure_prefix_deps as _epd
+                    from plutonium_lcd import HEROIC_DEFAULT_WINE_PREFIX
+                    if os.path.isdir(HEROIC_DEFAULT_WINE_PREFIX):
+                        _epd(
+                            ge_version, HEROIC_DEFAULT_WINE_PREFIX,
+                            on_progress=lambda msg: self._s.log.emit(msg),
+                            proton_path=proton,
+                            steam_root=self.steam_root,
+                        )
+                        self._s.log.emit("✓  Heroic shared prefix preheated")
+                except Exception as ex:
+                    self._s.log.emit(f"  Heroic prefix deps skipped: {ex}")
+
             plut_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "plutonium"]
             total_plut = len(plut_selected)
             for idx, (key, gd, game) in enumerate(plut_selected):
@@ -3121,6 +3140,25 @@ class OwnInstallScreen(QWidget):
                 self._s.log.emit("✓  Offline launcher prefix preheated")
             except Exception as ex:
                 self._s.log.emit(f"  Launcher prefix deps skipped: {ex}")
+
+            # LCD: also preheat Heroic's shared prefix. Heroic initializes
+            # it during Plutonium login, but may not include the full d3dx9
+            # set needed for all games. ensure_prefix_deps only copies
+            # missing DLLs so it won't overwrite Heroic's own files.
+            if not cfg.is_oled():
+                try:
+                    from ge_proton import ensure_prefix_deps as _epd
+                    from plutonium_lcd import HEROIC_DEFAULT_WINE_PREFIX
+                    if os.path.isdir(HEROIC_DEFAULT_WINE_PREFIX):
+                        _epd(
+                            ge_version, HEROIC_DEFAULT_WINE_PREFIX,
+                            on_progress=lambda msg: self._s.log.emit(msg),
+                            proton_path=proton,
+                            steam_root=self.steam_root,
+                        )
+                        self._s.log.emit("✓  Heroic shared prefix preheated")
+                except Exception as ex:
+                    self._s.log.emit(f"  Heroic prefix deps skipped: {ex}")
 
             # Per-game Plutonium install: copy Plutonium into each prefix,
             # write config.json with game paths. Own games skip the wrapper
