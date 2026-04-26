@@ -1737,7 +1737,7 @@ class InstallScreen(QWidget):
 # ── ManagementCard ─────────────────────────────────────────────────────────────
 class ManagementCard(QFrame):
     def __init__(self, gd, installed, on_setup, on_update, on_reinstall,
-                 on_readd=None, parent=None):
+                 on_readd=None, on_mods=None, parent=None):
         super().__init__(parent)
         color = C_IW if gd["dev"] == "iw" else C_TREY
         self._color  = color
@@ -1817,7 +1817,18 @@ class ManagementCard(QFrame):
             bb.addStretch(); bb.addWidget(setup_btn); bb.addStretch()
         elif is_setup:
             has_mod = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in ik)
+            # Show Mods button for games with mod-supporting clients
+            _MOD_CLIENTS = ("cod4x", "iw4x", "plutonium")
+            has_mods_support = any(KEY_CLIENT.get(k, "") in _MOD_CLIENTS for k in ik)
             bb.addStretch()
+            if has_mods_support and on_mods:
+                mods_btn = _btn("Mods", C_DARK_BTN, size=9, h=26)
+                mods_btn.clicked.connect(lambda: on_mods(gd, ik))
+                mods_btn.setStyleSheet(
+                    f"QPushButton{{background:rgba(51,51,63,200);color:#CCC;border:none;"
+                    f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
+                )
+                bb.addWidget(mods_btn)
             if has_mod:
                 upd_btn = _btn("Update", C_DARK_BTN, size=9, h=26)
                 upd_btn.clicked.connect(lambda: on_update(gd, ik))
@@ -1971,6 +1982,7 @@ class ManagementScreen(QWidget):
                 on_update    = self._update,
                 on_reinstall = self._reinstall,
                 on_readd     = self._readd,
+                on_mods      = self._mods,
             )
             self._grid.addWidget(card, row, col)
 
@@ -2058,6 +2070,150 @@ class ManagementScreen(QWidget):
         self._status.setText(f"Cleared setup state for {gd['base']}. Running clean install...")
         # Route through the same path as "Set Up"
         self._setup(gd)
+
+    def _mods(self, gd, installed_keys):
+        """Open the mod folder for a game. Shows a chooser for games with
+        both mods/ and usermaps/ directories (CoD4x, IW4x), or for OLED
+        Plutonium games whose SP/MP modes live in separate prefixes."""
+
+        # ── Plutonium storage name mapping ────────────────────────────────
+        _PLUT_STORAGE = {
+            "t4sp": "t4", "t4mp": "t4",
+            "t5sp": "t5", "t5mp": "t5",
+            "t6mp": "t6", "t6zm": "t6",
+            "iw5mp": "iw5", "iw5mp_ds": "iw5",
+        }
+
+        # Appid per key — used to detect when keys on the same card
+        # have separate Wine prefixes (different appids = different
+        # mods/ folders on OLED).
+        _PLUT_APPID = {
+            "t4sp": 10090, "t4mp": 10090,
+            "t5sp": 42700, "t5mp": 42710,
+            "t6mp": 202990, "t6zm": 212910,
+            "iw5mp": 42690, "iw5mp_ds": 42750,
+        }
+
+        # Friendly labels for the dialog buttons
+        _PLUT_MODE_LABEL = {
+            "t4sp": "Campaign / Zombies", "t4mp": "Multiplayer",
+            "t5sp": "Campaign / Zombies", "t5mp": "Multiplayer",
+            "t6zm": "Zombies",            "t6mp": "Multiplayer",
+            "iw5mp": "Multiplayer",       "iw5mp_ds": "Dedicated Server",
+        }
+
+        def _open_folder(path):
+            os.makedirs(path, exist_ok=True)
+            subprocess.Popen(["xdg-open", path])
+            self._status.setText(f"Opened: {path}")
+
+        def _resolve_plut_mods_dir(game_key):
+            """Resolve the Plutonium mods/ folder for a game key."""
+            storage_name = _PLUT_STORAGE.get(game_key)
+            if not storage_name:
+                return None
+
+            if not cfg.is_oled():
+                # LCD: single Heroic shared prefix for all games
+                from plutonium_lcd import get_shared_plut_dir
+                plut_dir = get_shared_plut_dir()
+            else:
+                # OLED: read plut_dir from per-game metadata
+                game = self.installed.get(game_key, {})
+                install_dir = game.get("install_dir", "")
+                if install_dir:
+                    meta_path = os.path.join(install_dir, "deckops_plutonium.json")
+                    if os.path.exists(meta_path):
+                        try:
+                            import json
+                            with open(meta_path) as f:
+                                meta = json.load(f)
+                            plut_dir = meta.get("plut_dir", "")
+                        except Exception:
+                            plut_dir = ""
+                    else:
+                        plut_dir = ""
+                else:
+                    plut_dir = ""
+
+            if not plut_dir:
+                return None
+            return os.path.join(plut_dir, "storage", storage_name, "mods")
+
+        # Determine which client we're dealing with from the installed keys
+        client = None
+        plut_keys = []
+        for k in installed_keys:
+            c = KEY_CLIENT.get(k, "")
+            if c in ("cod4x", "iw4x"):
+                client = c
+                break
+            elif c == "plutonium" and k in _PLUT_STORAGE:
+                client = "plutonium"
+                plut_keys.append(k)
+
+        if not client:
+            self._status.setText("No mod support for this game.")
+            return
+
+        if client in ("cod4x", "iw4x"):
+            mod_key = installed_keys[0]
+            game = self.installed.get(mod_key, {})
+            install_dir = game.get("install_dir", "")
+            if not install_dir:
+                self._status.setText("Game install directory not found.")
+                return
+            # Two folders — ask user which one
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Open Mod Folder")
+            msg.setText(f"Which folder would you like to open for {gd['base']}?")
+            mods_btn = msg.addButton("Mods", QMessageBox.AcceptRole)
+            usermaps_btn = msg.addButton("User Maps", QMessageBox.AcceptRole)
+            msg.addButton("Cancel", QMessageBox.RejectRole)
+            msg.exec_()
+            clicked = msg.clickedButton()
+            if clicked == mods_btn:
+                _open_folder(os.path.join(install_dir, "mods"))
+            elif clicked == usermaps_btn:
+                _open_folder(os.path.join(install_dir, "usermaps"))
+
+        elif client == "plutonium":
+            if not plut_keys:
+                self._status.setText("No Plutonium mod keys found.")
+                return
+
+            # Check if multiple keys have different appids (OLED only).
+            # If so, they have separate prefixes with separate mods/ folders.
+            unique_appids = set(_PLUT_APPID.get(k) for k in plut_keys)
+            need_chooser = cfg.is_oled() and len(unique_appids) > 1
+
+            if need_chooser:
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Open Mod Folder")
+                msg.setText(f"Which mode's mods folder for {gd['base']}?")
+                key_buttons = []
+                for k in plut_keys:
+                    label = _PLUT_MODE_LABEL.get(k, k)
+                    btn = msg.addButton(label, QMessageBox.AcceptRole)
+                    key_buttons.append((btn, k))
+                msg.addButton("Cancel", QMessageBox.RejectRole)
+                msg.exec_()
+                clicked = msg.clickedButton()
+                for btn, k in key_buttons:
+                    if clicked == btn:
+                        mods_path = _resolve_plut_mods_dir(k)
+                        if mods_path:
+                            _open_folder(mods_path)
+                        else:
+                            self._status.setText(f"Could not resolve mods folder for {k}.")
+                        break
+            else:
+                # Single prefix or LCD — open directly
+                mods_path = _resolve_plut_mods_dir(plut_keys[0])
+                if mods_path:
+                    _open_folder(mods_path)
+                else:
+                    self._status.setText("Could not resolve Plutonium mods folder.")
 
 
 # ── ControllerInfoScreen ───────────────────────────────────────────────────────
