@@ -524,6 +524,80 @@ def _copy_plut_to_launcher_prefix(src_plut_dir: str, game_prefix_plut_dir: str,
             shutil.copy2(src_item, dst_item)
 
 
+# ── launcher prefix game configs ──────────────────────────────────────────────
+#
+# Maps game keys to their DeckOps asset config and the relative storage
+# path inside the Plutonium directory where the bootstrapper expects them.
+# This is the single source of truth for placing game configs into the
+# offline launcher prefix — called every time a Plutonium game is
+# installed or reinstalled, so configs always land regardless of which
+# install flow triggered it.
+
+_LAUNCHER_CONFIG_MAP = {
+    # game_key: (asset_subpath, storage_relpath)
+    "t4sp":     ("WaW/config.cfg",          os.path.join("storage", "t4", "players", "profiles", "$$$")),
+    "t4mp":     ("WaW/config_mp.cfg",       os.path.join("storage", "t4", "players", "profiles", "$$$")),
+    "t5sp":     ("BO1/config.cfg",          os.path.join("storage", "t5", "players")),
+    "t5mp":     ("BO1/config_mp.cfg",       os.path.join("storage", "t5", "players")),
+    "t6mp":     ("BO2/plutonium_mp.cfg",    os.path.join("storage", "t6", "players")),
+    "t6zm":     ("BO2/plutonium_zm.cfg",    os.path.join("storage", "t6", "players")),
+    "iw5mp":    ("MW3/config_mp.cfg",       os.path.join("storage", "iw5", "players")),
+    "iw5mp_ds": ("MW3/config_mp.cfg",       os.path.join("storage", "iw5", "players")),
+}
+
+
+def _apply_launcher_game_configs(launcher_plut_dir: str, game_key: str,
+                                  on_progress=None):
+    """
+    Copy DeckOps asset configs directly into the offline launcher prefix.
+
+    This ensures the bootstrapper has correct resolution, FOV, sensitivity,
+    and player name settings when launching games from the offline LAN
+    launcher — regardless of install flow or timing.
+
+    Called inside install_plutonium / install_plutonium_lcd after the
+    storage/ tree and menu mods have been mirrored. Uses the deck model
+    from deckops.json to pick LCD or OLED assets.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    if game_key not in _LAUNCHER_CONFIG_MAP:
+        return
+
+    import config as _cfg
+    deck_model = _cfg.get_deck_model() or "oled"
+    player_name = _cfg.get_player_name() or "Player"
+    model_dir = "OLED" if deck_model == "oled" else "LCD"
+
+    _here = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(_here)
+    configs_dir = os.path.join(project_root, "assets", "configs")
+
+    asset_subpath, storage_relpath = _LAUNCHER_CONFIG_MAP[game_key]
+    src = os.path.join(configs_dir, model_dir, asset_subpath)
+
+    if not os.path.exists(src):
+        prog(f"  ⚠ Launcher config asset not found: {asset_subpath}")
+        return
+
+    dest_dir = os.path.join(launcher_plut_dir, storage_relpath)
+    os.makedirs(dest_dir, exist_ok=True)
+    dest = os.path.join(dest_dir, os.path.basename(src))
+
+    try:
+        shutil.copy2(src, dest)
+
+        # Apply player name
+        from game_config import _replace_player_name
+        _replace_player_name(dest, player_name)
+
+        prog(f"  + {game_key}: launcher config -> {os.path.basename(src)}")
+    except Exception as ex:
+        prog(f"  ⚠ {game_key}: launcher config failed: {ex}")
+
+
 # ── wrapper script ────────────────────────────────────────────────────────────
 
 # Maps DeckOps game keys to the Plutonium protocol key used in
@@ -843,7 +917,13 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         _install_menu_mod(launcher_plut_dir, game_key,
                           on_progress=lambda msg: prog(74, msg))
 
-        prog(75, "  ✓ Offline launcher prefix updated")
+        # Apply DeckOps game configs (resolution, FOV, sensitivity, name)
+        # directly into the launcher prefix so the bootstrapper picks them
+        # up when launching from the offline LAN launcher.
+        _apply_launcher_game_configs(launcher_plut_dir, game_key,
+                                      on_progress=lambda msg: prog(75, msg))
+
+        prog(76, "  ✓ Offline launcher prefix updated")
     except Exception as ex:
         prog(75, f"  ⚠ Offline launcher prefix mirror failed: {ex}")
 
