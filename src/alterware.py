@@ -7,11 +7,12 @@ to fetch mod client files for Ghosts (IW6-Mod) and Advanced Warfare
 the install step.
 
 For Steam games:
-  - Backs up original exe (iw6mp64_ship.exe → iw6mp64_ship.exe.bak)
-  - Writes a bash wrapper over the original exe that launches the mod
-    exe through Proton with the correct mode flag (-multiplayer etc.)
-  - Wrapper is padded to original exe size so Steam validation passes
-  - Steam launches the wrapper transparently via original shortcut
+  - Sets Steam launch options to redirect the game exe to the mod exe
+    using bash parameter substitution on %command%
+  - The original exe is NEVER modified — iw6-mod.exe maps the original
+    binary into memory at runtime, so it must remain a valid PE file
+  - Steam's own Proton invocation handles all env vars, cwd, prefix
+  - GE-Proton compat tool mapping (set by ge_proton.py) is required
 
 For own games:
   - Leaves mod client exe as-is (iw6-mod.exe, s1-mod.exe)
@@ -24,8 +25,9 @@ Both flows:
   - Launcher modifies .ff and .bik files in-place (patches)
 
 Uninstall:
-  - Restore backed-up exes (Steam only)
+  - Clear launch options (Steam only)
   - Remove mod client exe, launcher artifacts, data/ contents
+  - Restore .bak files if present (migration from old wrapper flow)
   - User must verify integrity in Steam to restore patched .ff files
 
 Progress is reported via a callback:
@@ -55,7 +57,7 @@ METADATA_FILE = "deckops_alterware.json"
 #
 # launcher_arg:  passed to the alterware-launcher binary to select the client
 # client_exe:    the mod exe that the launcher downloads into the game dir
-# original_exe:  the vanilla Steam exe we back up and replace (Steam installs)
+# original_exe:  the vanilla Steam exe that the mod maps into memory at runtime
 #
 # Both iw6mp and iw6sp use the same client (iw6-mod), just launched with
 # different flags (-multiplayer / -singleplayer) at runtime. Same for s1.
@@ -68,7 +70,7 @@ _GAME_CONFIG = {
 
 # The built-in launcher UI in iw6-mod and s1-mod crashes under Wine/Proton.
 # These flags bypass it and launch directly into the correct game mode.
-# Must be passed via the wrapper script (Steam installs) or shortcut
+# Must be passed via launch options (Steam installs) or shortcut
 # launch options (own installs).
 _MODE_FLAGS = {
     "iw6mp": "-multiplayer",
@@ -103,24 +105,67 @@ def _write_metadata(install_dir: str, data: dict):
         json.dump(data, f, indent=2)
 
 
+def _build_launch_option(original_exe: str, client_exe: str,
+                         mode_flag: str) -> str:
+    """
+    Build the Steam launch option string that redirects the original exe
+    to the mod exe using bash parameter substitution on %command%.
+
+    Steam expands %command% to the full Proton launch chain:
+      SLR/_v2-entry-point --verb=waitforexitandrun -- GE-Proton/proton
+      waitforexitandrun /path/to/game/iw6mp64_ship.exe
+
+    The ${@/old/new} substitution replaces the original exe name with
+    the mod exe in whichever positional parameter contains it. The mode
+    flag (-multiplayer/-singleplayer) is appended to bypass the mod's
+    built-in launcher UI which crashes under Wine/Proton.
+
+    The original exe is never touched on disk — the mod exe maps it
+    into memory at runtime, so it must remain a valid PE binary.
+    """
+    return (
+        f"bash -c "
+        f"'exec \"${{@/{original_exe}/{client_exe}}}\" {mode_flag}' "
+        f"-- %command%"
+    )
+
+
+def _migrate_old_wrapper(install_dir: str, original_exe: str):
+    """
+    Migrate from the old wrapper-over-exe flow to the new launch options
+    flow. If a .bak file exists, the old flow replaced the original exe
+    with a bash wrapper — restore the original PE binary so the mod exe
+    can map it at runtime.
+
+    Safe to call even if no .bak exists (no-op).
+    """
+    original_path = os.path.join(install_dir, original_exe)
+    backup_path = original_path + ".bak"
+
+    if os.path.exists(backup_path):
+        # Restore the original PE binary
+        if os.path.exists(original_path):
+            os.remove(original_path)
+        os.rename(backup_path, original_path)
+
+
 def is_alterware_installed(install_dir: str, game_key: str) -> bool:
     """
     Returns True if the AlterWare mod client is installed for this game.
 
-    Checks for the mod client exe or a .bak of the original exe (which
-    indicates DeckOps performed the wrapper write for a Steam install).
+    Checks for the mod client exe or the DeckOps metadata file.
     """
     cfg = _GAME_CONFIG.get(game_key)
     if not cfg:
         return False
-    _, client_exe, original_exe = cfg
+    _, client_exe, _ = cfg
 
     # Check for mod client exe
     if os.path.exists(os.path.join(install_dir, client_exe)):
         return True
 
-    # Check for backup (Steam install indicator)
-    if os.path.exists(os.path.join(install_dir, original_exe + ".bak")):
+    # Check for metadata file (install completed)
+    if os.path.exists(os.path.join(install_dir, METADATA_FILE)):
         return True
 
     return False
@@ -137,15 +182,16 @@ def install_alterware(game: dict, game_key: str,
     Install AlterWare mod client (IW6-Mod or S1-Mod).
 
     Downloads the native Linux AlterWare launcher, runs it to fetch the
-    mod client files, then writes a Proton wrapper over the original exe
-    for Steam installs. The launcher runs natively — no Proton needed.
+    mod client files, then sets Steam launch options to redirect the
+    original exe to the mod exe. The launcher runs natively — no Proton
+    needed for the install step.
 
     Parameters:
       game            — dict from detect_games with install_dir
       game_key        — one of: iw6mp, iw6sp, s1mp, s1sp
-      steam_root      — path to Steam root (for wrapper env vars)
-      proton_path     — path to Proton binary (for wrapper invocation)
-      compatdata_path — path to compatdata prefix (for wrapper env vars)
+      steam_root      — path to Steam root (for launch option writing)
+      proton_path     — path to Proton binary (unused, kept for API compat)
+      compatdata_path — path to compatdata prefix (unused, kept for API compat)
       on_progress     — optional callback(percent: int, status: str)
       source          — "steam" or "own"
       download_bonus  — if True, download bonus content (extra maps/DLC)
@@ -241,57 +287,38 @@ def install_alterware(game: dict, game_key: str,
             f"in {install_dir}"
         )
 
-    # ── Step 5: Write Proton wrapper over original exe (Steam only) ───────
+    # ── Step 5: Set launch options (Steam) or skip (own) ─────────────────
     # The mod exe (iw6-mod.exe / s1-mod.exe) is a Windows PE binary that
-    # must run through Proton. Its built-in launcher UI crashes under
-    # Wine/Proton, so we pass -multiplayer / -singleplayer to bypass it.
+    # must run through Proton. It maps the original game exe into memory
+    # at runtime — the original exe MUST remain a valid PE file on disk.
     #
-    # We replace the original game exe with a bash wrapper that:
-    #   1. Sets STEAM_COMPAT_DATA_PATH and STEAM_COMPAT_CLIENT_INSTALL_PATH
-    #   2. Calls Proton to run the mod exe with the correct mode flag
-    #   3. Waits for the wineserver to exit before returning
+    # For Steam installs we set launch options that use bash parameter
+    # substitution to swap the exe name in Steam's Proton launch chain.
+    # Steam's compat tool mapping (set by ge_proton.py) provides the
+    # Proton environment — no manual env var setup needed.
     #
-    # The wrapper is padded to the original exe's file size so Steam's
-    # file validation does not flag the replacement.
-    #
-    # This matches the pattern used by plutonium_oled._write_wrapper().
+    # The built-in launcher UI crashes under Wine/Proton, so we append
+    # -multiplayer / -singleplayer to bypass it.
     mode_flag = _MODE_FLAGS.get(game_key, "")
     if source != "own":
-        original_path = os.path.join(install_dir, original_exe)
+        appid = _APPIDS.get(game_key)
+        if appid and steam_root:
+            # Migrate from old wrapper flow if needed — restore original exe
+            prog(83, "Checking for old wrapper migration...")
+            _migrate_old_wrapper(install_dir, original_exe)
 
-        if os.path.exists(original_path) or os.path.exists(original_path + ".bak"):
-            prog(85, f"Writing wrapper for {original_exe}...")
+            prog(85, f"Setting launch options for {original_exe}...")
+            launch_opt = _build_launch_option(original_exe, client_exe,
+                                              mode_flag)
 
-            script = (
-                "#!/bin/bash\n"
-                f'export STEAM_COMPAT_DATA_PATH="{compatdata_path}"\n'
-                f'export STEAM_COMPAT_CLIENT_INSTALL_PATH="{steam_root}"\n'
-                f'"{proton_path}" run "{client_exe_path}" {mode_flag} &\n'
-                "PROTON_PID=$!\n"
-                "sleep 8\n"
-                f'while kill -0 $PROTON_PID 2>/dev/null || '
-                f'pgrep -fa wineserver | grep -q "{compatdata_path}"; do\n'
-                "  sleep 3\n"
-                "done\n"
-            )
-
-            from wrapper import write_wrapper_script
-            # Read original exe size so the wrapper can be padded to match.
-            # Steam's file validation checks size — without padding it will
-            # overwrite the wrapper on the next integrity check.
-            # Matches the pattern used by plutonium_oled._write_wrapper().
-            original_size = game.get("exe_size")
-            if not original_size and os.path.exists(original_path):
-                original_size = os.path.getsize(original_path)
-            elif not original_size and os.path.exists(original_path + ".bak"):
-                original_size = os.path.getsize(original_path + ".bak")
-            write_wrapper_script(original_path, script, original_size=original_size)
+            from wrapper import set_launch_options, clear_launch_options
+            # Clear first to avoid appending duplicates on reinstall
+            clear_launch_options(steam_root, appid)
+            set_launch_options(steam_root, appid, launch_opt)
         else:
-            # Original exe missing — own game mislabelled as steam,
-            # or partial install. Skip the wrapper, log a note.
-            prog(85, f"⚠ {original_exe} not found — skipping wrapper")
+            prog(85, f"⚠ Missing appid or steam_root — skipping launch options")
     else:
-        prog(85, "Own game — skipping wrapper")
+        prog(85, "Own game — skipping launch options")
 
     # ── Step 6: Write metadata ────────────────────────────────────────────
     prog(90, "Saving metadata...")
@@ -313,11 +340,12 @@ def install_alterware(game: dict, game_key: str,
 
 def uninstall_alterware(game: dict, game_key: str, steam_root: str = ""):
     """
-    Remove AlterWare mod files and restore original exes.
+    Remove AlterWare mod files and clear launch options.
 
-    Restores backed-up exes for Steam installs, removes the mod client
-    exe, launcher artifacts, and contents of the data/ subdirectories
-    created by the launcher. Leaves the data/ folder itself in place.
+    Clears Steam launch options, removes the mod client exe, launcher
+    artifacts, and contents of the data/ subdirectories created by the
+    launcher. Leaves the data/ folder itself in place. Also restores
+    any .bak files left over from the old wrapper flow.
 
     The launcher patches .ff and .bik files in-place during install.
     After uninstall, the user should verify integrity through Steam to
@@ -326,7 +354,7 @@ def uninstall_alterware(game: dict, game_key: str, steam_root: str = ""):
     Parameters:
       game       — dict from detect_games with install_dir
       game_key   — one of: iw6mp, iw6sp, s1mp, s1sp
-      steam_root — path to Steam root (unused, kept for API consistency)
+      steam_root — path to Steam root (for clearing launch options)
     """
     install_dir = game["install_dir"]
 
@@ -335,13 +363,14 @@ def uninstall_alterware(game: dict, game_key: str, steam_root: str = ""):
         return
     _, client_exe, original_exe = cfg
 
-    # ── Restore original exe from backup ──────────────────────────────────
-    original_path = os.path.join(install_dir, original_exe)
-    backup_path   = original_path + ".bak"
-    if os.path.exists(backup_path):
-        if os.path.exists(original_path):
-            os.remove(original_path)
-        os.rename(backup_path, original_path)
+    # ── Clear Steam launch options ────────────────────────────────────────
+    appid = _APPIDS.get(game_key)
+    if appid and steam_root:
+        from wrapper import clear_launch_options
+        clear_launch_options(steam_root, appid)
+
+    # ── Restore original exe from .bak (old wrapper flow migration) ───────
+    _migrate_old_wrapper(install_dir, original_exe)
 
     # ── Remove mod client exe ─────────────────────────────────────────────
     client_path = os.path.join(install_dir, client_exe)
