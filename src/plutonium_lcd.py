@@ -836,244 +836,12 @@ def _ensure_shared_plutonium_lcd(src_plut_dir: str, on_progress=None) -> bool:
         return False
 
 
-def _copy_plut_to_game_prefix_lcd(src_plut_dir: str, dest_plut_dir: str,
-                                    on_progress=None):
-    """
-    Copy Plutonium files into a game's Steam compatdata prefix for LCD
-    offline mode. Uses symlinks for shared dirs (bin/, launcher/, games/)
-    and real copies for storage/ (per-game data).
-
-    Same logic as plutonium._copy_plut_to_prefix.
-    """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    prog(f"  Copying Plutonium: {src_plut_dir} -> {dest_plut_dir}")
-
-    if os.path.exists(dest_plut_dir):
-        prog(f"  Removing existing Plutonium at {dest_plut_dir}...")
-        shutil.rmtree(dest_plut_dir)
-
-    start = time.time()
-
-    # Check if shared dirs are available for symlink approach
-    shared_ready = all(
-        os.path.isdir(os.path.join(SHARED_PLUT_DIR, d))
-        for d in _PLUT_SHARED_SUBDIRS
-        if os.path.isdir(os.path.join(src_plut_dir, d))
-    )
-
-    if shared_ready:
-        os.makedirs(dest_plut_dir, exist_ok=True)
-
-        # Symlink shared directories
-        for subdir in _PLUT_SHARED_SUBDIRS:
-            shared_src = os.path.join(SHARED_PLUT_DIR, subdir)
-            dest_sub = os.path.join(dest_plut_dir, subdir)
-            if os.path.isdir(shared_src):
-                os.symlink(shared_src, dest_sub)
-
-        # Copy storage/ as real files (per-game data)
-        storage_src = os.path.join(src_plut_dir, "storage")
-        if os.path.isdir(storage_src):
-            storage_dst = os.path.join(dest_plut_dir, "storage")
-            shutil.copytree(storage_src, storage_dst)
-
-        # Copy any remaining top-level files (config, etc.)
-        for item in os.listdir(src_plut_dir):
-            src_item = os.path.join(src_plut_dir, item)
-            dst_item = os.path.join(dest_plut_dir, item)
-            if os.path.exists(dst_item):
-                continue  # already handled (symlink or storage)
-            if os.path.isfile(src_item):
-                shutil.copy2(src_item, dst_item)
-
-        elapsed = time.time() - start
-        prog(f"  Copied Plutonium with symlinks ({elapsed:.1f}s)")
-    else:
-        # Fallback: full copy if shared dirs not available
-        shutil.copytree(src_plut_dir, dest_plut_dir)
-        elapsed = time.time() - start
-        prog(f"  Copied Plutonium ({elapsed:.1f}s)")
 
 
-def _write_lcd_config(plut_dir: str, game_key: str, installed_games: dict):
-    """
-    Write config.json inside a game prefix's Plutonium dir with the correct
-    game install paths. Same as plutonium_oled._write_config but uses
-    plutonium_lcd's own PLUT_CONFIG_KEYS and _wine_path_lcd.
-    """
-    config_path = os.path.join(plut_dir, "config.json")
-
-    if os.path.exists(config_path):
-        try:
-            with open(config_path) as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            data = {}
-    else:
-        data = {}
-
-    # Write paths for all keys that share this appid so sibling games
-    # (e.g. t4sp + t4mp both on appid 10090) get their paths too
-    if game_key in PLUT_GAME_EXES:
-        target_appid = PLUT_GAME_EXES[game_key][0]
-        for key, (appid, _) in PLUT_GAME_EXES.items():
-            if appid == target_appid:
-                game = installed_games.get(key, {})
-                install_dir = game.get("install_dir", "")
-                if install_dir and key in PLUT_CONFIG_KEYS:
-                    data[PLUT_CONFIG_KEYS[key]] = _wine_path_lcd(install_dir)
-
-    with open(config_path, "w") as f:
-        json.dump(data, f, indent=2)
-
-
-# ── offline launcher prefix helper ────────────────────────────────────────────
-
-def _copy_plut_to_launcher_prefix_lcd(src_plut_dir: str,
-                                        game_prefix_plut_dir: str,
-                                        launcher_plut_dir: str,
-                                        game_key: str,
-                                        on_progress=None):
-    """
-    Mirror Plutonium files into the offline launcher's prefix (LCD).
-
-    Unlike _copy_plut_to_game_prefix_lcd, this does NOT wipe the
-    destination — each game's install call adds its own storage/ subdirs
-    incrementally. Shared dirs (bin/, launcher/, games/) are symlinked
-    once and skipped on subsequent calls.
-
-    src_plut_dir          — Heroic shared prefix Plutonium dir
-    game_prefix_plut_dir  — per-game compatdata Plutonium dir (just populated)
-    launcher_plut_dir     — destination inside the launcher's compatdata prefix
-    game_key              — current game key (for storage subdir mapping)
-    """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    os.makedirs(launcher_plut_dir, exist_ok=True)
-
-    # Symlink shared directories (skip if already present)
-    shared_ready = all(
-        os.path.isdir(os.path.join(SHARED_PLUT_DIR, d))
-        for d in _PLUT_SHARED_SUBDIRS
-        if os.path.isdir(os.path.join(src_plut_dir, d))
-    )
-
-    if shared_ready:
-        for subdir in _PLUT_SHARED_SUBDIRS:
-            shared_src = os.path.join(SHARED_PLUT_DIR, subdir)
-            dest_sub = os.path.join(launcher_plut_dir, subdir)
-            if os.path.isdir(shared_src) and not os.path.exists(dest_sub):
-                os.symlink(shared_src, dest_sub)
-
-    # Merge storage/ — copy per-game storage subdirs without wiping others.
-    _STORAGE_SUBDIRS = {
-        "t4sp": "t4", "t4mp": "t4",
-        "t5sp": "t5", "t5mp": "t5",
-        "t6zm": "t6", "t6mp": "t6",
-        "iw5mp": "iw5", "iw5mp_ds": "iw5",
-    }
-    storage_name = _STORAGE_SUBDIRS.get(game_key)
-    if storage_name:
-        src_storage = os.path.join(game_prefix_plut_dir, "storage", storage_name)
-        dst_storage = os.path.join(launcher_plut_dir, "storage", storage_name)
-        if os.path.isdir(src_storage):
-            if os.path.exists(dst_storage):
-                shutil.rmtree(dst_storage)
-            shutil.copytree(src_storage, dst_storage)
-            prog(f"  Merged storage/{storage_name} into launcher prefix")
-
-    # Copy top-level files (config.json handled separately)
-    for item in os.listdir(src_plut_dir):
-        src_item = os.path.join(src_plut_dir, item)
-        dst_item = os.path.join(launcher_plut_dir, item)
-        if os.path.exists(dst_item):
-            continue  # already present
-        if os.path.isfile(src_item):
-            shutil.copy2(src_item, dst_item)
-
-
-# ── launcher prefix game configs ──────────────────────────────────────────────
-#
-# Maps game keys to their DeckOps asset config and the relative storage
-# path inside the Plutonium directory where the bootstrapper expects them.
-# This is the single source of truth for placing game configs into the
-# offline launcher prefix — called every time a Plutonium game is
-# installed or reinstalled, so configs always land regardless of which
-# install flow triggered it.
-
-_LAUNCHER_CONFIG_MAP = {
-    # game_key: (asset_subpath, storage_relpath)
-    "t4sp":     ("WaW/config.cfg",          os.path.join("storage", "t4", "players", "profiles", "$$$")),
-    "t4mp":     ("WaW/config_mp.cfg",       os.path.join("storage", "t4", "players", "profiles", "$$$")),
-    "t5sp":     ("BO1/config.cfg",          os.path.join("storage", "t5", "players")),
-    "t5mp":     ("BO1/config_mp.cfg",       os.path.join("storage", "t5", "players")),
-    "t6mp":     ("BO2/plutonium_mp.cfg",    os.path.join("storage", "t6", "players")),
-    "t6zm":     ("BO2/plutonium_zm.cfg",    os.path.join("storage", "t6", "players")),
-    "iw5mp":    ("MW3/config_mp.cfg",       os.path.join("storage", "iw5", "players")),
-    "iw5mp_ds": ("MW3/config_mp.cfg",       os.path.join("storage", "iw5", "players")),
-}
-
-
-def _apply_launcher_game_configs(launcher_plut_dir: str, game_key: str,
-                                  on_progress=None):
-    """
-    Copy DeckOps asset configs directly into the offline launcher prefix.
-
-    This ensures the bootstrapper has correct resolution, FOV, sensitivity,
-    and player name settings when launching games from the offline LAN
-    launcher — regardless of install flow or timing.
-
-    Called inside install_plutonium_lcd after the storage/ tree and menu
-    mods have been mirrored. Uses the deck model from deckops.json to
-    pick LCD or OLED assets.
-    """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    if game_key not in _LAUNCHER_CONFIG_MAP:
-        return
-
-    import config as _cfg
-    deck_model = _cfg.get_deck_model() or "oled"
-    player_name = _cfg.get_player_name() or "Player"
-    model_dir = "OLED" if deck_model == "oled" else "LCD"
-
-    _here = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.dirname(_here)
-    configs_dir = os.path.join(project_root, "assets", "configs")
-
-    asset_subpath, storage_relpath = _LAUNCHER_CONFIG_MAP[game_key]
-    src = os.path.join(configs_dir, model_dir, asset_subpath)
-
-    if not os.path.exists(src):
-        prog(f"  ⚠ Launcher config asset not found: {asset_subpath}")
-        return
-
-    dest_dir = os.path.join(launcher_plut_dir, storage_relpath)
-    os.makedirs(dest_dir, exist_ok=True)
-    dest = os.path.join(dest_dir, os.path.basename(src))
-
-    try:
-        shutil.copy2(src, dest)
-
-        # Apply player name
-        from game_config import _replace_player_name
-        _replace_player_name(dest, player_name)
-
-        prog(f"  + {game_key}: launcher config -> {os.path.basename(src)}")
-    except Exception as ex:
-        prog(f"  ⚠ {game_key}: launcher config failed: {ex}")
 
 
 def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
-                        proton_path: str, compatdata_path: str,
-                        plut_dir: str):
+                        proton_path: str):
     """
     Replace the game exe with a bash wrapper that launches Plutonium in
     offline LAN mode through Proton. LCD only.
@@ -1082,6 +850,11 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
     Plutonium account needed, game starts in offline LAN mode. The
     bootstrapper needs to be run from the Plutonium directory so it can
     find its files relative to cwd.
+
+    Uses Heroic's shared default Wine prefix (HEROIC_DEFAULT_WINE_PREFIX)
+    for STEAM_COMPAT_DATA_PATH and Plutonium paths. This matches
+    _write_lcd_lan_wrapper — both online and offline play use the same
+    shared prefix on LCD.
 
     The original exe is backed up as <exe>.bak. The wrapper is padded to
     the original file's size so Steam's file validation does not flag it.
@@ -1113,15 +886,19 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
     except Exception:
         player_name = "Player"
 
-    bootstrapper = os.path.join(plut_dir, "bin",
+    # Use Heroic's shared prefix — it has a fully initialized Wine/Proton
+    # environment with working DXVK state. Per-game compatdata prefixes
+    # were never set up for direct game launches and crash on D3D init.
+    heroic_plut_dir = get_shared_plut_dir()
+    bootstrapper = os.path.join(heroic_plut_dir, "bin",
                                 "plutonium-bootstrapper-win32.exe")
     game_dir_wine = _wine_path_lcd(install_dir)
 
     script = (
         "#!/bin/bash\n"
-        f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
+        f"export STEAM_COMPAT_DATA_PATH=\"{HEROIC_DEFAULT_WINE_PREFIX}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        f"cd \"{plut_dir}\"\n"
+        f"cd \"{heroic_plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
         f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
     )
@@ -1611,14 +1388,18 @@ def install_plutonium_lcd(game: dict, game_key: str,
       3. Register per-game Heroic sideload entry + GamesConfig (kept for
          future online play through ManagementScreen).
       4. Set up shared Plutonium directories for symlink-based copies.
-      5. Copy Plutonium files into the game's Steam compatdata prefix.
-      6. Write config.json in the game prefix with correct paths.
-      7. Write a -lan bash wrapper for Steam games (exe replacement).
+      5. Write a -lan bash wrapper for Steam games (exe replacement).
          Own games launch via Heroic shortcuts created in step 3.
-     7b. Set Heroic launch options on the Steam library entry for online
+     5b. Set Heroic launch options on the Steam library entry for online
          play. The -lan wrapper is kept for offline mode via the launcher.
          t4mp excluded (shares appid) — gets a non-Steam shortcut instead.
-      8. Write the DeckOps metadata sentinel.
+      6. Nuke shader cache for this game's appid.
+      7. Write the DeckOps metadata sentinel.
+
+    LCD no longer copies Plutonium into per-game compatdata prefixes or
+    the offline launcher prefix. Both online (Heroic) and offline (launcher
+    exe) play use the single Heroic shared prefix. This saves hundreds of
+    MB per game by eliminating redundant storage/ copies.
 
     game            - entry from detect_games.find_installed_games()
     game_key        - one of: t4sp, t4mp, t5sp, t5mp, t6zm, t6mp, iw5mp
@@ -1694,139 +1475,78 @@ def install_plutonium_lcd(game: dict, game_key: str,
         on_progress=lambda m: prog(40, m),
     )
 
-    # 5. Copy Plutonium into this game's Steam compatdata prefix
+    # 5. Write bash wrapper and -lan sidecar scripts.
+    #
+    #    LCD no longer copies Plutonium into per-game compatdata prefixes or
+    #    the offline launcher prefix. Both online (Heroic) and offline
+    #    (launcher exe) play read from the single Heroic shared prefix at
+    #    ~/Games/Heroic/Prefixes/default. This saves hundreds of MB per game
+    #    by eliminating redundant storage/ copies.
+    #
+    #    Migration: older DeckOps versions used shared filenames for
+    #    SP/MP and MP/ZM pairs (e.g. t4plut_lan.sh for both t4sp and
+    #    t4mp), causing whichever installed last to overwrite the
+    #    other's wrapper. Remove the old shared-name wrapper if it
+    #    exists so stale scripts don't persist alongside the new
+    #    per-game-key scripts.
     wrapper_path = None
-    if compatdata_path:
-        dest_plut_dir = os.path.join(
-            compatdata_path, "pfx", "drive_c", "users", "steamuser",
-            "AppData", "Local", "Plutonium",
+    _OLD_LAN_WRAPPER_NAMES = {
+        "t4sp":  "t4plut_lan.sh",
+        "t4mp":  "t4plut_lan.sh",
+        "t5sp":  "t5plut_lan.sh",
+        "t5mp":  "t5plut_lan.sh",
+        "t6mp":  "t6plut_lan.sh",
+        "t6zm":  "t6plut_lan.sh",
+    }
+    old_name = _OLD_LAN_WRAPPER_NAMES.get(game_key)
+    new_name = LCD_LAN_WRAPPER_NAMES.get(game_key)
+    if old_name and new_name and old_name != new_name:
+        old_path = os.path.join(game["install_dir"], old_name)
+        if os.path.exists(old_path):
+            try:
+                os.remove(old_path)
+                prog(55, f"Removed stale shared wrapper: {old_name}")
+            except OSError:
+                pass
+
+    lan_wrapper_path = None
+    if source == "own":
+        prog(60, "Own game — writing offline LAN wrapper...")
+        lan_wrapper_path = _write_lcd_lan_wrapper(
+            game, game_key, steam_root, proton_path,
+            compatdata_path, shared_plut_dir,
         )
-        prog(50, f"Copying Plutonium into prefix for {game.get('name', game_key)}...")
-        _copy_plut_to_game_prefix_lcd(
-            shared_plut_dir, dest_plut_dir,
-            on_progress=lambda m: prog(60, m),
+    elif proton_path and steam_root:
+        prog(60, "Writing offline launcher wrapper...")
+        _write_lcd_wrapper(
+            game, game_key, steam_root, proton_path,
         )
-
-        # 6. Write config.json in the game prefix with correct paths
-        prog(70, "Writing game path config...")
-        _write_lcd_config(dest_plut_dir, game_key, installed_games)
-
-        # Apply DeckOps game configs (resolution, FOV, sensitivity, name)
-        # into the per-game prefix BEFORE copying to the launcher prefix.
-        # This way the tuned configs propagate automatically to every prefix
-        # that receives a copy of storage/ — no separate mirror step needed.
-        _apply_launcher_game_configs(dest_plut_dir, game_key,
-                                      on_progress=lambda m: prog(71, m))
-
-        # 6b. Mirror Plutonium into the offline launcher's prefix.
-        #     The launcher exe runs in its own Proton prefix (based on the
-        #     non-Steam shortcut appid). We copy bins (symlinks), storage/,
-        #     and mods there too, plus a merged config.json with all games.
-        prog(72, "Mirroring to offline launcher prefix...")
-        try:
-            from shortcut import get_launcher_plut_dir
-            launcher_plut_dir = get_launcher_plut_dir()
-
-            _copy_plut_to_launcher_prefix_lcd(
-                shared_plut_dir, dest_plut_dir, launcher_plut_dir,
-                game_key,
-                on_progress=lambda m: prog(73, m),
-            )
-
-            # Write merged config.json with ALL selected Plutonium game paths
-            selected_plut_keys = [
-                k for k in installed_games.keys() if k in PLUT_GAME_KEYS
-            ]
-            _write_plutonium_config_lcd(
-                launcher_plut_dir, selected_plut_keys, installed_games,
-                on_progress=lambda m: prog(74, m),
-            )
-
-            # Install menu mod into launcher prefix too
-            _install_menu_mod_lcd(launcher_plut_dir, game_key,
-                                   on_progress=lambda m: prog(75, m))
-
-            # Apply DeckOps game configs (resolution, FOV, sensitivity, name)
-            # directly into the launcher prefix so the bootstrapper picks them
-            # up when launching from the offline LAN launcher.
-            _apply_launcher_game_configs(launcher_plut_dir, game_key,
-                                          on_progress=lambda m: prog(76, m))
-
-            prog(77, "  ✓ Offline launcher prefix updated")
-        except Exception as ex:
-            prog(76, f"  ⚠ Offline launcher prefix mirror failed: {ex}")
-
-        # 7. Write bash wrapper for Steam-owned games (exe replacement).
-        #    Own games launch via Heroic shortcuts created in step 3
-        #    (_create_heroic_steam_shortcut) — no wrapper needed.
-        #
-        #    Migration: older DeckOps versions used shared filenames for
-        #    SP/MP and MP/ZM pairs (e.g. t4plut_lan.sh for both t4sp and
-        #    t4mp), causing whichever installed last to overwrite the
-        #    other's wrapper. Remove the old shared-name wrapper if it
-        #    exists so stale scripts don't persist alongside the new
-        #    per-game-key scripts.
-        _OLD_LAN_WRAPPER_NAMES = {
-            "t4sp":  "t4plut_lan.sh",
-            "t4mp":  "t4plut_lan.sh",
-            "t5sp":  "t5plut_lan.sh",
-            "t5mp":  "t5plut_lan.sh",
-            "t6mp":  "t6plut_lan.sh",
-            "t6zm":  "t6plut_lan.sh",
-        }
-        old_name = _OLD_LAN_WRAPPER_NAMES.get(game_key)
-        new_name = LCD_LAN_WRAPPER_NAMES.get(game_key)
-        if old_name and new_name and old_name != new_name:
-            old_path = os.path.join(game["install_dir"], old_name)
-            if os.path.exists(old_path):
-                try:
-                    os.remove(old_path)
-                    prog(78, f"Removed stale shared wrapper: {old_name}")
-                except OSError:
-                    pass
-
-        lan_wrapper_path = None
-        if source == "own":
-            prog(80, "Own game — writing offline LAN wrapper...")
-            lan_wrapper_path = _write_lcd_lan_wrapper(
-                game, game_key, steam_root, proton_path,
-                compatdata_path, dest_plut_dir,
-            )
-        elif proton_path and steam_root:
-            prog(80, "Writing offline launcher wrapper...")
-            _write_lcd_wrapper(
-                game, game_key, steam_root, proton_path,
-                compatdata_path, dest_plut_dir,
-            )
-            # Write a separate sidecar -lan wrapper for the offline
-            # launcher, matching OLED's approach. The replaced exe
-            # above handles online play via Heroic launch options
-            # (step 7b), but the offline launcher needs its own
-            # standalone .sh script that Steam's file validation
-            # can never touch or restore.
-            prog(82, "Writing offline LAN wrapper...")
-            lan_wrapper_path = _write_lcd_lan_wrapper(
-                game, game_key, steam_root, proton_path,
-                compatdata_path, dest_plut_dir,
-            )
-        else:
-            prog(80, "Skipping wrapper -- missing proton_path or steam_root")
-
-        # 7b. Set Heroic launch options on the Steam library entry so the
-        #     game launches online through Heroic. The -lan wrapper from
-        #     step 7 stays in place for offline mode via the Plutonium
-        #     launcher. t4mp is excluded (shares appid with t4sp) and gets
-        #     a non-Steam shortcut in shortcut.py instead.
-        if source == "steam" and steam_root:
-            prog(85, "Setting Heroic launch options...")
-            _set_heroic_steam_launch_options(
-                game_key, steam_root,
-                on_progress=lambda m: prog(87, m),
-            )
+        # Write a separate sidecar -lan wrapper for the offline
+        # launcher, matching OLED's approach. The replaced exe
+        # above is a fallback for offline play if Heroic launch
+        # options are ever cleared. The standalone .sh script is
+        # what DeckOps_Offline.exe actually calls.
+        prog(70, "Writing offline LAN wrapper...")
+        lan_wrapper_path = _write_lcd_lan_wrapper(
+            game, game_key, steam_root, proton_path,
+            compatdata_path, shared_plut_dir,
+        )
     else:
-        prog(50, "Skipping prefix copy -- no compatdata_path provided")
+        prog(60, "Skipping wrapper -- missing proton_path or steam_root")
 
-    # 7c. Nuke the entire shader cache directory for this game's appid.
+    # 5b. Set Heroic launch options on the Steam library entry so the
+    #     game launches online through Heroic. The -lan wrapper from
+    #     step 5 stays in place for offline mode via the Plutonium
+    #     launcher. t4mp is excluded (shares appid with t4sp) and gets
+    #     a non-Steam shortcut in shortcut.py instead.
+    if source == "steam" and steam_root:
+        prog(80, "Setting Heroic launch options...")
+        _set_heroic_steam_launch_options(
+            game_key, steam_root,
+            on_progress=lambda m: prog(82, m),
+        )
+
+    # 6. Nuke the entire shader cache directory for this game's appid.
     #     LCD games launch through cache_cleanup.py → flatpak → Heroic →
     #     Proton, so Steam's shader cache for these appids is useless
     #     junk from the launcher process. Nuking it during install gives
@@ -1837,7 +1557,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
         on_progress=lambda m: prog(92, m),
     )
 
-    # 8. Metadata sentinel
+    # 7. Metadata sentinel
     prog(95, "Saving metadata...")
     meta = {
         "game_key":   game_key,
@@ -1851,7 +1571,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
     import config as _cfg_lcd
     _cfg_lcd.mark_game_setup(
         game_key, "plutonium", source=source,
-        lan_wrapper_path=lan_wrapper_path if compatdata_path else None,
+        lan_wrapper_path=lan_wrapper_path,
     )
 
     prog(100, f"Plutonium ready for {game.get('name', game_key)}!")
