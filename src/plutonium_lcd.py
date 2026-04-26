@@ -160,27 +160,15 @@ _PLUT_SHARED_SUBDIRS = ("bin", "launcher", "games")
 # the shared Heroic prefix. Loaded automatically on game launch, overriding
 # the default main menu.
 #
-# T6 MP and T6 ZM share storage/t6/raw/, and Plutonium's T6 engines both
-# look for ui/t6/mainlobby.lua at the same internal .iwd path. Shipping
-# two separate .iwds (one per game) caused them to overwrite each other
-# in memory at load time -- whichever loaded last won, breaking the menu
-# for the other game. The LCD build collapses both into a single .iwd:
-# one mainlobby.lua containing both PopulateButtons_Multiplayer and
-# PopulateButtons_Zombie button adds, with the engine's own dispatch
-# (CoD.MainLobby.PopulateButtons branches on CoD.isZombie) selecting the
-# right one at runtime. MP gets the MP server button, ZM gets the ZM
-# server button -- no shared state, no overwrite.
-#
-# Both t6mp and t6zm point at the same source file and same destination,
-# so the per-game install loop writes the file twice when both games are
-# installed. Idempotent -- same bytes, same path.
-#
-# OLED (plutonium_oled.MENU_MOD_FILES) still uses the per-game .iwds
-# pending its own consolidation; not in scope for this fix.
+# T6 uses a single consolidated .iwd (deckops_bo2_menu.iwd) for both MP
+# and ZM. The Lua inside contains both PopulateButtons_Multiplayer and
+# PopulateButtons_Zombie, with the engine's CoD.isZombie dispatch selecting
+# the right button set at runtime. Both t6mp and t6zm point at the same
+# source file and same destination -- idempotent when both are installed.
 MENU_MOD_BASE_URL = "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main/assets/mods"
 MENU_MOD_FILES = {
-    "t6mp":  ("t6/deckops_menu_lcd.iwd", "storage/t6/raw/deckops_menu_lcd.iwd"),
-    "t6zm":  ("t6/deckops_menu_lcd.iwd", "storage/t6/raw/deckops_menu_lcd.iwd"),
+    "t6mp":  ("t6/deckops_bo2_menu.iwd", "storage/t6/raw/deckops_bo2_menu.iwd"),
+    "t6zm":  ("t6/deckops_bo2_menu.iwd", "storage/t6/raw/deckops_bo2_menu.iwd"),
     "iw5mp": ("iw5mp/main.lua", "storage/iw5/ui_mp/main.lua"),
     "iw5mp_ds": ("iw5mp/main.lua", "storage/iw5/ui_mp/main.lua"),
 }
