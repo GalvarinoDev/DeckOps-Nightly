@@ -2200,19 +2200,6 @@ class ControllerInfoScreen(QWidget):
         self.stack.setCurrentIndex(5)
 
 
-def _reopen_steam_bg(steam_root=None):
-    """Reopen Steam in the background after a settings operation."""
-    try:
-        if not steam_root:
-            steam_root = find_steam_root()
-        steam_sh = os.path.join(steam_root, "steam.sh") if steam_root else None
-        if steam_sh and os.path.exists(steam_sh):
-            subprocess.Popen([steam_sh], start_new_session=True)
-        else:
-            subprocess.Popen(["steam"], start_new_session=True)
-    except Exception:
-        pass
-
 # ── ConfigureScreen ────────────────────────────────────────────────────────────
 class ConfigureScreen(QWidget):
     def __init__(self, stack):
@@ -2434,7 +2421,7 @@ class ConfigureScreen(QWidget):
                 if sr:
                     set_steam_input_enabled(sr)
                 s.done.emit(True)
-                _reopen_steam_bg(sr)
+                s.log.emit("✓  Controller profiles applied. It is now safe to reopen Steam.")
             except Exception as ex:
                 s.log.emit(f"✗  Failed: {ex}")
                 s.done.emit(False)
