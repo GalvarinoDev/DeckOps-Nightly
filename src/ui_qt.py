@@ -2108,7 +2108,7 @@ class ManagementScreen(QWidget):
 
         def _open_folder(path):
             os.makedirs(path, exist_ok=True)
-            subprocess.Popen(["xdg-open", path])
+            subprocess.Popen(["dolphin", path], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self._status.setText(f"Opened: {path}")
 
         def _resolve_plut_mods_dir(game_key):
