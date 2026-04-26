@@ -1984,20 +1984,18 @@ echo "  All IW3SP-MOD and IW4x client files removed."
 echo "  All DeckOps controller templates and profiles removed."
 echo ""
 
-info "Relaunching Steam..."
-nohup "$HOME/.local/share/Steam/steam.sh" > /dev/null 2>&1 &
-success "Steam is starting."
+info "It is now safe to open Steam."
 echo ""
 
 # Show summary dialog in background while countdown runs in terminal
 zenity --info \
     --title="DeckOps Nightly Uninstaller" \
-    --text="DeckOps fully uninstalled.\n\nYour Steam games are untouched.\nAll Plutonium data removed from Wine prefixes.\nAll LCD HGL state and shortcuts removed.\nAll IW3SP-MOD and IW4x client files removed.\nAll DeckOps controller templates and profiles removed." \
-    --timeout=6 \
+    --text="DeckOps fully uninstalled.\n\nYour Steam games are untouched.\nAll Plutonium data removed from Wine prefixes.\nAll LCD HGL state and shortcuts removed.\nAll IW3SP-MOD and IW4x client files removed.\nAll DeckOps controller templates and profiles removed.\n\nIt is now safe to open Steam." \
+    --timeout=12 \
     2>/dev/null &
 
-for i in 5 4 3 2 1; do
-    printf "\r  Closing in %d seconds..." "$i"
+for i in 10 9 8 7 6 5 4 3 2 1; do
+    printf "\r  Closing in %d seconds... " "$i"
     sleep 1
 done
 echo ""
