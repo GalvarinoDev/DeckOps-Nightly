@@ -176,6 +176,7 @@
 │   │           └── deckops_menu_zm.iwd
 │   └── music
 ├── DeckOps-Nightly.desktop
+├── DeckOpsTree.text
 ├── DeckOpsTree.txt
 ├── deckops_uninstall.sh
 ├── DeckOps.zip
@@ -225,7 +226,7 @@
 ├── install.sh
 ├── launcher.sh
 ├── LICENSE
-├── nightly_README.md
+├── README.md
 ├── requirements.txt
 ├── src
 │   ├── alterware.py
@@ -257,4 +258,4 @@
 │   └── wrapper.py
 └── VERSION
 
-85 directories, 173 files
+85 directories, 174 files

@@ -95,13 +95,18 @@ _OLD_OLED_LAN_WRAPPER_NAMES = {
 }
 
 # DeckOps client-side menu mods packaged as .iwd files (renamed .zip).
-# Downloaded from the repo and placed in Plutonium's storage/t6/raw/
-# directory where they are loaded automatically on game launch.
-# Internal .iwd path is ui/t6/mainlobby.lua for both MP and ZM.
+# Downloaded from the repo and placed in Plutonium's storage/ directory
+# where they are loaded automatically on game launch.
+#
+# T6 uses a single consolidated .iwd (deckops_bo2_menu.iwd) for both MP
+# and ZM. The Lua inside contains both PopulateButtons_Multiplayer and
+# PopulateButtons_Zombie, with the engine's CoD.isZombie dispatch selecting
+# the right button set at runtime. Both t6mp and t6zm point at the same
+# source file and same destination -- idempotent when both are installed.
 MENU_MOD_BASE_URL = "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main/assets/mods"
 MENU_MOD_FILES = {
-    "t6mp": ("t6/t6mp/deckops_menu.iwd", "storage/t6/raw/deckops_menu.iwd"),
-    "t6zm": ("t6/t6zm/deckops_menu_zm.iwd", "storage/t6/raw/deckops_menu_zm.iwd"),
+    "t6mp":  ("t6/deckops_bo2_menu.iwd", "storage/t6/raw/deckops_bo2_menu.iwd"),
+    "t6zm":  ("t6/deckops_bo2_menu.iwd", "storage/t6/raw/deckops_bo2_menu.iwd"),
     "iw5mp": ("iw5mp/main.lua", "storage/iw5/ui_mp/main.lua"),
     "iw5mp_ds": ("iw5mp/main.lua", "storage/iw5/ui_mp/main.lua"),
 }
