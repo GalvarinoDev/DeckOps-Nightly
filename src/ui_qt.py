@@ -1489,6 +1489,29 @@ class InstallScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"  Launcher shortcut failed: {ex}")
 
+            # Preheat the offline launcher prefix with GE-Proton's full
+            # dependency set (d3dx9, d3dcompiler, vcrun, xact, etc.).
+            # The launcher prefix is a non-Steam shortcut — Steam/Proton
+            # never initializes it automatically, so it misses the DLLs
+            # that per-game prefixes get on first launch.
+            try:
+                from shortcut import get_launcher_appid
+                from ge_proton import ensure_prefix_deps
+                launcher_appid = get_launcher_appid()
+                launcher_compat = os.path.join(
+                    os.path.expanduser("~/.local/share/Steam"),
+                    "steamapps", "compatdata", str(launcher_appid),
+                )
+                ensure_prefix_deps(
+                    ge_version, launcher_compat,
+                    on_progress=lambda msg: self._s.log.emit(msg),
+                    proton_path=proton,
+                    steam_root=self.steam_root,
+                )
+                self._s.log.emit("✓  Offline launcher prefix preheated")
+            except Exception as ex:
+                self._s.log.emit(f"  Launcher prefix deps skipped: {ex}")
+
             plut_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "plutonium"]
             total_plut = len(plut_selected)
             for idx, (key, gd, game) in enumerate(plut_selected):
@@ -3075,6 +3098,29 @@ class OwnInstallScreen(QWidget):
                 )
             except Exception as ex:
                 self._s.log.emit(f"  Launcher shortcut failed: {ex}")
+
+            # Preheat the offline launcher prefix with GE-Proton's full
+            # dependency set (d3dx9, d3dcompiler, vcrun, xact, etc.).
+            # The launcher prefix is a non-Steam shortcut — Steam/Proton
+            # never initializes it automatically, so it misses the DLLs
+            # that per-game prefixes get on first launch.
+            try:
+                from shortcut import get_launcher_appid
+                from ge_proton import ensure_prefix_deps
+                launcher_appid = get_launcher_appid()
+                launcher_compat = os.path.join(
+                    os.path.expanduser("~/.local/share/Steam"),
+                    "steamapps", "compatdata", str(launcher_appid),
+                )
+                ensure_prefix_deps(
+                    ge_version, launcher_compat,
+                    on_progress=lambda msg: self._s.log.emit(msg),
+                    proton_path=proton,
+                    steam_root=self.steam_root,
+                )
+                self._s.log.emit("✓  Offline launcher prefix preheated")
+            except Exception as ex:
+                self._s.log.emit(f"  Launcher prefix deps skipped: {ex}")
 
             # Per-game Plutonium install: copy Plutonium into each prefix,
             # write config.json with game paths. Own games skip the wrapper
