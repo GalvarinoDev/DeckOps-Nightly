@@ -500,12 +500,14 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
                         prog(f"  ! {key}: Heroic mirror failed "
                              f"({os.path.basename(src)}): {ex}")
 
-            # ── Offline launcher prefix mirror (all Plutonium games) ─────
+            # ── Offline launcher prefix mirror (OLED Plutonium only) ────
             # The offline launcher exe runs in its own Proton prefix.
             # Mirror Plutonium configs there so the bootstrapper finds
             # resolution, FOV, sensitivity, and player name settings.
+            # LCD is skipped — both online and offline play use the
+            # single Heroic shared prefix, not the launcher's own prefix.
             # Best-effort — does not affect applied/failed counts.
-            if fixed_dest:
+            if fixed_dest and deck_model != "lcd":
                 launcher_dest_dir = _launcher_mirror_path(dest_dir)
                 if launcher_dest_dir:
                     try:
