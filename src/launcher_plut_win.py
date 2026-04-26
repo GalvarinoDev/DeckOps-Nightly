@@ -104,8 +104,10 @@ def _resolve_plut_dir() -> str:
     """Determine the primary Plutonium directory (where the bootstrapper lives).
 
     LCD: Heroic shared prefix.
-    OLED: first prefix found with a bootstrapper exe. Falls back to
-    first prefix with config.json, then LOCALAPPDATA.
+    OLED: prefer LOCALAPPDATA first — this is the launcher's own prefix,
+    which has all Plutonium files mirrored into it during install. Falls
+    back to scanning per-game prefixes if the launcher prefix doesn't
+    have the bootstrapper (e.g. first run before any game is installed).
     """
     try:
         with open(_DECKOPS_JSON, "r") as f:
@@ -118,7 +120,20 @@ def _resolve_plut_dir() -> str:
     if model == "lcd":
         return _LCD_PLUT_DIR
 
-    # OLED: find a prefix that has the bootstrapper
+    # OLED: try LOCALAPPDATA first — this is the launcher's own prefix.
+    # The launcher exe runs inside this prefix via Proton, so LOCALAPPDATA
+    # points to the correct AppData/Local. Using it ensures the bootstrapper
+    # runs from the same prefix as the launcher, with matching Wine
+    # environment, registry, and DLL configuration.
+    local_plut = os.path.join(
+        os.environ.get("LOCALAPPDATA", ""), "Plutonium",
+    )
+    if local_plut and os.path.exists(
+        os.path.join(local_plut, "bin", "plutonium-bootstrapper-win32.exe")
+    ):
+        return local_plut
+
+    # Fallback: scan per-game prefixes for a bootstrapper
     all_dirs = _find_all_plut_dirs()
     for d in all_dirs:
         if os.path.exists(os.path.join(d, "bin",
@@ -129,8 +144,10 @@ def _resolve_plut_dir() -> str:
     if all_dirs:
         return all_dirs[0]
 
-    # Fallback to LOCALAPPDATA (whatever prefix this exe is running in)
-    return os.path.join(os.environ.get("LOCALAPPDATA", ""), "Plutonium")
+    # Last resort — LOCALAPPDATA even without bootstrapper
+    return local_plut or os.path.join(
+        os.environ.get("LOCALAPPDATA", ""), "Plutonium",
+    )
 
 
 # Resolved at import time
