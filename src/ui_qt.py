@@ -1736,8 +1736,8 @@ class InstallScreen(QWidget):
 
 # ── ManagementCard ─────────────────────────────────────────────────────────────
 class ManagementCard(QFrame):
-    def __init__(self, gd, installed, on_setup, on_update, on_reinstall,
-                 on_readd=None, on_mods=None, parent=None):
+    def __init__(self, gd, installed, on_setup, on_configure,
+                 on_readd=None, parent=None):
         super().__init__(parent)
         color = C_IW if gd["dev"] == "iw" else C_TREY
         self._color  = color
@@ -1816,35 +1816,13 @@ class ManagementCard(QFrame):
             )
             bb.addStretch(); bb.addWidget(setup_btn); bb.addStretch()
         elif is_setup:
-            has_mod = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in ik)
-            # Show Mods button for games with mod-supporting clients
-            _MOD_CLIENTS = ("cod4x", "iw4x", "plutonium")
-            has_mods_support = any(KEY_CLIENT.get(k, "") in _MOD_CLIENTS for k in ik)
-            bb.addStretch()
-            if has_mods_support and on_mods:
-                mods_btn = _btn("Mods", C_DARK_BTN, size=9, h=26)
-                mods_btn.clicked.connect(lambda: on_mods(gd, ik))
-                mods_btn.setStyleSheet(
-                    f"QPushButton{{background:rgba(51,51,63,200);color:#CCC;border:none;"
-                    f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
-                )
-                bb.addWidget(mods_btn)
-            if has_mod:
-                upd_btn = _btn("Update", C_DARK_BTN, size=9, h=26)
-                upd_btn.clicked.connect(lambda: on_update(gd, ik))
-                upd_btn.setStyleSheet(
-                    f"QPushButton{{background:rgba(51,51,63,200);color:#CCC;border:none;"
-                    f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
-                )
-                bb.addWidget(upd_btn)
-            rei_btn = _btn("Reinstall", C_DARK_BTN, size=9, h=26)
-            rei_btn.clicked.connect(lambda: on_reinstall(gd))
-            rei_btn.setStyleSheet(
+            cfg_btn = _btn("Configure", C_DARK_BTN, size=9, h=26)
+            cfg_btn.clicked.connect(lambda: on_configure(gd, ik))
+            cfg_btn.setStyleSheet(
                 f"QPushButton{{background:rgba(51,51,63,200);color:#CCC;border:none;"
                 f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
             )
-            bb.addWidget(rei_btn)
-            bb.addStretch()
+            bb.addStretch(); bb.addWidget(cfg_btn); bb.addStretch()
         else:
             setup_btn = _btn("Set Up", C_DARK_BTN, size=9, h=26)
             setup_btn.setEnabled(False)
@@ -1979,10 +1957,8 @@ class ManagementScreen(QWidget):
             card = ManagementCard(
                 gd, self.installed,
                 on_setup     = self._setup,
-                on_update    = self._update,
-                on_reinstall = self._reinstall,
+                on_configure = self._configure,
                 on_readd     = self._readd,
-                on_mods      = self._mods,
             )
             self._grid.addWidget(card, row, col)
 
@@ -2048,6 +2024,34 @@ class ManagementScreen(QWidget):
             s._return_to_management = True
             s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
             self.stack.setCurrentIndex(4)
+
+    def _configure(self, gd, installed_keys):
+        """Show configure dialog with Mods, Update, and Reinstall options."""
+        _MOD_CLIENTS = ("cod4x", "iw4x", "plutonium")
+        has_mods_support = any(KEY_CLIENT.get(k, "") in _MOD_CLIENTS for k in installed_keys)
+        has_mod_client = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in installed_keys)
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle(gd["base"])
+        msg.setText("What would you like to do?")
+
+        mods_btn = None
+        if has_mods_support:
+            mods_btn = msg.addButton("Mods", QMessageBox.AcceptRole)
+        upd_btn = None
+        if has_mod_client:
+            upd_btn = msg.addButton("Update", QMessageBox.AcceptRole)
+        rei_btn = msg.addButton("Reinstall", QMessageBox.AcceptRole)
+        msg.addButton("Cancel", QMessageBox.RejectRole)
+        msg.exec_()
+
+        clicked = msg.clickedButton()
+        if clicked == mods_btn:
+            self._mods(gd, installed_keys)
+        elif clicked == upd_btn:
+            self._update(gd, installed_keys)
+        elif clicked == rei_btn:
+            self._reinstall(gd)
 
     def _update(self, gd, keys):
         """Route a single card's installed keys through the update flow."""
