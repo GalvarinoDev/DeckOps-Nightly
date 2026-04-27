@@ -73,7 +73,7 @@ GAMES = {
         "order": 6,
         "appid": "202970",
         "exe": "t6sp.exe",
-        "protocol": "steam",
+        "protocol": "t6sp_mod",
     },
     "t7": {
         "name": "Call of Duty: Black Ops III",

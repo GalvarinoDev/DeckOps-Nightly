@@ -1724,8 +1724,9 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 )
 
             else:
-                # cod4mp (cod4x patches iw3mp.exe in place), iw4sp, iw5sp, t6sp
-                # -- these use the original game exe with no mod client
+                # cod4mp (cod4x patches iw3mp.exe in place), iw4sp, iw5sp,
+                # t6sp (T6SP-MOD replaces exe in place)
+                # -- these use the original game exe path with no shortcut change
                 actual_exe = exe_path
                 launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
 
