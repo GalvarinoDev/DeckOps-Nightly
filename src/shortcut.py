@@ -128,10 +128,10 @@ OWN_SHORTCUTS = {
         "template_type":  "standard",
         "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10190/7dd7c2d5bce2413131762d7cbee3f059614ed69d.jpg",
         "grid_url":       "https://cdn2.steamgriddb.com/thumb/4f4ecc161b18f07dcf2c8296fad55709.jpg",
-        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10190/header.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/grid/7f7e6eaa61e5b3fecec9e364aafd8a8e.png",
         "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/1fc214004c9481e4c8073e85323bfd4b.png",
         "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/d79aac075930c83c2f1e369a511148fe.png",
-        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
     },
     "iw5sp": {
         "name":           "Call of Duty: Modern Warfare 3 (2011) - Singleplayer",
@@ -299,10 +299,10 @@ STEAM_ARTWORK = {
     "10190": {  # MW2 MP
         "icon_url":  "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10190/7dd7c2d5bce2413131762d7cbee3f059614ed69d.jpg",
         "grid_url":  "https://cdn2.steamgriddb.com/thumb/4f4ecc161b18f07dcf2c8296fad55709.jpg",
-        "wide_url":  "https://shared.steamstatic.com/store_item_assets/steam/apps/10190/header.jpg",
+        "wide_url":  "https://cdn2.steamgriddb.com/grid/7f7e6eaa61e5b3fecec9e364aafd8a8e.png",
         "hero_url":  "https://cdn2.steamgriddb.com/hero_thumb/1fc214004c9481e4c8073e85323bfd4b.png",
         "logo_url":  "https://cdn2.steamgriddb.com/logo_thumb/d79aac075930c83c2f1e369a511148fe.png",
-        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
     },
     "42690": {  # MW3 MP
         "icon_url":  "https://cdn2.steamgriddb.com/icon_thumb/67b48cc32ab9f04633bd50656a4a26fc.png",
