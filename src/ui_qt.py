@@ -2077,7 +2077,7 @@ class ManagementScreen(QWidget):
 
     def _configure(self, gd, installed_keys):
         """Show configure dialog with Mods, Update, and Reinstall options."""
-        _MOD_CLIENTS = ("cod4x", "iw4x", "plutonium", "alterware", "cleanops", "t7x")
+        _MOD_CLIENTS = ("cod4x", "iw4x", "plutonium", "alterware", "t7x")
         has_mods_support = any(KEY_CLIENT.get(k, "") in _MOD_CLIENTS for k in installed_keys)
         has_mod_client = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in installed_keys)
 
@@ -2127,7 +2127,7 @@ class ManagementScreen(QWidget):
 
     def _mods(self, gd, installed_keys):
         """Open the mod folder for a game. Shows a chooser for games with
-        both mods/ and usermaps/ directories (CoD4x, IW4x, CleanOps), for
+        both mods/ and usermaps/ directories (CoD4x, IW4x, T7X), for
         AlterWare games with data/scripts/mp and data/scripts/sp, or for
         OLED Plutonium games whose SP/MP modes live in separate prefixes."""
 
@@ -2204,9 +2204,6 @@ class ManagementScreen(QWidget):
             if c in ("cod4x", "iw4x"):
                 client = c
                 break
-            elif c == "cleanops":
-                client = "cleanops"
-                break
             elif c == "t7x":
                 client = "t7x"
                 break
@@ -2242,34 +2239,20 @@ class ManagementScreen(QWidget):
             elif clicked == usermaps_btn:
                 _open_folder(os.path.join(install_dir, "usermaps"))
 
-        elif client == "cleanops":
-            mod_key = installed_keys[0]
-            game = self.installed.get(mod_key, {})
-            install_dir = game.get("install_dir", "")
-            if not install_dir:
-                self._status.setText("Game install directory not found.")
-                return
-            # Two folders — ask user which one
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Open Mod Folder")
-            msg.setText(f"Which folder would you like to open for {gd['base']}?")
-            mods_btn = msg.addButton("Mods", QMessageBox.AcceptRole)
-            usermaps_btn = msg.addButton("User Maps", QMessageBox.AcceptRole)
-            msg.addButton("Cancel", QMessageBox.RejectRole)
-            msg.exec_()
-            clicked = msg.clickedButton()
-            if clicked == mods_btn:
-                _open_folder(os.path.join(install_dir, "mods"))
-            elif clicked == usermaps_btn:
-                _open_folder(os.path.join(install_dir, "usermaps"))
-
         elif client == "t7x":
+            from t7x import _get_sibling_dir
             mod_key = [k for k in installed_keys if KEY_CLIENT.get(k) == "t7x"]
             mod_key = mod_key[0] if mod_key else installed_keys[0]
             game = self.installed.get(mod_key, {})
-            install_dir = game.get("install_dir", "")
-            if not install_dir:
+            stock_dir = game.get("install_dir", "")
+            if not stock_dir:
                 self._status.setText("Game install directory not found.")
+                return
+            # T7X writes mods/usermaps into the DeckOps-T7X sibling dir,
+            # not the stock BO3 install directory that detect_games returns.
+            install_dir = _get_sibling_dir(stock_dir)
+            if not os.path.isdir(install_dir):
+                self._status.setText("T7X directory not found. Has T7X been installed?")
                 return
             # Two folders — ask user which one
             msg = QMessageBox(self)
