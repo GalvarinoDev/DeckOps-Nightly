@@ -171,6 +171,12 @@ SHORTCUT_DEFS = {
         "game_appid":    "10090",
         "profile_type":  "standard",
     },
+    "t7x": {
+        "name":          "Call of Duty: Black Ops 3 T7x",
+        "exe_name":      "t7x.exe",
+        "game_appid":    "311210",
+        "profile_type":  "standard",
+    },
 }
 
 MIN_UID = 10000
