@@ -143,8 +143,8 @@ def _launcher_mirror_path(compatdata_dest):
 # The config map is built inside apply_game_configs so steam_root is available.
 # Keys that are absent for a given model are simply not included.
 
-_LCD_KEYS  = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "iw5sp", "iw5mp", "iw5mp_ds", "t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "t7", "t7x", "iw6sp", "iw6mp", "s1sp", "s1mp"}
-_OLED_KEYS = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "t4sp", "t4mp", "t5sp", "t5mp", "iw5sp", "iw5mp", "iw5mp_ds", "t6zm", "t6mp", "t7", "t7x", "iw6sp", "iw6mp", "s1sp", "s1mp"}
+_LCD_KEYS  = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "iw5sp", "iw5mp", "iw5mp_ds", "t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "t6sp", "t7", "t7x", "iw6sp", "iw6mp", "s1sp", "s1mp"}
+_OLED_KEYS = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "t4sp", "t4mp", "t5sp", "t5mp", "iw5sp", "iw5mp", "iw5mp_ds", "t6zm", "t6mp", "t6sp", "t7", "t7x", "iw6sp", "iw6mp", "s1sp", "s1mp"}
 
 
 def _build_config_map(steam_root, installed_games=None):
@@ -283,6 +283,12 @@ def _build_config_map(steam_root, installed_games=None):
             ),
         ],
 
+        # ── BO2 SP (T6SP-MOD, uses stock BO2 install dir) ────────────────────
+        # Binary settings profile — dropped into install_dir/players/.
+        "t6sp": [
+            ("BO2/user_sp.cgp", None),
+        ],
+
         # ── Ghosts SP (AlterWare iw6, appid 209160) ──────────────────────────
         "iw6sp": [
             ("Ghosts/config.cfg", None),
@@ -339,6 +345,8 @@ def _dest_from_install(game_key, install_dir):
         return os.path.join(install_dir, "players")
     if game_key == "t7x":
         return os.path.join(install_dir, "t7x", "players")
+    if game_key == "t6sp":
+        return os.path.join(install_dir, "players")
     return None
 
 
