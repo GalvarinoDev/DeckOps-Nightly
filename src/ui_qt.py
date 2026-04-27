@@ -109,8 +109,8 @@ ALL_GAMES = [
     {"base":"Call of Duty: Black Ops","keys":["t5mp","t5sp"],"appid":42700,"dev":"trey","client":"plutonium",
      "lcd_keys":["t5mp","t5sp"],"lcd_client":"plutonium",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Black Ops II","keys":["t6mp","t6sp","t6zm"],"appid":202990,"dev":"trey","client":"plutonium",
-     "lcd_keys":["t6mp","t6sp","t6zm"],"lcd_client":"plutonium + steam","lcd_appid":202970,
+    {"base":"Call of Duty: Black Ops II","keys":["t6mp","t6sp","t6zm"],"appid":202990,"dev":"trey","client":"plutonium + t6sp-mod",
+     "lcd_keys":["t6mp","t6sp","t6zm"],"lcd_client":"plutonium + t6sp-mod","lcd_appid":202970,
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Black Ops III","keys":["t7","t7x"],"appid":311210,"dev":"trey","client":"cleanops + t7x",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
@@ -154,7 +154,7 @@ KEY_CLIENT = {
     "t5mp":   "plutonium",
     "t6zm":   "plutonium",
     "t6mp":   "plutonium",
-    "t6sp":   "steam",
+    "t6sp":   "t6sp_mod",
     "t7":     "cleanops",
     "t7x":    "t7x",
     "iw6mp": "alterware",
@@ -1302,6 +1302,7 @@ class InstallScreen(QWidget):
         from cod4x import install_cod4x
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
+        from t6sp_mod import install_t6sp_mod
         from cleanops import install_cleanops
         from t7x import install_t7x
         from ge_proton import install_ge_proton, set_compat_tool, MANAGED_APPIDS
@@ -1312,6 +1313,7 @@ class InstallScreen(QWidget):
         has_iw4x        = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
         has_cleanops    = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
         has_t7x         = any(KEY_CLIENT.get(k) == "t7x" for k in selected_keys)
+        has_t6sp_mod    = any(KEY_CLIENT.get(k) == "t6sp_mod" for k in selected_keys)
         logged_bases    = set()
         ge_version      = None
         _compat_applied = False
@@ -1685,8 +1687,25 @@ class InstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
+        # ── T6SP-MOD (BO2 Singleplayer) — Steam closed ───────────────────
+        if has_t6sp_mod:
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t6sp_mod"]:
+                base_name = gd["base"]
+                self._s.progress.emit(95, f"Installing Rattpak's T6SP-MOD (Beta)...")
+                def op_t6sp(pct, msg): self._s.progress.emit(95 + int(pct / 100 * 2), msg)
+                try:
+                    _install_dir = game["install_dir"] if game else None
+                    compat = find_compatdata(self.steam_root, gd["appid"],
+                                              game_install_dir=_install_dir)
+                    install_t6sp_mod(game, self.steam_root, proton, compat, op_t6sp)
+                    cfg.mark_game_setup(key, "t6sp_mod", source="steam")
+                    self._s.log.emit(f"✓  {base_name} (T6SP-MOD) done")
+                    logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
         # ── Vanilla Steam games (no mod client, just configs + controllers) ──
-        # Games like MW2 SP, MW3 SP, and BO2 SP run through Steam as-is.
+        # Games like MW2 SP and MW3 SP run through Steam as-is.
         # No download or exe replacement needed. We just mark them as set up
         # so they show as installed on the My Games screen and get their
         # display configs and controller profiles applied below.
@@ -2888,6 +2907,7 @@ class UpdateScreen(QWidget):
         from iw4x import install_iw4x
         from cod4x import install_cod4x
         from iw3sp import install_iw3sp
+        from t6sp_mod import install_t6sp_mod
         from cleanops import install_cleanops
         from t7x import install_t7x
         from plutonium_oled import install_plutonium
@@ -2987,6 +3007,9 @@ class UpdateScreen(QWidget):
                     from alterware import install_alterware
                     install_alterware(game, key, self.steam_root, proton, compat, op,
                                      source=source)
+                elif c == "t6sp_mod":
+                    install_t6sp_mod(game, self.steam_root, proton, compat, op,
+                                    source=source)
                 self._s.log.emit(f"✓  {base_name} ({key}) done")
             except Exception as ex:
                 self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
@@ -3155,6 +3178,7 @@ class OwnInstallScreen(QWidget):
         from cod4x import install_cod4x
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
+        from t6sp_mod import install_t6sp_mod
         from cleanops import install_cleanops
         from t7x import install_t7x
         from ge_proton import install_ge_proton, MANAGED_APPIDS
@@ -3174,6 +3198,7 @@ class OwnInstallScreen(QWidget):
         logged_bases  = set()
         has_plut      = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
         has_cod4      = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k in selected_keys)
+        has_t6sp_mod  = any(KEY_CLIENT.get(k) == "t6sp_mod" for k in selected_keys)
 
         # ── GE-Proton download (Steam still running) ─────────────────────
         ge_version = None
@@ -3583,6 +3608,27 @@ class OwnInstallScreen(QWidget):
                                      source=source)
                     cfg.mark_game_setup(key, "alterware", source=source)
                     self._s.log.emit(f"✓  {base_name} done")
+                    logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # ── T6SP-MOD (BO2 Singleplayer) ──────────────────────────────────
+        _log_to_file("[BREADCRUMB] starting t6sp_mod install phase")
+        if has_t6sp_mod:
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t6sp_mod"]:
+                base_name = gd["base"]
+                self._s.progress.emit(80, f"Installing Rattpak's T6SP-MOD (Beta)...")
+                def op_t6sp(pct, msg): self._s.progress.emit(80 + int(pct / 100 * 4), msg)
+                try:
+                    source = "own" if key in self.own_selected else "steam"
+                    if source == "own":
+                        compat = game.get("compatdata_path", "")
+                    else:
+                        compat = find_compatdata(self.steam_root, gd["appid"],
+                                                  game_install_dir=game.get("install_dir"))
+                    install_t6sp_mod(game, self.steam_root, proton, compat, op_t6sp, source=source)
+                    cfg.mark_game_setup(key, "t6sp_mod", source=source)
+                    self._s.log.emit(f"✓  {base_name} (T6SP-MOD) done")
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")

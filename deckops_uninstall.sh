@@ -152,6 +152,7 @@ if [ -n "$STEAM_ROOT" ]; then
         [10190]="iw4mp.exe"
         [42690]="iw5mp.exe"
         [42750]="iw5mp_server.exe"
+        [202970]="t6sp.exe"
     )
     declare -A GAME_EXES_MULTI=(
         [10090]="CoDWaW.exe CoDWaWmp.exe"
@@ -312,6 +313,20 @@ if [ -n "$STEAM_ROOT" ]; then
 fi
 echo ""
 
+info "Removing Rattpak's T6SP-MOD files from Black Ops II folder..."
+
+if [ -n "$STEAM_ROOT" ]; then
+    bo2sp_dir=$(find_install_dir 202970) || true
+    if [ -n "$bo2sp_dir" ]; then
+        for f in "t6sp-mod.dll" "deckops_t6sp_mod.json"; do
+            [ -f "$bo2sp_dir/$f" ] && rm -f "$bo2sp_dir/$f" && success "Removed $f" || skip "$f not found"
+        done
+    else
+        skip "Black Ops II SP install directory not found"
+    fi
+fi
+echo ""
+
 info "Removing CleanOps files from Black Ops III folder..."
 
 if [ -n "$STEAM_ROOT" ]; then
@@ -419,6 +434,11 @@ OWN_CLEANUP = {
     "iw3sp_mod.exe": {
         "files": ["iw3sp_mod.exe", "iw3sp_mod.dll", "deckops_iw3sp.json"],
         "dirs":  ["iw3sp_mod"],
+    },
+    # T6SP-MOD replaces t6sp.exe in place; DLL and metadata are the mod artifacts
+    "t6sp.exe": {
+        "files": ["t6sp-mod.dll", "deckops_t6sp_mod.json"],
+        "dirs":  [],
     },
     "blackops3.exe": {
         "files": ["d3d11.dll", "deckops_cleanops.json"],
