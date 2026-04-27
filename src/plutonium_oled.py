@@ -95,15 +95,16 @@ _OLD_OLED_LAN_WRAPPER_NAMES = {
 }
 
 # DeckOps client-side menu mods packaged as .iwd files (renamed .zip).
-# Downloaded from the repo and placed in Plutonium's storage/ directory
-# where they are loaded automatically on game launch.
+# Bundled with the repo at assets/mods/ and copied locally into Plutonium's
+# storage/ directory where they are loaded automatically on game launch.
 #
 # T6 uses a single consolidated .iwd (deckops_bo2_menu.iwd) for both MP
 # and ZM. The Lua inside contains both PopulateButtons_Multiplayer and
 # PopulateButtons_Zombie, with the engine's CoD.isZombie dispatch selecting
 # the right button set at runtime. Both t6mp and t6zm point at the same
 # source file and same destination -- idempotent when both are installed.
-MENU_MOD_BASE_URL = "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main/assets/mods"
+_OLED_HERE = os.path.dirname(os.path.abspath(__file__))
+MENU_MOD_ASSETS_DIR = os.path.join(os.path.dirname(_OLED_HERE), "assets", "mods")
 MENU_MOD_FILES = {
     "t6mp":  ("t6/deckops_bo2_menu.iwd", "storage/t6/raw/deckops_bo2_menu.iwd"),
     "t6zm":  ("t6/deckops_bo2_menu.iwd", "storage/t6/raw/deckops_bo2_menu.iwd"),
@@ -408,13 +409,13 @@ def _write_config(plut_dir: str, game_keys: list, installed_games: dict):
 
 def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
     """
-    Download and install the DeckOps menu mod for the given game key.
+    Copy and install the DeckOps menu mod for the given game key.
 
-    Downloads a pre-built .iwd file (renamed .zip) from the repo and
-    places it in the prefix's Plutonium storage path at raw/. Plutonium
-    loads .iwd files from raw/ automatically on game launch, overriding
-    the default main menu with the DeckOps community version (server
-    connect, unlock all, reset stats buttons).
+    Copies the bundled mod file from assets/mods/ into the prefix's
+    Plutonium storage path at raw/. Plutonium loads .iwd files from
+    raw/ automatically on game launch, overriding the default main
+    menu with the DeckOps community version (server connect, unlock
+    all, reset stats buttons).
 
     Uses .iwd in raw/ (not mods/) so it:
     - Uses normal player stats (no separate mod stats)
@@ -430,35 +431,23 @@ def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
     if game_key not in MENU_MOD_FILES:
         return
 
-    remote_path, local_path = MENU_MOD_FILES[game_key]
-    url = f"{MENU_MOD_BASE_URL}/{remote_path}"
+    asset_rel, local_path = MENU_MOD_FILES[game_key]
+    src_file = os.path.join(MENU_MOD_ASSETS_DIR, asset_rel)
     dest_file = os.path.join(dest_plut_dir, local_path)
 
     prog(f"  Installing DeckOps menu mod for {game_key}...")
 
+    if not os.path.isfile(src_file):
+        prog(f"  ⚠ Menu mod asset missing: {src_file}")
+        return  # Non-fatal -- game still works without the mod
+
     os.makedirs(os.path.dirname(dest_file), exist_ok=True)
 
-    import time
-    _headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                       "AppleWebKit/537.36 (KHTML, like Gecko) "
-                       "Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-    }
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(url, headers=_headers)
-            with urllib.request.urlopen(req, timeout=30) as r:
-                data = r.read()
-            with open(dest_file, "wb") as f:
-                f.write(data)
-            prog(f"  ✓ Menu mod installed ({len(data)} bytes)")
-            return
-        except Exception as ex:
-            if attempt == 2:
-                prog(f"  ⚠ Menu mod download failed: {ex}")
-                return  # Non-fatal -- game still works without the mod
-            time.sleep(2 ** attempt)
+    try:
+        shutil.copy2(src_file, dest_file)
+        prog(f"  ✓ Menu mod installed ({os.path.getsize(dest_file)} bytes)")
+    except OSError as ex:
+        prog(f"  ⚠ Menu mod copy failed: {ex}")
 
 
 # ── offline launcher prefix helper ────────────────────────────────────────────
