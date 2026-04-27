@@ -3202,7 +3202,7 @@ class OwnInstallScreen(QWidget):
 
     def _on_done(self, _):
         self._stop_pulse()
-        self.cur.setText("Installation complete!")
+        self.cur.setText("Installation complete!\n\nIf you enjoy these mods, please consider starring the original creators' GitHub repositories!")
         self.cont_btn.setVisible(True)
 
     def _run(self):
