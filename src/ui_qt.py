@@ -291,6 +291,36 @@ def _hdiv():
     d = QFrame(); d.setFrameShape(QFrame.HLine); d.setFixedHeight(1)
     d.setStyleSheet("background:#252530;border:none;"); return d
 
+def _detached_open(args):
+    """
+    Launch an external command fully detached from DeckOps.
+
+    Double-forks so the resulting process is adopted by PID 1 (init/systemd)
+    and has no parent relationship to DeckOps. It will not appear as a child
+    or subprocess of DeckOps in any task manager.
+    """
+    try:
+        pid = os.fork()
+        if pid == 0:
+            # First child — new session, then fork again and exit
+            os.setsid()
+            pid2 = os.fork()
+            if pid2 == 0:
+                # Grandchild — close inherited fds and exec
+                devnull = os.open(os.devnull, os.O_RDWR)
+                os.dup2(devnull, 0)
+                os.dup2(devnull, 1)
+                os.dup2(devnull, 2)
+                os.close(devnull)
+                os.execlp(args[0], *args)
+            else:
+                os._exit(0)
+        else:
+            # Parent — reap the first child immediately
+            os.waitpid(pid, 0)
+    except OSError:
+        pass
+
 def _ask_iw4x_dlc(parent, selected) -> bool:
     """
     Show a dialog asking whether to install free IW4x DLC maps.
@@ -2127,7 +2157,7 @@ class ManagementScreen(QWidget):
 
         def _open_folder(path):
             os.makedirs(path, exist_ok=True)
-            subprocess.Popen(["dolphin", path], start_new_session=True, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _detached_open(["xdg-open", path])
             self._status.setText(f"Opened: {path}")
 
         def _resolve_plut_mods_dir(game_key):
@@ -2412,8 +2442,8 @@ class ControllerInfoScreen(QWidget):
             11, C_DIM, align=Qt.AlignLeft)
         self._decky_btn  = _btn("Get Decky Loader  →  decky.xyz", C_BLUE_BTN, size=12, h=40)
         self._decky_btn.setFixedWidth(320)
-        self._decky_btn.clicked.connect(lambda: __import__("subprocess").Popen(
-            ["xdg-open", "https://decky.xyz/"], start_new_session=True
+        self._decky_btn.clicked.connect(lambda: _detached_open(
+            ["xdg-open", "https://decky.xyz/"]
         ))
         dbw = QHBoxLayout(); dbw.addWidget(self._decky_btn); dbw.addStretch()
         lay.addWidget(self._decky_div)
@@ -2738,15 +2768,7 @@ class ConfigureScreen(QWidget):
         threading.Thread(target=_run, daemon=True).start()
 
     def _open_url(self, url):
-        try:
-            from PyQt5.QtCore import QUrl
-            from PyQt5.QtGui import QDesktopServices
-            QDesktopServices.openUrl(QUrl(url))
-        except Exception:
-            try:
-                subprocess.Popen(["xdg-open", url], start_new_session=True)
-            except Exception:
-                self.status.setText("Could not open browser.")
+        _detached_open(["xdg-open", url])
 
     def _confirm_uninstall(self):
         reply = QMessageBox.warning(
