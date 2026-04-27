@@ -112,7 +112,7 @@ ALL_GAMES = [
     {"base":"Call of Duty: Black Ops II","keys":["t6mp","t6sp","t6zm"],"appid":202990,"dev":"trey","client":"plutonium + t6sp-mod",
      "lcd_keys":["t6mp","t6sp","t6zm"],"lcd_client":"plutonium + t6sp-mod","lcd_appid":202970,
      "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Black Ops III","keys":["t7","t7x"],"appid":311210,"dev":"trey","client":"cleanops + t7x",
+    {"base":"Call of Duty: Black Ops III","keys":["t7"],"appid":311210,"dev":"trey","client":"cleanops",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Ghosts","keys":["iw6mp","iw6sp"],"appid":209160,"dev":"iw","client":"alterware",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
@@ -185,7 +185,6 @@ KEY_MODE_LABEL = {
     "t5sp":   "S/Z",   "t5mp":   "MP",
     "t6sp":   "SP",    "t6zm":   "ZM",    "t6mp":   "MP",
     "t7":     "All",
-    "t7x":    "T7x",
     "iw6mp":  "MP",    "iw6sp":  "SP",
     "s1mp":   "MP",    "s1sp":   "SP",
 }
@@ -337,6 +336,28 @@ def _ask_iw4x_dlc(parent, selected) -> bool:
         "Includes CoD4, MW3, Black Ops, and CoD Online maps.\n"
         "Recommended for joining most servers.\n\n"
         "Download size: ~3 GB",
+        QMessageBox.Yes | QMessageBox.No,
+        QMessageBox.Yes,
+    )
+    return reply == QMessageBox.Yes
+
+def _ask_t7x_install(parent, selected):
+    """
+    Show a dialog asking whether to install T7X alongside CleanOps.
+    Returns True if the user wants T7X, False otherwise.
+    Only shows the dialog if BO3 (t7/cleanops) is in the selected games.
+    """
+    has_bo3 = any(KEY_CLIENT.get(k) == "cleanops" for k, _, _ in selected)
+    if not has_bo3:
+        return False
+    reply = QMessageBox.question(
+        parent,
+        "T7X — Additional BO3 Client",
+        "CleanOps is already included — it patches BO3 to protect against "
+        "exploits and adds dedicated servers alongside Activision's official servers.\n\n"
+        "T7X is an optional additional client with its own dedicated server list.\n\n"
+        "Download size: ~105 MB\n\n"
+        "Install T7X?",
         QMessageBox.Yes | QMessageBox.No,
         QMessageBox.Yes,
     )
@@ -518,7 +539,8 @@ class IntroScreen(QWidget):
         nl.addWidget(_lbl("What's your player name?", 15, "#CCC"))
         nl.addSpacing(4)
         nl.addWidget(_lbl(
-            "This name will be used in CoD4x, IW4x, and Plutonium (LCD offline mode). "
+            "This is your in-game name for most mod clients — CoD4x, IW4x, "
+            "AlterWare (Ghosts, AW), T7X, and Plutonium (LCD offline mode). "
             "Your Steam display name is filled in by default — change it to whatever you want.",
             13, C_DIM, align=Qt.AlignLeft))
         nl.addSpacing(12)
@@ -1161,6 +1183,7 @@ class SetupScreen(QWidget):
                     if _k in _active_keys(_gd):
                         _own_tmp.append((_k, _gd, _g)); break
             own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, selected + _own_tmp)
+            own_screen.install_t7x_opt = _ask_t7x_install(self, selected + _own_tmp)
             self.stack.setCurrentIndex(10)
             return
 
@@ -1169,6 +1192,7 @@ class SetupScreen(QWidget):
         s.selected   = selected
         s.steam_root = self.steam_root
         s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
+        s.install_t7x_opt = _ask_t7x_install(self, selected)
         self.stack.setCurrentIndex(4)
 
 # ── InstallScreen ──────────────────────────────────────────────────────────────
@@ -1177,6 +1201,7 @@ class InstallScreen(QWidget):
         super().__init__(); self.stack=stack; self.selected=[]; self.steam_root=""; self.screen_name = "InstallScreen"
         self._plut_event = threading.Event()
         self._return_to_management = False
+        self.install_t7x_opt = False
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
         t = QLabel("INSTALLING"); t.setFont(font(36,True)); t.setAlignment(Qt.AlignCenter)
@@ -1312,8 +1337,17 @@ class InstallScreen(QWidget):
         has_cod4        = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k in selected_keys)
         has_iw4x        = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
         has_cleanops    = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
-        has_t7x         = any(KEY_CLIENT.get(k) == "t7x" for k in selected_keys)
         has_t6sp_mod    = any(KEY_CLIENT.get(k) == "t6sp_mod" for k in selected_keys)
+
+        # ── T7X opt-in: inject t7x into selected if user chose to install it ──
+        has_t7x = getattr(self, "install_t7x_opt", False) and has_cleanops
+        if has_t7x:
+            # Find the t7 (CleanOps) entry and clone it for t7x
+            for k, gd, g in self.selected:
+                if k == "t7":
+                    self.selected.append(("t7x", gd, dict(g)))
+                    selected_keys.append("t7x")
+                    break
         logged_bases    = set()
         ge_version      = None
         _compat_applied = False
@@ -2397,12 +2431,22 @@ class ControllerInfoScreen(QWidget):
 
         lay.addWidget(_hdiv())
 
-        # ── BO2 encrypted config note ──────────────────────────────────────────
-        lay.addWidget(_lbl("⚠  Black Ops II - Manual Setup Required", 13, "#5B9BD5", bold=True, align=Qt.AlignLeft))
+        # ── First launch note ────────────────────────────────────────────────
+        lay.addWidget(_lbl("⏳  First Launch", 13, "#5B9BD5", bold=True, align=Qt.AlignLeft))
         lay.addWidget(_lbl(
-            "BO2 Multiplayer and Zombies config files are handled automatically by DeckOps. "
-            "Singleplayer config files are encrypted and cannot be written by DeckOps. "
-            "Set your resolution and display settings manually in-game after launching for the first time.",
+            "All games may take a while to launch the first time — this is normal. "
+            "They will run fine after the initial launch.",
+            11, C_DIM, align=Qt.AlignLeft))
+
+        lay.addWidget(_hdiv())
+
+        # ── BO3 first launch note ────────────────────────────────────────────
+        lay.addWidget(_lbl("🎮  Black Ops III — First Launch", 13, C_TREY, bold=True, align=Qt.AlignLeft))
+        lay.addWidget(_lbl(
+            "CleanOps and T7X install on their first run, which takes a bit and may "
+            "slow down the Steam Deck temporarily. This is expected — do not worry. "
+            "Wiggle the analog sticks to keep the screen from turning off while you wait, "
+            "since the game hasn't officially launched yet.",
             11, C_DIM, align=Qt.AlignLeft))
 
         lay.addWidget(_hdiv())
@@ -2566,7 +2610,7 @@ class ConfigureScreen(QWidget):
         save_btn.clicked.connect(self._save_name)
         nr.addWidget(self._name_input, stretch=1); nr.addWidget(save_btn)
         lay.addLayout(nr)
-        self._name_note = _lbl("Does not affect Plutonium online play", 10, C_DIM, align=Qt.AlignLeft)
+        self._name_note = _lbl("Sets your name in CoD4x, IW4x, AlterWare (Ghosts, AW), T7X, and Plutonium offline. Does not affect Plutonium online or CleanOps (uses Steam name).", 10, C_DIM, align=Qt.AlignLeft)
         lay.addWidget(self._name_note)
         lay.addWidget(_hdiv())
 
@@ -3040,6 +3084,7 @@ class OwnInstallScreen(QWidget):
         self.steam_root = ""
         self._plut_event = threading.Event()
         self._return_to_management = False
+        self.install_t7x_opt = False
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
         t = QLabel("INSTALLING"); t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
@@ -3332,8 +3377,15 @@ class OwnInstallScreen(QWidget):
         # Must run BEFORE create_own_shortcuts so game["install_dir"]
         # points at the DeckOps-T7X sibling dir when the shortcut is built.
         _log_to_file("[BREADCRUMB] starting t7x install phase")
-        has_t7x = any(KEY_CLIENT.get(k) == "t7x" for k in selected_keys)
+        has_cleanops = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
+        has_t7x = getattr(self, "install_t7x_opt", False) and has_cleanops
         if has_t7x:
+            # Inject t7x into selected from the t7 (CleanOps) entry
+            for k, gd, g in list(self.selected):
+                if k == "t7":
+                    self.selected.append(("t7x", gd, dict(g)))
+                    selected_keys.append("t7x")
+                    break
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
                 base_name = gd["base"]
                 self._s.progress.emit(20, f"Setting up T7x...")
