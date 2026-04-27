@@ -96,6 +96,7 @@ def font(size=13, bold=False, weight=None, display=False):
 # resolve the correct value based on the user's saved deck_model config.
 
 ALL_GAMES = [
+    # ── Row 1: Infinity Ward (green) ─────────────────────────────────────
     {"base":"Call of Duty 4: Modern Warfare","keys":["cod4mp","cod4sp"],"appid":7940,"dev":"iw","client":"cod4x + iw3sp",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Modern Warfare 2","keys":["iw4mp","iw4sp"],"appid":10190,"dev":"iw","client":"iw4x",
@@ -103,6 +104,11 @@ ALL_GAMES = [
     {"base":"Call of Duty: Modern Warfare 3","keys":["iw5mp","iw5sp","iw5mp_ds"],"appid":42690,"dev":"iw","client":"plutonium",
      "lcd_keys":["iw5mp","iw5sp","iw5mp_ds"],"lcd_client":"plutonium + steam","lcd_appid":42680,
      "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"Call of Duty: Ghosts","keys":["iw6mp","iw6sp"],"appid":209160,"dev":"iw","client":"alterware",
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"Call of Duty: Advanced Warfare","keys":["s1mp","s1sp"],"appid":209650,"dev":"iw","client":"alterware",
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
+    # ── Row 2: Treyarch (orange) ─────────────────────────────────────────
     {"base":"Call of Duty: World at War","keys":["t4mp","t4sp"],"appid":10090,"dev":"trey","client":"plutonium",
      "lcd_keys":["t4mp","t4sp"],"lcd_client":"plutonium",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
@@ -112,11 +118,7 @@ ALL_GAMES = [
     {"base":"Call of Duty: Black Ops II","keys":["t6mp","t6sp","t6zm"],"appid":202990,"dev":"trey","client":"plutonium + t6sp-mod",
      "lcd_keys":["t6mp","t6sp","t6zm"],"lcd_client":"plutonium + t6sp-mod","lcd_appid":202970,
      "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Black Ops III","keys":["t7"],"appid":311210,"dev":"trey","client":"cleanops",
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Ghosts","keys":["iw6mp","iw6sp"],"appid":209160,"dev":"iw","client":"alterware",
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Advanced Warfare","keys":["s1mp","s1sp"],"appid":209650,"dev":"iw","client":"alterware",
+    {"base":"Call of Duty: Black Ops III","keys":["t7"],"appid":311210,"dev":"trey","client":"cleanops + t7x",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"DeckOps: Plutonium Offline","keys":[],"appid":None,"dev":"trey","client":"lan",
      "launch_note":"Re-adds the Plutonium offline launcher shortcut."},
