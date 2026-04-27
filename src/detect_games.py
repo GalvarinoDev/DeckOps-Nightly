@@ -86,7 +86,7 @@ GAMES = {
         "name": "Call of Duty: Black Ops III - T7x",
         "order": 7,
         "appid": "311210",
-        "exe": "t7x.exe",
+        "exe": "BlackOps3.exe",
         "protocol": "t7x",
     },
     "iw6mp": {
