@@ -495,6 +495,8 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
                     actual_exe = os.path.join(install_dir, "iw6-mod.exe")
                 elif key in ("s1mp", "s1sp") and install_dir:
                     actual_exe = os.path.join(install_dir, "s1-mod.exe")
+                elif key == "t7x" and install_dir:
+                    actual_exe = os.path.join(install_dir, "t7x.exe")
                 else:
                     actual_exe = exe_path
 
@@ -693,6 +695,8 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
                     actual_exe = os.path.join(install_dir, "iw6-mod.exe")
                 elif key in ("s1mp", "s1sp") and install_dir:
                     actual_exe = os.path.join(install_dir, "s1-mod.exe")
+                elif key == "t7x" and install_dir:
+                    actual_exe = os.path.join(install_dir, "t7x.exe")
                 else:
                     actual_exe = exe_path
 
