@@ -143,8 +143,8 @@ def _launcher_mirror_path(compatdata_dest):
 # The config map is built inside apply_game_configs so steam_root is available.
 # Keys that are absent for a given model are simply not included.
 
-_LCD_KEYS  = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "iw5sp", "iw5mp", "iw5mp_ds", "t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "iw6sp", "iw6mp", "s1sp", "s1mp"}
-_OLED_KEYS = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "t4sp", "t4mp", "t5sp", "t5mp", "iw5sp", "iw5mp", "iw5mp_ds", "t6zm", "t6mp", "iw6sp", "iw6mp", "s1sp", "s1mp"}
+_LCD_KEYS  = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "iw5sp", "iw5mp", "iw5mp_ds", "t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "t7", "t7x", "iw6sp", "iw6mp", "s1sp", "s1mp"}
+_OLED_KEYS = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "t4sp", "t4mp", "t5sp", "t5mp", "iw5sp", "iw5mp", "iw5mp_ds", "t6zm", "t6mp", "t7", "t7x", "iw6sp", "iw6mp", "s1sp", "s1mp"}
 
 
 def _build_config_map(steam_root, installed_games=None):
@@ -302,6 +302,20 @@ def _build_config_map(steam_root, installed_games=None):
         "s1mp": [
             ("AW/config_mp.cfg", None),
         ],
+
+        # ── BO3 (CleanOps t7) ────────────────────────────────────────────────
+        # CleanOps is a DLL overlay — config.ini lives in the stock BO3
+        # players/ directory, same as vanilla.
+        "t7": [
+            ("T7X/config.ini", None),
+        ],
+
+        # ── BO3 (T7X / AlterWare) ────────────────────────────────────────────
+        # T7X stores its config.ini inside the t7x/players/ subdirectory
+        # of the DeckOps-T7X sibling dir.
+        "t7x": [
+            ("T7X/config.ini", None),
+        ],
     }
 
 
@@ -321,6 +335,10 @@ def _dest_from_install(game_key, install_dir):
         return os.path.join(install_dir, "players2")
     if game_key in ("iw6sp", "iw6mp", "s1sp", "s1mp"):
         return os.path.join(install_dir, "players2")
+    if game_key == "t7":
+        return os.path.join(install_dir, "players")
+    if game_key == "t7x":
+        return os.path.join(install_dir, "t7x", "players")
     return None
 
 
