@@ -18,24 +18,19 @@
 
 | Game | Mode | Client | Online | Aim Assist | Gyro |
 |---|---|---|---|---|---|
-| Modern Warfare | SP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) | No | ✅ | ✅ |
-| Modern Warfare | MP | [CoD4x](https://cod4x.ovh) | Yes | ❌ | ✅ |
-| Modern Warfare 2 | SP | — | No | ❌ | ✅ |
-| Modern Warfare 2 | MP | [iw4x](https://iw4x.io) | Yes | ✅ | ✅ |
-| Modern Warfare 3 | SP | — | No | ❌ | ✅ |
-| Modern Warfare 3 | MP | [Plutonium](https://plutonium.pw) | Yes | ✅ | ✅ |
-| Ghosts | SP | [AlterWare](https://alterware.dev) ¹ | No | ✅ | ✅ |
-| Ghosts | MP | [AlterWare](https://alterware.dev) ¹ | Yes | ✅ | ✅ |
-| Advanced Warfare | SP | [AlterWare](https://alterware.dev) ¹ | No | ✅ | ✅ |
-| Advanced Warfare | MP | [AlterWare](https://alterware.dev) ¹ | Yes | ✅ | ✅ |
-| World at War | SP + ZM | [Plutonium](https://plutonium.pw) | Yes | ✅ | ✅ |
-| World at War | MP | [Plutonium](https://plutonium.pw) | Yes | ✅ | ✅ |
-| Black Ops | SP + ZM | [Plutonium](https://plutonium.pw) | Yes | ✅ | ✅ |
-| Black Ops | MP | [Plutonium](https://plutonium.pw) | Yes | ✅ | ✅ |
-| Black Ops II | SP | [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) ¹ | No | ✅ | ✅ |
-| Black Ops II | ZM | [Plutonium](https://plutonium.pw) | Yes | ✅ | ✅ |
-| Black Ops II | MP | [Plutonium](https://plutonium.pw) | Yes | ✅ | ✅ |
-| Black Ops III | SP + MP + ZM | [CleanOps](https://github.com/notnightwolf/cleanopsT7) | Yes | ✅ | ✅ |
+| Modern Warfare | SP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) | — | ✅ | ✅ |
+| Modern Warfare | MP | [CoD4x](https://cod4x.ovh) | ✅ | ❌ | ✅ |
+| World at War | SP/ZM/MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
+| Modern Warfare 2 | SP | — | — | ❌ | ✅ |
+| Modern Warfare 2 | MP | [iw4x](https://iw4x.io) | ✅ | ✅ | ✅ |
+| Black Ops | SP/ZM/MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
+| Modern Warfare 3 | SP | — | — | ❌ | ✅ |
+| Modern Warfare 3 | MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
+| Black Ops II | SP | [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) ¹ | — | ✅ | ✅ |
+| Black Ops II | ZM/MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
+| Ghosts | SP/MP | [AlterWare](https://alterware.dev) | ✅ | ✅ | ✅ |
+| Advanced Warfare | SP/MP | [AlterWare](https://alterware.dev) | ✅ | ✅ | ✅ |
+| Black Ops III | SP/MP/ZM | [CleanOps](https://github.com/notnightwolf/cleanopsT7) + [T7x](https://github.com/Starter-Pack/T7x) | ✅ | ✅ | ✅ |
 
 > ¹ Coming soon.
 
@@ -47,17 +42,15 @@
 
 **LCD Online Play** · Plutonium online multiplayer now works on LCD Steam Decks. All seven Plutonium titles can connect to online servers from both LCD and OLED hardware. A [free Plutonium account](https://forum.plutonium.pw/register) is required. This is not ban evasion. DeckOps does not bypass or interfere with Plutonium's anti-cheat in any way.
 
+**Ghosts and Advanced Warfare** · Both titles supported via AlterWare (IW6-Mod and S1-Mod). Singleplayer and multiplayer for each game. The AlterWare launcher runs natively on Linux and downloads mod client files automatically during setup.
+
+**Black Ops III** · Now supported via CleanOps + T7x. CleanOps is a lightweight DLL mod that improves performance and fixes various issues. T7x is a standalone AlterWare client that launches via its own non-Steam shortcut. Both clients can coexist in the same install.
+
 **Non-Steam Game Support** · Games from the Microsoft Store, retail CD copies, and other storefronts are now supported. Place your game files in `~/Games` and select **Steam & Non-Steam** during setup. DeckOps scans for your games and handles shortcuts, artwork, Proton prefixes, mod clients, controller profiles, and display configs automatically.
-
-**Black Ops III** · Now supported via CleanOps, a lightweight mod that improves performance and fixes various issues. Single DLL install, no exe replacement needed.
-
-**Offline LAN Launcher** · A dedicated Game Mode launcher for playing Plutonium games offline with bots. Shows installed games with mode buttons (MP, SP, Zombies), supports full gamepad navigation, and works on both LCD and OLED without a Plutonium account.
 
 **Player Name** · Set your in-game name during setup, pre-filled from your Steam display name. Used in CoD4x, IW4x, and Plutonium offline LAN mode. Change it anytime in Settings.
 
 **No More Protontricks** · All runtime dependencies are now copied directly from GE-Proton's built-in prefix. Faster installs, fewer failure points, no external tools.
-
-**Shader Cache Cleanup** · LCD Plutonium games automatically clear junk shader cache data on every launch, preventing accumulation from a Steam bug with non-Steam shortcuts.
 
 **Menu Mods** · Custom DeckOps UI mods for BO2 Multiplayer, BO2 Zombies, and MW3 Multiplayer, installed automatically during setup.
 
@@ -65,7 +58,7 @@
 
 ## 🚧 WIP / Coming Soon
 
-**Ghosts and Advanced Warfare** · Both titles via AlterWare (IW6-Mod and S1-Mod). Singleplayer and multiplayer for each game. The AlterWare launcher runs natively on Linux and downloads mod client files automatically during setup.
+**Offline LAN Launcher** · A dedicated Game Mode launcher for playing Plutonium games offline with bots. Shows installed games with mode buttons (MP, SP, Zombies), supports full gamepad navigation, and works on both LCD and OLED without a Plutonium account.
 
 **Black Ops II Singleplayer** · Dedicated SP client via [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release). Currently launches through vanilla Steam.
 
@@ -126,7 +119,7 @@ MW1 MP, MW2 SP, and MW3 SP handle gyro differently due to controller support add
 The My Games screen shows every supported game as a card with header art and a client badge. From here you can:
 
 - **Set Up** - run the install flow for a game that is detected but not yet configured
-- **Update** - re-download the mod client for a game already set up (available for games with a mod client such as CoD4x, IW4x, Plutonium, AlterWare, and CleanOps)
+- **Update** - re-download the mod client for a game already set up (available for games with a mod client such as CoD4x, IW4x, Plutonium, AlterWare, CleanOps, and T7x)
 - **Reinstall** - run the full setup again for a game
 - **Re-Add** - re-add the Plutonium offline launcher shortcut
 
@@ -162,7 +155,7 @@ DeckOps is an installer. This project wouldn't exist without the years of founda
 
 **[iw4x](https://iw4x.io)** - Modern Warfare 2 Multiplayer client. [GitHub](https://github.com/iw4x)
 
-**[AlterWare](https://alterware.dev)** - Ghosts and Advanced Warfare client (IW6-Mod and S1-Mod). [GitHub](https://github.com/alterware)
+**[AlterWare](https://alterware.dev)** - Ghosts and Advanced Warfare client (IW6-Mod and S1-Mod). Black Ops III T7x client. [GitHub](https://github.com/alterware)
 
 **[T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release)** - Black Ops II Singleplayer client by [Rattpak](https://github.com/Rattpak).
 
@@ -177,7 +170,7 @@ Official Test Team: LeFinnaBust & Special Agent Dale Cooper
 
 **[LanLauncher](https://github.com/JugAndDoubleTap/LanLauncher)** - Inspiration for LCD offline LAN mode.
 
-Steam artwork from [SteamGridDB](https://www.steamgriddb.com) - thanks to [Moohoo](https://www.steamgriddb.com/profile/76561198009314736), [jarvis](https://www.steamgriddb.com/profile/76561198103947979), [Ramjez](https://www.steamgriddb.com/profile/76561198122547176), [Over](https://www.steamgriddb.com/profile/76561198049670875), [Uravity-PRO](https://www.steamgriddb.com/profile/76561198167607660), [Maxine](https://www.steamgriddb.com/profile/76561198130550992), [caukyy](https://www.steamgriddb.com/profile/76561198031582867), [Middle](https://www.steamgriddb.com/profile/76561198027273869), [Hevi](https://www.steamgriddb.com/profile/76561198018073166), [europeOS](https://www.steamgriddb.com/profile/76561198038608428), [Empti](https://www.steamgriddb.com/profile/76561198022992095), [grimlokk](https://www.steamgriddb.com/profile/76561199034037601), [Mr.Parks](https://www.steamgriddb.com/profile/76561198018403239), [Dankheili](https://www.steamgriddb.com/profile/76561198040056867), [FaN](https://www.steamgriddb.com/profile/76561198015449572), [adamboulton](https://www.steamgriddb.com/profile/76561198143575007), [ActualCj](https://www.steamgriddb.com/profile/76561198135110632), [KimaRo](https://www.steamgriddb.com/profile/76561197985524535), [Gector(lint)Nathan](https://www.steamgriddb.com/profile/76561198319864298), [increasing](https://www.steamgriddb.com/profile/76561198041593264), [xamon](https://www.steamgriddb.com/profile/76561197979282373), [jakearty](https://www.steamgriddb.com/profile/76561199079444502), [dragnus](https://www.steamgriddb.com/profile/76561198015793633), and [Rod](https://www.steamgriddb.com/profile/76561198125292564).
+Steam artwork from [SteamGridDB](https://www.steamgriddb.com) - thanks to [Moohoo](https://www.steamgriddb.com/profile/76561198009314736), [jarvis](https://www.steamgriddb.com/profile/76561198103947979), [Ramjez](https://www.steamgriddb.com/profile/76561198122547176), [Over](https://www.steamgriddb.com/profile/76561198049670875), [Uravity-PRO](https://www.steamgriddb.com/profile/76561198167607660), [Maxine](https://www.steamgriddb.com/profile/76561198130550992), [caukyy](https://www.steamgriddb.com/profile/76561198031582867), [Middle](https://www.steamgriddb.com/profile/76561198027273869), [Hevi](https://www.steamgriddb.com/profile/76561198018073166), [europeOS](https://www.steamgriddb.com/profile/76561198038608428), [Empti](https://www.steamgriddb.com/profile/76561198022992095), [grimlokk](https://www.steamgriddb.com/profile/76561199034037601), [Mr.Parks](https://www.steamgriddb.com/profile/76561198018403239), [Dankheili](https://www.steamgriddb.com/profile/76561198040056867), [FaN](https://www.steamgriddb.com/profile/76561198015449572), [adamboulton](https://www.steamgriddb.com/profile/76561198143575007), [ActualCj](https://www.steamgriddb.com/profile/76561198135110632), [KimaRo](https://www.steamgriddb.com/profile/76561197985524535), [Gector(lint)Nathan](https://www.steamgriddb.com/profile/76561198319864298), [increasing](https://www.steamgriddb.com/profile/76561198041593264), [xamon](https://www.steamgriddb.com/profile/76561197979282373), [jakearty](https://www.steamgriddb.com/profile/76561199079444502), [dragnus](https://www.steamgriddb.com/profile/76561198015793633), [Rod](https://www.steamgriddb.com/profile/76561198125292564), and [OnSync](https://www.steamgriddb.com/profile/76561198061208589).
 
 **[Claude](https://claude.ai)** by Anthropic - assisted in development.
 
