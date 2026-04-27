@@ -495,7 +495,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"key_press INSERT, , "
+							"binding"		"key_press INSERT, Overlay On/Off, "
 						}
 					}
 				}
@@ -521,18 +521,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"key_press U, , "
-						}
-						"settings"
-						{
-							"haptic_intensity"		"0"
-						}
-					}
-					"Full_Press"
-					{
-						"bindings"
-						{
-							"binding"		"key_press Y, , "
+							"binding"		"key_press Y, Team Chat, "
 						}
 						"settings"
 						{
@@ -552,7 +541,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"key_press T, , "
+							"binding"		"key_press T, All Chat, "
 						}
 						"settings"
 						{
@@ -572,7 +561,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"key_press BACK_TICK, , "
+							"binding"		"key_press BACK_TICK, Console, "
 						}
 						"settings"
 						{
@@ -592,7 +581,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"key_press INSERT, , "
+							"binding"		"key_press INSERT, Overlay On/Off, "
 						}
 						"settings"
 						{
@@ -749,7 +738,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button Y, Switch Weapon, , "
+							"binding"		"key_press Z, Push to Talk, , "
 						}
 					}
 				}

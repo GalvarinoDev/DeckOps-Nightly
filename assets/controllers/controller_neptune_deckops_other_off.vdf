@@ -1,8 +1,8 @@
 "controller_mappings"
 {
 	"version"		"3"
-	"title"		"DeckOps - Gyro Other - Toggle"
-	"description"		"MW1 MP, MW2 SP, and MW3 SP"
+	"title"		"DeckOps - Other - No Gyro"
+	"description"		"MW1 MP, MW2 SP, and MW3 SP No Gyro"
 	"controller_type"		"controller_neptune"
 	"group"
 	{
@@ -459,9 +459,6 @@
 		}
 		"settings"
 		{
-			"gyro_natural_sensitivity"		"89"
-			"gyro_ratchet_button_mask"		"65536"
-			"gyro_button_invert"		"2"
 		}
 	}
 	"group"
@@ -674,7 +671,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"key_press INSERT, , "
+							"binding"		"key_press INSERT, Overlay On/Off, "
 						}
 					}
 				}
@@ -700,18 +697,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"key_press U, , "
-						}
-						"settings"
-						{
-							"haptic_intensity"		"0"
-						}
-					}
-					"Full_Press"
-					{
-						"bindings"
-						{
-							"binding"		"key_press Y, , "
+							"binding"		"key_press Y, Team Chat, "
 						}
 						"settings"
 						{
@@ -731,7 +717,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"key_press T, , "
+							"binding"		"key_press T, All Chat, "
 						}
 						"settings"
 						{
@@ -751,7 +737,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"key_press BACK_TICK, , "
+							"binding"		"key_press BACK_TICK, Console, "
 						}
 						"settings"
 						{
@@ -771,7 +757,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"key_press INSERT, , "
+							"binding"		"key_press INSERT, Overlay On/Off, "
 						}
 						"settings"
 						{
@@ -811,7 +797,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"key_press INSERT, , "
+							"binding"		"key_press INSERT, Overlay On/Off, "
 						}
 					}
 				}
@@ -940,7 +926,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"game_action 1 1027, Gyro Aim (Toggle), , "
+							"binding"		"key_press Z, Push to Talk, , "
 						}
 					}
 				}
@@ -1019,7 +1005,7 @@
 			"3"		"joystick active"
 			"4"		"left_trigger active"
 			"5"		"right_trigger active"
-			"7"		"gyro active"
+			"7"		"gyro inactive"
 			"8"		"dpad inactive"
 			"9"		"dpad active"
 			"10"		"right_joystick active"

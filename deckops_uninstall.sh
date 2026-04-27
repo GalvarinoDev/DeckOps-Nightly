@@ -1360,9 +1360,11 @@ for f in \
     "controller_neptune_deckops_hold.vdf" \
     "controller_neptune_deckops_toggle.vdf" \
     "controller_neptune_deckops_ads.vdf" \
+    "controller_neptune_deckops_off.vdf" \
     "controller_neptune_deckops_other_hold.vdf" \
     "controller_neptune_deckops_other_toggle.vdf" \
     "controller_neptune_deckops_other_ads.vdf" \
+    "controller_neptune_deckops_other_off.vdf" \
     "controller_ps5_deckops.vdf" \
     "controller_ps5_deckops_ads.vdf" \
     "controller_ps5_deckops_other.vdf" \

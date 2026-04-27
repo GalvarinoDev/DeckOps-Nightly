@@ -504,22 +504,19 @@ class IntroScreen(QWidget):
         gl.addStretch()
         _title_block(gl)
         gl.addSpacing(16)
-        gl.addWidget(_lbl("How do you want to activate gyro aiming?", 15, "#CCC"))
+        gl.addWidget(_lbl("Do you want gyro aiming?", 15, "#CCC"))
         gl.addSpacing(4)
         gl.addWidget(_lbl(
-            "Hold  —  gyro is active while R5 (right grip) is held down.\n"
-            "ADS  —  gyro activates when you aim down sights.\n"
-            "Toggle  —  press R5 once to turn gyro on, press again to turn it off.",
+            "On  —  gyro activates when you aim down sights (left trigger).\n"
+            "Off  —  no gyro aiming.",
             13, C_DIM, align=Qt.AlignLeft))
         gl.addSpacing(12)
         grow = QHBoxLayout(); grow.setSpacing(20)
-        hold_btn   = _btn("Hold",   C_DARK_BTN, h=56)
-        ads_btn    = _btn("ADS",    C_DARK_BTN, h=56)
-        toggle_btn = _btn("Toggle", C_DARK_BTN, h=56)
-        hold_btn.clicked.connect(lambda: self._pick_gyro("hold"))
-        ads_btn.clicked.connect(lambda: self._pick_gyro("ads"))
-        toggle_btn.clicked.connect(lambda: self._pick_gyro("toggle"))
-        grow.addWidget(hold_btn); grow.addWidget(ads_btn); grow.addWidget(toggle_btn)
+        on_btn     = _btn("Gyro On",  C_IW,       h=56)
+        off_btn    = _btn("Gyro Off", C_DARK_BTN, h=56)
+        on_btn.clicked.connect(lambda: self._pick_gyro("on"))
+        off_btn.clicked.connect(lambda: self._pick_gyro("off"))
+        grow.addWidget(on_btn); grow.addWidget(off_btn)
         gl.addLayout(grow)
         gl.addStretch()
         main_lay.addWidget(self._gyro_section)
@@ -1780,7 +1777,7 @@ class InstallScreen(QWidget):
             install_controller_templates(
                 on_progress=lambda msg: self._s.log.emit(f"  {msg}")
             )
-            gyro_mode = cfg.get_gyro_mode() or "hold"
+            gyro_mode = cfg.get_gyro_mode() or "on"
             # Neptune profiles always assigned - user may play handheld too
             assign_controller_profiles(
                 gyro_mode,
@@ -1814,7 +1811,7 @@ class InstallScreen(QWidget):
             create_shortcuts(
                 installed_games=installed_for_shortcuts,
                 selected_keys=selected_keys,
-                gyro_mode=cfg.get_gyro_mode() or "hold",
+                gyro_mode=cfg.get_gyro_mode() or "on",
                 on_progress=lambda msg: self._s.log.emit(msg),
                 steam_root=self.steam_root,
             )
@@ -2517,15 +2514,13 @@ class ControllerInfoScreen(QWidget):
     def showEvent(self, e):
         super().showEvent(e)
         self._safe_lbl.setVisible(True)
-        gyro_mode = cfg.get_gyro_mode() or "hold"
-        if gyro_mode == "hold":
-            gyro_desc = "R5 held"
-        elif gyro_mode == "ads":
-            gyro_desc = "aim down sights"
+        gyro_mode = cfg.get_gyro_mode() or "on"
+        if gyro_mode == "on":
+            gyro_desc = "gyro on ADS"
         else:
-            gyro_desc = "R5 toggles"
+            gyro_desc = "gyro off"
         self._gyro_lbl.setText(
-            f"Standard gamepad layout with gyro aiming ({gyro_desc}) assigned to all games. "
+            f"Standard gamepad layout with {gyro_desc} assigned to all games. "
         )
         # Only show the Decky section for docked users
         is_docked = cfg.is_docked()
@@ -2580,8 +2575,9 @@ class ConfigureScreen(QWidget):
         gr = QHBoxLayout(); gr.setSpacing(8)
         gr.addWidget(_lbl("Gyro:", 12, "#AAA", wrap=False))
         self._gyro_btns = {}
-        for mode in ("hold", "toggle", "ads"):
-            b = _btn(mode.upper(), C_DARK_BTN, size=11, h=36)
+        for mode in ("on", "off"):
+            label = "Gyro On" if mode == "on" else "Gyro Off"
+            b = _btn(label, C_DARK_BTN, size=11, h=36)
             b.setFixedWidth(90)
             b.clicked.connect(lambda checked, m=mode: self._set_gyro(m))
             gr.addWidget(b)
@@ -2678,7 +2674,7 @@ class ConfigureScreen(QWidget):
         self._name_input.setText(player if player != "Player" else "")
 
         # Gyro highlight
-        gyro = cfg.get_gyro_mode() or "hold"
+        gyro = cfg.get_gyro_mode() or "on"
         for mode, btn in self._gyro_btns.items():
             if mode == gyro:
                 btn.setStyleSheet(btn.styleSheet().replace(C_DARK_BTN, C_IW))
@@ -2750,7 +2746,7 @@ class ConfigureScreen(QWidget):
                 install_controller_templates(
                     on_progress=lambda msg: s.log.emit(msg)
                 )
-                gyro_mode = cfg.get_gyro_mode() or "hold"
+                gyro_mode = cfg.get_gyro_mode() or "on"
                 assign_controller_profiles(
                     gyro_mode,
                     on_progress=lambda msg: s.log.emit(msg)
@@ -3405,7 +3401,7 @@ class OwnInstallScreen(QWidget):
         # ── Create shortcuts with artwork + controller configs ────────────
         self._s.progress.emit(22, "Creating shortcuts and downloading artwork...")
         self._s.log.emit("Creating non-Steam shortcuts...")
-        gyro_mode = cfg.get_gyro_mode() or "hold"
+        gyro_mode = cfg.get_gyro_mode() or "on"
         own_games_dict = {k: g for k, g in self.own_selected.items()}
         own_games_dict = create_own_shortcuts(
             own_games=own_games_dict,
@@ -3720,7 +3716,7 @@ class OwnInstallScreen(QWidget):
             install_controller_templates(
                 on_progress=lambda msg: self._s.log.emit(f"  {msg}")
             )
-            gyro_mode = cfg.get_gyro_mode() or "hold"
+            gyro_mode = cfg.get_gyro_mode() or "on"
             # Neptune profiles always assigned - user may play handheld too
             assign_controller_profiles(
                 gyro_mode,
