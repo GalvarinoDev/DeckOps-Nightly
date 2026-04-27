@@ -156,16 +156,17 @@ SHARED_PLUT_DIR = os.path.expanduser("~/.local/share/deckops/plutonium_shared")
 _PLUT_SHARED_SUBDIRS = ("bin", "launcher", "games")
 
 # DeckOps client-side menu mods packaged as .iwd files (renamed .zip).
-# Downloaded from the repo and placed in Plutonium's storage/ path inside
-# the shared Heroic prefix. Loaded automatically on game launch, overriding
-# the default main menu.
+# Bundled with the repo at assets/mods/ and copied locally into Plutonium's
+# storage/ path inside the shared Heroic prefix. Loaded automatically on
+# game launch, overriding the default main menu.
 #
 # T6 uses a single consolidated .iwd (deckops_bo2_menu.iwd) for both MP
 # and ZM. The Lua inside contains both PopulateButtons_Multiplayer and
 # PopulateButtons_Zombie, with the engine's CoD.isZombie dispatch selecting
 # the right button set at runtime. Both t6mp and t6zm point at the same
 # source file and same destination -- idempotent when both are installed.
-MENU_MOD_BASE_URL = "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main/assets/mods"
+_LCD_HERE = os.path.dirname(os.path.abspath(__file__))
+MENU_MOD_ASSETS_DIR = os.path.join(os.path.dirname(_LCD_HERE), "assets", "mods")
 MENU_MOD_FILES = {
     "t6mp":  ("t6/deckops_bo2_menu.iwd", "storage/t6/raw/deckops_bo2_menu.iwd"),
     "t6zm":  ("t6/deckops_bo2_menu.iwd", "storage/t6/raw/deckops_bo2_menu.iwd"),
@@ -976,11 +977,12 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
 
 def _install_menu_mod_lcd(plut_dir: str, game_key: str, on_progress=None):
     """
-    Download and install the DeckOps menu mod for the given game key.
+    Copy and install the DeckOps menu mod for the given game key.
 
-    LCD counterpart to plutonium_oled._install_menu_mod. Places the mod
-    files into the shared Heroic prefix's Plutonium storage path so they
-    are loaded automatically by the Plutonium client on game launch.
+    LCD counterpart to plutonium_oled._install_menu_mod. Copies the
+    bundled mod file from assets/mods/ into the shared Heroic prefix's
+    Plutonium storage path so it is loaded automatically by the
+    Plutonium client on game launch.
 
     Skips silently for game keys without a menu mod defined.
     """
@@ -991,28 +993,23 @@ def _install_menu_mod_lcd(plut_dir: str, game_key: str, on_progress=None):
     if game_key not in MENU_MOD_FILES:
         return
 
-    remote_path, local_path = MENU_MOD_FILES[game_key]
-    url = f"{MENU_MOD_BASE_URL}/{remote_path}"
+    asset_rel, local_path = MENU_MOD_FILES[game_key]
+    src_file = os.path.join(MENU_MOD_ASSETS_DIR, asset_rel)
     dest_file = os.path.join(plut_dir, local_path)
 
     prog(f"  Installing DeckOps menu mod for {game_key}...")
 
+    if not os.path.isfile(src_file):
+        prog(f"  ⚠ Menu mod asset missing: {src_file}")
+        return  # Non-fatal -- game still works without the mod
+
     os.makedirs(os.path.dirname(dest_file), exist_ok=True)
 
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(url, headers=_BROWSER_UA)
-            with urllib.request.urlopen(req, timeout=30) as r:
-                data = r.read()
-            with open(dest_file, "wb") as f:
-                f.write(data)
-            prog(f"  ✓ Menu mod installed ({len(data)} bytes)")
-            return
-        except Exception as ex:
-            if attempt == 2:
-                prog(f"  ⚠ Menu mod download failed: {ex}")
-                return  # Non-fatal -- game still works without the mod
-            time.sleep(2 ** attempt)
+    try:
+        shutil.copy2(src_file, dest_file)
+        prog(f"  ✓ Menu mod installed ({os.path.getsize(dest_file)} bytes)")
+    except OSError as ex:
+        prog(f"  ⚠ Menu mod copy failed: {ex}")
 
 
 def _download_plutonium_exe(dest_dir: str, on_progress=None) -> str:
@@ -1444,7 +1441,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
 
     # 2b. Install DeckOps menu mod (mainlobby.lua for T6, main.lua for IW5).
     #     Placed in the shared Heroic prefix so all LCD games pick it up.
-    #     Idempotent -- re-downloading overwrites the existing file.
+    #     Idempotent -- re-copying overwrites the existing file.
     prog(22, "Installing menu mod...")
     _install_menu_mod_lcd(shared_plut_dir, game_key,
                           on_progress=lambda m: prog(23, m))
