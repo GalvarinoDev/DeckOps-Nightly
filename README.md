@@ -31,7 +31,7 @@
 | Advanced Warfare | SP/MP | [AlterWare](https://alterware.dev) | ✅ | ✅ | ✅ |
 | Black Ops III | SP/MP/ZM | [CleanOps](https://github.com/notnightwolf/cleanopsT7) + [T7x](https://github.com/Starter-Pack/T7x) | ✅ | ✅ | ✅ |
 
-> All titles support controller and gyro via Steam Input. During setup, choose your gyro style: **Hold** (R5 held), **ADS** (gyro activates when you aim down sights), or **Toggle** (R5 press). Aim assist is unavailable for MW1 MP, MW2 SP, MW3 SP, and BO2 SP.
+> All titles support controller and gyro via Steam Input. During setup, choose your gyro style: **Hold** (R5 held), **ADS** (gyro activates when you aim down sights), or **Toggle** (R5 press). Aim assist is unavailable for MW1 MP, MW2 SP, and MW3 SP.
 
 ---
 
