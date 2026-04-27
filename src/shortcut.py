@@ -1295,8 +1295,23 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
         shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
         grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
         
-        existing_names = _read_existing_shortcuts(shortcuts_path)
         existing_raw = _read_shortcuts_raw(shortcuts_path)
+
+        # Strip any existing entries whose AppName matches a shortcut we're
+        # about to write. Without this, reinstalls leave stale Exe /
+        # LaunchOptions / StartDir fields in place (e.g. T7X moving from
+        # the stock BO3 dir to DeckOps-T7X sibling dir).
+        names_to_write = {sd["name"] for _, sd, _ in to_create}
+        existing_raw, stripped = _strip_entries_by_name(
+            existing_raw, names_to_write
+        )
+        if stripped:
+            prog(f"  Replacing {len(stripped)} stale shortcut(s)...")
+
+        existing_names = [
+            n for n in _read_existing_shortcuts(shortcuts_path)
+            if n not in stripped
+        ]
         next_idx = _get_next_index(existing_raw)
         
         new_entries = []
