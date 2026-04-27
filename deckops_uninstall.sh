@@ -326,15 +326,22 @@ if [ -n "$STEAM_ROOT" ]; then
 fi
 echo ""
 
-info "Removing T7X files from Black Ops III folder..."
+info "Removing T7X (DeckOps-T7X sibling directory)..."
 
 if [ -n "$STEAM_ROOT" ]; then
     bo3_dir=$(find_install_dir 311210) || true
     if [ -n "$bo3_dir" ]; then
+        t7x_sibling="$(dirname "$bo3_dir")/DeckOps-T7X"
+        if [ -d "$t7x_sibling" ]; then
+            rm -rf "$t7x_sibling" && success "Removed DeckOps-T7X directory" || warn "Could not remove DeckOps-T7X"
+        else
+            skip "DeckOps-T7X directory not found"
+        fi
+        # Clean up legacy T7X files from stock BO3 dir (pre-sibling installs)
         for f in "t7x.exe" "deckops_t7x.json"; do
-            [ -f "$bo3_dir/$f" ] && rm -f "$bo3_dir/$f" && success "Removed $f" || skip "$f not found"
+            [ -f "$bo3_dir/$f" ] && rm -f "$bo3_dir/$f" && success "Removed legacy $f"
         done
-        [ -d "$bo3_dir/t7x" ] && rm -rf "$bo3_dir/t7x" && success "Removed t7x/ directory" || skip "t7x/ not found"
+        [ -d "$bo3_dir/t7x" ] && rm -rf "$bo3_dir/t7x" && success "Removed legacy t7x/ directory"
     else
         skip "Black Ops III install directory not found"
     fi
@@ -418,8 +425,9 @@ OWN_CLEANUP = {
         "dirs":  [],
     },
     "t7x.exe": {
-        "files": ["t7x.exe", "deckops_t7x.json"],
-        "dirs":  ["t7x"],
+        "files": [],
+        "dirs":  [],
+        "remove_install_dir": True,   # DeckOps-T7X sibling dir — nuke entirely
     },
     # AlterWare mod client exes (Ghosts / Advanced Warfare)
     "iw6-mod.exe": {
@@ -493,6 +501,16 @@ for uid in os.listdir(USERDATA_DIR):
         cleaned.add(install_dir)
 
         print(f"  Cleaning {install_dir}...")
+
+        # T7X uses a DeckOps-managed sibling dir — remove the entire directory
+        if cleanup.get("remove_install_dir"):
+            try:
+                shutil.rmtree(install_dir)
+                print(f"    Removed entire {os.path.basename(install_dir)}/ directory")
+            except Exception as ex:
+                print(f"    Failed to remove {os.path.basename(install_dir)}/: {ex}")
+            continue
+
         for fname in cleanup["files"]:
             fpath = os.path.join(install_dir, fname)
             if os.path.exists(fpath):
