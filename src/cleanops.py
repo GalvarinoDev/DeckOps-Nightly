@@ -1,31 +1,16 @@
 """
-cleanops.py - DeckOps installer for Black Ops III mod clients
+cleanops.py - DeckOps installer for the CleanOps mod (Black Ops III)
 
-Handles two independent mod clients for BO3:
+CleanOps is a lightweight DLL mod that improves performance and fixes
+various issues. Single d3d11.dll drop, no exe replacement.
 
-  CleanOps — lightweight DLL mod that improves performance and fixes
-             various issues. Single d3d11.dll drop, no exe replacement.
-
-  T7X     — AlterWare standalone client. Downloads t7x.exe into the BO3
-             install directory. Launched via its own non-Steam shortcut,
-             not through the base game exe.
-
-Both clients can coexist in the same BO3 install directory:
-  - CleanOps hooks into BlackOps3.exe via DLL override
-  - T7X runs as a separate exe (t7x.exe) alongside BlackOps3.exe
-
-For Steam games (CleanOps only):
+For Steam games:
   - Drops d3d11.dll into the install directory
   - Sets launch options: WINEDLLOVERRIDES="d3d11=n,b" %command%
 
-For own games (CleanOps):
+For own games:
   - Drops d3d11.dll into the install directory
   - Launch options are handled by the non-Steam shortcut instead
-
-T7X (both Steam and own):
-  - Downloads t7x.exe into the install directory
-  - Always launched via a dedicated non-Steam shortcut
-  - No launch options needed on the base game
 
 Progress is reported via a callback:
     on_progress(percent: int, status: str)
@@ -33,7 +18,6 @@ Progress is reported via a callback:
 
 import json
 import os
-import shutil
 
 from net import download as _download
 
@@ -45,32 +29,14 @@ METADATA_FILE = "deckops_cleanops.json"
 LAUNCH_OPTS   = 'WINEDLLOVERRIDES="d3d11=n,b" %command%'
 APPID         = "311210"
 
-# ── T7X constants ─────────────────────────────────────────────────────────────
-
-T7X_URL           = "https://master.bo3.eu/t7x/t7x.exe"
-T7X_EXE           = "t7x.exe"
-T7X_METADATA_FILE = "deckops_t7x.json"
-T7X_DATA_DIR      = "t7x"          # created by t7x.exe on first run
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-
-# _download imported from net.py (default timeout=60).
-
 
 def is_cleanops_installed(install_dir: str) -> bool:
     """Returns True if the CleanOps DLL and metadata file are both present."""
     return (
         os.path.exists(os.path.join(install_dir, DLL_NAME))
         and os.path.exists(os.path.join(install_dir, METADATA_FILE))
-    )
-
-
-def is_t7x_installed(install_dir: str) -> bool:
-    """Returns True if T7X exe and metadata file are both present."""
-    return (
-        os.path.exists(os.path.join(install_dir, T7X_EXE))
-        and os.path.exists(os.path.join(install_dir, T7X_METADATA_FILE))
     )
 
 
@@ -153,71 +119,3 @@ def uninstall_cleanops(game: dict, steam_root: str = None):
             clear_launch_options(steam_root, APPID)
         except Exception:
             pass
-
-
-# ── T7X public API ────────────────────────────────────────────────────────────
-
-def install_t7x(game: dict, on_progress=None):
-    """
-    Install T7X (AlterWare) for Call of Duty: Black Ops III.
-
-    Downloads t7x.exe from the AlterWare master server and places it
-    in the BO3 install directory alongside BlackOps3.exe. T7X is always
-    launched via its own non-Steam shortcut — no launch options are set
-    on the base game.
-
-    T7X self-installs additional files into a t7x/ subdirectory on
-    first launch. DeckOps only needs to place the exe.
-
-    game        — entry from detect_games with install_dir
-    on_progress — optional callback(percent: int, status: str)
-    """
-    install_dir = game["install_dir"]
-
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
-
-    # Download t7x.exe
-    exe_dest = os.path.join(install_dir, T7X_EXE)
-    prog(5, "Downloading T7X client...")
-    _download(
-        T7X_URL,
-        exe_dest,
-        lambda p, m: prog(5 + int(p * 0.70), m),
-        "Downloading T7X client...",
-    )
-
-    # Write metadata
-    prog(90, "Saving metadata...")
-    meta_path = os.path.join(install_dir, T7X_METADATA_FILE)
-    with open(meta_path, "w") as f:
-        json.dump({"client": "t7x", "exe": T7X_EXE}, f, indent=2)
-
-    prog(100, "T7X installation complete!")
-
-
-def uninstall_t7x(game: dict):
-    """
-    Remove T7X from a BO3 install directory.
-
-    Deletes t7x.exe, the metadata file, and the t7x/ data directory
-    that T7X creates on first run (contains players folder, configs,
-    and cached client files).
-    """
-    install_dir = game["install_dir"]
-
-    # Remove exe
-    exe_path = os.path.join(install_dir, T7X_EXE)
-    if os.path.exists(exe_path):
-        os.remove(exe_path)
-
-    # Remove metadata
-    meta_path = os.path.join(install_dir, T7X_METADATA_FILE)
-    if os.path.exists(meta_path):
-        os.remove(meta_path)
-
-    # Remove t7x data directory (created by t7x.exe on first run)
-    data_dir = os.path.join(install_dir, T7X_DATA_DIR)
-    if os.path.isdir(data_dir):
-        shutil.rmtree(data_dir, ignore_errors=True)
