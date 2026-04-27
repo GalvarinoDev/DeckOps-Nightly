@@ -1361,6 +1361,13 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                     actual_exe     = _venv_python
                     start_dir      = os.path.dirname(_cleanup_script)
                     launch_options = f'"{_cleanup_script}" t4mp steam'
+            elif key == "t7x":
+                # T7X (AlterWare) -- standalone exe in the DeckOps-T7X
+                # sibling dir. GE-Proton compat tool handles everything;
+                # no launch options needed.
+                actual_exe     = exe_path
+                start_dir      = install_dir
+                launch_options = ""
             else:
                 actual_exe     = exe_path
                 start_dir      = install_dir
@@ -1658,9 +1665,11 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 )
 
             elif key == "t7x":
-                # T7X (AlterWare) -- standalone exe, no DLL override needed
+                # T7X (AlterWare) -- standalone exe in the DeckOps-T7X
+                # sibling dir. GE-Proton compat tool handles everything;
+                # no launch options needed.
                 actual_exe = os.path.join(install_dir, "t7x.exe")
-                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                launch_options = ""
 
             elif key in ("iw6mp", "iw6sp"):
                 # AlterWare Ghosts -- point at iw6-mod.exe, pass mode flag
@@ -1732,7 +1741,7 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                         f'WINEDLLOVERRIDES="d3d11=n,b" %command%'
                     )
                 elif key == "t7x":
-                    launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                    launch_options = ""
                 else:
                     launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
 

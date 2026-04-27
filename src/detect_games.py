@@ -486,7 +486,7 @@ def _find_game_root(candidate_dir, sentinel_group):
 
 def _walk_limited(root, max_depth):
     """Walk a directory tree up to max_depth levels deep."""
-    skip = {".steam", ".local", ".cache", ".config", "__pycache__"}
+    skip = {".steam", ".local", ".cache", ".config", "__pycache__", "DeckOps-T7X"}
     for dirpath, dirnames, filenames in os.walk(root):
         rel = os.path.relpath(dirpath, root)
         depth = 0 if rel == "." else rel.count(os.sep) + 1

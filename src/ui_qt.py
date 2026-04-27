@@ -1302,7 +1302,8 @@ class InstallScreen(QWidget):
         from cod4x import install_cod4x
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
-        from cleanops import install_cleanops, install_t7x
+        from cleanops import install_cleanops
+        from t7x import install_t7x
         from ge_proton import install_ge_proton, set_compat_tool, MANAGED_APPIDS
 
         selected_keys   = [key for key, _, _ in self.selected]
@@ -1652,7 +1653,8 @@ class InstallScreen(QWidget):
                 self._s.progress.emit(88, f"Setting up T7x...")
                 def op_t7x(pct, msg): self._s.progress.emit(88 + int(pct / 100 * 2), msg)
                 try:
-                    install_t7x(game, on_progress=op_t7x)
+                    t7x_dir = install_t7x(game, on_progress=op_t7x)
+                    game["install_dir"] = t7x_dir
                     cfg.mark_game_setup(key, "t7x", source="steam")
                     self._s.log.emit(f"✓  {base_name} (T7x) done")
                     logged_bases.add(base_name)
@@ -2903,7 +2905,8 @@ class UpdateScreen(QWidget):
         from iw4x import install_iw4x
         from cod4x import install_cod4x
         from iw3sp import install_iw3sp
-        from cleanops import install_cleanops, install_t7x
+        from cleanops import install_cleanops
+        from t7x import install_t7x
         from plutonium_oled import install_plutonium
 
         has_cod4  = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k, _, _ in self.selected)
@@ -2995,7 +2998,8 @@ class UpdateScreen(QWidget):
                     install_cleanops(game, self.steam_root, proton, compat, op,
                                     source=source)
                 elif c == "t7x":
-                    install_t7x(game, on_progress=op)
+                    t7x_dir = install_t7x(game, on_progress=op)
+                    game["install_dir"] = t7x_dir
                 elif c == "alterware":
                     from alterware import install_alterware
                     install_alterware(game, key, self.steam_root, proton, compat, op,
@@ -3168,7 +3172,8 @@ class OwnInstallScreen(QWidget):
         from cod4x import install_cod4x
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
-        from cleanops import install_cleanops, install_t7x
+        from cleanops import install_cleanops
+        from t7x import install_t7x
         from ge_proton import install_ge_proton, MANAGED_APPIDS
 
         # Build the combined selected list from both Steam and own sources.
@@ -3314,6 +3319,26 @@ class OwnInstallScreen(QWidget):
                 self._s.log.emit(f"✓  {ge_version} set for Steam game appids")
             except Exception as ex:
                 self._s.log.emit(f"  CompatToolMapping for Steam appids skipped: {ex}")
+
+        # ── Install T7X (BO3 AlterWare client) ─────────────────────────
+        # Must run BEFORE create_own_shortcuts so game["install_dir"]
+        # points at the DeckOps-T7X sibling dir when the shortcut is built.
+        _log_to_file("[BREADCRUMB] starting t7x install phase")
+        has_t7x = any(KEY_CLIENT.get(k) == "t7x" for k in selected_keys)
+        if has_t7x:
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
+                base_name = gd["base"]
+                self._s.progress.emit(20, f"Setting up T7x...")
+                def op_t7x(pct, msg): self._s.progress.emit(20 + int(pct / 100 * 2), msg)
+                try:
+                    source = "own" if key in self.own_selected else "steam"
+                    t7x_dir = install_t7x(game, on_progress=op_t7x)
+                    game["install_dir"] = t7x_dir
+                    cfg.mark_game_setup(key, "t7x", source=source)
+                    self._s.log.emit(f"✓  {base_name} (T7x) done")
+                    logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
 
         # ── Create shortcuts with artwork + controller configs ────────────
         self._s.progress.emit(22, "Creating shortcuts and downloading artwork...")
@@ -3546,23 +3571,6 @@ class OwnInstallScreen(QWidget):
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── Install T7X (BO3 AlterWare client) ───────────────────────────
-        _log_to_file("[BREADCRUMB] starting t7x install phase")
-        has_t7x = any(KEY_CLIENT.get(k) == "t7x" for k in selected_keys)
-        if has_t7x:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
-                base_name = gd["base"]
-                self._s.progress.emit(78, f"Setting up T7x...")
-                def op_t7x(pct, msg): self._s.progress.emit(78 + int(pct / 100 * 2), msg)
-                try:
-                    source = "own" if key in self.own_selected else "steam"
-                    install_t7x(game, on_progress=op_t7x)
-                    cfg.mark_game_setup(key, "t7x", source=source)
-                    self._s.log.emit(f"✓  {base_name} (T7x) done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
 
         # ── Install AlterWare (Ghosts / Advanced Warfare) ─────────────────
         _log_to_file("[BREADCRUMB] starting alterware install phase")
