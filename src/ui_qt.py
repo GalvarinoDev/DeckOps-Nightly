@@ -112,7 +112,7 @@ ALL_GAMES = [
     {"base":"Call of Duty: Black Ops II","keys":["t6mp","t6sp","t6zm"],"appid":202990,"dev":"trey","client":"plutonium",
      "lcd_keys":["t6mp","t6sp","t6zm"],"lcd_client":"plutonium + steam","lcd_appid":202970,
      "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Black Ops III","keys":["t7"],"appid":311210,"dev":"trey","client":"cleanops",
+    {"base":"Call of Duty: Black Ops III","keys":["t7","t7x"],"appid":311210,"dev":"trey","client":"cleanops + t7x",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Ghosts","keys":["iw6mp","iw6sp"],"appid":209160,"dev":"iw","client":"alterware",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
@@ -156,6 +156,7 @@ KEY_CLIENT = {
     "t6mp":   "plutonium",
     "t6sp":   "steam",
     "t7":     "cleanops",
+    "t7x":    "t7x",
     "iw6mp": "alterware",
     "iw6sp": "alterware",
     "s1mp":  "alterware",
@@ -170,6 +171,7 @@ KEY_EXES = {
     "t5sp":"BlackOps.exe","t5mp":"BlackOpsMP.exe",
     "t6zm":"t6zm.exe","t6mp":"t6mp.exe","t6sp":"t6sp.exe",
     "t7":"BlackOps3.exe",
+    "t7x":"t7x.exe",
     "iw6mp":"iw6mp64_ship.exe","iw6sp":"iw6sp64_ship.exe",
     "s1mp":"s1_mp64_ship.exe","s1sp":"s1_sp64_ship.exe",
 }
@@ -183,6 +185,7 @@ KEY_MODE_LABEL = {
     "t5sp":   "S/Z",   "t5mp":   "MP",
     "t6sp":   "SP",    "t6zm":   "ZM",    "t6mp":   "MP",
     "t7":     "All",
+    "t7x":    "T7x",
     "iw6mp":  "MP",    "iw6sp":  "SP",
     "s1mp":   "MP",    "s1sp":   "SP",
 }
@@ -1269,7 +1272,7 @@ class InstallScreen(QWidget):
         from cod4x import install_cod4x
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
-        from cleanops import install_cleanops
+        from cleanops import install_cleanops, install_t7x
         from ge_proton import install_ge_proton, set_compat_tool, MANAGED_APPIDS
 
         selected_keys   = [key for key, _, _ in self.selected]
@@ -1277,6 +1280,7 @@ class InstallScreen(QWidget):
         has_cod4        = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k in selected_keys)
         has_iw4x        = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
         has_cleanops    = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
+        has_t7x         = any(KEY_CLIENT.get(k) == "t7x" for k in selected_keys)
         logged_bases    = set()
         ge_version      = None
         _compat_applied = False
@@ -1610,6 +1614,20 @@ class InstallScreen(QWidget):
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # ── T7X (BO3 AlterWare client) — Steam closed ─────────────────────────
+        if has_t7x:
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
+                base_name = gd["base"]
+                self._s.progress.emit(88, f"Setting up T7x...")
+                def op_t7x(pct, msg): self._s.progress.emit(88 + int(pct / 100 * 2), msg)
+                try:
+                    install_t7x(game, on_progress=op_t7x)
+                    cfg.mark_game_setup(key, "t7x", source="steam")
+                    self._s.log.emit(f"✓  {base_name} (T7x) done")
+                    logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
 
         # ── AlterWare (Ghosts / Advanced Warfare) — Steam closed ──────────────
         has_alterware = any(KEY_CLIENT.get(k) == "alterware" for k in selected_keys)
@@ -2027,7 +2045,7 @@ class ManagementScreen(QWidget):
 
     def _configure(self, gd, installed_keys):
         """Show configure dialog with Mods, Update, and Reinstall options."""
-        _MOD_CLIENTS = ("cod4x", "iw4x", "plutonium", "alterware", "cleanops")
+        _MOD_CLIENTS = ("cod4x", "iw4x", "plutonium", "alterware", "cleanops", "t7x")
         has_mods_support = any(KEY_CLIENT.get(k, "") in _MOD_CLIENTS for k in installed_keys)
         has_mod_client = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in installed_keys)
 
@@ -2157,6 +2175,9 @@ class ManagementScreen(QWidget):
             elif c == "cleanops":
                 client = "cleanops"
                 break
+            elif c == "t7x":
+                client = "t7x"
+                break
             elif c == "alterware":
                 client = "alterware"
                 alterware_keys.append(k)
@@ -2200,6 +2221,28 @@ class ManagementScreen(QWidget):
             msg = QMessageBox(self)
             msg.setWindowTitle("Open Mod Folder")
             msg.setText(f"Which folder would you like to open for {gd['base']}?")
+            mods_btn = msg.addButton("Mods", QMessageBox.AcceptRole)
+            usermaps_btn = msg.addButton("User Maps", QMessageBox.AcceptRole)
+            msg.addButton("Cancel", QMessageBox.RejectRole)
+            msg.exec_()
+            clicked = msg.clickedButton()
+            if clicked == mods_btn:
+                _open_folder(os.path.join(install_dir, "mods"))
+            elif clicked == usermaps_btn:
+                _open_folder(os.path.join(install_dir, "usermaps"))
+
+        elif client == "t7x":
+            mod_key = [k for k in installed_keys if KEY_CLIENT.get(k) == "t7x"]
+            mod_key = mod_key[0] if mod_key else installed_keys[0]
+            game = self.installed.get(mod_key, {})
+            install_dir = game.get("install_dir", "")
+            if not install_dir:
+                self._status.setText("Game install directory not found.")
+                return
+            # Two folders — ask user which one
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Open Mod Folder")
+            msg.setText(f"Which folder would you like to open for {gd['base']} (T7x)?")
             mods_btn = msg.addButton("Mods", QMessageBox.AcceptRole)
             usermaps_btn = msg.addButton("User Maps", QMessageBox.AcceptRole)
             msg.addButton("Cancel", QMessageBox.RejectRole)
@@ -2838,7 +2881,7 @@ class UpdateScreen(QWidget):
         from iw4x import install_iw4x
         from cod4x import install_cod4x
         from iw3sp import install_iw3sp
-        from cleanops import install_cleanops
+        from cleanops import install_cleanops, install_t7x
         from plutonium_oled import install_plutonium
 
         has_cod4  = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k, _, _ in self.selected)
@@ -2929,6 +2972,8 @@ class UpdateScreen(QWidget):
                 elif c == "cleanops":
                     install_cleanops(game, self.steam_root, proton, compat, op,
                                     source=source)
+                elif c == "t7x":
+                    install_t7x(game, on_progress=op)
                 elif c == "alterware":
                     from alterware import install_alterware
                     install_alterware(game, key, self.steam_root, proton, compat, op,
@@ -3101,7 +3146,7 @@ class OwnInstallScreen(QWidget):
         from cod4x import install_cod4x
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
-        from cleanops import install_cleanops
+        from cleanops import install_cleanops, install_t7x
         from ge_proton import install_ge_proton, MANAGED_APPIDS
 
         # Build the combined selected list from both Steam and own sources.
@@ -3479,6 +3524,23 @@ class OwnInstallScreen(QWidget):
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # ── Install T7X (BO3 AlterWare client) ───────────────────────────
+        _log_to_file("[BREADCRUMB] starting t7x install phase")
+        has_t7x = any(KEY_CLIENT.get(k) == "t7x" for k in selected_keys)
+        if has_t7x:
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
+                base_name = gd["base"]
+                self._s.progress.emit(78, f"Setting up T7x...")
+                def op_t7x(pct, msg): self._s.progress.emit(78 + int(pct / 100 * 2), msg)
+                try:
+                    source = "own" if key in self.own_selected else "steam"
+                    install_t7x(game, on_progress=op_t7x)
+                    cfg.mark_game_setup(key, "t7x", source=source)
+                    self._s.log.emit(f"✓  {base_name} (T7x) done")
+                    logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
 
         # ── Install AlterWare (Ghosts / Advanced Warfare) ─────────────────
         _log_to_file("[BREADCRUMB] starting alterware install phase")

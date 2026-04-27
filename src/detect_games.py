@@ -82,6 +82,13 @@ GAMES = {
         "exe": "BlackOps3.exe",
         "protocol": "cleanops",
     },
+    "t7x": {
+        "name": "Call of Duty: Black Ops III - T7x",
+        "order": 7,
+        "appid": "311210",
+        "exe": "t7x.exe",
+        "protocol": "t7x",
+    },
     "iw6mp": {
         "name": "Call of Duty: Ghosts - Multiplayer",
         "order": 8,
@@ -318,7 +325,7 @@ FOLDER_TO_KEYS = {
     "call of duty modern warfare 3":    ["iw5sp",  "iw5mp"],
     "call of duty black ops":           ["t5sp",   "t5mp"],
     "call of duty black ops ii":        ["t6sp",   "t6mp",  "t6zm"],
-    "call of duty black ops iii":       ["t7"],
+    "call of duty black ops iii":       ["t7", "t7x"],
     "call of duty ghosts":              ["iw6sp",  "iw6mp"],
     "call of duty advanced warfare":    ["s1sp",   "s1mp"],
 }
@@ -328,7 +335,7 @@ FOLDER_TO_KEYS = {
 # Order matters - more specific rules go first (e.g. "black ops iii" before "black ops ii").
 _KEYWORD_RULES = [
     # BO3 - check before BO2 and BO1 so "black ops iii/3" doesn't fall through
-    (re.compile(r'\b(black\s*ops\s*(iii|3)|bo3|t7)\b', re.IGNORECASE), ["t7"]),
+    (re.compile(r'\b(black\s*ops\s*(iii|3)|bo3|t7)\b', re.IGNORECASE), ["t7", "t7x"]),
     # BO2 - check before BO1 so "black ops ii" doesn't fall through to BO1
     (re.compile(r'\b(black\s*ops\s*(ii|2)|bo2|t6)\b', re.IGNORECASE), ["t6sp", "t6mp", "t6zm"]),
     # BO1
@@ -398,6 +405,7 @@ KEY_TO_SENTINEL = {
     "t5sp":   "bo1",  "t5mp":   "bo1",
     "t6sp":   "bo2",  "t6mp":   "bo2",  "t6zm": "bo2",
     "t7":     "bo3",
+    "t7x":    "bo3",
     "iw6sp":  "ghosts", "iw6mp": "ghosts",
     "s1sp":   "aw",     "s1mp":  "aw",
 }

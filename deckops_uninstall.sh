@@ -326,6 +326,21 @@ if [ -n "$STEAM_ROOT" ]; then
 fi
 echo ""
 
+info "Removing T7X files from Black Ops III folder..."
+
+if [ -n "$STEAM_ROOT" ]; then
+    bo3_dir=$(find_install_dir 311210) || true
+    if [ -n "$bo3_dir" ]; then
+        for f in "t7x.exe" "deckops_t7x.json"; do
+            [ -f "$bo3_dir/$f" ] && rm -f "$bo3_dir/$f" && success "Removed $f" || skip "$f not found"
+        done
+        [ -d "$bo3_dir/t7x" ] && rm -rf "$bo3_dir/t7x" && success "Removed t7x/ directory" || skip "t7x/ not found"
+    else
+        skip "Black Ops III install directory not found"
+    fi
+fi
+echo ""
+
 info "Removing AlterWare files from Ghosts and Advanced Warfare folders..."
 
 if [ -n "$STEAM_ROOT" ]; then
@@ -401,6 +416,10 @@ OWN_CLEANUP = {
     "blackops3.exe": {
         "files": ["d3d11.dll", "deckops_cleanops.json"],
         "dirs":  [],
+    },
+    "t7x.exe": {
+        "files": ["t7x.exe", "deckops_t7x.json"],
+        "dirs":  ["t7x"],
     },
     # AlterWare mod client exes (Ghosts / Advanced Warfare)
     "iw6-mod.exe": {
@@ -1202,6 +1221,7 @@ OWN_EXE_MAP = {
     "t6plutzm.exe":   "Call of Duty: Black Ops II - Zombies",
     "iw5plutmp.exe":  "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
     "blackops3.exe":  "Call of Duty: Black Ops III",
+    "t7x.exe":        "Call of Duty: Black Ops 3 T7x",
 }
 
 for uid in os.listdir(userdata):
@@ -1470,6 +1490,7 @@ OWN_EXE_MAP = {
     "t6plutzm.exe":   "Call of Duty: Black Ops II - Zombies",
     "iw5plutmp.exe":  "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
     "blackops3.exe":  "Call of Duty: Black Ops III",
+    "t7x.exe":        "Call of Duty: Black Ops 3 T7x",
 }
 
 for uid in os.listdir(USERDATA):
@@ -1649,6 +1670,7 @@ OWN_EXE_MAP = {
     "t6plutzm.exe":   "Call of Duty: Black Ops II - Zombies",
     "iw5plutmp.exe":  "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
     "blackops3.exe":  "Call of Duty: Black Ops III",
+    "t7x.exe":        "Call of Duty: Black Ops 3 T7x",
 }
 
 userdata = os.path.join(steam_root, "userdata")

@@ -233,6 +233,16 @@ OWN_SHORTCUTS = {
         "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/logo.png",
         "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
     },
+    "t7x": {
+        "name":           "Call of Duty: Black Ops 3 T7x",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/311210/bd3e3a9516b480164df25d16e49ae4ce4a063cb4.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/library_hero.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/logo.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
     "iw6sp": {
         "name":           "Call of Duty: Ghosts - Singleplayer",
         "template_type":  "standard",
@@ -1631,6 +1641,11 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                     f'WINEDLLOVERRIDES="d3d11=n,b" %command%'
                 )
 
+            elif key == "t7x":
+                # T7X (AlterWare) -- standalone exe, no DLL override needed
+                actual_exe = os.path.join(install_dir, "t7x.exe")
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+
             elif key in ("iw6mp", "iw6sp"):
                 # AlterWare Ghosts -- point at iw6-mod.exe, pass mode flag
                 # The built-in launcher UI crashes under Proton; the mode
@@ -1700,6 +1715,8 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                         f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
                         f'WINEDLLOVERRIDES="d3d11=n,b" %command%'
                     )
+                elif key == "t7x":
+                    launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
                 else:
                     launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
 
