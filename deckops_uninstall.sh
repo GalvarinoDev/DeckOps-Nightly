@@ -502,13 +502,35 @@ for uid in os.listdir(USERDATA_DIR):
 
         print(f"  Cleaning {install_dir}...")
 
-        # T7X uses a DeckOps-managed sibling dir — remove the entire directory
+        # T7X uses a DeckOps-managed sibling dir — remove the entire directory.
+        # Safety: only nuke if the directory is actually named DeckOps-T7X.
+        # A stale shortcut from a pre-sibling install may still point at the
+        # stock BO3 folder — we must never rmtree that.
         if cleanup.get("remove_install_dir"):
-            try:
-                shutil.rmtree(install_dir)
-                print(f"    Removed entire {os.path.basename(install_dir)}/ directory")
-            except Exception as ex:
-                print(f"    Failed to remove {os.path.basename(install_dir)}/: {ex}")
+            if os.path.basename(install_dir) == "DeckOps-T7X":
+                try:
+                    shutil.rmtree(install_dir)
+                    print(f"    Removed entire {os.path.basename(install_dir)}/ directory")
+                except Exception as ex:
+                    print(f"    Failed to remove {os.path.basename(install_dir)}/: {ex}")
+            else:
+                # Stale shortcut pointing at stock game dir — only remove
+                # DeckOps-owned files, never the whole directory.
+                for fname in ("t7x.exe", "deckops_t7x.json"):
+                    fpath = os.path.join(install_dir, fname)
+                    if os.path.exists(fpath):
+                        try:
+                            os.remove(fpath)
+                            print(f"    Removed legacy {fname}")
+                        except Exception as ex:
+                            print(f"    Failed to remove {fname}: {ex}")
+                t7x_data = os.path.join(install_dir, "t7x")
+                if os.path.isdir(t7x_data):
+                    try:
+                        shutil.rmtree(t7x_data)
+                        print(f"    Removed legacy t7x/ directory")
+                    except Exception as ex:
+                        print(f"    Failed to remove t7x/: {ex}")
             continue
 
         for fname in cleanup["files"]:
