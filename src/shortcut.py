@@ -583,15 +583,30 @@ def _write_shortcuts_vdf(path: str, existing_raw: bytes, new_entries: list):
 # ── Artwork download ──────────────────────────────────────────────────────────
 
 def _download_artwork(grid_dir: str, appid: int, shortcut_def: dict, prog,
-                      force: bool = False):
+                      force: bool = False, clean_stale: bool = False):
     """Download all artwork for a shortcut to the grid directory (concurrent).
 
-    force — if True, re-download even if the file already exists on disk.
+    force       — if True, re-download even if the file already exists on disk.
+    clean_stale — if True, delete all existing {appid}* files in grid_dir
+                  before downloading. Handles extension changes between
+                  versions (e.g. old .jpg → new .png) that would otherwise
+                  leave orphans Steam might pick up instead of the new files.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     appid_str = str(appid)
     os.makedirs(grid_dir, exist_ok=True)
+
+    if clean_stale:
+        try:
+            import glob as _glob
+            for f in _glob.glob(os.path.join(grid_dir, f"{appid_str}*")):
+                try:
+                    os.remove(f)
+                except OSError:
+                    pass
+        except Exception:
+            pass
     
     artwork_map = [
         ("icon_url",  f"{appid_str}_icon.{shortcut_def['icon_ext']}",  "icon"),
@@ -979,7 +994,7 @@ def add_shortcut(
 
         # Artwork
         _download_artwork(grid_dir, shortcut_appid, artwork_def, prog,
-                          force=force_artwork)
+                          force=force_artwork, clean_stale=force_artwork)
 
         # Controller config
         _assign_controller_config(uid, shortcut_appid,
@@ -1446,7 +1461,8 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
             except Exception as ex:
                 prog(f"    ⚠ Could not set compat tool for shortcut: {ex}")
 
-            _download_artwork(grid_dir, shortcut_appid, shortcut_def, prog)
+            _download_artwork(grid_dir, shortcut_appid, shortcut_def, prog,
+                              force=True, clean_stale=True)
             _assign_controller_config(uid, shortcut_appid, shortcut_def, gyro_mode, prog)
         
         if new_entries:
@@ -1514,7 +1530,8 @@ def apply_steam_artwork(selected_keys: list, on_progress=None):
 
         for key, steam_appid, art_def in to_apply:
             prog(f"  Downloading artwork for {key} (appid {steam_appid})...")
-            _download_artwork(grid_dir, int(steam_appid), art_def, prog)
+            _download_artwork(grid_dir, int(steam_appid), art_def, prog,
+                              force=True, clean_stale=True)
 
     prog(f"✓ Steam artwork applied for {len(to_apply)} game(s).")
 
@@ -1799,7 +1816,8 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
             prog(f"    ✓ Shortcut created")
 
             # Download artwork
-            _download_artwork(grid_dir, shortcut_appid, shortcut_def, prog)
+            _download_artwork(grid_dir, shortcut_appid, shortcut_def, prog,
+                              force=True, clean_stale=True)
 
             # Assign controller config
             _assign_controller_config(uid, shortcut_appid, shortcut_def, gyro_mode, prog)
@@ -2042,26 +2060,8 @@ def create_launcher_shortcut(on_progress=None):
                 prog(f"  Failed to write launcher shortcut: {e}")
 
         # Always re-download launcher artwork (URLs may change between versions).
-        # Before downloading, delete any pre-existing files for this appid so
-        # stale artwork from prior installs doesn't outrank the new files.
-        # Steam reads whichever file it finds first when both .jpg and .png
-        # variants exist for the same appid -- previous installs that used
-        # different file extensions (e.g. steamgriddb served .jpg) leave
-        # orphans that hide the new .png artwork.
-        try:
-            import glob as _glob
-            stale = _glob.glob(os.path.join(grid_dir, f"{shortcut_appid}*"))
-            for f in stale:
-                try:
-                    os.remove(f)
-                    prog(f"  Removed stale launcher artwork: {os.path.basename(f)}")
-                except OSError as _ex:
-                    prog(f"  Could not remove stale artwork {os.path.basename(f)}: {_ex}")
-        except Exception as _ex:
-            prog(f"  Stale artwork cleanup skipped: {_ex}")
-
         _download_artwork(grid_dir, shortcut_appid, LAUNCHER_ART, prog,
-                          force=True)
+                          force=True, clean_stale=True)
 
         # Assign the user's chosen controller template so games launched
         # from the launcher inherit the correct gamepad layout. The launcher
