@@ -138,8 +138,46 @@ def install_t7x(game: dict, on_progress=None):
             "original_dir": install_dir,
         }, f, indent=2)
 
+    # Set player name from DeckOps config
+    prog(95, "Setting player name...")
+    try:
+        import config as _cfg
+        name = _cfg.get_player_name()
+        if name:
+            set_player_name(sibling, name)
+    except Exception:
+        pass  # Non-fatal — user can set it later in Settings
+
     prog(100, "T7X installation complete!")
     return sibling
+
+
+def set_player_name(sibling_dir: str, player_name: str):
+    """
+    Write or update the player name in T7X's properties.json.
+
+    T7X stores the player name in t7x/players/properties.json as:
+        {"playerName": "<name>"}
+
+    Creates the file and parent directories if they don't exist.
+    Preserves any other keys already in the file.
+    """
+    props_path = os.path.join(sibling_dir, "t7x", "players", "properties.json")
+    os.makedirs(os.path.dirname(props_path), exist_ok=True)
+
+    # Read existing properties if present
+    data = {}
+    if os.path.exists(props_path):
+        try:
+            with open(props_path, "r") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            data = {}
+
+    data["playerName"] = player_name
+
+    with open(props_path, "w") as f:
+        json.dump(data, f)
 
 
 def uninstall_t7x(game: dict):

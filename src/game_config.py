@@ -610,5 +610,27 @@ def rename_player(player_name, steam_root, installed_games=None,
                         updated += 1
                         prog(f"  + {key}: renamed in launcher mirror")
 
+    # ── T7X special case ─────────────────────────────────────────────────
+    # T7X stores its player name in t7x/players/properties.json as JSON,
+    # not as a seta cvar. Handled separately from the config map.
+    if "t7x" in setup_keys:
+        try:
+            from t7x import set_player_name as _t7x_set_name, _get_sibling_dir
+            game = (installed_games or {}).get("t7x", {})
+            # t7x install_dir IS the sibling dir (set during install)
+            sibling = game.get("install_dir", "")
+            if not sibling:
+                # Fall back: look up from the t7 (BO3) install dir
+                t7_game = (installed_games or {}).get("t7", {})
+                t7_dir = t7_game.get("install_dir", "")
+                if t7_dir:
+                    sibling = _get_sibling_dir(t7_dir)
+            if sibling and os.path.isdir(sibling):
+                _t7x_set_name(sibling, player_name)
+                updated += 1
+                prog(f"  + t7x: renamed in properties.json")
+        except Exception as ex:
+            prog(f"  ⚠ t7x: rename failed: {ex}")
+
     prog(f"Player name updated in {updated} file(s).")
     return updated
