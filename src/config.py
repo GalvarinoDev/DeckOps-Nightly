@@ -21,7 +21,7 @@ CONFIG_PATH = os.path.expanduser("~/DeckOps-Nightly/deckops.json")
 DEFAULTS = {
     "first_run_complete": False,
     "deck_model": None,          # "oled" or "lcd"
-    "gyro_mode":  None,          # "hold", "toggle", or "ads"
+    "gyro_mode":  None,          # "on" or "off"
     "play_mode":  None,          # "handheld" or "docked"
     "external_controller": None, # "playstation", "xbox", or "other" -- only used when play_mode is "docked"
     "docked_resolution": None,   # "1280x720", "1280x800", "1920x1080", "1920x1200", or "own" -- only used when play_mode is "docked"
@@ -85,12 +85,12 @@ def is_oled() -> bool:
 
 
 def get_gyro_mode() -> str | None:
-    """Returns 'hold', 'toggle', 'ads', or None if not yet set."""
+    """Returns 'on', 'off', or None if not yet set."""
     return load().get("gyro_mode")
 
 
 def set_gyro_mode(mode: str):
-    """Save the user's gyro preference. mode should be 'hold', 'toggle', or 'ads'."""
+    """Save the user's gyro preference. mode should be 'on' or 'off'."""
     config = load()
     config["gyro_mode"] = mode
     save(config)

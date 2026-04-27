@@ -656,10 +656,11 @@ def _download_artwork(grid_dir: str, appid: int, shortcut_def: dict, prog,
 
 def _get_template_filename(template_type: str, gyro_mode: str) -> str:
     """Return the controller template filename based on type and gyro mode."""
+    suffix = "ads" if gyro_mode == "on" else "off"
     if template_type == "other":
-        return f"controller_neptune_deckops_other_{gyro_mode}.vdf"
+        return f"controller_neptune_deckops_other_{suffix}.vdf"
     else:
-        return f"controller_neptune_deckops_{gyro_mode}.vdf"
+        return f"controller_neptune_deckops_{suffix}.vdf"
 
 
 def _assign_controller_config(uid: str, appid: int, shortcut_def: dict,
@@ -913,7 +914,7 @@ def add_shortcut(
     artwork_def      — dict with icon_url, grid_url, wide_url, hero_url,
                         logo_url and corresponding *_ext keys
     template_type    — "standard" or "other" for controller config
-    gyro_mode        — "hold", "ads", or "toggle"
+    gyro_mode        — "on" or "off"
     on_progress      — optional callback(msg: str)
     compat_tool      — GE-Proton version to set, or None to skip
     clear_compat_tool— if True, remove any existing compat tool entry
@@ -1547,7 +1548,7 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
 
     own_games     — dict from detect_games.find_own_installed()
     selected_keys — list of game keys the user selected
-    gyro_mode     — "hold", "ads", or "toggle"
+    gyro_mode     — "on" or "off"
     on_progress   — optional callback(msg: str)
 
     Returns own_games dict enriched with shortcut_appid, compatdata_path,
@@ -2059,9 +2060,9 @@ def create_launcher_shortcut(on_progress=None):
         # games (the majority are Treyarch titles using standard layout).
         try:
             import config as _cfg
-            _gyro = _cfg.get_gyro_mode() or "hold"
+            _gyro = _cfg.get_gyro_mode() or "on"
         except Exception:
-            _gyro = "hold"
+            _gyro = "on"
         _assign_controller_config(uid, shortcut_appid,
                                   {"template_type": "standard"},
                                   _gyro, prog)
@@ -2210,6 +2211,6 @@ if __name__ == "__main__":
     create_shortcuts(
         installed_games=installed,
         selected_keys=list(SHORTCUTS.keys()),
-        gyro_mode="hold",
+        gyro_mode="on",
         on_progress=lambda msg: print(msg)
     )

@@ -9,13 +9,11 @@ Also patches the appropriate configset VDFs to set our template as the
 active default for each managed game, overriding any community config or
 workshop ID that Steam would otherwise use.
 
-Neptune templates (2 variants x 3 schemes = 6 total):
-    controller_neptune_deckops_hold.vdf
-    controller_neptune_deckops_toggle.vdf
+Neptune templates (2 variants x 2 schemes = 4 total):
     controller_neptune_deckops_ads.vdf
-    controller_neptune_deckops_other_hold.vdf
-    controller_neptune_deckops_other_toggle.vdf
+    controller_neptune_deckops_off.vdf
     controller_neptune_deckops_other_ads.vdf
+    controller_neptune_deckops_other_off.vdf
 
 External controller templates (14 total):
     PS5:     controller_ps5_deckops.vdf, _ads.vdf, _other.vdf, _other_ads.vdf
@@ -43,12 +41,10 @@ STEAM_CONFIG  = os.path.join(STEAM_DIR, "config", "config.vdf")
 
 TEMPLATES = [
     # Neptune
-    "controller_neptune_deckops_hold.vdf",
-    "controller_neptune_deckops_toggle.vdf",
     "controller_neptune_deckops_ads.vdf",
-    "controller_neptune_deckops_other_hold.vdf",
-    "controller_neptune_deckops_other_toggle.vdf",
+    "controller_neptune_deckops_off.vdf",
     "controller_neptune_deckops_other_ads.vdf",
+    "controller_neptune_deckops_other_off.vdf",
     # PS5
     "controller_ps5_deckops.vdf",
     "controller_ps5_deckops_ads.vdf",
@@ -227,10 +223,11 @@ def _get_deck_serial() -> str | None:
 
 def _profile_filename(profile_type: str, gyro_mode: str) -> list[str]:
     """Return the list of Neptune VDF filenames for a given profile type and gyro mode."""
+    suffix = "ads" if gyro_mode == "on" else "off"
     if profile_type == "standard":
-        return [f"controller_neptune_deckops_{gyro_mode}.vdf"]
+        return [f"controller_neptune_deckops_{suffix}.vdf"]
     elif profile_type == "other":
-        return [f"controller_neptune_deckops_other_{gyro_mode}.vdf"]
+        return [f"controller_neptune_deckops_other_{suffix}.vdf"]
     return []
 
 
@@ -240,16 +237,12 @@ def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mo
     controller type, profile type, and gyro mode.
 
     PS5/PS4 gyro logic:
-        hold or ads -> _ads variant (gyro on left trigger pull)
-        toggle      -> standard variant (gyro off - toggle users don't want it)
+        on  -> _ads variant (gyro on left trigger pull)
+        off -> standard variant (no gyro)
 
     Xbox/Generic: gyro_mode is ignored - no gyro hardware on these controllers.
-
-    NOTE - advanced install: in a future advanced setup flow we could let
-    PS5/PS4 users explicitly opt out of gyro even if they picked hold/ads.
-    For now we default to gyro on unless they picked toggle.
     """
-    use_ads = gyro_mode in ("hold", "ads")
+    use_ads = gyro_mode == "on"
 
     if controller_type == "playstation":
         if profile_type == "other":
@@ -345,15 +338,15 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
     """
     Assign DeckOps Neptune controller profiles for all managed games.
 
-    gyro_mode -- "hold", "toggle", or "ads"
+    gyro_mode -- "on" or "off"
     Must be called while Steam is closed.
     """
     def prog(msg):
         if on_progress:
             on_progress(msg)
 
-    if gyro_mode not in ("hold", "toggle", "ads"):
-        prog(f"  ⚠ Invalid gyro_mode '{gyro_mode}' -- must be 'hold', 'toggle', or 'ads'.")
+    if gyro_mode not in ("on", "off"):
+        prog(f"  ⚠ Invalid gyro_mode '{gyro_mode}' -- must be 'on' or 'off'.")
         return
 
     uids = _find_all_steam_uids()
@@ -552,7 +545,7 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
     Assign DeckOps external controller profiles for all managed games.
 
     controller_type -- "playstation", "xbox", or "other"
-    gyro_mode       -- "hold", "toggle", or "ads" (only affects PS5/PS4 templates)
+    gyro_mode       -- "on" or "off" (only affects PS5/PS4 templates)
 
     Patches configset VDFs for the relevant external controller types so
     Steam picks up our templates when the user plugs in their controller.
@@ -566,8 +559,8 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
         prog(f"  ⚠ Invalid controller_type '{controller_type}'.")
         return
 
-    if gyro_mode not in ("hold", "toggle", "ads"):
-        prog(f"  ⚠ Invalid gyro_mode '{gyro_mode}' -- must be 'hold', 'toggle', or 'ads'.")
+    if gyro_mode not in ("on", "off"):
+        prog(f"  ⚠ Invalid gyro_mode '{gyro_mode}' -- must be 'on' or 'off'.")
         return
 
     uids = _find_all_steam_uids()
