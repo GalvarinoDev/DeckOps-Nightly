@@ -37,7 +37,7 @@
 
 ## 🆕 What's New in Nightly
 
-**LCD Online Play** · Plutonium online multiplayer now works on LCD Steam Decks. All seven Plutonium titles can connect to online servers from both LCD and OLED hardware. A [free Plutonium account](https://forum.plutonium.pw/register) is required. This is not ban evasion. DeckOps does not bypass or interfere with Plutonium's anti-cheat in any way.
+**LCD Online Play** · Plutonium online multiplayer now works on LCD Steam Decks. All seven Plutonium titles can connect to online servers from both LCD and OLED hardware. A [free Plutonium account](https://forum.plutonium.pw/register) is required. This is not ban evasion. DeckOps does not bypass or interfere with Plutonium's anti-cheat in any way, no fingerprinting is removed. We use the same methods they use recommend the average Linux user to use during installation. This prevents it from triggering the false positive ban and you can enjoy Plutonium servers just like an OLED user would.
 
 **Ghosts and Advanced Warfare** · Both titles supported via AlterWare (IW6-Mod and S1-Mod). Singleplayer and multiplayer for each game. The AlterWare launcher runs natively on Linux and downloads mod client files automatically during setup.
 
@@ -46,6 +46,8 @@
 **Black Ops II Singleplayer** · Now supported via [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) by Rattpak. DeckOps installs the mod client and deploys display settings automatically. Please be aware their mod is still in the Beta process, they've been gracious enough to let us use it despite it not being fully released on their github.
 
 **Non-Steam Game Support** · Games from the Microsoft Store, retail CD copies, and other storefronts are now supported. Place your game files in `~/Games` and select **Steam & Non-Steam** during setup. DeckOps scans for your games and handles shortcuts, artwork, Proton prefixes, mod clients, controller profiles, and display configs automatically.
+
+**Offline LAN Launcher** · A dedicated Game Mode launcher for playing Plutonium games offline with bots. Shows installed games with mode buttons (MP, SP, Zombies), supports full gamepad navigation, and works on both LCD and OLED without a Plutonium account.
 
 **Player Name** · Set your in-game name during setup, pre-filled from your Steam display name. Used in CoD4x, IW4x, AlterWare (Ghosts, AW), T7X, and Plutonium offline LAN mode. Does not affect Plutonium online or CleanOps (uses Steam name). Change it anytime in Settings.
 
@@ -56,8 +58,6 @@
 ---
 
 ## 🚧 WIP / Coming Soon
-
-**Offline LAN Launcher** · A dedicated Game Mode launcher for playing Plutonium games offline with bots. Shows installed games with mode buttons (MP, SP, Zombies), supports full gamepad navigation, and works on both LCD and OLED without a Plutonium account.
 
 **Docked Mode / Decky Plugin** · Play on a TV or monitor with an external controller. A Decky Loader plugin to auto-switch display settings when you dock and undock.
 
