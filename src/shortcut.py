@@ -1935,7 +1935,8 @@ def _launcher_cache_cleanup_opts(shortcut_appid: int) -> str:
     """
     return (
         f"bash -c 'rm -rf ~/.local/share/Steam/steamapps/shadercache/"
-        f"{shortcut_appid}; exec \"$@\"' _ %command%"
+        f"{shortcut_appid}; exec env PROTON_NO_FSYNC=1 PROTON_NO_ESYNC=1"
+        f" \"$@\"' _ %command%"
     )
 
 
