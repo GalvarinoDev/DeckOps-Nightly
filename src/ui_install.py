@@ -1331,35 +1331,25 @@ class OwnInstallScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"  CompatToolMapping for Steam appids skipped: {ex}")
 
-        # ── Install T7X (BO3 AlterWare client) ─────────────────────────
-        # Must run BEFORE create_own_shortcuts so game["install_dir"]
-        # points at the DeckOps-T7X sibling dir when the shortcut is built.
-        _log_to_file("[BREADCRUMB] starting t7x install phase")
+        # ── T7X opt-in: inject t7x into selected if user chose it ─────
+        # Injection must happen early so t7x is included in prefix init,
+        # shortcuts, and selected_keys. Actual install runs later (after
+        # CleanOps) to match the original phase order.
         has_cleanops = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
         has_t7x = getattr(self, "install_t7x_opt", False) and has_cleanops
         if has_t7x:
-            # Inject t7x into selected from the t7 (CleanOps) entry
             for k, gd, g in list(self.selected):
                 if k == "t7":
-                    self.selected.append(("t7x", gd, dict(g)))
+                    t7x_tuple = ("t7x", gd, dict(g))
+                    self.selected.append(t7x_tuple)
+                    self.steam_selected.append(t7x_tuple)
                     selected_keys.append("t7x")
                     break
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
-                base_name = gd["base"]
-                self._s.progress.emit(20, f"Setting up T7x...")
-                def op_t7x(pct, msg): self._s.progress.emit(20 + int(pct / 100 * 2), msg)
-                try:
-                    source = "own" if key in self.own_selected else "steam"
-                    t7x_dir = install_t7x(game, on_progress=op_t7x)
-                    game["install_dir"] = t7x_dir
-                    cfg.mark_game_setup(key, "t7x", source=source)
-                    self._s.log.emit(f"✓  {base_name} (T7x) done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
 
-        # ── Create shortcuts with artwork + controller configs ────────────
-        self._s.progress.emit(22, "Creating shortcuts and downloading artwork...")
+        # ── Enrich own game dicts (shortcut_appid, compatdata_path) ───────
+        # create_own_shortcuts computes CRC-based appids and prefix paths
+        # that prefix init needs. Must run before ensure_all_prefix_deps.
+        self._s.progress.emit(20, "Creating shortcuts and downloading artwork...")
         self._s.log.emit("Creating non-Steam shortcuts...")
         gyro_mode = cfg.get_gyro_mode() or "on"
         own_games_dict = {k: g for k, g in self.own_selected.items()}
@@ -1515,14 +1505,35 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
+        # ── T6SP-MOD (BO2 Singleplayer) ──────────────────────────────────
+        _log_to_file("[BREADCRUMB] starting t6sp_mod install phase")
+        if has_t6sp_mod:
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t6sp_mod"]:
+                base_name = gd["base"]
+                self._s.progress.emit(52, f"Installing Rattpak's T6SP-MOD (Beta)...")
+                def op_t6sp(pct, msg): self._s.progress.emit(52 + int(pct / 100 * 4), msg)
+                try:
+                    source = "own" if key in self.own_selected else "steam"
+                    if source == "own":
+                        compat = game.get("compatdata_path", "")
+                    else:
+                        compat = find_compatdata(self.steam_root, gd["appid"],
+                                                  game_install_dir=game.get("install_dir"))
+                    install_t6sp_mod(game, self.steam_root, proton, compat, op_t6sp, source=source)
+                    cfg.mark_game_setup(key, "t6sp_mod", source=source)
+                    self._s.log.emit(f"✓  {base_name} (T6SP-MOD) done")
+                    logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
         # ── Install iw4x ─────────────────────────────────────────────────
         _log_to_file("[BREADCRUMB] starting iw4x install phase")
         has_iw4x = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
         if has_iw4x:
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "iw4x"]:
                 base_name = gd["base"]
-                self._s.progress.emit(55, f"Setting up {base_name}...")
-                def op_iw4x(pct, msg): self._s.progress.emit(55 + int(pct / 100 * 7), msg)
+                self._s.progress.emit(56, f"Setting up {base_name}...")
+                def op_iw4x(pct, msg): self._s.progress.emit(56 + int(pct / 100 * 7), msg)
                 try:
                     source = "own" if key in self.own_selected else "steam"
                     if source == "own":
@@ -1544,8 +1555,8 @@ class OwnInstallScreen(QWidget):
             cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4x", "iw3sp")]
             for key, gd, game in cod4_selected:
                 base_name = gd["base"]
-                self._s.progress.emit(65, f"Setting up {base_name}...")
-                def op_cod4(pct, msg): self._s.progress.emit(65 + int(pct / 100 * 10), msg)
+                self._s.progress.emit(63, f"Setting up {base_name}...")
+                def op_cod4(pct, msg): self._s.progress.emit(63 + int(pct / 100 * 7), msg)
                 try:
                     source = "own" if key in self.own_selected else "steam"
                     c = KEY_CLIENT.get(key, gd["client"])
@@ -1570,12 +1581,11 @@ class OwnInstallScreen(QWidget):
 
         # ── Install CleanOps (BO3) ────────────────────────────────────────
         _log_to_file("[BREADCRUMB] starting cleanops install phase")
-        has_cleanops = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
         if has_cleanops:
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "cleanops"]:
                 base_name = gd["base"]
-                self._s.progress.emit(76, f"Setting up {base_name}...")
-                def op_cleanops(pct, msg): self._s.progress.emit(76 + int(pct / 100 * 4), msg)
+                self._s.progress.emit(70, f"Setting up {base_name}...")
+                def op_cleanops(pct, msg): self._s.progress.emit(70 + int(pct / 100 * 4), msg)
                 try:
                     source = "own" if key in self.own_selected else "steam"
                     if source == "own":
@@ -1589,6 +1599,23 @@ class OwnInstallScreen(QWidget):
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # ── Install T7X (BO3 AlterWare client) ─────────────────────────
+        _log_to_file("[BREADCRUMB] starting t7x install phase")
+        if has_t7x:
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
+                base_name = gd["base"]
+                self._s.progress.emit(74, f"Setting up T7x...")
+                def op_t7x(pct, msg): self._s.progress.emit(74 + int(pct / 100 * 2), msg)
+                try:
+                    source = "own" if key in self.own_selected else "steam"
+                    t7x_dir = install_t7x(game, on_progress=op_t7x)
+                    game["install_dir"] = t7x_dir
+                    cfg.mark_game_setup(key, "t7x", source=source)
+                    self._s.log.emit(f"✓  {base_name} (T7x) done")
+                    logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
 
         # ── Install AlterWare (Ghosts / Advanced Warfare) ─────────────────
         _log_to_file("[BREADCRUMB] starting alterware install phase")
@@ -1618,27 +1645,6 @@ class OwnInstallScreen(QWidget):
                                      source=source)
                     cfg.mark_game_setup(key, "alterware", source=source)
                     self._s.log.emit(f"✓  {base_name} done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── T6SP-MOD (BO2 Singleplayer) ──────────────────────────────────
-        _log_to_file("[BREADCRUMB] starting t6sp_mod install phase")
-        if has_t6sp_mod:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t6sp_mod"]:
-                base_name = gd["base"]
-                self._s.progress.emit(80, f"Installing Rattpak's T6SP-MOD (Beta)...")
-                def op_t6sp(pct, msg): self._s.progress.emit(80 + int(pct / 100 * 4), msg)
-                try:
-                    source = "own" if key in self.own_selected else "steam"
-                    if source == "own":
-                        compat = game.get("compatdata_path", "")
-                    else:
-                        compat = find_compatdata(self.steam_root, gd["appid"],
-                                                  game_install_dir=game.get("install_dir"))
-                    install_t6sp_mod(game, self.steam_root, proton, compat, op_t6sp, source=source)
-                    cfg.mark_game_setup(key, "t6sp_mod", source=source)
-                    self._s.log.emit(f"✓  {base_name} (T6SP-MOD) done")
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
