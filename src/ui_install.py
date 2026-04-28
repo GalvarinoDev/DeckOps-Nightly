@@ -149,26 +149,45 @@ class SetupScreen(QWidget):
         self.steam_installed={}; self.own_installed={}; self.steam_root=""
         self._checks={}
 
-        lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(14)
-        _title_block(lay)
-        lay.addSpacing(4)
-        lay.addWidget(_lbl(
+        lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
+
+        # ── Compact header bar ─────────────────────────────────────────
+        hdr = QWidget(); hdr.setFixedHeight(60)
+        hdr.setStyleSheet(f"background:{C_CARD};")
+        hl = QHBoxLayout(hdr); hl.setContentsMargins(20,0,20,0)
+        title = QLabel("DECKOPS"); title.setFont(font(22, display=True))
+        title.setStyleSheet("color:#FFF;background:transparent;")
+        hl.addWidget(title)
+        nightly_lbl = QLabel("NIGHTLY"); nightly_lbl.setFont(font(9, bold=True))
+        nightly_lbl.setStyleSheet(
+            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
+            "border-radius:4px;padding:1px 6px;"
+        )
+        hl.addWidget(nightly_lbl)
+        hl.addStretch()
+        lay.addWidget(hdr)
+
+        # ── Content area ───────────────────────────────────────────────
+        content = QWidget()
+        clay = QVBoxLayout(content); clay.setContentsMargins(60,20,60,40); clay.setSpacing(14)
+        clay.addWidget(_lbl(
             "Choose which games to set up. "
             "DeckOps will create Proton prefixes automatically.", 13, C_DIM))
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._lw = QWidget(); self._ll = QVBoxLayout(self._lw)
         self._ll.setSpacing(0); self._ll.addStretch()
-        scroll.setWidget(self._lw); lay.addWidget(scroll, stretch=1)
+        scroll.setWidget(self._lw); clay.addWidget(scroll, stretch=1)
 
         self.warning = _lbl("", 12, C_TREY, align=Qt.AlignLeft)
-        self.warning.setVisible(False); lay.addWidget(self.warning)
+        self.warning.setVisible(False); clay.addWidget(self.warning)
         brow = QHBoxLayout(); brow.setSpacing(16)
         back = _btn("<< Back", C_DARK_BTN, h=52); back.setFixedWidth(180)
         back.clicked.connect(lambda: go_to(self.stack, "WelcomeScreen"))
         self.inst_btn = _btn("Install Selected >>", C_IW, h=52)
         self.inst_btn.clicked.connect(self._go_install)
-        brow.addWidget(back); brow.addWidget(self.inst_btn, stretch=1); lay.addLayout(brow)
+        brow.addWidget(back); brow.addWidget(self.inst_btn, stretch=1); clay.addLayout(brow)
+        lay.addWidget(content, stretch=1)
 
     def showEvent(self, e):
         super().showEvent(e)
@@ -336,20 +355,34 @@ class InstallScreen(QWidget):
         self._return_to_management = False
         self.install_t7x_opt = False
 
-        lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
-        _title_block(lay)
-        lay.addSpacing(4)
-        self.cur = _lbl("Preparing...", 16, "#CCC"); lay.addWidget(self.cur)
+        lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
+
+        hdr = QWidget(); hdr.setFixedHeight(60)
+        hdr.setStyleSheet(f"background:{C_CARD};")
+        hl = QHBoxLayout(hdr); hl.setContentsMargins(20,0,20,0)
+        _ht = QLabel("DECKOPS"); _ht.setFont(font(22, display=True))
+        _ht.setStyleSheet("color:#FFF;background:transparent;"); hl.addWidget(_ht)
+        _nb = QLabel("NIGHTLY"); _nb.setFont(font(9, bold=True))
+        _nb.setStyleSheet(
+            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
+            "border-radius:4px;padding:1px 6px;"
+        )
+        hl.addWidget(_nb); hl.addStretch()
+        lay.addWidget(hdr)
+
+        content = QWidget()
+        clay = QVBoxLayout(content); clay.setContentsMargins(80,20,80,60); clay.setSpacing(20)
+        self.cur = _lbl("Preparing...", 16, "#CCC"); clay.addWidget(self.cur)
         self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
         self.bar.setFixedHeight(22)
         bw = QHBoxLayout(); bw.setContentsMargins(60,0,60,0); bw.addWidget(self.bar)
-        lay.addLayout(bw)
-        self.stat = _lbl("", 13, C_IW); lay.addWidget(self.stat)
+        clay.addLayout(bw)
+        self.stat = _lbl("", 13, C_IW); clay.addWidget(self.stat)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setFont(font(11))
         self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
-        lay.addWidget(self.log, stretch=1)
+        clay.addWidget(self.log, stretch=1)
 
         self.plut_warn = _lbl(
             "⚠  LCD: Plutonium takes time to download and launch.\n"
@@ -362,19 +395,20 @@ class InstallScreen(QWidget):
             "border-radius:8px;padding:10px 16px;"
         )
         self.plut_warn.setVisible(False)
-        lay.addWidget(self.plut_warn)
+        clay.addWidget(self.plut_warn)
 
         self.plut_btn = _btn("I've closed Plutonium  ✓", C_TREY, size=13, h=52)
         self.plut_btn.setFixedWidth(460); self.plut_btn.setVisible(False)
         self.plut_btn.clicked.connect(self._confirm_plut)
         pw = QHBoxLayout(); pw.addStretch(); pw.addWidget(self.plut_btn); pw.addStretch()
-        lay.addLayout(pw)
+        clay.addLayout(pw)
 
         self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
         self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
         self.cont_btn.clicked.connect(lambda: go_to(self.stack, "ControllerInfoScreen"))
         cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont_btn); cw.addStretch()
-        lay.addLayout(cw)
+        clay.addLayout(cw)
+        lay.addWidget(content, stretch=1)
 
         self._s = _Sigs()
         self._s.progress.connect(lambda p,m: (self.bar.setValue(p), self.cur.setText(m)))
@@ -995,18 +1029,32 @@ class OwnInstallScreen(QWidget):
         self._return_to_management = False
         self.install_t7x_opt = False
 
-        lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
-        _title_block(lay)
-        lay.addSpacing(4)
-        self.cur = _lbl("Preparing...", 16, "#CCC"); lay.addWidget(self.cur)
+        lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
+
+        hdr = QWidget(); hdr.setFixedHeight(60)
+        hdr.setStyleSheet(f"background:{C_CARD};")
+        hl = QHBoxLayout(hdr); hl.setContentsMargins(20,0,20,0)
+        _ht = QLabel("DECKOPS"); _ht.setFont(font(22, display=True))
+        _ht.setStyleSheet("color:#FFF;background:transparent;"); hl.addWidget(_ht)
+        _nb = QLabel("NIGHTLY"); _nb.setFont(font(9, bold=True))
+        _nb.setStyleSheet(
+            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
+            "border-radius:4px;padding:1px 6px;"
+        )
+        hl.addWidget(_nb); hl.addStretch()
+        lay.addWidget(hdr)
+
+        content = QWidget()
+        clay = QVBoxLayout(content); clay.setContentsMargins(80,20,80,60); clay.setSpacing(20)
+        self.cur = _lbl("Preparing...", 16, "#CCC"); clay.addWidget(self.cur)
         self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
         self.bar.setFixedHeight(22)
         bw = QHBoxLayout(); bw.setContentsMargins(60,0,60,0); bw.addWidget(self.bar)
-        lay.addLayout(bw)
-        self.stat = _lbl("", 13, C_IW); lay.addWidget(self.stat)
+        clay.addLayout(bw)
+        self.stat = _lbl("", 13, C_IW); clay.addWidget(self.stat)
         self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setFont(font(11))
         self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
-        lay.addWidget(self.log, stretch=1)
+        clay.addWidget(self.log, stretch=1)
 
         self.plut_warn = _lbl(
             "⚠  LCD: Plutonium takes time to download and launch.\n"
@@ -1019,19 +1067,20 @@ class OwnInstallScreen(QWidget):
             "border-radius:8px;padding:10px 16px;"
         )
         self.plut_warn.setVisible(False)
-        lay.addWidget(self.plut_warn)
+        clay.addWidget(self.plut_warn)
 
         self.plut_btn = _btn("I've closed Plutonium  ✓", C_TREY, size=13, h=52)
         self.plut_btn.setFixedWidth(460); self.plut_btn.setVisible(False)
         self.plut_btn.clicked.connect(self._confirm_plut)
         pw = QHBoxLayout(); pw.addStretch(); pw.addWidget(self.plut_btn); pw.addStretch()
-        lay.addLayout(pw)
+        clay.addLayout(pw)
 
         self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
         self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
         self.cont_btn.clicked.connect(lambda: go_to(self.stack, "ControllerInfoScreen"))
         cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont_btn); cw.addStretch()
-        lay.addLayout(cw)
+        clay.addLayout(cw)
+        lay.addWidget(content, stretch=1)
 
         self._s = _Sigs()
         self._s.progress.connect(lambda p, m: (self.bar.setValue(p), self.cur.setText(m)))
@@ -1737,21 +1786,35 @@ class OwnScanScreen(QWidget):
         self._checks = {}
         self._extra_paths = []
 
-        lay = QVBoxLayout(self); lay.setContentsMargins(80, 60, 80, 60); lay.setSpacing(14)
-        _title_block(lay)
-        lay.addSpacing(4)
-        lay.addWidget(_lbl("NON-STEAM GAMES", 14, C_TREY, align=Qt.AlignCenter))
-        lay.addWidget(_lbl(
+        lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
+
+        hdr = QWidget(); hdr.setFixedHeight(60)
+        hdr.setStyleSheet(f"background:{C_CARD};")
+        hl = QHBoxLayout(hdr); hl.setContentsMargins(20,0,20,0)
+        _ht = QLabel("DECKOPS"); _ht.setFont(font(22, display=True))
+        _ht.setStyleSheet("color:#FFF;background:transparent;"); hl.addWidget(_ht)
+        _nb = QLabel("NIGHTLY"); _nb.setFont(font(9, bold=True))
+        _nb.setStyleSheet(
+            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
+            "border-radius:4px;padding:1px 6px;"
+        )
+        hl.addWidget(_nb); hl.addStretch()
+        lay.addWidget(hdr)
+
+        content = QWidget()
+        clay = QVBoxLayout(content); clay.setContentsMargins(60,20,60,40); clay.setSpacing(14)
+        clay.addWidget(_lbl("NON-STEAM GAMES", 14, C_TREY, align=Qt.AlignCenter))
+        clay.addWidget(_lbl(
             "Scanning for games installed outside Steam. "
             "You can also choose a custom folder below.",
             13, C_DIM))
 
         self.status = _lbl("Scanning...", 14, C_DIM)
-        lay.addWidget(self.status)
+        clay.addWidget(self.status)
         self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
         self.bar.setFixedHeight(14)
         bw = QHBoxLayout(); bw.addStretch(); bw.addWidget(self.bar, 6); bw.addStretch()
-        lay.addLayout(bw)
+        clay.addLayout(bw)
 
         # Scrollable list of found games
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
@@ -1761,18 +1824,18 @@ class OwnScanScreen(QWidget):
         self._list_layout.setSpacing(0)
         self._list_layout.addStretch()
         scroll.setWidget(self._list_widget)
-        lay.addWidget(scroll, stretch=1)
+        clay.addWidget(scroll, stretch=1)
 
         self._no_games_msg = _lbl(
             "No supported games found in the default locations.\n"
             "Use \"Choose Folder\" to pick where your games are installed.",
             13, C_TREY, align=Qt.AlignCenter)
         self._no_games_msg.setVisible(False)
-        lay.addWidget(self._no_games_msg)
+        clay.addWidget(self._no_games_msg)
 
         # Button row — matches SetupScreen pattern
         self.warning = _lbl("", 12, C_TREY, align=Qt.AlignLeft)
-        self.warning.setVisible(False); lay.addWidget(self.warning)
+        self.warning.setVisible(False); clay.addWidget(self.warning)
         btn_row = QHBoxLayout(); btn_row.setSpacing(16)
 
         back = _btn("<< Back", C_DARK_BTN, h=52); back.setFixedWidth(180)
@@ -1795,7 +1858,8 @@ class OwnScanScreen(QWidget):
         btn_row.addWidget(self._folder_btn)
         btn_row.addWidget(self._skip_btn)
         btn_row.addWidget(self._cont_btn, stretch=1)
-        lay.addLayout(btn_row)
+        clay.addLayout(btn_row)
+        lay.addWidget(content, stretch=1)
 
     def showEvent(self, e):
         super().showEvent(e)
