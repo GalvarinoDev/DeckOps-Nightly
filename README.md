@@ -59,6 +59,8 @@
 
 ## 🚧 WIP / Coming Soon
 
+**Other SteamOS Devices** · Support for non-Deck SteamOS handhelds (Lenovo Legion Go series, ROG Ally series, MSI Claw 8). Device picker in setup, resolution-tuned display configs, and full launch pipeline support. Controller templates pending.
+
 **Docked Mode / Decky Plugin** · Play on a TV or monitor with an external controller. A Decky Loader plugin to auto-switch display settings when you dock and undock.
 
 ---
