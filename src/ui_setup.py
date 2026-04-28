@@ -191,17 +191,25 @@ class SetupFlowScreen(QWidget):
         gl.addSpacing(16)
         gl.addWidget(_lbl("Do you want gyro aiming?", 15, "#CCC"))
         gl.addSpacing(4)
-        gl.addWidget(_lbl(
-            "On  —  gyro activates when you aim down sights (left trigger).\n"
-            "Off  —  no gyro aiming.",
-            13, C_DIM, align=Qt.AlignLeft))
+        # Description label — updated dynamically in _show_gyro_section
+        self._gyro_desc_lbl = _lbl("", 13, C_DIM, align=Qt.AlignLeft)
+        gl.addWidget(self._gyro_desc_lbl)
         gl.addSpacing(12)
         grow = QHBoxLayout(); grow.setSpacing(20)
-        gyro_on  = _btn("Gyro On",  C_IW,       h=56)
-        gyro_off = _btn("Gyro Off", C_DARK_BTN, h=56)
-        gyro_on.clicked.connect(lambda: self._pick_gyro("on"))
+        # All 4 buttons are created; hold/toggle hidden for non-SD devices
+        gyro_ads    = _btn("ADS",    C_IW,       h=56)
+        gyro_hold   = _btn("Hold",   C_IW,       h=56)
+        gyro_toggle = _btn("Toggle", C_IW,       h=56)
+        gyro_off    = _btn("Gyro Off", C_DARK_BTN, h=56)
+        gyro_ads.clicked.connect(lambda: self._pick_gyro("on"))
+        gyro_hold.clicked.connect(lambda: self._pick_gyro("hold"))
+        gyro_toggle.clicked.connect(lambda: self._pick_gyro("toggle"))
         gyro_off.clicked.connect(lambda: self._pick_gyro("off"))
-        grow.addWidget(gyro_on); grow.addWidget(gyro_off)
+        grow.addWidget(gyro_ads); grow.addWidget(gyro_hold)
+        grow.addWidget(gyro_toggle); grow.addWidget(gyro_off)
+        self._gyro_hold_btn   = gyro_hold
+        self._gyro_toggle_btn = gyro_toggle
+        self._gyro_ads_btn    = gyro_ads
         gl.addLayout(grow)
         gl.addStretch()
         main_lay.addWidget(self._gyro_section)
@@ -337,12 +345,13 @@ class SetupFlowScreen(QWidget):
         self._ctrl_desc_lbl = _lbl(
             "PlayStation  —  PS5 or PS4 DualShock/DualSense. Includes gyro aiming.\n"
             "Xbox  —  Xbox 360, Xbox One, or Xbox Elite. Standard layout, no gyro.\n"
+            "Steam Controller  —  Steam Controller 2 (Triton). Dual trackpads, gyro, 4 back buttons.\n"
             "Other  —  Generic or 8BitDo controller. Standard layout, no gyro.",
             13, C_DIM, align=Qt.AlignLeft)
         pcl.addWidget(self._ctrl_desc_lbl)
         pcl.addSpacing(12)
         pcrow = QHBoxLayout(); pcrow.setSpacing(20)
-        for ctrl_key, label in [("playstation", "PlayStation"), ("xbox", "Xbox"), ("other", "Other")]:
+        for ctrl_key, label in [("playstation", "PlayStation"), ("xbox", "Xbox"), ("steamcontroller", "Steam Controller"), ("other", "Other")]:
             b = _btn(label, C_DARK_BTN, h=56)
             b.clicked.connect(lambda checked, k=ctrl_key: self._pick_primary_controller(k))
             pcrow.addWidget(b)
@@ -491,11 +500,12 @@ class SetupFlowScreen(QWidget):
         dcl.addWidget(_lbl(
             "PlayStation  —  PS5 or PS4 DualShock/DualSense. Includes gyro aiming.\n"
             "Xbox  —  Xbox 360, Xbox One, or Xbox Elite. Standard layout, no gyro.\n"
+            "Steam Controller  —  Steam Controller 2 (Triton). Dual trackpads, gyro, 4 back buttons.\n"
             "Other  —  Generic or 8BitDo controller. Standard layout, no gyro.",
             13, C_DIM, align=Qt.AlignLeft))
         dcl.addSpacing(12)
         dcrow = QHBoxLayout(); dcrow.setSpacing(20)
-        for ctrl_key, label in [("playstation", "PlayStation"), ("xbox", "Xbox"), ("other", "Other")]:
+        for ctrl_key, label in [("playstation", "PlayStation"), ("xbox", "Xbox"), ("steamcontroller", "Steam Controller"), ("other", "Other")]:
             b = _btn(label, C_DARK_BTN, h=56)
             b.clicked.connect(lambda checked, k=ctrl_key: self._pick_docked_controller(k))
             dcrow.addWidget(b)
@@ -538,7 +548,7 @@ class SetupFlowScreen(QWidget):
 
         # Next: gyro (if device has it) or name
         if dev["has_gyro"]:
-            self._show("_gyro_section")
+            self._show_gyro_section(dev_key)
         else:
             cfg.set_gyro_mode("off")
             self._show_name_section()
@@ -548,6 +558,32 @@ class SetupFlowScreen(QWidget):
 
     def _back_to_model(self):
         self._show("_model_section")
+
+    def _show_gyro_section(self, dev_key):
+        """Show gyro section with the right buttons for the selected device.
+
+        Steam Deck LCD/OLED: 4 options (ADS, Hold, Toggle, Off)
+        All other devices:   2 options (ADS renamed to 'Gyro On', Off)
+        """
+        is_sd = dev_key in ("sd_lcd", "sd_oled")
+        self._gyro_hold_btn.setVisible(is_sd)
+        self._gyro_toggle_btn.setVisible(is_sd)
+        # Update ADS button label
+        self._gyro_ads_btn.setText("ADS" if is_sd else "Gyro On")
+        # Update description
+        if is_sd:
+            self._gyro_desc_lbl.setText(
+                "ADS  —  gyro activates when you aim down sights (left trigger).\n"
+                "Hold  —  gyro active while holding a button.\n"
+                "Toggle  —  press to toggle gyro on and off.\n"
+                "Off  —  no gyro aiming."
+            )
+        else:
+            self._gyro_desc_lbl.setText(
+                "On  —  gyro activates when you aim down sights (left trigger).\n"
+                "Off  —  no gyro aiming."
+            )
+        self._show("_gyro_section")
 
     def _back_to_device_from_gyro(self):
         dev = DEVICES.get(self._selected_device, {})
@@ -563,7 +599,7 @@ class SetupFlowScreen(QWidget):
     def _back_to_gyro_from_name(self):
         dev = DEVICES.get(self._selected_device, {})
         if dev.get("has_gyro"):
-            self._show("_gyro_section")
+            self._show_gyro_section(self._selected_device)
         else:
             # No gyro section to go back to, go to device
             self._back_to_device_from_gyro()
