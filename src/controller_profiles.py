@@ -9,18 +9,25 @@ Also patches the appropriate configset VDFs to set our template as the
 active default for each managed game, overriding any community config or
 workshop ID that Steam would otherwise use.
 
-Neptune templates (2 variants x 2 schemes = 4 total):
-    controller_neptune_deckops_ads.vdf
-    controller_neptune_deckops_off.vdf
-    controller_neptune_deckops_other_ads.vdf
-    controller_neptune_deckops_other_off.vdf
+Neptune templates (4 standard + 4 hold/toggle + 4 Legion + 4 2btn = 16 total):
+    Standard (SD LCD/OLED, Legion Go S, generic):
+        controller_neptune_deckops_{ads,off,hold,toggle}.vdf
+        controller_neptune_deckops_other_{ads,off,hold,toggle}.vdf
+    Legion (Go 1/2 — 4 paddles, no left touchpad):
+        controller_neptune_deckops_legion_{ads,off}.vdf
+        controller_neptune_deckops_legion_other_{ads,off}.vdf
+    2btn (ROG Ally, MSI Claw — 2 paddles, no touchpad):
+        controller_neptune_deckops_2btn_{ads,off}.vdf
+        controller_neptune_deckops_2btn_other_{ads,off}.vdf
 
-External controller templates (14 total):
-    PS5:     controller_ps5_deckops.vdf, _ads.vdf, _other.vdf, _other_ads.vdf
-    PS4:     controller_ps4_deckops.vdf, _ads.vdf, _other.vdf, _other_ads.vdf
-    Xbox360: controller_xbox360_deckops.vdf, _other.vdf
-    XboxOne: controller_xboxone_deckops.vdf, _other.vdf
-    Generic: controller_generic_deckops.vdf, _other.vdf
+External controller templates (20 total):
+    PS5:       controller_ps5_deckops{,_ads,_other,_other_ads}.vdf
+    PS5 Edge:  controller_ps5_edge_deckops{,_ads,_other,_other_ads}.vdf
+    PS4:       controller_ps4_deckops{,_ads,_other,_other_ads}.vdf
+    Xbox360:   controller_xbox360_deckops{,_other}.vdf
+    XboxOne:   controller_xboxone_deckops{,_other}.vdf
+    XboxElite: controller_xboxelite_deckops{,_other}.vdf
+    Generic:   controller_generic_deckops{,_other}.vdf
 
 Must be called while Steam is closed.
 """
@@ -40,16 +47,35 @@ STEAM_DIR     = os.path.expanduser("~/.local/share/Steam")
 STEAM_CONFIG  = os.path.join(STEAM_DIR, "config", "config.vdf")
 
 TEMPLATES = [
-    # Neptune
+    # Neptune (Steam Deck, Legion Go S, generic fallback)
     "controller_neptune_deckops_ads.vdf",
     "controller_neptune_deckops_off.vdf",
+    "controller_neptune_deckops_hold.vdf",
+    "controller_neptune_deckops_toggle.vdf",
     "controller_neptune_deckops_other_ads.vdf",
     "controller_neptune_deckops_other_off.vdf",
+    "controller_neptune_deckops_other_hold.vdf",
+    "controller_neptune_deckops_other_toggle.vdf",
+    # Neptune Legion (Go 1/2 — 4 paddles, no left touchpad)
+    "controller_neptune_deckops_legion_ads.vdf",
+    "controller_neptune_deckops_legion_off.vdf",
+    "controller_neptune_deckops_legion_other_ads.vdf",
+    "controller_neptune_deckops_legion_other_off.vdf",
+    # Neptune 2btn (ROG Ally, MSI Claw — 2 paddles, no touchpad)
+    "controller_neptune_deckops_2btn_ads.vdf",
+    "controller_neptune_deckops_2btn_off.vdf",
+    "controller_neptune_deckops_2btn_other_ads.vdf",
+    "controller_neptune_deckops_2btn_other_off.vdf",
     # PS5
     "controller_ps5_deckops.vdf",
     "controller_ps5_deckops_ads.vdf",
     "controller_ps5_deckops_other.vdf",
     "controller_ps5_deckops_other_ads.vdf",
+    # PS5 DualSense Edge (4 paddles, gyro)
+    "controller_ps5_edge_deckops.vdf",
+    "controller_ps5_edge_deckops_ads.vdf",
+    "controller_ps5_edge_deckops_other.vdf",
+    "controller_ps5_edge_deckops_other_ads.vdf",
     # PS4
     "controller_ps4_deckops.vdf",
     "controller_ps4_deckops_ads.vdf",
@@ -61,6 +87,9 @@ TEMPLATES = [
     # Xbox One
     "controller_xboxone_deckops.vdf",
     "controller_xboxone_deckops_other.vdf",
+    # Xbox Elite 2 (4 paddles, no gyro)
+    "controller_xboxelite_deckops.vdf",
+    "controller_xboxelite_deckops_other.vdf",
     # Generic (covers 8BitDo and anything else Steam maps as generic)
     "controller_generic_deckops.vdf",
     "controller_generic_deckops_other.vdf",
@@ -134,10 +163,12 @@ EXTERNAL_CONFIGSET_NAMES = {
     "playstation": [
         "configset_controller_ps5.vdf",
         "configset_controller_ps4.vdf",
+        "configset_controller_ps5_edge.vdf",
     ],
     "xbox": [
         "configset_controller_xbox360.vdf",
         "configset_controller_xboxone.vdf",
+        "configset_controller_xboxelite.vdf",
     ],
     "other": [
         "configset_controller_generic.vdf",
@@ -222,8 +253,44 @@ def _get_deck_serial() -> str | None:
 
 
 def _profile_filename(profile_type: str, gyro_mode: str) -> list[str]:
-    """Return the list of Neptune VDF filenames for a given profile type and gyro mode."""
-    suffix = "ads" if gyro_mode == "on" else "off"
+    """Return the list of Neptune VDF filenames for a given profile type and gyro mode.
+
+    Checks other_device_type when the device is "other" (non-Steam Deck):
+        legion_go  -> Neptune Legion templates (no left touchpad)
+        2btn       -> Neptune 2btn templates (2 paddles, no touchpad)
+        legion_go_s / generic -> standard Neptune (fallback)
+
+    Gyro mode mapping for standard Neptune (SD LCD/OLED, Legion Go S, generic):
+        "on"     -> ads   (gyro activates on ADS / left trigger pull)
+        "hold"   -> hold  (gyro active while holding a button)
+        "toggle" -> toggle (gyro toggled on/off with a button press)
+        "off"    -> off   (no gyro)
+
+    Hold and toggle VDFs only exist for standard Neptune (Steam Deck).
+    Legion and 2btn devices only have ads/off variants — hold/toggle
+    falls back to ads for those devices.
+    """
+    # Map gyro_mode to VDF filename suffix
+    _SUFFIX_MAP = {"on": "ads", "hold": "hold", "toggle": "toggle"}
+    suffix = _SUFFIX_MAP.get(gyro_mode, "off")
+
+    # Check if this is a non-Deck device with a specific controller variant
+    import config as cfg
+    if cfg.is_other():
+        device_type = cfg.get_other_device_type()
+        # Legion and 2btn only have ads/off — no hold/toggle VDFs
+        other_suffix = "ads" if gyro_mode in ("on", "hold", "toggle") else "off"
+        if device_type == "legion_go":
+            if profile_type == "other":
+                return [f"controller_neptune_deckops_legion_other_{other_suffix}.vdf"]
+            return [f"controller_neptune_deckops_legion_{other_suffix}.vdf"]
+        elif device_type == "2btn":
+            if profile_type == "other":
+                return [f"controller_neptune_deckops_2btn_other_{other_suffix}.vdf"]
+            return [f"controller_neptune_deckops_2btn_{other_suffix}.vdf"]
+        # legion_go_s and generic fall through to standard Neptune
+
+    # Standard Neptune (Steam Deck LCD/OLED, Legion Go S, generic)
     if profile_type == "standard":
         return [f"controller_neptune_deckops_{suffix}.vdf"]
     elif profile_type == "other":
@@ -236,13 +303,15 @@ def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mo
     Return the list of external controller VDF filenames for a given
     controller type, profile type, and gyro mode.
 
-    PS5/PS4 gyro logic:
-        on  -> _ads variant (gyro on left trigger pull)
-        off -> standard variant (no gyro)
+    PS5/PS4/Edge gyro logic:
+        on/hold/toggle -> _ads variant (gyro on left trigger pull)
+        off            -> standard variant (no gyro)
 
-    Xbox/Generic: gyro_mode is ignored - no gyro hardware on these controllers.
+    External controllers don't have separate hold/toggle VDFs —
+    hold and toggle map to the ads variant (closest equivalent).
+    Xbox/Elite/Generic: gyro_mode is ignored - no gyro hardware on these controllers.
     """
-    use_ads = gyro_mode == "on"
+    use_ads = gyro_mode in ("on", "hold", "toggle")
 
     if controller_type == "playstation":
         if profile_type == "other":
@@ -252,6 +321,7 @@ def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mo
         return [
             f"controller_ps5_deckops{suffix}.vdf",
             f"controller_ps4_deckops{suffix}.vdf",
+            f"controller_ps5_edge_deckops{suffix}.vdf",
         ]
 
     elif controller_type == "xbox":
@@ -259,10 +329,12 @@ def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mo
             return [
                 "controller_xbox360_deckops_other.vdf",
                 "controller_xboxone_deckops_other.vdf",
+                "controller_xboxelite_deckops_other.vdf",
             ]
         return [
             "controller_xbox360_deckops.vdf",
             "controller_xboxone_deckops.vdf",
+            "controller_xboxelite_deckops.vdf",
         ]
 
     elif controller_type == "other":
@@ -338,15 +410,15 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
     """
     Assign DeckOps Neptune controller profiles for all managed games.
 
-    gyro_mode -- "on" or "off"
+    gyro_mode -- "on", "off", "hold", or "toggle"
     Must be called while Steam is closed.
     """
     def prog(msg):
         if on_progress:
             on_progress(msg)
 
-    if gyro_mode not in ("on", "off"):
-        prog(f"  ⚠ Invalid gyro_mode '{gyro_mode}' -- must be 'on' or 'off'.")
+    if gyro_mode not in ("on", "off", "hold", "toggle"):
+        prog(f"  ⚠ Invalid gyro_mode '{gyro_mode}' -- must be 'on', 'off', 'hold', or 'toggle'.")
         return
 
     uids = _find_all_steam_uids()
@@ -559,8 +631,8 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
         prog(f"  ⚠ Invalid controller_type '{controller_type}'.")
         return
 
-    if gyro_mode not in ("on", "off"):
-        prog(f"  ⚠ Invalid gyro_mode '{gyro_mode}' -- must be 'on' or 'off'.")
+    if gyro_mode not in ("on", "off", "hold", "toggle"):
+        prog(f"  ⚠ Invalid gyro_mode '{gyro_mode}' -- must be 'on', 'off', 'hold', or 'toggle'.")
         return
 
     uids = _find_all_steam_uids()
