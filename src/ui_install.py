@@ -1737,18 +1737,12 @@ class OwnScanScreen(QWidget):
         self._checks = {}
         self._extra_paths = []
 
-        lay = QVBoxLayout(self); lay.setContentsMargins(80, 60, 80, 60); lay.setSpacing(14)
-
-        back = _btn("<< Back", C_DARK_BTN, h=44); back.setFixedWidth(160)
-        back.clicked.connect(lambda: go_to(self.stack, "SetupFlowScreen"))
-        brow = QHBoxLayout()
-        brow.addWidget(back); brow.addStretch()
-        lay.addLayout(brow)
-
-        _title_block(lay)
-        lay.addSpacing(8)
+        lay = QVBoxLayout(self); lay.setContentsMargins(60, 40, 60, 40); lay.setSpacing(14)
+        t = QLabel("SETUP"); t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
+        t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
+        lay.addWidget(_lbl("NON-STEAM GAMES", 14, C_TREY, align=Qt.AlignCenter))
         lay.addWidget(_lbl(
-            "Scanning for non-Steam games in the default locations.\n"
+            "Scanning for games installed outside Steam. "
             "You can also choose a custom folder below.",
             13, C_DIM))
 
@@ -1758,14 +1752,13 @@ class OwnScanScreen(QWidget):
         self.bar.setFixedHeight(14)
         bw = QHBoxLayout(); bw.addStretch(); bw.addWidget(self.bar, 6); bw.addStretch()
         lay.addLayout(bw)
-        lay.addSpacing(6)
 
         # Scrollable list of found games
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self._list_widget = QWidget()
         self._list_layout = QVBoxLayout(self._list_widget)
-        self._list_layout.setSpacing(4)
+        self._list_layout.setSpacing(0)
         self._list_layout.addStretch()
         scroll.setWidget(self._list_widget)
         lay.addWidget(scroll, stretch=1)
@@ -1777,8 +1770,13 @@ class OwnScanScreen(QWidget):
         self._no_games_msg.setVisible(False)
         lay.addWidget(self._no_games_msg)
 
-        # Button row
+        # Button row — matches SetupScreen pattern
+        self.warning = _lbl("", 12, C_TREY, align=Qt.AlignLeft)
+        self.warning.setVisible(False); lay.addWidget(self.warning)
         btn_row = QHBoxLayout(); btn_row.setSpacing(16)
+
+        back = _btn("<< Back", C_DARK_BTN, h=52); back.setFixedWidth(180)
+        back.clicked.connect(lambda: go_to(self.stack, "SetupFlowScreen"))
 
         self._folder_btn = _btn("Choose Folder", C_DARK_BTN, h=52)
         self._folder_btn.setFixedWidth(200)
@@ -1793,6 +1791,7 @@ class OwnScanScreen(QWidget):
         self._cont_btn.setVisible(False)
         self._cont_btn.clicked.connect(self._continue)
 
+        btn_row.addWidget(back)
         btn_row.addWidget(self._folder_btn)
         btn_row.addWidget(self._skip_btn)
         btn_row.addWidget(self._cont_btn, stretch=1)
@@ -1857,10 +1856,10 @@ class OwnScanScreen(QWidget):
         self.status.setText(f"Found {count} game(s)!")
         self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
 
-        # Build game rows sorted by order
+        # Build game rows sorted by order — matches SetupScreen row style
         for key in sorted(self._own_found, key=lambda k: self._own_found[k].get("order", 99)):
             game = self._own_found[key]
-            row = QHBoxLayout(); row.setSpacing(12); row.setContentsMargins(8, 6, 8, 6)
+            row = QHBoxLayout(); row.setSpacing(12); row.setContentsMargins(8, 8, 8, 8)
 
             cb = QCheckBox()
             cb.setChecked(True)
@@ -1868,14 +1867,13 @@ class OwnScanScreen(QWidget):
             self._checks[key] = cb
             row.addWidget(cb)
 
-            name_lbl = _lbl(game["name"], 13, "#FFF", align=Qt.AlignLeft, wrap=False)
+            name_lbl = _lbl(game["name"], 14, "#FFF", align=Qt.AlignLeft, wrap=False)
             row.addWidget(name_lbl, stretch=1)
 
             path_lbl = _lbl(game["install_dir"], 10, C_DIM, align=Qt.AlignRight, wrap=False)
             row.addWidget(path_lbl)
 
             cw = QWidget(); cw.setLayout(row)
-            cw.setStyleSheet(f"background:{C_CARD};border-radius:6px;")
             self._list_layout.insertWidget(self._list_layout.count() - 1, cw)
 
         self._cont_btn.setVisible(True)
