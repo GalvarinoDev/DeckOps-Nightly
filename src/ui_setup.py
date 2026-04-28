@@ -82,21 +82,15 @@ class SetupFlowScreen(QWidget):
             lay.addWidget(_lbl(warn, 13, C_TREY, align=Qt.AlignLeft))
         lay.addSpacing(16)
         lay.addWidget(_lbl("What operating system are you running?", 15, "#CCC"))
-        lay.addSpacing(4)
-        lay.addWidget(_lbl(
-            "This determines how controller profiles are assigned. "
-            "If you're on a Steam Deck, choose SteamOS.",
-            13, C_DIM, align=Qt.AlignLeft))
         lay.addSpacing(12)
 
         os_row = QHBoxLayout(); os_row.setSpacing(16)
-        for os_key, label, color in [
-            ("steamos", "SteamOS", C_IW),
-            ("bazzite", "Bazzite", C_TREY),
-            ("cachyos", "CachyOS", C_DARK_BTN),
-            ("other_linux", "Other Linux", C_DARK_BTN),
+        for os_key, label in [
+            ("steamos", "SteamOS"),
+            ("bazzite", "Bazzite"),
+            ("cachyos", "CachyOS"),
         ]:
-            b = _btn(label, color, h=56)
+            b = _btn(label, C_IW, h=56)
             b.clicked.connect(lambda checked, k=os_key: self._pick_os(k))
             os_row.addWidget(b)
         lay.addLayout(os_row)
@@ -190,29 +184,47 @@ class SetupFlowScreen(QWidget):
         _title_block(gl)
         gl.addSpacing(16)
         gl.addWidget(_lbl("Do you want gyro aiming?", 15, "#CCC"))
-        gl.addSpacing(4)
-        # Description label — updated dynamically in _show_gyro_section
-        self._gyro_desc_lbl = _lbl("", 13, C_DIM, align=Qt.AlignLeft)
-        gl.addWidget(self._gyro_desc_lbl)
         gl.addSpacing(12)
         grow = QHBoxLayout(); grow.setSpacing(20)
-        # All 4 buttons are created; hold/toggle hidden for non-SD devices
-        gyro_ads    = _btn("ADS",    C_IW,       h=56)
-        gyro_hold   = _btn("Hold",   C_IW,       h=56)
-        gyro_toggle = _btn("Toggle", C_IW,       h=56)
-        gyro_off    = _btn("Gyro Off", C_DARK_BTN, h=56)
-        gyro_ads.clicked.connect(lambda: self._pick_gyro("on"))
-        gyro_hold.clicked.connect(lambda: self._pick_gyro("hold"))
-        gyro_toggle.clicked.connect(lambda: self._pick_gyro("toggle"))
-        gyro_off.clicked.connect(lambda: self._pick_gyro("off"))
-        grow.addWidget(gyro_ads); grow.addWidget(gyro_hold)
-        grow.addWidget(gyro_toggle); grow.addWidget(gyro_off)
-        self._gyro_hold_btn   = gyro_hold
-        self._gyro_toggle_btn = gyro_toggle
-        self._gyro_ads_btn    = gyro_ads
+        gyro_yes = _btn("Yes", C_IW, h=56)
+        gyro_no  = _btn("No",  C_DARK_BTN, h=56)
+        gyro_yes.clicked.connect(self._gyro_yes)
+        gyro_no.clicked.connect(lambda: self._pick_gyro("off"))
+        grow.addWidget(gyro_yes); grow.addWidget(gyro_no)
         gl.addLayout(grow)
         gl.addStretch()
         main_lay.addWidget(self._gyro_section)
+
+        # ── 4b. Gyro mode section (shown after Yes) ───────────────────────
+        self._gyro_mode_section = QWidget(); self._gyro_mode_section.setVisible(False)
+        gml = QVBoxLayout(self._gyro_mode_section)
+        gml.setContentsMargins(80, 60, 80, 60); gml.setSpacing(16)
+        self._back_gyro_mode_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
+        self._back_gyro_mode_btn.setFixedWidth(80)
+        self._back_gyro_mode_btn.clicked.connect(self._back_to_gyro_from_mode)
+        brow3b = QHBoxLayout(); brow3b.addWidget(self._back_gyro_mode_btn); brow3b.addStretch()
+        gml.addLayout(brow3b)
+        gml.addStretch()
+        _title_block(gml)
+        gml.addSpacing(16)
+        gml.addWidget(_lbl("How should gyro activate?", 15, "#CCC"))
+        gml.addSpacing(4)
+        self._gyro_mode_desc_lbl = _lbl("", 13, C_DIM, align=Qt.AlignLeft)
+        gml.addWidget(self._gyro_mode_desc_lbl)
+        gml.addSpacing(12)
+        gmrow = QHBoxLayout(); gmrow.setSpacing(20)
+        gyro_ads    = _btn("ADS",    C_IW, h=56)
+        gyro_hold   = _btn("Hold",   C_IW, h=56)
+        gyro_toggle = _btn("Toggle", C_IW, h=56)
+        gyro_ads.clicked.connect(lambda: self._pick_gyro("on"))
+        gyro_hold.clicked.connect(lambda: self._pick_gyro("hold"))
+        gyro_toggle.clicked.connect(lambda: self._pick_gyro("toggle"))
+        gmrow.addWidget(gyro_ads); gmrow.addWidget(gyro_hold); gmrow.addWidget(gyro_toggle)
+        self._gyro_hold_btn   = gyro_hold
+        self._gyro_toggle_btn = gyro_toggle
+        gml.addLayout(gmrow)
+        gml.addStretch()
+        main_lay.addWidget(self._gyro_mode_section)
 
         # ── 5. Player name section ────────────────────────────────────────
         self._name_section = QWidget(); self._name_section.setVisible(False)
@@ -560,29 +572,7 @@ class SetupFlowScreen(QWidget):
         self._show("_model_section")
 
     def _show_gyro_section(self, dev_key):
-        """Show gyro section with the right buttons for the selected device.
-
-        Steam Deck LCD/OLED: 4 options (ADS, Hold, Toggle, Off)
-        All other devices:   2 options (ADS renamed to 'Gyro On', Off)
-        """
-        is_sd = dev_key in ("sd_lcd", "sd_oled")
-        self._gyro_hold_btn.setVisible(is_sd)
-        self._gyro_toggle_btn.setVisible(is_sd)
-        # Update ADS button label
-        self._gyro_ads_btn.setText("ADS" if is_sd else "Gyro On")
-        # Update description
-        if is_sd:
-            self._gyro_desc_lbl.setText(
-                "ADS  —  gyro activates when you aim down sights (left trigger).\n"
-                "Hold  —  gyro active while holding a button.\n"
-                "Toggle  —  press to toggle gyro on and off.\n"
-                "Off  —  no gyro aiming."
-            )
-        else:
-            self._gyro_desc_lbl.setText(
-                "On  —  gyro activates when you aim down sights (left trigger).\n"
-                "Off  —  no gyro aiming."
-            )
+        """Show the Yes/No gyro question."""
         self._show("_gyro_section")
 
     def _back_to_device_from_gyro(self):
@@ -592,17 +582,49 @@ class SetupFlowScreen(QWidget):
         else:
             self._show("_device_section")
 
+    def _gyro_yes(self):
+        """User wants gyro — show the mode picker.
+
+        Steam Deck LCD/OLED: 3 options (ADS, Hold, Toggle)
+        All other devices:   skip mode picker, apply 'on' (ADS) directly
+        """
+        is_sd = self._selected_device in ("sd_lcd", "sd_oled")
+        if not is_sd:
+            # Non-SD devices only support ADS mode
+            self._pick_gyro("on")
+            return
+        # SD: show mode picker with Hold/Toggle visible
+        self._gyro_hold_btn.setVisible(True)
+        self._gyro_toggle_btn.setVisible(True)
+        self._gyro_mode_desc_lbl.setText(
+            "ADS  —  gyro activates when you aim down sights (left trigger).\n"
+            "Hold  —  gyro active while holding L5.\n"
+            "Toggle  —  press L5 to toggle gyro on and off."
+        )
+        self._show("_gyro_mode_section")
+
+    def _back_to_gyro_from_mode(self):
+        self._show("_gyro_section")
+
     def _pick_gyro(self, mode):
         cfg.set_gyro_mode(mode)
         self._show_name_section()
 
     def _back_to_gyro_from_name(self):
         dev = DEVICES.get(self._selected_device, {})
-        if dev.get("has_gyro"):
-            self._show_gyro_section(self._selected_device)
-        else:
+        if not dev.get("has_gyro"):
             # No gyro section to go back to, go to device
             self._back_to_device_from_gyro()
+            return
+        # If the user picked a mode (ADS/Hold/Toggle) they came through
+        # the mode picker — go back there. If they picked "off" (No) they
+        # skipped it — go back to the Yes/No screen.
+        gyro = cfg.get_gyro_mode()
+        is_sd = self._selected_device in ("sd_lcd", "sd_oled")
+        if gyro != "off" and is_sd:
+            self._show("_gyro_mode_section")
+        else:
+            self._show("_gyro_section")
 
     def _show_name_section(self):
         """Show the player name input, pre-filled with Steam display name."""
