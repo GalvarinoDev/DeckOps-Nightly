@@ -84,23 +84,16 @@ class SetupFlowScreen(QWidget):
         lay.addWidget(_lbl("What operating system are you running?", 15, "#CCC"))
         lay.addSpacing(12)
 
-        # Pyramid: SteamOS centered on top, Bazzite + CachyOS side-by-side below
-        OS_BTN_W = 220
-        steamos_btn = _btn("SteamOS", C_IW, h=56)
-        steamos_btn.setFixedWidth(OS_BTN_W)
-        steamos_btn.clicked.connect(lambda: self._pick_os("steamos"))
-        os_top = QHBoxLayout(); os_top.addStretch(); os_top.addWidget(steamos_btn); os_top.addStretch()
-        lay.addLayout(os_top)
-        lay.addSpacing(8)
-        os_bottom = QHBoxLayout(); os_bottom.setSpacing(16)
-        os_bottom.addStretch()
-        for os_key, label in [("bazzite", "Bazzite"), ("cachyos", "CachyOS")]:
+        os_row = QHBoxLayout(); os_row.setSpacing(20)
+        for os_key, label in [
+            ("steamos", "SteamOS"),
+            ("bazzite", "Bazzite"),
+            ("cachyos", "CachyOS"),
+        ]:
             b = _btn(label, C_IW, h=56)
-            b.setFixedWidth(OS_BTN_W)
             b.clicked.connect(lambda checked, k=os_key: self._pick_os(k))
-            os_bottom.addWidget(b)
-        os_bottom.addStretch()
-        lay.addLayout(os_bottom)
+            os_row.addWidget(b)
+        lay.addLayout(os_row)
         main_lay.addWidget(self._os_section)
 
         # ── 2. Device model section ───────────────────────────────────────
@@ -112,31 +105,21 @@ class SetupFlowScreen(QWidget):
         self._back_os_btn.clicked.connect(self._back_to_os)
         brow = QHBoxLayout(); brow.addWidget(self._back_os_btn); brow.addStretch()
         ml.addLayout(brow)
+        ml.addStretch()
         _title_block(ml)
         ml.addSpacing(16)
         ml.addWidget(_lbl("Which device do you have?", 15, "#CCC"))
         ml.addSpacing(12)
-
-        # LCD + OLED side-by-side, centered
-        DEV_BTN_W = 220
-        dev_top = QHBoxLayout(); dev_top.setSpacing(16)
-        dev_top.addStretch()
-        lcd_btn  = _btn("Steam Deck LCD",  C_IW, h=56); lcd_btn.setFixedWidth(DEV_BTN_W)
-        oled_btn = _btn("Steam Deck OLED", C_IW, h=56); oled_btn.setFixedWidth(DEV_BTN_W)
+        mrow = QHBoxLayout(); mrow.setSpacing(20)
+        lcd_btn  = _btn("Steam Deck LCD",  C_IW, h=56)
+        oled_btn = _btn("Steam Deck OLED", C_IW, h=56)
+        other_btn = _btn("Other Device",   C_TREY, h=56)
         lcd_btn.clicked.connect(lambda: self._pick_device("sd_lcd"))
         oled_btn.clicked.connect(lambda: self._pick_device("sd_oled"))
-        dev_top.addWidget(lcd_btn); dev_top.addWidget(oled_btn)
-        dev_top.addStretch()
-        ml.addLayout(dev_top)
-
-        # "Not using a Steam Deck?" label + Other Device button, centered below
-        ml.addSpacing(8)
-        not_sd_lbl = _lbl("Not using a Steam Deck?", 10, "#555568")
-        ml.addWidget(not_sd_lbl)
-        other_btn = _btn("Other Device", C_TREY, h=56); other_btn.setFixedWidth(DEV_BTN_W)
         other_btn.clicked.connect(self._show_device_picker)
-        other_row = QHBoxLayout(); other_row.addStretch(); other_row.addWidget(other_btn); other_row.addStretch()
-        ml.addLayout(other_row)
+        mrow.addWidget(lcd_btn); mrow.addWidget(oled_btn); mrow.addWidget(other_btn)
+        ml.addLayout(mrow)
+        ml.addStretch()
         main_lay.addWidget(self._model_section)
 
         # ── 3. Specific device picker (Other) ────────────────────────────
@@ -148,6 +131,7 @@ class SetupFlowScreen(QWidget):
         self._back_model_btn.clicked.connect(self._back_to_model)
         brow2 = QHBoxLayout(); brow2.addWidget(self._back_model_btn); brow2.addStretch()
         dvl.addLayout(brow2)
+        dvl.addStretch()
         _title_block(dvl)
         dvl.addSpacing(16)
         dvl.addWidget(_lbl("Select your device", 15, "#CCC"))
@@ -196,6 +180,7 @@ class SetupFlowScreen(QWidget):
         self._back_device_gyro_btn.clicked.connect(self._back_to_device_from_gyro)
         brow3 = QHBoxLayout(); brow3.addWidget(self._back_device_gyro_btn); brow3.addStretch()
         gl.addLayout(brow3)
+        gl.addStretch()
         _title_block(gl)
         gl.addSpacing(16)
         gl.addWidget(_lbl("Do you want gyro aiming?", 15, "#CCC"))
@@ -219,6 +204,7 @@ class SetupFlowScreen(QWidget):
         self._back_gyro_mode_btn.clicked.connect(self._back_to_gyro_from_mode)
         brow3b = QHBoxLayout(); brow3b.addWidget(self._back_gyro_mode_btn); brow3b.addStretch()
         gml.addLayout(brow3b)
+        gml.addStretch()
         _title_block(gml)
         gml.addSpacing(16)
         gml.addWidget(_lbl("How should gyro activate?", 15, "#CCC"))
@@ -249,6 +235,7 @@ class SetupFlowScreen(QWidget):
         self._back_gyro_name_btn.clicked.connect(self._back_to_gyro_from_name)
         brow4 = QHBoxLayout(); brow4.addWidget(self._back_gyro_name_btn); brow4.addStretch()
         nl.addLayout(brow4)
+        nl.addStretch()
         _title_block(nl)
         nl.addSpacing(16)
         nl.addWidget(_lbl("What's your player name?", 15, "#CCC"))
@@ -282,12 +269,13 @@ class SetupFlowScreen(QWidget):
         # ── 6. Game source section (merged from SourceScreen) ─────────────
         self._source_section = QWidget(); self._source_section.setVisible(False)
         sl = QVBoxLayout(self._source_section)
-        sl.setContentsMargins(80, 60, 80, 60); sl.setSpacing(20)
+        sl.setContentsMargins(80, 60, 80, 60); sl.setSpacing(16)
         self._back_name_source_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
         self._back_name_source_btn.setFixedWidth(80)
         self._back_name_source_btn.clicked.connect(self._back_to_name_from_source)
         brow5 = QHBoxLayout(); brow5.addWidget(self._back_name_source_btn); brow5.addStretch()
         sl.addLayout(brow5)
+        sl.addStretch()
         _title_block(sl)
         sl.addSpacing(8)
         sl.addWidget(_lbl("How did you install your games?", 15, "#CCC"))
@@ -360,6 +348,7 @@ class SetupFlowScreen(QWidget):
         self._back_source_ctrl_btn.clicked.connect(self._back_to_source_from_ctrl)
         brow6 = QHBoxLayout(); brow6.addWidget(self._back_source_ctrl_btn); brow6.addStretch()
         pcl.addLayout(brow6)
+        pcl.addStretch()
         _title_block(pcl)
         pcl.addSpacing(16)
         self._ctrl_title_lbl = _lbl("What controller do you use?", 15, "#CCC")
@@ -391,6 +380,7 @@ class SetupFlowScreen(QWidget):
         self._back_res_btn.clicked.connect(self._back_to_prev_from_res)
         brow_res = QHBoxLayout(); brow_res.addWidget(self._back_res_btn); brow_res.addStretch()
         rl.addLayout(brow_res)
+        rl.addStretch()
         _title_block(rl)
         rl.addSpacing(16)
         self._res_title_lbl = _lbl("What resolution is your display?", 15, "#CCC")
@@ -438,6 +428,7 @@ class SetupFlowScreen(QWidget):
         self._back_play_btn.clicked.connect(self._back_to_prev_from_play)
         brow_play = QHBoxLayout(); brow_play.addWidget(self._back_play_btn); brow_play.addStretch()
         pl.addLayout(brow_play)
+        pl.addStretch()
         _title_block(pl)
         pl.addSpacing(16)
         pl.addWidget(_lbl("How do you play?", 15, "#CCC"))
@@ -468,6 +459,7 @@ class SetupFlowScreen(QWidget):
         self._back_decky_btn.clicked.connect(self._back_to_play_from_decky)
         brow_dk = QHBoxLayout(); brow_dk.addWidget(self._back_decky_btn); brow_dk.addStretch()
         dl.addLayout(brow_dk)
+        dl.addStretch()
         _title_block(dl)
         dl.addSpacing(8)
         self._decky_status_lbl = _lbl("Installing DeckOps Decky plugin...", 15, "#CCC")
@@ -512,6 +504,7 @@ class SetupFlowScreen(QWidget):
         self._back_docked_ctrl_btn.clicked.connect(self._back_to_resolution_from_docked_ctrl)
         brow_dc = QHBoxLayout(); brow_dc.addWidget(self._back_docked_ctrl_btn); brow_dc.addStretch()
         dcl.addLayout(brow_dc)
+        dcl.addStretch()
         _title_block(dcl)
         dcl.addSpacing(16)
         dcl.addWidget(_lbl("What external controller do you use?", 15, "#CCC"))
