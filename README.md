@@ -59,7 +59,7 @@
 
 ## 🚧 WIP / Coming Soon
 
-**Other SteamOS Devices** · Support for non-Deck SteamOS handhelds (Lenovo Legion Go series, ROG Ally series, MSI Claw 8). Device picker in setup, resolution-tuned display configs, and full launch pipeline support. Controller templates pending.
+**Other SteamOS Devices + Bazzite and CachyOS Support** · Support for non-Deck SteamOS handhelds (Lenovo Legion Go series, ROG Ally series, MSI Claw 8). Device picker in setup, resolution-tuned display configs, and full launch pipeline support. Controller templates pending.
 
 **Docked Mode / Decky Plugin** · Play on a TV or monitor with an external controller. A Decky Loader plugin to auto-switch display settings when you dock and undock.
 
@@ -95,7 +95,7 @@ If Steam asks about cloud saves, choose **Keep Local**. If asked about launching
 
 - **MW1 MP** requires two Steam launches to finish setup, then runs normally on the third.
 - **First launch:** All games may take a while to launch the first time — this is normal. They will run fine after the initial launch.
-- **Black Ops III:** CleanOps and T7X install on their first run, which takes a bit and may slow down the Steam Deck temporarily. Wiggle the analog sticks to keep the screen from turning off while you wait.
+- **Black Ops III:** CleanOps and T7X install on their first run, which takes a bit and may slow down Device temporarily. Wiggle the analog sticks to keep the screen from turning off while you wait.
 
 ---
 
@@ -105,9 +105,7 @@ DeckOps installs a custom controller profile for every game. During setup you ch
 
 | Scheme | How it works |
 |---|---|
-| **Hold** | Gyro is active while R5 (right grip) is held down |
 | **ADS** | Gyro activates when you aim down sights |
-| **Toggle** | Press R5 once to turn gyro on, press again to turn it off |
 
 MW1 MP, MW2 SP, and MW3 SP handle gyro differently due to controller support added via Steam Input.
 
