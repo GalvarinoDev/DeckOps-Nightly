@@ -107,7 +107,7 @@ class SetupFlowScreen(QWidget):
         ml.addLayout(brow)
         ml.addSpacing(40)
         _title_block(ml)
-        ml.addSpacing(16)
+        ml.addStretch()
         ml.addWidget(_lbl("Which device do you have?", 15, "#CCC"))
         ml.addSpacing(12)
         mrow = QHBoxLayout(); mrow.setSpacing(20)
@@ -119,7 +119,7 @@ class SetupFlowScreen(QWidget):
         other_btn.clicked.connect(self._show_device_picker)
         mrow.addWidget(lcd_btn); mrow.addWidget(oled_btn); mrow.addWidget(other_btn)
         ml.addLayout(mrow)
-        ml.addStretch()
+        ml.addSpacing(40)
         main_lay.addWidget(self._model_section)
 
         # ── 3. Specific device picker (Other) ────────────────────────────
@@ -133,7 +133,7 @@ class SetupFlowScreen(QWidget):
         dvl.addLayout(brow2)
         dvl.addSpacing(40)
         _title_block(dvl)
-        dvl.addSpacing(16)
+        dvl.addStretch()
         dvl.addWidget(_lbl("Select your device", 15, "#CCC"))
         dvl.addSpacing(4)
         dvl.addWidget(_lbl(
@@ -168,7 +168,7 @@ class SetupFlowScreen(QWidget):
         dev_cols.addLayout(col_right)
 
         dvl.addLayout(dev_cols)
-        dvl.addStretch()
+        dvl.addSpacing(40)
         main_lay.addWidget(self._device_section)
 
         # ── 4. Gyro section ───────────────────────────────────────────────
@@ -182,7 +182,7 @@ class SetupFlowScreen(QWidget):
         gl.addLayout(brow3)
         gl.addSpacing(40)
         _title_block(gl)
-        gl.addSpacing(16)
+        gl.addStretch()
         gl.addWidget(_lbl("Do you want gyro aiming?", 15, "#CCC"))
         gl.addSpacing(12)
         grow = QHBoxLayout(); grow.setSpacing(20)
@@ -192,7 +192,7 @@ class SetupFlowScreen(QWidget):
         gyro_no.clicked.connect(lambda: self._pick_gyro("off"))
         grow.addWidget(gyro_yes); grow.addWidget(gyro_no)
         gl.addLayout(grow)
-        gl.addStretch()
+        gl.addSpacing(40)
         main_lay.addWidget(self._gyro_section)
 
         # ── 4b. Gyro mode section (shown after Yes) ───────────────────────
@@ -206,7 +206,7 @@ class SetupFlowScreen(QWidget):
         gml.addLayout(brow3b)
         gml.addSpacing(40)
         _title_block(gml)
-        gml.addSpacing(16)
+        gml.addStretch()
         gml.addWidget(_lbl("How should gyro activate?", 15, "#CCC"))
         gml.addSpacing(4)
         self._gyro_mode_desc_lbl = _lbl("", 13, C_DIM, align=Qt.AlignLeft)
@@ -223,7 +223,7 @@ class SetupFlowScreen(QWidget):
         self._gyro_hold_btn   = gyro_hold
         self._gyro_toggle_btn = gyro_toggle
         gml.addLayout(gmrow)
-        gml.addStretch()
+        gml.addSpacing(40)
         main_lay.addWidget(self._gyro_mode_section)
 
         # ── 5. Player name section ────────────────────────────────────────
@@ -237,7 +237,7 @@ class SetupFlowScreen(QWidget):
         nl.addLayout(brow4)
         nl.addSpacing(40)
         _title_block(nl)
-        nl.addSpacing(16)
+        nl.addStretch()
         nl.addWidget(_lbl("What's your player name?", 15, "#CCC"))
         nl.addSpacing(4)
         nl.addWidget(_lbl(
@@ -263,7 +263,7 @@ class SetupFlowScreen(QWidget):
         name_cont.clicked.connect(self._save_player_name)
         nc_row = QHBoxLayout(); nc_row.addStretch(); nc_row.addWidget(name_cont); nc_row.addStretch()
         nl.addLayout(nc_row)
-        nl.addStretch()
+        nl.addSpacing(40)
         main_lay.addWidget(self._name_section)
 
         # ── 6. Game source section (merged from SourceScreen) ─────────────
@@ -277,7 +277,7 @@ class SetupFlowScreen(QWidget):
         sl.addLayout(brow5)
         sl.addSpacing(40)
         _title_block(sl)
-        sl.addSpacing(8)
+        sl.addStretch()
         sl.addWidget(_lbl("How did you install your games?", 15, "#CCC"))
         sl.addSpacing(8)
 
@@ -332,7 +332,7 @@ class SetupFlowScreen(QWidget):
         cards.addWidget(own_card)
 
         sl.addLayout(cards)
-        sl.addStretch()
+        sl.addSpacing(40)
         main_lay.addWidget(self._source_section)
 
         # ── 7. Primary controller section (Bazzite + General PC) ──────────
@@ -350,7 +350,7 @@ class SetupFlowScreen(QWidget):
         pcl.addLayout(brow6)
         pcl.addSpacing(40)
         _title_block(pcl)
-        pcl.addSpacing(16)
+        pcl.addStretch()
         self._ctrl_title_lbl = _lbl("What controller do you use?", 15, "#CCC")
         pcl.addWidget(self._ctrl_title_lbl)
         pcl.addSpacing(4)
@@ -368,7 +368,7 @@ class SetupFlowScreen(QWidget):
             b.clicked.connect(lambda checked, k=ctrl_key: self._pick_primary_controller(k))
             pcrow.addWidget(b)
         pcl.addLayout(pcrow)
-        pcl.addStretch()
+        pcl.addSpacing(40)
         main_lay.addWidget(self._primary_controller_section)
 
         # ── 8. Resolution section (General PC, or docked) ─────────────────
@@ -382,7 +382,7 @@ class SetupFlowScreen(QWidget):
         rl.addLayout(brow_res)
         rl.addSpacing(40)
         _title_block(rl)
-        rl.addSpacing(16)
+        rl.addStretch()
         self._res_title_lbl = _lbl("What resolution is your display?", 15, "#CCC")
         rl.addWidget(self._res_title_lbl)
         rl.addSpacing(4)
@@ -416,7 +416,7 @@ class SetupFlowScreen(QWidget):
         own_res.clicked.connect(lambda: self._pick_resolution("own"))
         own_row = QHBoxLayout(); own_row.addStretch(); own_row.addWidget(own_res); own_row.addStretch()
         rl.addLayout(own_row)
-        rl.addStretch()
+        rl.addSpacing(40)
         main_lay.addWidget(self._resolution_section)
 
         # ── 9. Play mode section (handhelds only, not General PC) ─────────
@@ -430,7 +430,7 @@ class SetupFlowScreen(QWidget):
         pl.addLayout(brow_play)
         pl.addSpacing(40)
         _title_block(pl)
-        pl.addSpacing(16)
+        pl.addStretch()
         pl.addWidget(_lbl("How do you play?", 15, "#CCC"))
         pl.addSpacing(4)
         pl.addWidget(_lbl(
@@ -447,7 +447,7 @@ class SetupFlowScreen(QWidget):
         dk_btn.clicked.connect(lambda: self._pick_play_mode("docked"))
         prow.addWidget(hh_btn); prow.addWidget(dk_btn)
         pl.addLayout(prow)
-        pl.addStretch()
+        pl.addSpacing(40)
         main_lay.addWidget(self._play_section)
 
         # ── 10. Decky install section (docked only) ───────────────────────
@@ -461,7 +461,7 @@ class SetupFlowScreen(QWidget):
         dl.addLayout(brow_dk)
         dl.addSpacing(40)
         _title_block(dl)
-        dl.addSpacing(8)
+        dl.addStretch()
         self._decky_status_lbl = _lbl("Installing DeckOps Decky plugin...", 15, "#CCC")
         dl.addWidget(self._decky_status_lbl)
         dl.addSpacing(4)
@@ -485,7 +485,7 @@ class SetupFlowScreen(QWidget):
         drw = QHBoxLayout(); drw.addStretch(); drw.addWidget(self._decky_retry_btn); drw.addStretch()
         dl.addLayout(drw)
 
-        dl.addStretch()
+        dl.addSpacing(40)
         main_lay.addWidget(self._decky_section)
 
         self._decky_sigs = _Sigs()
@@ -506,7 +506,7 @@ class SetupFlowScreen(QWidget):
         dcl.addLayout(brow_dc)
         dcl.addSpacing(40)
         _title_block(dcl)
-        dcl.addSpacing(16)
+        dcl.addStretch()
         dcl.addWidget(_lbl("What external controller do you use?", 15, "#CCC"))
         dcl.addSpacing(4)
         dcl.addWidget(_lbl(
@@ -522,7 +522,7 @@ class SetupFlowScreen(QWidget):
             b.clicked.connect(lambda checked, k=ctrl_key: self._pick_docked_controller(k))
             dcrow.addWidget(b)
         dcl.addLayout(dcrow)
-        dcl.addStretch()
+        dcl.addSpacing(40)
         main_lay.addWidget(self._docked_controller_section)
 
     # ── Section visibility helpers ────────────────────────────────────────
