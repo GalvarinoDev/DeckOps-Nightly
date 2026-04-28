@@ -1365,10 +1365,22 @@ for f in \
     "controller_neptune_deckops_other_toggle.vdf" \
     "controller_neptune_deckops_other_ads.vdf" \
     "controller_neptune_deckops_other_off.vdf" \
+    "controller_neptune_deckops_legion_ads.vdf" \
+    "controller_neptune_deckops_legion_off.vdf" \
+    "controller_neptune_deckops_legion_other_ads.vdf" \
+    "controller_neptune_deckops_legion_other_off.vdf" \
+    "controller_neptune_deckops_2btn_ads.vdf" \
+    "controller_neptune_deckops_2btn_off.vdf" \
+    "controller_neptune_deckops_2btn_other_ads.vdf" \
+    "controller_neptune_deckops_2btn_other_off.vdf" \
     "controller_ps5_deckops.vdf" \
     "controller_ps5_deckops_ads.vdf" \
     "controller_ps5_deckops_other.vdf" \
     "controller_ps5_deckops_other_ads.vdf" \
+    "controller_ps5_edge_deckops.vdf" \
+    "controller_ps5_edge_deckops_ads.vdf" \
+    "controller_ps5_edge_deckops_other.vdf" \
+    "controller_ps5_edge_deckops_other_ads.vdf" \
     "controller_ps4_deckops.vdf" \
     "controller_ps4_deckops_ads.vdf" \
     "controller_ps4_deckops_other.vdf" \
@@ -1377,6 +1389,8 @@ for f in \
     "controller_xbox360_deckops_other.vdf" \
     "controller_xboxone_deckops.vdf" \
     "controller_xboxone_deckops_other.vdf" \
+    "controller_xboxelite_deckops.vdf" \
+    "controller_xboxelite_deckops_other.vdf" \
     "controller_generic_deckops.vdf" \
     "controller_generic_deckops_other.vdf"; do
     target="$TEMPLATE_DIR/$f"
@@ -1616,8 +1630,10 @@ for uid in os.listdir(USERDATA):
             "configset_controller_neptune.vdf",
             "configset_controller_ps5.vdf",
             "configset_controller_ps4.vdf",
+            "configset_controller_ps5_edge.vdf",
             "configset_controller_xbox360.vdf",
             "configset_controller_xboxone.vdf",
+            "configset_controller_xboxelite.vdf",
             "configset_controller_generic.vdf",
         ]
         if deck_serial:

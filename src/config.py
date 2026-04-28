@@ -21,9 +21,12 @@ CONFIG_PATH = os.path.expanduser("~/DeckOps-Nightly/deckops.json")
 
 DEFAULTS = {
     "first_run_complete": False,
+    "os_type": None,             # "steamos", "bazzite", "cachyos", or "other_linux"
     "deck_model": None,          # "oled", "lcd", or "other"
     "other_device": None,         # resolution key for non-Deck devices, e.g.
                                   # "1920x1200", "1920x1200_144hz", "1920x1080", "1280x720"
+    "other_device_type": None,    # device type for controller profile selection:
+                                  # "legion_go", "legion_go_s", "2btn", "generic"
     "gyro_mode":  None,          # "on" or "off"
     "play_mode":  None,          # "handheld" or "docked"
     "external_controller": None, # "playstation", "xbox", or "other" -- only used when play_mode is "docked"
@@ -69,6 +72,26 @@ def save(config: dict):
 def is_first_run() -> bool:
     """Returns True if setup has never been completed."""
     return not load().get("first_run_complete", False)
+
+
+def get_os_type() -> str | None:
+    """Returns 'steamos', 'bazzite', 'cachyos', 'other_linux', or None."""
+    return load().get("os_type")
+
+
+def set_os_type(os_type: str):
+    """Save the user's operating system type.
+
+    os_type -- 'steamos', 'bazzite', 'cachyos', or 'other_linux'
+    """
+    config = load()
+    config["os_type"] = os_type
+    save(config)
+
+
+def is_bazzite() -> bool:
+    """Returns True if the user selected Bazzite as their OS."""
+    return load().get("os_type") == "bazzite"
 
 
 def get_deck_model() -> str | None:
@@ -117,6 +140,26 @@ def set_other_device(device: str):
     """Save the Other device resolution key, e.g. '1920x1200_144hz'."""
     config = load()
     config["other_device"] = device
+    save(config)
+
+
+def get_other_device_type() -> str | None:
+    """Returns the device type for controller profile selection.
+
+    Values: 'legion_go', 'legion_go_s', '2btn', 'generic', or None.
+    Used by controller_profiles.py to pick the correct Neptune variant.
+    """
+    return load().get("other_device_type")
+
+
+def set_other_device_type(device_type: str):
+    """Save the Other device type for controller profile selection.
+
+    device_type -- 'legion_go' (Go 1/2), 'legion_go_s', '2btn' (ROG Ally,
+                   MSI Claw), or 'generic'
+    """
+    config = load()
+    config["other_device_type"] = device_type
     save(config)
 
 
