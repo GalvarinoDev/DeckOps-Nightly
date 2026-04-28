@@ -712,11 +712,11 @@ class InstallScreen(QWidget):
                     proton_path=proton,
                     steam_root=self.steam_root,
                 )
-                self._s.log.emit("✓  Offline launcher prefix preheated")
+                self._s.log.emit("✓  Offline launcher prefix ready")
             except Exception as ex:
                 self._s.log.emit(f"  Launcher prefix deps skipped: {ex}")
 
-            # LCD: also preheat Heroic's shared prefix. Heroic initializes
+            # LCD: also prepare Heroic's shared prefix. Heroic initializes
             # it during Plutonium login, but may not include the full d3dx9
             # set needed for all games. ensure_prefix_deps only copies
             # missing DLLs so it won't overwrite Heroic's own files.
@@ -731,7 +731,7 @@ class InstallScreen(QWidget):
                             proton_path=proton,
                             steam_root=self.steam_root,
                         )
-                        self._s.log.emit("✓  Heroic shared prefix preheated")
+                        self._s.log.emit("✓  Heroic shared prefix ready")
                 except Exception as ex:
                     self._s.log.emit(f"  Heroic prefix deps skipped: {ex}")
 
@@ -1407,11 +1407,11 @@ class OwnInstallScreen(QWidget):
                     proton_path=proton,
                     steam_root=self.steam_root,
                 )
-                self._s.log.emit("✓  Offline launcher prefix preheated")
+                self._s.log.emit("✓  Offline launcher prefix ready")
             except Exception as ex:
                 self._s.log.emit(f"  Launcher prefix deps skipped: {ex}")
 
-            # LCD: also preheat Heroic's shared prefix. Heroic initializes
+            # LCD: also prepare Heroic's shared prefix. Heroic initializes
             # it during Plutonium login, but may not include the full d3dx9
             # set needed for all games. ensure_prefix_deps only copies
             # missing DLLs so it won't overwrite Heroic's own files.
@@ -1426,7 +1426,7 @@ class OwnInstallScreen(QWidget):
                             proton_path=proton,
                             steam_root=self.steam_root,
                         )
-                        self._s.log.emit("✓  Heroic shared prefix preheated")
+                        self._s.log.emit("✓  Heroic shared prefix ready")
                 except Exception as ex:
                     self._s.log.emit(f"  Heroic prefix deps skipped: {ex}")
 

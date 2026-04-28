@@ -1047,6 +1047,11 @@ SHORTCUT_NAMES = {
     "Call of Duty: Black Ops II - Zombies",
     "Call of Duty: Black Ops II - Multiplayer",
     "Call of Duty: Black Ops III",
+    "Call of Duty: Black Ops 3 T7x",
+    "Call of Duty: Ghosts - Singleplayer",
+    "Call of Duty: Ghosts - Multiplayer",
+    "Call of Duty: Advanced Warfare - Singleplayer",
+    "Call of Duty: Advanced Warfare - Multiplayer",
 }
 
 steam_dir = os.path.expanduser("~/.local/share/Steam")

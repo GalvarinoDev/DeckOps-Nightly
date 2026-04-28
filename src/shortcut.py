@@ -1683,20 +1683,17 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
             elif key == "iw4mp":
                 # iw4x -- point at iw4x.exe (dropped by installer, no rename)
                 actual_exe = os.path.join(install_dir, "iw4x.exe")
-                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                launch_options = ""
 
             elif key == "cod4sp":
                 # iw3sp-mod -- point at iw3sp_mod.exe (dropped by installer, no rename)
                 actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
-                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                launch_options = ""
 
             elif key == "t7":
                 # CleanOps -- uses original exe with Wine DLL override for d3d11.dll
                 actual_exe = exe_path
-                launch_options = (
-                    f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                    f'WINEDLLOVERRIDES="d3d11=n,b" %command%'
-                )
+                launch_options = 'WINEDLLOVERRIDES="d3d11=n,b" %command%'
 
             elif key == "t7x":
                 # T7X (AlterWare) -- standalone exe in the DeckOps-T7X
@@ -1710,27 +1707,19 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 # The built-in launcher UI crashes under Proton; the mode
                 # flag bypasses it and loads directly into the correct mode.
                 actual_exe = os.path.join(install_dir, "iw6-mod.exe")
-                mode_flag = "-multiplayer" if key == "iw6mp" else "-singleplayer"
-                launch_options = (
-                    f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                    f'%command% {mode_flag}'
-                )
+                launch_options = "-multiplayer" if key == "iw6mp" else "-singleplayer"
 
             elif key in ("s1mp", "s1sp"):
                 # AlterWare Advanced Warfare -- point at s1-mod.exe, pass mode flag
                 actual_exe = os.path.join(install_dir, "s1-mod.exe")
-                mode_flag = "-multiplayer" if key == "s1mp" else "-singleplayer"
-                launch_options = (
-                    f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                    f'%command% {mode_flag}'
-                )
+                launch_options = "-multiplayer" if key == "s1mp" else "-singleplayer"
 
             else:
                 # cod4mp (cod4x patches iw3mp.exe in place), iw4sp, iw5sp,
                 # t6sp (T6SP-MOD replaces exe in place)
-                # -- these use the original game exe path with no shortcut change
+                # -- these use the original game exe path with no launch options
                 actual_exe = exe_path
-                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                launch_options = ""
 
             # For non-Plutonium keys, warn if the target exe is missing.
             # Plutonium exes won't exist yet -- they get created when the
@@ -1753,32 +1742,12 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
                 game["shortcut_appid"]  = shortcut_appid
                 game["compatdata_path"] = compatdata_path
-                # Re-resolve launch options with updated compatdata_path
-                if key in ("iw6mp", "iw6sp"):
-                    mode_flag = "-multiplayer" if key == "iw6mp" else "-singleplayer"
-                    launch_options = (
-                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                        f'%command% {mode_flag}'
-                    )
-                elif key in ("s1mp", "s1sp"):
-                    mode_flag = "-multiplayer" if key == "s1mp" else "-singleplayer"
-                    launch_options = (
-                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                        f'%command% {mode_flag}'
-                    )
-                elif key == "iw4mp":
-                    launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
-                elif key == "cod4sp":
-                    launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
-                elif key == "t7":
-                    launch_options = (
-                        f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                        f'WINEDLLOVERRIDES="d3d11=n,b" %command%'
-                    )
-                elif key == "t7x":
-                    launch_options = ""
-                else:
-                    launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                # Re-resolve launch options with updated compatdata_path.
+                # Most own-game keys have no compatdata_path in their launch
+                # options, so only keys that reference it need re-resolving.
+                # Currently only Plutonium OLED keys use it, and those are
+                # handled above the continue. This block is kept as a
+                # defensive no-op for future keys that might need it.
 
             if key not in _PLUT_KEYS and not os.path.exists(actual_exe):
                 prog(f"  → {name}")
