@@ -1,11 +1,13 @@
 """
-plutonium_oled.py - DeckOps installer for Plutonium (OLED path)
+plutonium_oled.py - DeckOps installer for Plutonium (OLED / Other path)
 (Call of Duty: MW3, World at War, Black Ops, Black Ops II)
 
 LCD Decks are dispatched to plutonium_lcd.py early in
-install_plutonium(). Everything below the LCD dispatch is OLED-only.
+install_plutonium(). Everything below the LCD dispatch handles both
+OLED and Other (non-Deck SteamOS) devices, which share the same
+direct-launch architecture.
 
-OLED flow:
+OLED / Other flow:
   1. Download plutonium.exe into a dedicated DeckOps-managed Wine prefix.
   2. Launch it through Proton so the user can log in and let Plutonium
      download its full client.
@@ -563,7 +565,7 @@ def _apply_launcher_game_configs(launcher_plut_dir: str, game_key: str,
     import config as _cfg
     deck_model = _cfg.get_deck_model() or "oled"
     player_name = _cfg.get_player_name() or "Player"
-    model_dir = "OLED" if deck_model == "oled" else "LCD"
+    model_dir = _cfg.get_model_config_dir()
 
     _here = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(_here)
@@ -724,7 +726,7 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
                    proton_path: str, compatdata_path: str, plut_dir: str):
     """
     Replace the game exe with a bash wrapper that launches Plutonium
-    through Proton. OLED only — LCD uses plutonium_lcd.py.
+    through Proton. OLED / Other only — LCD uses plutonium_lcd.py.
 
     Calls plutonium-launcher-win32.exe with a protocol URL.
     Requires the user to have logged in.
@@ -806,7 +808,8 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     Full install flow for a single Plutonium game.
 
     LCD Decks are dispatched to plutonium_lcd.py early
-    in this function. Everything after the dispatch is OLED-only.
+    in this function. Everything after the dispatch handles
+    OLED and Other (non-Deck SteamOS) devices.
 
     Assumes the user has already logged in and closed Plutonium via
     launch_bootstrapper(), and is_plutonium_ready() has returned True.
@@ -831,9 +834,9 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     # LCD Decks use Heroic Games Launcher with a single shared Wine prefix
     # for all Plutonium games. Everything from downloading the bootstrapper
     # to writing per-game shortcuts lives in plutonium_lcd.py.
-    # This function is OLED-only past this point.
+    # OLED and Other devices continue below with the direct-launch path.
     import config as _cfg_lcd
-    if not _cfg_lcd.is_oled():
+    if _cfg_lcd.is_lcd():
         from plutonium_lcd import install_plutonium_lcd
         wrapper_path = install_plutonium_lcd(
             game, game_key, installed_games,
@@ -851,11 +854,11 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     _ensure_shared_plutonium(src_plut_dir,
                              on_progress=lambda msg: prog(5, msg))
 
-    # OLED only past this point (LCD returns early above).
+    # OLED / Other past this point (LCD returns early above).
     # Plutonium files go into Steam's compatdata prefix for the game,
-    # because OLED launches the game through a bash wrapper that Steam runs
-    # inside that same prefix. Use the compatdata_path passed by the caller
-    # for correct SD card handling via find_compatdata().
+    # because OLED/Other launches the game through a bash wrapper that
+    # Steam runs inside that same prefix. Use the compatdata_path passed
+    # by the caller for correct SD card handling via find_compatdata().
     dest_plut_dir = os.path.join(
         compatdata_path, "pfx", "drive_c", "users", "steamuser",
         "AppData", "Local", "Plutonium",
@@ -883,7 +886,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
                                   on_progress=lambda msg: prog(62, msg))
 
     # Install DeckOps client-side menu mod (e.g. mainlobby.lua for T6 MP).
-    # OLED only -- LCD handles its own setup in plutonium_lcd.py.
+    # OLED / Other only -- LCD handles its own setup in plutonium_lcd.py.
     prog(65, "Installing menu mod...")
     _install_menu_mod(dest_plut_dir, game_key,
                       on_progress=lambda msg: prog(67, msg))
@@ -928,7 +931,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     except Exception as ex:
         prog(75, f"  ⚠ Offline launcher prefix mirror failed: {ex}")
 
-    # ── OLED only past this point ────────────────────────────────────────
+    # ── OLED / Other only past this point ──────────────────────────────
     # LCD dispatched to plutonium_lcd.py at the top of this
     # function. OLED games get a Steam-side bash wrapper + metadata.
     wrapper_path = None

@@ -1,15 +1,21 @@
 """
 game_config.py - DeckOps game config writer
 
-Copies pre-built config files from assets/configs/LCD or assets/configs/OLED
-into the correct destination paths for each game. Overwrites whatever is
-currently there.
+Copies pre-built config files from assets/configs/ into the correct
+destination paths for each game. The source folder is determined by the
+user's device selection:
+
+    OLED  -> assets/configs/OLED/
+    LCD   -> assets/configs/LCD/
+    Other -> assets/configs/Other/<resolution>/   (e.g. Other/1920x1200)
+
+Overwrites whatever is currently there.
 
 After copying, replaces the default player name ("Player") with the user's
 chosen name from deckops.json in any config that has `seta name "Player"`.
 
 LCD users receive MW1, MW2, MW3 SP, Ghosts, and AW configs.
-OLED users receive MW1, MW2, WaW, BO1, MW3, BO2, Ghosts, and AW configs.
+OLED and Other users receive MW1, MW2, WaW, BO1, MW3, BO2, Ghosts, and AW configs.
 
 LCD Plutonium games are additionally mirrored into the Heroic shared default
 prefix (~/Games/Heroic/Prefixes/default), because LCD online play routes
@@ -408,7 +414,7 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
     selected_keys   — list of game keys the user selected to install
     installed_games — dict from detect_games.find_installed_games()
     steam_root      — path to Steam root
-    deck_model      — 'oled' or 'lcd'
+    deck_model      — 'oled', 'lcd', or 'other'
     on_progress     — optional callback(msg: str)
 
     Returns (applied, skipped, failed) counts.
@@ -445,8 +451,8 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
             if mp_key in installed_games and sp_key not in installed_games:
                 installed_games[sp_key] = installed_games[mp_key]
 
-    model_dir   = "OLED" if deck_model == "oled" else "LCD"
-    allowed_keys = _OLED_KEYS if deck_model == "oled" else _LCD_KEYS
+    model_dir    = cfg.get_model_config_dir()
+    allowed_keys = _LCD_KEYS if deck_model == "lcd" else _OLED_KEYS
     config_map  = _build_config_map(steam_root, installed_games)
 
     for key in expanded_keys:
@@ -505,11 +511,12 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
                 failed += 1
                 continue
 
-            # ── Heroic shared prefix mirror (LCD Plutonium only) ──────────
+            # ── Heroic shared prefix mirror (LCD only) ────────────────────
             # LCD online play routes through Heroic's default prefix, which
             # never touches the per-game compatdata above. Mirror the same
             # config there so online launches see it. Best-effort: failures
             # here are logged but don't increment applied/failed.
+            # OLED and Other devices skip this — they launch directly.
             if deck_model == "lcd" and fixed_dest:
                 heroic_dest_dir = _heroic_mirror_path(dest_dir)
                 if heroic_dest_dir:
@@ -526,7 +533,7 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
                         prog(f"  ! {key}: Heroic mirror failed "
                              f"({os.path.basename(src)}): {ex}")
 
-            # ── Offline launcher prefix mirror (OLED Plutonium only) ────
+            # ── Offline launcher prefix mirror (OLED / Other only) ────────
             # The offline launcher exe runs in its own Proton prefix.
             # Mirror Plutonium configs there so the bootstrapper finds
             # resolution, FOV, sensitivity, and player name settings.

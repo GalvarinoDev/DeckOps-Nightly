@@ -1355,7 +1355,8 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
 
             # For t4mp (WaW Multiplayer), plutonium.py has replaced CoDWaWmp.exe
             # with a bash wrapper -- Proton cannot run it as a Windows binary.
-            # OLED: point at the launcher with a protocol URL for online play.
+            # OLED / Other: point at the launcher with a protocol URL for
+            #               online play.
             # LCD: create a Heroic flatpak shortcut for online play. Uses the
             #      same LD_PRELOAD pattern as Steam library launch options to
             #      work around Steam's pinned libcurl conflict with flatpak.
@@ -1363,7 +1364,7 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
             # existing shortcut entry in Steam is not invalidated.
             if key == "t4mp":
                 import config as _cfg
-                if _cfg.is_oled():
+                if _cfg.uses_oled_path():
                     plut_dir = os.path.join(
                         compatdata_path,
                         "pfx", "drive_c", "users", "steamuser",
@@ -1448,7 +1449,7 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
             # a compat tool would sandbox flatpak inside SLR and break it.
             try:
                 import config as cfg
-                if key == "t4mp" and not cfg.is_oled():
+                if key == "t4mp" and cfg.is_lcd():
                     _clear_compat_tool(str(shortcut_appid))
                     prog(f"    ✓ Cleared compat tool (LCD Heroic shortcut)")
                 else:
@@ -1662,12 +1663,12 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
                 # enriched with shortcut_appid and compatdata_path above,
                 # which install_plutonium needs to copy Plutonium files
                 # into the prefix.
-                if not _cfg.is_oled():
+                if _cfg.is_lcd():
                     prog(f"  → {name}")
                     prog(f"    LCD path - shortcut handled separately")
                     continue
 
-                # OLED: point at the Plutonium launcher directly
+                # OLED / Other: point at the Plutonium launcher directly
                 plut_dir = os.path.join(
                     compatdata_path,
                     "pfx", "drive_c", "users", "steamuser",

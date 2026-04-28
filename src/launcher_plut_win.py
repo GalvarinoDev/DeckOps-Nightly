@@ -104,7 +104,7 @@ def _resolve_plut_dir() -> str:
     """Determine the primary Plutonium directory (where the bootstrapper lives).
 
     LCD: Heroic shared prefix.
-    OLED: first prefix found with a bootstrapper exe. Falls back to
+    OLED / Other: first prefix found with a bootstrapper exe. Falls back to
     first prefix with config.json, then LOCALAPPDATA.
     """
     try:
@@ -118,7 +118,7 @@ def _resolve_plut_dir() -> str:
     if model == "lcd":
         return _LCD_PLUT_DIR
 
-    # OLED: find a prefix that has the bootstrapper
+    # OLED / Other: find a prefix that has the bootstrapper
     all_dirs = _find_all_plut_dirs()
     for d in all_dirs:
         if os.path.exists(os.path.join(d, "bin",
@@ -168,8 +168,8 @@ _GAME_KEY_APPIDS = {
 def _resolve_game_plut_dir(game_key: str) -> tuple:
     """
     Resolve the Plutonium directory and bootstrapper path for a specific
-    game key. On OLED, uses the game's own compatdata prefix. On LCD,
-    returns the global _PLUT_DIR.
+    game key. On OLED / Other, uses the game's own compatdata prefix.
+    On LCD, returns the global _PLUT_DIR.
 
     Returns (plut_dir, bootstrapper_path).
     Falls back to the global _PLUT_DIR if the per-game prefix doesn't
@@ -184,7 +184,7 @@ def _resolve_game_plut_dir(game_key: str) -> tuple:
     except Exception:
         pass
 
-    # OLED: try the game's own prefix first
+    # OLED / Other: try the game's own prefix first
     appid = _GAME_KEY_APPIDS.get(game_key)
     if appid:
         candidate = os.path.join(_OLED_COMPATDATA_BASE, appid, _OLED_PLUT_SUFFIX)
@@ -465,10 +465,10 @@ def _load_deckops_config() -> dict:
 
 
 def _load_plut_config() -> dict:
-    """Load Plutonium config.json — merges across all prefixes on OLED.
+    """Load Plutonium config.json — merges across all prefixes on OLED / Other.
 
     LCD: single config.json from the Heroic shared prefix.
-    OLED: each per-game prefix has its own config.json with only that
+    OLED / Other: each per-game prefix has its own config.json with only that
     game's path populated. This function merges all of them so every
     installed game's path is available.
     """
@@ -491,7 +491,7 @@ def _load_plut_config() -> dict:
         except (json.JSONDecodeError, IOError):
             return {}
 
-    # OLED: merge config.json from all prefixes
+    # OLED / Other: merge config.json from all prefixes
     merged = {}
     path_keys = ("t4Path", "t5Path", "t6Path", "iw5Path")
 
