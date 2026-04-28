@@ -84,8 +84,8 @@ def font(size=13, bold=False, weight=None, display=False):
 # ── Game card definitions ─────────────────────────────────────────────────────
 #
 # Each entry is one card in the UI. Always 6 cards, but what each card shows
-# depends on the Deck model. OLED users get the full key list. LCD users get
-# a reduced set via the lcd_* overrides:
+# depends on the Deck model. OLED and Other users get the full key list. LCD
+# users get a reduced set via the lcd_* overrides:
 #
 #   lcd_keys   — which game keys this card includes on LCD (empty = card hidden)
 #   lcd_client — client badge label on LCD (e.g. "steam" instead of "plutonium")
@@ -126,19 +126,19 @@ ALL_GAMES = [
 
 def _active_keys(gd):
     """Return the keys to show for this card based on the user's Deck model."""
-    if cfg.is_oled():
+    if not cfg.is_lcd():
         return gd["keys"]
     return gd.get("lcd_keys", gd["keys"])
 
 def _active_client(gd):
     """Return the client label for this card based on the user's Deck model."""
-    if cfg.is_oled():
+    if not cfg.is_lcd():
         return gd["client"]
     return gd.get("lcd_client", gd["client"])
 
 def _active_appid(gd):
     """Return the display appid for this card based on the user's Deck model."""
-    if cfg.is_oled():
+    if not cfg.is_lcd():
         return gd["appid"]
     return gd.get("lcd_appid", gd["appid"])
 
@@ -479,15 +479,69 @@ class IntroScreen(QWidget):
             lay.addWidget(_lbl(warn, 13, C_TREY, align=Qt.AlignLeft))
         lay.addSpacing(16)
 
-        lay.addWidget(_lbl("Which Steam Deck do you have?", 15, "#CCC"))
+        lay.addWidget(_lbl("Which device do you have?", 15, "#CCC"))
         brow = QHBoxLayout(); brow.setSpacing(20)
         lcd  = _btn("Steam Deck LCD", C_IW, h=56)
         oled = _btn("Steam Deck OLED", C_IW, h=56)
+        other_dev = _btn("Other SteamOS Device", C_TREY, h=56)
         lcd.clicked.connect(lambda: self._pick_model("lcd"))
         oled.clicked.connect(lambda: self._pick_model("oled"))
-        brow.addWidget(lcd); brow.addWidget(oled)
+        other_dev.clicked.connect(lambda: self._pick_model("other"))
+        brow.addWidget(lcd); brow.addWidget(oled); brow.addWidget(other_dev)
         lay.addLayout(brow)
         main_lay.addWidget(self._model_section)
+
+        # ── Device picker section (Other device sub-screen) ──────────────
+        self._device_section = QWidget(); self._device_section.setVisible(False)
+        dvl = QVBoxLayout(self._device_section); dvl.setContentsMargins(80,60,80,60); dvl.setSpacing(16)
+
+        self._back_device_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
+        self._back_device_btn.setFixedWidth(80)
+        self._back_device_btn.clicked.connect(self._back_to_model_from_device)
+        back_row_dev = QHBoxLayout()
+        back_row_dev.addWidget(self._back_device_btn); back_row_dev.addStretch()
+        dvl.addLayout(back_row_dev)
+
+        dvl.addStretch()
+        _title_block(dvl)
+        dvl.addSpacing(16)
+        dvl.addWidget(_lbl("Select your device", 15, "#CCC"))
+        dvl.addSpacing(4)
+        dvl.addWidget(_lbl(
+            "Pick the device closest to yours. This sets the display resolution, "
+            "refresh rate, and FPS cap for your game configs.",
+            13, C_DIM, align=Qt.AlignLeft))
+        dvl.addSpacing(12)
+
+        # Device buttons — two columns
+        dev_cols = QHBoxLayout(); dev_cols.setSpacing(20)
+
+        col_left = QVBoxLayout(); col_left.setSpacing(10)
+        col_left.addWidget(_lbl("16:10  (1920×1200)", 12, C_TREY, bold=True))
+        dev_lgs = _btn("Lenovo Legion Go S", C_DARK_BTN, h=48)
+        dev_lg2 = _btn("Lenovo Legion Go 2", C_DARK_BTN, h=48)
+        dev_msi = _btn("MSI Claw 8 AI+", C_DARK_BTN, h=48)
+        dev_lgs.clicked.connect(lambda: self._pick_other_device("1920x1200"))
+        dev_lg2.clicked.connect(lambda: self._pick_other_device("1920x1200_144hz"))
+        dev_msi.clicked.connect(lambda: self._pick_other_device("1920x1200"))
+        col_left.addWidget(dev_lgs); col_left.addWidget(dev_lg2); col_left.addWidget(dev_msi)
+        dev_cols.addLayout(col_left)
+
+        col_right = QVBoxLayout(); col_right.setSpacing(10)
+        col_right.addWidget(_lbl("16:9  (1920×1080)", 12, C_TREY, bold=True))
+        dev_rog = _btn("ROG Ally X / Xbox Ally X", C_DARK_BTN, h=48)
+        dev_rog.clicked.connect(lambda: self._pick_other_device("1920x1080"))
+        col_right.addWidget(dev_rog)
+        col_right.addSpacing(10)
+        col_right.addWidget(_lbl("Other", 12, C_TREY, bold=True))
+        dev_720 = _btn("Other / 720p Fallback", C_DARK_BTN, h=48)
+        dev_720.clicked.connect(lambda: self._pick_other_device("1280x720"))
+        col_right.addWidget(dev_720)
+        dev_cols.addLayout(col_right)
+
+        dvl.addLayout(dev_cols)
+        dvl.addStretch()
+        main_lay.addWidget(self._device_section)
 
         # ── Gyro section (second screen, replaces model section) ──────────────
         self._gyro_section = QWidget(); self._gyro_section.setVisible(False)
@@ -801,8 +855,23 @@ class IntroScreen(QWidget):
         self._resolution_section.setVisible(True)
 
     def _pick_model(self, model):
+        if model == "other":
+            # Show the device picker sub-screen
+            self._model_section.setVisible(False)
+            self._device_section.setVisible(True)
+            return
         cfg.set_deck_model(model)
         self._model_section.setVisible(False)
+        self._gyro_section.setVisible(True)
+
+    def _back_to_model_from_device(self):
+        self._device_section.setVisible(False)
+        self._model_section.setVisible(True)
+
+    def _pick_other_device(self, device_key):
+        cfg.set_other_device(device_key)
+        cfg.set_deck_model("other")
+        self._device_section.setVisible(False)
         self._gyro_section.setVisible(True)
 
     def _next_screen(self):
@@ -950,7 +1019,7 @@ class WelcomeScreen(QWidget):
         else:
             self.own_installed = {}
             self.installed = steam_found
-        if not cfg.is_oled():
+        if cfg.is_lcd():
             lcd_allowed = set()
             for g in ALL_GAMES:
                 lcd_allowed.update(g.get("lcd_keys", g["keys"]))
@@ -1270,7 +1339,7 @@ class InstallScreen(QWidget):
         self._pulse_timer.stop()
 
     def _show_plut_wait(self):
-        is_lcd = not cfg.is_oled()
+        is_lcd = cfg.is_lcd()
         self.plut_warn.setVisible(is_lcd)
         self.plut_btn.setVisible(True)
 
@@ -1446,12 +1515,12 @@ class InstallScreen(QWidget):
 
         # ── Plutonium bootstrapper (Steam still running) ──────────────────────
         if has_plut:
-            is_lcd = not cfg.is_oled()
+            is_lcd = cfg.is_lcd()
 
-            # LCD and OLED both require the user to log in, just in different
+            # LCD and OLED / Other both require the user to log in, just in different
             # prefixes. LCD logs in inside HGL's shared default prefix so
             # the auth state is bound to the exact Wine prefix that will
-            # later launch the games. OLED logs in inside the dedicated
+            # later launch the games. OLED / Other logs in inside the dedicated
             # DeckOps prefix at ~/.local/share/deckops/plutonium_prefix/.
             if is_lcd:
                 from plutonium_lcd import (launch_bootstrapper_lcd,
@@ -1586,7 +1655,7 @@ class InstallScreen(QWidget):
             # it during Plutonium login, but may not include the full d3dx9
             # set needed for all games. ensure_prefix_deps only copies
             # missing DLLs so it won't overwrite Heroic's own files.
-            if not cfg.is_oled():
+            if cfg.is_lcd():
                 try:
                     from ge_proton import ensure_prefix_deps as _epd
                     from plutonium_lcd import HEROIC_DEFAULT_WINE_PREFIX
@@ -2220,7 +2289,7 @@ class ManagementScreen(QWidget):
             if not storage_name:
                 return None
 
-            if not cfg.is_oled():
+            if cfg.is_lcd():
                 # LCD: single Heroic shared prefix for all games
                 from plutonium_lcd import get_shared_plut_dir
                 plut_dir = get_shared_plut_dir()
@@ -2361,7 +2430,7 @@ class ManagementScreen(QWidget):
             # Check if multiple keys have different appids (OLED only).
             # If so, they have separate prefixes with separate mods/ folders.
             unique_appids = set(_PLUT_APPID.get(k) for k in plut_keys)
-            need_chooser = cfg.is_oled() and len(unique_appids) > 1
+            need_chooser = not cfg.is_lcd() and len(unique_appids) > 1
 
             if need_chooser:
                 msg = QMessageBox(self)
@@ -2529,7 +2598,7 @@ class ControllerInfoScreen(QWidget):
         self._decky_body.setVisible(is_docked)
         self._decky_btn.setVisible(is_docked)
         # Only show the LCD launch delay note for LCD users
-        is_lcd = not cfg.is_oled()
+        is_lcd = cfg.is_lcd()
         self._lcd_div.setVisible(is_lcd)
         self._lcd_hdr.setVisible(is_lcd)
         self._lcd_body.setVisible(is_lcd)
@@ -2696,8 +2765,21 @@ class ConfigureScreen(QWidget):
             except Exception:
                 pass
 
+        # Device display name for about label
+        if model == "other":
+            other_dev = cfg.get_other_device() or "unknown"
+            _DEVICE_NAMES = {
+                "1920x1200": "Other (1920×1200)",
+                "1920x1200_144hz": "Other (1920×1200 144Hz)",
+                "1920x1080": "Other (1920×1080)",
+                "1280x720": "Other (1280×720)",
+            }
+            device_display = _DEVICE_NAMES.get(other_dev, f"Other ({other_dev})")
+        else:
+            device_display = f"Steam Deck {model.upper()}"
+
         self._about_label.setText(
-            f"Steam Deck: {model.upper()}  |  Source: {source_label}  |  "
+            f"Device: {device_display}  |  Source: {source_label}  |  "
             f"Player: {player}\n"
             f"Build: {build}"
         )
@@ -3150,7 +3232,7 @@ class OwnInstallScreen(QWidget):
         self._pulse_timer.stop()
 
     def _show_plut_wait(self):
-        is_lcd = not cfg.is_oled()
+        is_lcd = cfg.is_lcd()
         self.plut_warn.setVisible(is_lcd)
         self.plut_btn.setVisible(True)
 
@@ -3268,7 +3350,7 @@ class OwnInstallScreen(QWidget):
             from plutonium_oled import (launch_bootstrapper, is_plutonium_ready,
                                    install_plutonium)
             from plutonium_oled import GAME_META as _PLUT_META
-            is_lcd = not cfg.is_oled()
+            is_lcd = cfg.is_lcd()
 
             if is_lcd:
                 from plutonium_lcd import (launch_bootstrapper_lcd,
@@ -3504,7 +3586,7 @@ class OwnInstallScreen(QWidget):
             # it during Plutonium login, but may not include the full d3dx9
             # set needed for all games. ensure_prefix_deps only copies
             # missing DLLs so it won't overwrite Heroic's own files.
-            if not cfg.is_oled():
+            if cfg.is_lcd():
                 try:
                     from ge_proton import ensure_prefix_deps as _epd
                     from plutonium_lcd import HEROIC_DEFAULT_WINE_PREFIX

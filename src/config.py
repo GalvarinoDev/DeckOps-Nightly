@@ -6,7 +6,8 @@ Handles reading and writing deckops.json which lives at:
 
 The config file tracks:
     - Whether first-time setup has been completed
-    - Which Deck model the user has (oled or lcd)
+    - Which device the user has (oled, lcd, or other)
+    - For 'other' devices, which device/resolution profile to use
     - Which games have been set up and when
     - The Steam root path found during setup
 """
@@ -20,7 +21,9 @@ CONFIG_PATH = os.path.expanduser("~/DeckOps-Nightly/deckops.json")
 
 DEFAULTS = {
     "first_run_complete": False,
-    "deck_model": None,          # "oled" or "lcd"
+    "deck_model": None,          # "oled", "lcd", or "other"
+    "other_device": None,         # resolution key for non-Deck devices, e.g.
+                                  # "1920x1200", "1920x1200_144hz", "1920x1080", "1280x720"
     "gyro_mode":  None,          # "on" or "off"
     "play_mode":  None,          # "handheld" or "docked"
     "external_controller": None, # "playstation", "xbox", or "other" -- only used when play_mode is "docked"
@@ -69,19 +72,68 @@ def is_first_run() -> bool:
 
 
 def get_deck_model() -> str | None:
-    """Returns 'oled', 'lcd', or None if not yet set."""
+    """Returns 'oled', 'lcd', 'other', or None if not yet set."""
     return load().get("deck_model")
 
 
 def set_deck_model(model: str):
-    """Save the user's Deck model. model should be 'oled' or 'lcd'."""
+    """Save the user's device model. model should be 'oled', 'lcd', or 'other'."""
     config = load()
     config["deck_model"] = model
     save(config)
 
 
 def is_oled() -> bool:
+    """True only for actual Steam Deck OLED hardware."""
     return load().get("deck_model") == "oled"
+
+
+def is_lcd() -> bool:
+    """True only for Steam Deck LCD hardware (Heroic/LCD launch path)."""
+    return load().get("deck_model") == "lcd"
+
+
+def is_other() -> bool:
+    """True for non-Deck SteamOS devices (Legion Go, ROG Ally, etc.)."""
+    return load().get("deck_model") == "other"
+
+
+def uses_oled_path() -> bool:
+    """True for devices that use the direct Plutonium launcher path.
+
+    Both OLED and Other devices launch Plutonium directly via the
+    protocol URL in Steam's compatdata prefix. LCD uses Heroic instead.
+    Use this for launch pipeline decisions, NOT for config folder resolution.
+    """
+    return load().get("deck_model") != "lcd"
+
+
+def get_other_device() -> str | None:
+    """Returns the resolution key for Other devices, e.g. '1920x1200', or None."""
+    return load().get("other_device")
+
+
+def set_other_device(device: str):
+    """Save the Other device resolution key, e.g. '1920x1200_144hz'."""
+    config = load()
+    config["other_device"] = device
+    save(config)
+
+
+def get_model_config_dir() -> str:
+    """Return the asset subdirectory for the current device's configs.
+
+    OLED  -> 'OLED'
+    LCD   -> 'LCD'
+    Other -> 'Other/<resolution>'  (e.g. 'Other/1920x1200')
+
+    Falls back to 'OLED' if deck_model is unset.
+    """
+    model = load().get("deck_model") or "oled"
+    if model == "other":
+        device = load().get("other_device") or "1920x1200"
+        return f"Other/{device}"
+    return "OLED" if model == "oled" else "LCD"
 
 
 def get_gyro_mode() -> str | None:
