@@ -123,7 +123,7 @@ class WelcomeScreen(QWidget):
             if base not in seen_own:
                 seen_own.add(base)
                 lines.append(f'<span style="color:{C_TREY}">{base} (Non-Steam)</span>')
-        self.results.setText("\n".join(lines)); self.cont.setVisible(True)
+        self.results.setText("<br>".join(lines)); self.cont.setVisible(True)
 
     def _go_next(self):
         if cfg.is_first_run():
@@ -149,9 +149,9 @@ class SetupScreen(QWidget):
         self.steam_installed={}; self.own_installed={}; self.steam_root=""
         self._checks={}
 
-        lay = QVBoxLayout(self); lay.setContentsMargins(60,40,60,40); lay.setSpacing(14)
-        t = QLabel("SETUP"); t.setFont(font(36,True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
+        lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(14)
+        _title_block(lay)
+        lay.addSpacing(4)
         lay.addWidget(_lbl(
             "Choose which games to set up. "
             "DeckOps will create Proton prefixes automatically.", 13, C_DIM))
@@ -337,8 +337,8 @@ class InstallScreen(QWidget):
         self.install_t7x_opt = False
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
-        t = QLabel("INSTALLING"); t.setFont(font(36,True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
+        _title_block(lay)
+        lay.addSpacing(4)
         self.cur = _lbl("Preparing...", 16, "#CCC"); lay.addWidget(self.cur)
         self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
         self.bar.setFixedHeight(22)
@@ -996,8 +996,8 @@ class OwnInstallScreen(QWidget):
         self.install_t7x_opt = False
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
-        t = QLabel("INSTALLING"); t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
+        _title_block(lay)
+        lay.addSpacing(4)
         self.cur = _lbl("Preparing...", 16, "#CCC"); lay.addWidget(self.cur)
         self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
         self.bar.setFixedHeight(22)
@@ -1737,9 +1737,9 @@ class OwnScanScreen(QWidget):
         self._checks = {}
         self._extra_paths = []
 
-        lay = QVBoxLayout(self); lay.setContentsMargins(60, 40, 60, 40); lay.setSpacing(14)
-        t = QLabel("SETUP"); t.setFont(font(36, True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
+        lay = QVBoxLayout(self); lay.setContentsMargins(80, 60, 80, 60); lay.setSpacing(14)
+        _title_block(lay)
+        lay.addSpacing(4)
         lay.addWidget(_lbl("NON-STEAM GAMES", 14, C_TREY, align=Qt.AlignCenter))
         lay.addWidget(_lbl(
             "Scanning for games installed outside Steam. "
