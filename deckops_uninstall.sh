@@ -1392,7 +1392,15 @@ for f in \
     "controller_xboxelite_deckops.vdf" \
     "controller_xboxelite_deckops_other.vdf" \
     "controller_generic_deckops.vdf" \
-    "controller_generic_deckops_other.vdf"; do
+    "controller_generic_deckops_other.vdf" \
+    "controller_triton_deckops_ads.vdf" \
+    "controller_triton_deckops_off.vdf" \
+    "controller_triton_deckops_hold.vdf" \
+    "controller_triton_deckops_toggle.vdf" \
+    "controller_triton_deckops_other_ads.vdf" \
+    "controller_triton_deckops_other_off.vdf" \
+    "controller_triton_deckops_other_hold.vdf" \
+    "controller_triton_deckops_other_toggle.vdf"; do
     target="$TEMPLATE_DIR/$f"
     if [ -f "$target" ]; then
         rm -f "$target" && success "Removed $f" || warn "Failed to remove $f"
@@ -1635,6 +1643,7 @@ for uid in os.listdir(USERDATA):
             "configset_controller_xboxone.vdf",
             "configset_controller_xboxelite.vdf",
             "configset_controller_generic.vdf",
+            "configset_controller_triton.vdf",
         ]
         if deck_serial:
             configsets_to_clean.append(f"configset_{deck_serial}.vdf")

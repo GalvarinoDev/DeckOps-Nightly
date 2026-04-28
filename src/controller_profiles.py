@@ -20,7 +20,7 @@ Neptune templates (4 standard + 4 hold/toggle + 4 Legion + 4 2btn = 16 total):
         controller_neptune_deckops_2btn_{ads,off}.vdf
         controller_neptune_deckops_2btn_other_{ads,off}.vdf
 
-External controller templates (20 total):
+External controller templates (28 total):
     PS5:       controller_ps5_deckops{,_ads,_other,_other_ads}.vdf
     PS5 Edge:  controller_ps5_edge_deckops{,_ads,_other,_other_ads}.vdf
     PS4:       controller_ps4_deckops{,_ads,_other,_other_ads}.vdf
@@ -28,6 +28,8 @@ External controller templates (20 total):
     XboxOne:   controller_xboxone_deckops{,_other}.vdf
     XboxElite: controller_xboxelite_deckops{,_other}.vdf
     Generic:   controller_generic_deckops{,_other}.vdf
+    Triton:    controller_triton_deckops_{ads,off,hold,toggle}.vdf
+               controller_triton_deckops_other_{ads,off,hold,toggle}.vdf
 
 Must be called while Steam is closed.
 """
@@ -93,6 +95,15 @@ TEMPLATES = [
     # Generic (covers 8BitDo and anything else Steam maps as generic)
     "controller_generic_deckops.vdf",
     "controller_generic_deckops_other.vdf",
+    # Steam Controller 2 (Triton — dual trackpads, gyro, 4 back buttons)
+    "controller_triton_deckops_ads.vdf",
+    "controller_triton_deckops_off.vdf",
+    "controller_triton_deckops_hold.vdf",
+    "controller_triton_deckops_toggle.vdf",
+    "controller_triton_deckops_other_ads.vdf",
+    "controller_triton_deckops_other_off.vdf",
+    "controller_triton_deckops_other_hold.vdf",
+    "controller_triton_deckops_other_toggle.vdf",
 ]
 
 # ── Per-game profile assignment map ───────────────────────────────────────────
@@ -172,6 +183,9 @@ EXTERNAL_CONFIGSET_NAMES = {
     ],
     "other": [
         "configset_controller_generic.vdf",
+    ],
+    "steamcontroller": [
+        "configset_controller_triton.vdf",
     ],
 }
 
@@ -341,6 +355,19 @@ def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mo
         if profile_type == "other":
             return ["controller_generic_deckops_other.vdf"]
         return ["controller_generic_deckops.vdf"]
+
+    elif controller_type == "steamcontroller":
+        # Triton has gyro and its own hold/toggle VDFs (like Neptune)
+        if gyro_mode == "hold":
+            suffix = "_other_hold" if profile_type == "other" else "_hold"
+        elif gyro_mode == "toggle":
+            suffix = "_other_toggle" if profile_type == "other" else "_toggle"
+        elif gyro_mode == "off":
+            suffix = "_other_off" if profile_type == "other" else "_off"
+        else:
+            # "on" → ads variant
+            suffix = "_other_ads" if profile_type == "other" else "_ads"
+        return [f"controller_triton_deckops{suffix}.vdf"]
 
     return []
 
@@ -627,7 +654,7 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
         if on_progress:
             on_progress(msg)
 
-    if controller_type not in ("playstation", "xbox", "other"):
+    if controller_type not in ("playstation", "xbox", "other", "steamcontroller"):
         prog(f"  ⚠ Invalid controller_type '{controller_type}'.")
         return
 

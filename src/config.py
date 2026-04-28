@@ -29,7 +29,7 @@ DEFAULTS = {
                                   # "legion_go", "legion_go_s", "2btn", "generic"
     "gyro_mode":  None,          # "on" or "off"
     "play_mode":  None,          # "handheld" or "docked"
-    "external_controller": None, # "playstation", "xbox", or "other" -- only used when play_mode is "docked"
+    "external_controller": None, # "playstation", "xbox", "steamcontroller", or "other" -- only used when play_mode is "docked"
     "docked_resolution": None,   # "1280x720", "1280x800", "1920x1080", "1920x1200", or "own" -- only used when play_mode is "docked"
                                  # NOTE: this will also be used for future Bazzite, Steam Box, and other handheld support on SteamOS
     "ge_proton_version": None,   # e.g. "GE-Proton10-32"
