@@ -833,12 +833,31 @@ class InstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
+        # ── T7X (BO3 AlterWare client) — Steam closed ─────────────────────────
+        # Must run BEFORE CleanOps — CleanOps drops d3d11.dll into the
+        # stock BO3 dir, and the symlink farm would pick it up if it
+        # already exists. Running T7x first builds symlinks from a clean
+        # stock dir, then CleanOps only touches the stock dir afterward.
+        if has_t7x:
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
+                base_name = gd["base"]
+                self._s.progress.emit(86, f"Setting up T7x...")
+                def op_t7x(pct, msg): self._s.progress.emit(86 + int(pct / 100 * 2), msg)
+                try:
+                    t7x_dir = install_t7x(game, on_progress=op_t7x)
+                    game["install_dir"] = t7x_dir
+                    cfg.mark_game_setup(key, "t7x", source="steam")
+                    self._s.log.emit(f"✓  {base_name} (T7x) done")
+                    logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
+
         # ── CleanOps (BO3) — Steam closed ─────────────────────────────────────
         if has_cleanops:
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "cleanops"]:
                 base_name = gd["base"]
-                self._s.progress.emit(86, f"Setting up {base_name}...")
-                def op_cleanops(pct, msg): self._s.progress.emit(86 + int(pct / 100 * 4), msg)
+                self._s.progress.emit(88, f"Setting up {base_name}...")
+                def op_cleanops(pct, msg): self._s.progress.emit(88 + int(pct / 100 * 4), msg)
                 try:
                     compat = find_compatdata(self.steam_root, gd["appid"],
                                               game_install_dir=game["install_dir"] if game else None)
@@ -848,21 +867,6 @@ class InstallScreen(QWidget):
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── T7X (BO3 AlterWare client) — Steam closed ─────────────────────────
-        if has_t7x:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
-                base_name = gd["base"]
-                self._s.progress.emit(88, f"Setting up T7x...")
-                def op_t7x(pct, msg): self._s.progress.emit(88 + int(pct / 100 * 2), msg)
-                try:
-                    t7x_dir = install_t7x(game, on_progress=op_t7x)
-                    game["install_dir"] = t7x_dir
-                    cfg.mark_game_setup(key, "t7x", source="steam")
-                    self._s.log.emit(f"✓  {base_name} (T7x) done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
 
         # ── AlterWare (Ghosts / Advanced Warfare) — Steam closed ──────────────
         has_alterware = any(KEY_CLIENT.get(k) == "alterware" for k in selected_keys)
@@ -1579,13 +1583,34 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
+        # ── Install T7X (BO3 AlterWare client) ─────────────────────────
+        # Must run BEFORE CleanOps — CleanOps drops d3d11.dll into the
+        # stock BO3 dir, and the symlink farm would pick it up if it
+        # already exists. Running T7x first builds symlinks from a clean
+        # stock dir, then CleanOps only touches the stock dir afterward.
+        _log_to_file("[BREADCRUMB] starting t7x install phase")
+        if has_t7x:
+            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
+                base_name = gd["base"]
+                self._s.progress.emit(70, f"Setting up T7x...")
+                def op_t7x(pct, msg): self._s.progress.emit(70 + int(pct / 100 * 2), msg)
+                try:
+                    source = "own" if key in self.own_selected else "steam"
+                    t7x_dir = install_t7x(game, on_progress=op_t7x)
+                    game["install_dir"] = t7x_dir
+                    cfg.mark_game_setup(key, "t7x", source=source)
+                    self._s.log.emit(f"✓  {base_name} (T7x) done")
+                    logged_bases.add(base_name)
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
+
         # ── Install CleanOps (BO3) ────────────────────────────────────────
         _log_to_file("[BREADCRUMB] starting cleanops install phase")
         if has_cleanops:
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "cleanops"]:
                 base_name = gd["base"]
-                self._s.progress.emit(70, f"Setting up {base_name}...")
-                def op_cleanops(pct, msg): self._s.progress.emit(70 + int(pct / 100 * 4), msg)
+                self._s.progress.emit(72, f"Setting up {base_name}...")
+                def op_cleanops(pct, msg): self._s.progress.emit(72 + int(pct / 100 * 4), msg)
                 try:
                     source = "own" if key in self.own_selected else "steam"
                     if source == "own":
@@ -1599,23 +1624,6 @@ class OwnInstallScreen(QWidget):
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── Install T7X (BO3 AlterWare client) ─────────────────────────
-        _log_to_file("[BREADCRUMB] starting t7x install phase")
-        if has_t7x:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
-                base_name = gd["base"]
-                self._s.progress.emit(74, f"Setting up T7x...")
-                def op_t7x(pct, msg): self._s.progress.emit(74 + int(pct / 100 * 2), msg)
-                try:
-                    source = "own" if key in self.own_selected else "steam"
-                    t7x_dir = install_t7x(game, on_progress=op_t7x)
-                    game["install_dir"] = t7x_dir
-                    cfg.mark_game_setup(key, "t7x", source=source)
-                    self._s.log.emit(f"✓  {base_name} (T7x) done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
 
         # ── Install AlterWare (Ghosts / Advanced Warfare) ─────────────────
         _log_to_file("[BREADCRUMB] starting alterware install phase")
