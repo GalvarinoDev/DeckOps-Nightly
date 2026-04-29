@@ -373,7 +373,10 @@ def _ask_t7x_install(parent, selected):
         "T7X — Additional BO3 Client",
         "CleanOps is already included — it patches BO3 to protect against "
         "exploits and adds dedicated servers alongside Activision's official servers.\n\n"
-        "T7X is an optional additional client with its own dedicated server list.\n\n"
+        "T7X is an optional additional client with its own dedicated server list. "
+        "Using both is supported but not recommended unless you know what you're doing.\n\n"
+        "If you install both, launch T7X first before CleanOps on first run. "
+        "If you're worried about using both, just stick to one over the other post install.\n\n"
         "Download size: ~105 MB\n\n"
         "Install T7X?",
         QMessageBox.Yes | QMessageBox.No,
