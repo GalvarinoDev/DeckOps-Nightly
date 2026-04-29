@@ -6,8 +6,8 @@ Handles reading and writing deckops.json which lives at:
 
 The config file tracks:
     - Whether first-time setup has been completed
-    - Which device the user has (oled, lcd, or other)
-    - For 'other' devices, which device/resolution profile to use
+    - Which device the user has (oled, lcd, other, or steam_machine)
+    - For 'other' and 'steam_machine' devices, which resolution profile to use
     - Which games have been set up and when
     - The Steam root path found during setup
 """
@@ -22,11 +22,11 @@ CONFIG_PATH = os.path.expanduser("~/DeckOps-Nightly/deckops.json")
 DEFAULTS = {
     "first_run_complete": False,
     "os_type": None,             # "steamos", "bazzite", "cachyos", or "other_linux"
-    "deck_model": None,          # "oled", "lcd", or "other"
-    "other_device": None,         # resolution key for non-Deck devices, e.g.
+    "deck_model": None,          # "oled", "lcd", "other", or "steam_machine"
+    "other_device": None,         # resolution key for non-Deck devices and Steam Machine, e.g.
                                   # "1920x1200", "1920x1200_144hz", "1920x1080", "1280x720"
     "other_device_type": None,    # device type for controller profile selection:
-                                  # "legion_go", "legion_go_s", "2btn", "generic"
+                                  # "legion_go", "legion_go_s", "2btn", "generic", "steam_machine"
     "gyro_mode":  None,          # "on" or "off"
     "play_mode":  None,          # "handheld" or "docked"
     "external_controller": None, # "playstation", "xbox", "steamcontroller", or "other" -- only used when play_mode is "docked"
@@ -95,12 +95,15 @@ def is_bazzite() -> bool:
 
 
 def get_deck_model() -> str | None:
-    """Returns 'oled', 'lcd', 'other', or None if not yet set."""
+    """Returns 'oled', 'lcd', 'other', 'steam_machine', or None if not yet set."""
     return load().get("deck_model")
 
 
 def set_deck_model(model: str):
-    """Save the user's device model. model should be 'oled', 'lcd', or 'other'."""
+    """Save the user's device model.
+
+    model -- 'oled', 'lcd', 'other', or 'steam_machine'
+    """
     config = load()
     config["deck_model"] = model
     save(config)
@@ -121,23 +124,36 @@ def is_other() -> bool:
     return load().get("deck_model") == "other"
 
 
+def is_steam_machine() -> bool:
+    """True for Valve Steam Machine hardware (triton controller)."""
+    return load().get("deck_model") == "steam_machine"
+
+
 def uses_oled_path() -> bool:
     """True for devices that use the direct Plutonium launcher path.
 
-    Both OLED and Other devices launch Plutonium directly via the
-    protocol URL in Steam's compatdata prefix. LCD uses Heroic instead.
+    OLED, Other, and Steam Machine devices launch Plutonium directly via
+    the protocol URL in Steam's compatdata prefix. LCD uses Heroic instead.
     Use this for launch pipeline decisions, NOT for config folder resolution.
     """
     return load().get("deck_model") != "lcd"
 
 
 def get_other_device() -> str | None:
-    """Returns the resolution key for Other devices, e.g. '1920x1200', or None."""
+    """Returns the resolution key for Other/Steam Machine devices.
+
+    e.g. '1920x1200', '1920x1080', or None.
+    Steam Machine also stores its user-picked resolution here.
+    """
     return load().get("other_device")
 
 
 def set_other_device(device: str):
-    """Save the Other device resolution key, e.g. '1920x1200_144hz'."""
+    """Save the resolution key, e.g. '1920x1200_144hz'.
+
+    Used by both Other devices (preset per device) and Steam Machine
+    (user-picked from the resolution screen).
+    """
     config = load()
     config["other_device"] = device
     save(config)
@@ -146,17 +162,18 @@ def set_other_device(device: str):
 def get_other_device_type() -> str | None:
     """Returns the device type for controller profile selection.
 
-    Values: 'legion_go', 'legion_go_s', '2btn', 'generic', or None.
-    Used by controller_profiles.py to pick the correct Neptune variant.
+    Values: 'legion_go', 'legion_go_s', '2btn', 'generic',
+            'steam_machine', or None.
+    Used by controller_profiles.py to pick the correct profile variant.
     """
     return load().get("other_device_type")
 
 
 def set_other_device_type(device_type: str):
-    """Save the Other device type for controller profile selection.
+    """Save the device type for controller profile selection.
 
     device_type -- 'legion_go' (Go 1/2), 'legion_go_s', '2btn' (ROG Ally,
-                   MSI Claw), or 'generic'
+                   MSI Claw), 'generic', or 'steam_machine'
     """
     config = load()
     config["other_device_type"] = device_type
@@ -166,14 +183,15 @@ def set_other_device_type(device_type: str):
 def get_model_config_dir() -> str:
     """Return the asset subdirectory for the current device's configs.
 
-    OLED  -> 'OLED'
-    LCD   -> 'LCD'
-    Other -> 'Other/<resolution>'  (e.g. 'Other/1920x1200')
+    OLED          -> 'OLED'
+    LCD           -> 'LCD'
+    Other         -> 'Other/<resolution>'  (e.g. 'Other/1920x1200')
+    Steam Machine -> 'Other/<resolution>'  (user-picked, same assets as Other)
 
     Falls back to 'OLED' if deck_model is unset.
     """
     model = load().get("deck_model") or "oled"
-    if model == "other":
+    if model in ("other", "steam_machine"):
         device = load().get("other_device") or "1920x1200"
         return f"Other/{device}"
     return "OLED" if model == "oled" else "LCD"
