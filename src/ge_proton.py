@@ -281,6 +281,13 @@ def _copy_dlls(src_dir: str, dest_dir: str) -> tuple[int, int]:
                         continue
                 except OSError:
                     pass  # can't stat -- copy it
+            # Unlock read-only files (Proton sometimes creates prefix
+            # files with 0o444 permissions)
+            if os.path.isfile(dest_path):
+                try:
+                    os.chmod(dest_path, 0o644)
+                except OSError:
+                    pass
             shutil.copy2(src_path, dest_path)
             copied += 1
     return (copied, skipped)
@@ -512,6 +519,14 @@ def _overlay_prefix(source_pfx_dir: str, dest_prefix_path: str,
                                 continue
                         except OSError:
                             pass
+                    # Skip existing read-only files -- these are Proton
+                    # prefix scaffolding (wordpad.exe, odbccp32.dll, etc.)
+                    # that differ in size between Proton versions but are
+                    # not needed by any game.  Game-critical DLLs are
+                    # handled separately by _copy_dlls.
+                    if os.path.exists(dst_file) and not os.access(dst_file, os.W_OK):
+                        skipped += 1
+                        continue
                     shutil.copy2(src_file, dst_file)
                     copied += 1
 
