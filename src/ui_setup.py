@@ -553,7 +553,11 @@ class SetupFlowScreen(QWidget):
     def _pick_os(self, os_key):
         self._selected_os = os_key
         cfg.set_os_type(os_key)
-        self._show("_model_section")
+        if os_key in ("bazzite", "cachyos"):
+            # Non-SteamOS users are always on Other devices — skip model screen
+            self._show("_device_section")
+        else:
+            self._show("_model_section")
 
     def _back_to_os(self):
         self._show("_os_section")
@@ -582,7 +586,11 @@ class SetupFlowScreen(QWidget):
         self._show("_device_section")
 
     def _back_to_model(self):
-        self._show("_model_section")
+        if self._selected_os in ("bazzite", "cachyos"):
+            # Non-SteamOS users skipped the model screen — go back to OS
+            self._show("_os_section")
+        else:
+            self._show("_model_section")
 
     def _show_gyro_section(self, dev_key):
         """Show the Yes/No gyro question."""
@@ -590,7 +598,10 @@ class SetupFlowScreen(QWidget):
 
     def _back_to_device_from_gyro(self):
         dev = DEVICES.get(self._selected_device, {})
-        if dev.get("deck_model") in ("lcd", "oled", "steam_machine"):
+        if self._selected_os in ("bazzite", "cachyos"):
+            # Non-SteamOS users always came from the device picker
+            self._show("_device_section")
+        elif dev.get("deck_model") in ("lcd", "oled", "steam_machine"):
             self._show("_model_section")
         else:
             self._show("_device_section")
@@ -654,7 +665,17 @@ class SetupFlowScreen(QWidget):
     def _save_player_name(self):
         name = self._name_input.text().strip()
         cfg.set_player_name(name if name else "Player")
-        self._show("_source_section")
+        if self._allows_source_choice():
+            self._show("_source_section")
+        else:
+            # Forced advanced — auto-set source and continue
+            cfg.set_game_source("own")
+            self._pick_source("own")
+
+    def _allows_source_choice(self):
+        """Only SteamOS users on LCD, OLED, or Steam Machine get the source picker."""
+        return (self._selected_os == "steamos"
+                and self._selected_device in ("sd_lcd", "sd_oled", "steam_machine"))
 
     def _back_to_name_from_source(self):
         self._show("_name_section")
@@ -681,7 +702,11 @@ class SetupFlowScreen(QWidget):
         return self._selected_os == "bazzite" or self._is_general_pc
 
     def _back_to_source_from_ctrl(self):
-        self._show("_source_section")
+        if self._allows_source_choice():
+            self._show("_source_section")
+        else:
+            # Forced advanced skipped the source screen — back to name
+            self._show("_name_section")
 
     def _pick_primary_controller(self, ctrl_type):
         cfg.set_external_controller(ctrl_type)
@@ -694,11 +719,13 @@ class SetupFlowScreen(QWidget):
             self._show("_play_section")
 
     def _back_to_prev_from_play(self):
-        """Back from play mode goes to controller (Bazzite) or source (SteamOS/CachyOS)."""
+        """Back from play mode goes to controller (Bazzite), source (SteamOS with source choice), or name (forced advanced)."""
         if self._needs_primary_controller():
             self._show("_primary_controller_section")
-        else:
+        elif self._allows_source_choice():
             self._show("_source_section")
+        else:
+            self._show("_name_section")
 
     def _pick_play_mode(self, mode):
         cfg.set_play_mode(mode)
@@ -766,8 +793,10 @@ class SetupFlowScreen(QWidget):
 
     def _back_to_prev_from_res(self):
         if self._is_steam_machine:
-            # Steam Machine: back to source (no controller or decky step)
-            self._show("_source_section")
+            if self._allows_source_choice():
+                self._show("_source_section")
+            else:
+                self._show("_name_section")
         elif self._is_general_pc:
             # PC: back to controller
             self._show("_primary_controller_section")
