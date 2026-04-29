@@ -41,7 +41,7 @@ DEVICES = {
     "rog_ally_x":   {"label": "ROG Ally X",            "deck_model": "other", "other_device": "1920x1080",       "other_device_type": "2btn",       "has_gyro": True},
     "xbox_ally_x":  {"label": "ROG Xbox Ally X",       "deck_model": "other", "other_device": "1920x1080",       "other_device_type": "2btn",       "has_gyro": True},
     "msi_claw_8":   {"label": "MSI Claw 8",           "deck_model": "other", "other_device": "1920x1200",       "other_device_type": "2btn",       "has_gyro": True},
-    "general_pc":   {"label": "General PC",            "deck_model": "other", "other_device": None,              "other_device_type": "generic",    "has_gyro": False},
+    "general_pc":   {"label": "PC",                    "deck_model": "other", "other_device": None,              "other_device_type": "generic",    "has_gyro": True},
 }
 
 
@@ -144,25 +144,33 @@ class SetupFlowScreen(QWidget):
 
         dev_cols = QHBoxLayout(); dev_cols.setSpacing(20)
 
-        # Left column: 16:10 devices
-        col_left = QVBoxLayout(); col_left.setSpacing(10)
-        col_left.addWidget(_lbl("16:10  (1920×1200)", 12, C_TREY, bold=True))
-        for dev_key in ("legion_go", "legion_go_s", "legion_go_2", "msi_claw_8"):
+        # Left column: Lenovo
+        col_lenovo = QVBoxLayout(); col_lenovo.setSpacing(10)
+        col_lenovo.addWidget(_lbl("Lenovo", 12, C_TREY, bold=True))
+        for dev_key in ("legion_go", "legion_go_s", "legion_go_2"):
             b = _btn(DEVICES[dev_key]["label"], C_DARK_BTN, h=48)
             b.clicked.connect(lambda checked, k=dev_key: self._pick_device(k))
-            col_left.addWidget(b)
-        dev_cols.addLayout(col_left)
+            col_lenovo.addWidget(b)
+        dev_cols.addLayout(col_lenovo)
 
-        # Right column: 16:9 devices + General PC
-        col_right = QVBoxLayout(); col_right.setSpacing(10)
-        col_right.addWidget(_lbl("16:9  (1920×1080)", 12, C_TREY, bold=True))
+        # Middle column: ASUS
+        col_asus = QVBoxLayout(); col_asus.setSpacing(10)
+        col_asus.addWidget(_lbl("ASUS", 12, C_TREY, bold=True))
         for dev_key in ("rog_ally", "rog_ally_x", "xbox_ally_x"):
             b = _btn(DEVICES[dev_key]["label"], C_DARK_BTN, h=48)
             b.clicked.connect(lambda checked, k=dev_key: self._pick_device(k))
-            col_right.addWidget(b)
+            col_asus.addWidget(b)
+        dev_cols.addLayout(col_asus)
+
+        # Right column: MSI + PC
+        col_right = QVBoxLayout(); col_right.setSpacing(10)
+        col_right.addWidget(_lbl("MSI", 12, C_TREY, bold=True))
+        msi_btn = _btn(DEVICES["msi_claw_8"]["label"], C_DARK_BTN, h=48)
+        msi_btn.clicked.connect(lambda: self._pick_device("msi_claw_8"))
+        col_right.addWidget(msi_btn)
         col_right.addSpacing(10)
-        col_right.addWidget(_lbl("Desktop / Laptop", 12, C_TREY, bold=True))
-        pc_btn = _btn("General PC", C_DARK_BTN, h=48)
+        col_right.addWidget(_lbl("Other", 12, C_TREY, bold=True))
+        pc_btn = _btn("PC", C_DARK_BTN, h=48)
         pc_btn.clicked.connect(lambda: self._pick_device("general_pc"))
         col_right.addWidget(pc_btn)
         dev_cols.addLayout(col_right)
