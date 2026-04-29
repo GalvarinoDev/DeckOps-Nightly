@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Bringing the Golden Age of FPS to your Steam Deck, no tinkering required.
+  Bringing ~~the Golden Age of~~ a lot of Call of Duty games to your ~~Steam Deck~~ Immutable Linux device, no tinkering required.
 </p>
 
 ---
@@ -31,21 +31,27 @@
 | Advanced Warfare | SP/MP | [AlterWare](https://alterware.dev) | ✅ | ✅ | ✅ |
 | Black Ops III | SP/MP/ZM | [CleanOps](https://github.com/notnightwolf/cleanopsT7) + [T7x](https://github.com/Starter-Pack/T7x) | ✅ | ✅ | ✅ |
 
-> All titles support controller and gyro via Steam Input. During setup, choose your gyro style: **Hold** (R5 held), **ADS** (gyro activates when you aim down sights), or **Toggle** (R5 press). Aim assist is unavailable for MW1 MP, MW2 SP, and MW3 SP.
+> All titles support controller and gyro via Steam Input. During setup you choose whether to enable gyro and which activation mode you want (ADS, Hold, or Toggle). Aim assist is unavailable for MW1 MP, MW2 SP, and MW3 SP.
 
 ---
 
 ## 🆕 What's New in Nightly
 
-**LCD Online Play** · Plutonium online multiplayer now works on LCD Steam Decks. All seven Plutonium titles can connect to online servers from both LCD and OLED hardware. A [free Plutonium account](https://forum.plutonium.pw/register) is required. This is not ban evasion. DeckOps does not bypass or interfere with Plutonium's anti-cheat in any way, no fingerprinting is removed. We use the same methods they use recommend the average Linux user to use during installation. This prevents it from triggering the false positive ban and you can enjoy Plutonium servers just like an OLED user would.
+**LCD Online Play** · Plutonium online multiplayer now works on LCD Steam Decks. All seven Plutonium titles can connect to online servers from both LCD and OLED hardware. A [free Plutonium account](https://forum.plutonium.pw/register) is required. This is not ban evasion. DeckOps does not bypass or interfere with Plutonium's anti-cheat in any way, no fingerprinting is removed. We use the same methods they recommend the average Linux user to use during installation. This prevents it from triggering the false positive ban and you can enjoy Plutonium servers just like an OLED user would.
+
+**Multi-Device Support** · DeckOps now runs on more than just Steam Deck. The setup flow includes a device picker with support for: Steam Machine, the Lenovo Legion Go, Go S, and Go 2, the ASUS ROG Ally, Ally X, and Xbox Ally X, the MSI Claw 8, and PCs. Each device gets resolution-tuned display configs and a controller template set matched to its hardware (paddle count, touchpad availability, etc.). Non-SteamOS devices on Bazzite or CachyOS are also supported and auto-route to the advanced install flow.
+
+**Controller Templates** · DeckOps ships templates for every major controller type: Steam Controller 2 (Triton), PS5, PS5 Edge, PS4, Xbox 360, Xbox One, Xbox Elite, and generic. Only the Neptune variant matching your device is installed, keeping the template list clean. Steam Machine uses Triton templates as its primary controller with full gyro mode support.
+
+**Hold and Toggle Gyro** · Steam Deck LCD and OLED now have four gyro modes: ADS, Hold, Toggle, and Off. Hold activates gyro while L5 is pressed. Toggle activates gyro on L5 press and deactivates on the next press. R5 remains push-to-talk in all modes. Other devices get On/Off. You can change your gyro mode anytime in Settings.
 
 **Ghosts and Advanced Warfare** · Both titles supported via AlterWare (IW6-Mod and S1-Mod). Singleplayer and multiplayer for each game. The AlterWare launcher runs natively on Linux and downloads mod client files automatically during setup.
 
-**Black Ops III** · Now supported via CleanOps + T7x. CleanOps is a lightweight DLL mod that patches BO3 to protect against exploits and adds dedicated servers alongside Activision's official servers. T7x is an optional additional client with its own dedicated server list (~105 MB). T7X is offered as an opt-in during setup. Both clients can coexist in the same install.
+**Black Ops III** · Supported via CleanOps + T7x. CleanOps is a lightweight DLL mod that patches BO3 to protect against exploits and adds dedicated servers alongside Activision's official servers. T7x is an optional additional client with its own dedicated server list (~105 MB). T7X is offered as an opt-in during setup. Both clients can coexist in the same install.
 
-**Black Ops II Singleplayer** · Now supported via [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) by Rattpak. DeckOps installs the mod client and deploys display settings automatically. Please be aware their mod is still in the Beta process, they've been gracious enough to let us use it despite it not being fully released on their github.
+**Black Ops II Singleplayer** · Supported via [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) by Rattpak. DeckOps installs the mod client and deploys display settings automatically. Please be aware their mod is still in the Beta process, they've been gracious enough to let us use it despite it not being fully released on their github.
 
-**Non-Steam Game Support** · Games from the Microsoft Store, retail CD copies, and other storefronts are now supported. Place your game files in `~/Games` and select **Steam & Non-Steam** during setup. DeckOps scans for your games and handles shortcuts, artwork, Proton prefixes, mod clients, controller profiles, and display configs automatically.
+**Non-Steam Game Support** · Games from the Microsoft Store, retail CD copies, and other storefronts are supported. Place your game files in `~/Games` and select **Steam & Non-Steam** during setup. DeckOps scans for your games and handles shortcuts, artwork, Proton prefixes, mod clients, controller profiles, and display configs automatically.
 
 **Offline LAN Launcher** · A dedicated Game Mode launcher for playing Plutonium games offline with bots. Shows installed games with mode buttons (MP, SP, Zombies), supports full gamepad navigation, and works on both LCD and OLED without a Plutonium account.
 
@@ -55,13 +61,15 @@
 
 **Menu Mods** · Custom DeckOps UI mods for BO2 Multiplayer, BO2 Zombies, and MW3 Multiplayer, installed automatically during setup.
 
+**UI Overhaul** · The setup flow has been split into dedicated modules and rebuilt from scratch. New flow: OS > Device > Gyro > Name > Source. Consistent spacing, layout, and navigation across every screen.
+
 ---
 
 ## 🚧 WIP / Coming Soon
 
-**Other SteamOS Devices + Bazzite and CachyOS Support** · Support for non-Deck SteamOS handhelds (Lenovo Legion Go series, ROG Ally series, MSI Claw 8). Device picker in setup, resolution-tuned display configs, and full launch pipeline support. Controller templates pending.
-
 **Docked Mode / Decky Plugin** · Play on a TV or monitor with an external controller. A Decky Loader plugin to auto-switch display settings when you dock and undock.
+
+**Inputplumber dbus integration to autodetect your device and controller settings.**
 
 ---
 
@@ -94,18 +102,27 @@ Plutonium online play requires a [free account](https://forum.plutonium.pw/regis
 If Steam asks about cloud saves, choose **Keep Local**. If asked about launching in safe mode or changing your settings due to a hardware change, choose **No**.
 
 - **MW1 MP** requires two Steam launches to finish setup, then runs normally on the third.
-- **First launch:** All games may take a while to launch the first time — this is normal. They will run fine after the initial launch.
-- **Black Ops III:** CleanOps and T7X install on their first run, which takes a bit and may slow down Device temporarily. Wiggle the analog sticks to keep the screen from turning off while you wait.
+- **First launch:** All games may take a while to launch the first time. This is normal. They will run fine after the initial launch.
+- **Black Ops III:** CleanOps and T7X install on their first run, which takes a bit and may slow down your device temporarily. Wiggle the analog sticks to keep the screen from turning off while you wait.
 
 ---
 
 ## 🎮 Gyro Controls
 
-DeckOps installs a custom controller profile for every game. During setup you choose one of three gyro schemes, you can change this anytime in **Settings -> Controller Profiles -> Re-apply Templates**.
+DeckOps installs a custom controller profile for every game. During setup you choose whether to enable gyro and which mode to use. You can change this anytime in **Settings > Controller Profiles > Re-apply Templates**.
+
+**Steam Deck LCD and OLED** have four gyro modes:
 
 | Scheme | How it works |
 |---|---|
 | **ADS** | Gyro activates when you aim down sights |
+| **Hold** | Gyro activates while L5 is held |
+| **Toggle** | Gyro activates on L5 press, deactivates on the next press |
+| **Off** | Gyro disabled |
+
+R5 is push-to-talk in all modes.
+
+**Other devices** (Legion Go, ROG Ally, MSI Claw 8, PC, Steam Machine) get On or Off. Steam Machine uses the Steam Controller 2 (Triton) template set with full Hold/Toggle support.
 
 MW1 MP, MW2 SP, and MW3 SP handle gyro differently due to controller support added via Steam Input.
 
@@ -115,9 +132,9 @@ MW1 MP, MW2 SP, and MW3 SP handle gyro differently due to controller support add
 
 The My Games screen shows every supported game as a card with header art and a client badge. Each card has a **Configure** button that opens a dialog with the following options:
 
-- **Mods** — browse and install mods or user maps (available for CoD4x, IW4x, Plutonium, AlterWare, and T7x)
-- **Update** — re-download the mod client for a game already set up
-- **Reinstall** — run the full setup again for a game
+- **Mods** - browse and install mods or user maps (available for CoD4x, IW4x, Plutonium, AlterWare, and T7x)
+- **Update** - re-download the mod client for a game already set up
+- **Reinstall** - run the full setup again for a game
 
 Games that are detected but not yet configured show a **Set Up** button instead. The Plutonium Offline card has a **Re-Add** button to re-add the offline launcher shortcut.
 
@@ -130,7 +147,7 @@ The header bar includes a **Guide** button with post-install tips and a **Settin
 | Option | What it does |
 |---|---|
 | Background Music | Toggle on/off and adjust volume |
-| Controller Profiles | Switch gyro mode (Hold, Toggle, ADS) and re-apply controller templates to all games |
+| Controller Profiles | Switch gyro mode (ADS, Hold, Toggle, Off) and re-apply controller templates to all games |
 | Player Name | Change your in-game name for CoD4x, IW4x, AlterWare (Ghosts, AW), T7X, and Plutonium offline LAN mode |
 | Shader Cache (LCD only) | Clear shader cache data for all set-up games |
 | Links | Quick links to the Discord, Stable repo, and Nightly repo |
