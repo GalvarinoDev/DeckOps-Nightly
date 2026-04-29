@@ -9,7 +9,18 @@ Also patches the appropriate configset VDFs to set our template as the
 active default for each managed game, overriding any community config or
 workshop ID that Steam would otherwise use.
 
-Neptune templates (4 standard + 4 hold/toggle + 4 Legion + 4 2btn = 16 total):
+Universal templates (always installed — 28 total):
+    PS5:       controller_ps5_deckops{,_ads,_other,_other_ads}.vdf
+    PS5 Edge:  controller_ps5_edge_deckops{,_ads,_other,_other_ads}.vdf
+    PS4:       controller_ps4_deckops{,_ads,_other,_other_ads}.vdf
+    Xbox360:   controller_xbox360_deckops{,_other}.vdf
+    XboxOne:   controller_xboxone_deckops{,_other}.vdf
+    XboxElite: controller_xboxelite_deckops{,_other}.vdf
+    Generic:   controller_generic_deckops{,_other}.vdf
+    Triton:    controller_triton_deckops_{ads,off,hold,toggle}.vdf
+               controller_triton_deckops_other_{ads,off,hold,toggle}.vdf
+
+Per-device Neptune templates (only the matching variant is installed):
     Standard (SD LCD/OLED, Legion Go S, generic):
         controller_neptune_deckops_{ads,off,hold,toggle}.vdf
         controller_neptune_deckops_other_{ads,off,hold,toggle}.vdf
@@ -23,17 +34,7 @@ Neptune templates (4 standard + 4 hold/toggle + 4 Legion + 4 2btn = 16 total):
 Steam Machine uses triton templates as its PRIMARY controller (not external).
     assign_controller_profiles() returns triton VDFs via _profile_filename()
     instead of Neptune. Full hold/toggle support like standard Neptune.
-
-External controller templates (28 total):
-    PS5:       controller_ps5_deckops{,_ads,_other,_other_ads}.vdf
-    PS5 Edge:  controller_ps5_edge_deckops{,_ads,_other,_other_ads}.vdf
-    PS4:       controller_ps4_deckops{,_ads,_other,_other_ads}.vdf
-    Xbox360:   controller_xbox360_deckops{,_other}.vdf
-    XboxOne:   controller_xboxone_deckops{,_other}.vdf
-    XboxElite: controller_xboxelite_deckops{,_other}.vdf
-    Generic:   controller_generic_deckops{,_other}.vdf
-    Triton:    controller_triton_deckops_{ads,off,hold,toggle}.vdf
-               controller_triton_deckops_other_{ads,off,hold,toggle}.vdf
+    No Neptune templates are installed for Steam Machine.
 
 Must be called while Steam is closed.
 """
@@ -53,25 +54,8 @@ STEAM_DIR     = os.path.expanduser("~/.local/share/Steam")
 STEAM_CONFIG  = os.path.join(STEAM_DIR, "config", "config.vdf")
 
 TEMPLATES = [
-    # Neptune (Steam Deck, Legion Go S, generic fallback)
-    "controller_neptune_deckops_ads.vdf",
-    "controller_neptune_deckops_off.vdf",
-    "controller_neptune_deckops_hold.vdf",
-    "controller_neptune_deckops_toggle.vdf",
-    "controller_neptune_deckops_other_ads.vdf",
-    "controller_neptune_deckops_other_off.vdf",
-    "controller_neptune_deckops_other_hold.vdf",
-    "controller_neptune_deckops_other_toggle.vdf",
-    # Neptune Legion (Go 1/2 — 4 paddles, no left touchpad)
-    "controller_neptune_deckops_legion_ads.vdf",
-    "controller_neptune_deckops_legion_off.vdf",
-    "controller_neptune_deckops_legion_other_ads.vdf",
-    "controller_neptune_deckops_legion_other_off.vdf",
-    # Neptune 2btn (ROG Ally, MSI Claw — 2 paddles, no touchpad)
-    "controller_neptune_deckops_2btn_ads.vdf",
-    "controller_neptune_deckops_2btn_off.vdf",
-    "controller_neptune_deckops_2btn_other_ads.vdf",
-    "controller_neptune_deckops_2btn_other_off.vdf",
+    # ── Universal templates (always installed) ────────────────────────────
+    # These cover any controller a user might plug in, regardless of device.
     # PS5
     "controller_ps5_deckops.vdf",
     "controller_ps5_deckops_ads.vdf",
@@ -108,6 +92,38 @@ TEMPLATES = [
     "controller_triton_deckops_other_off.vdf",
     "controller_triton_deckops_other_hold.vdf",
     "controller_triton_deckops_other_toggle.vdf",
+]
+
+# ── Per-device Neptune templates ──────────────────────────────────────────────
+# Only the variant matching the user's device is installed.
+# Steam Machine uses triton (already in TEMPLATES above) so needs no Neptune.
+
+NEPTUNE_STANDARD = [
+    # Standard (SD LCD/OLED, Legion Go S, generic fallback)
+    "controller_neptune_deckops_ads.vdf",
+    "controller_neptune_deckops_off.vdf",
+    "controller_neptune_deckops_hold.vdf",
+    "controller_neptune_deckops_toggle.vdf",
+    "controller_neptune_deckops_other_ads.vdf",
+    "controller_neptune_deckops_other_off.vdf",
+    "controller_neptune_deckops_other_hold.vdf",
+    "controller_neptune_deckops_other_toggle.vdf",
+]
+
+NEPTUNE_LEGION = [
+    # Legion (Go 1/2 — 4 paddles, no left touchpad)
+    "controller_neptune_deckops_legion_ads.vdf",
+    "controller_neptune_deckops_legion_off.vdf",
+    "controller_neptune_deckops_legion_other_ads.vdf",
+    "controller_neptune_deckops_legion_other_off.vdf",
+]
+
+NEPTUNE_2BTN = [
+    # 2btn (ROG Ally, MSI Claw — 2 paddles, no touchpad)
+    "controller_neptune_deckops_2btn_ads.vdf",
+    "controller_neptune_deckops_2btn_off.vdf",
+    "controller_neptune_deckops_2btn_other_ads.vdf",
+    "controller_neptune_deckops_2btn_other_off.vdf",
 ]
 
 # ── Per-game profile assignment map ───────────────────────────────────────────
@@ -422,8 +438,15 @@ def _patch_configset(configset_path: str, key: str, template_name: str):
 
 def install_controller_templates(on_progress=None):
     """
-    Copy all DeckOps controller templates into Steam's global templates directory.
-    Covers Neptune and all external controller types.
+    Copy DeckOps controller templates into Steam's global templates directory.
+
+    Always installs universal templates (PS5, PS4, Xbox, Generic, Triton).
+    Only installs the Neptune variant matching the user's device:
+        Steam Deck LCD/OLED, Legion Go S, generic -> Neptune standard
+        Legion Go 1/2                             -> Neptune Legion
+        ROG Ally, MSI Claw                        -> Neptune 2btn
+        Steam Machine                             -> none (uses triton)
+
     Safe to call multiple times -- existing files are overwritten.
     Must be called while Steam is closed.
     """
@@ -431,9 +454,31 @@ def install_controller_templates(on_progress=None):
         if on_progress:
             on_progress(msg)
 
+    import config as cfg
+
+    # Build the full list: universal + device-specific Neptune
+    to_install = list(TEMPLATES)
+
+    model = cfg.get_deck_model() or "oled"
+    if model == "steam_machine":
+        # Triton is already in TEMPLATES, no Neptune needed
+        pass
+    elif model == "other":
+        device_type = cfg.get_other_device_type()
+        if device_type == "legion_go":
+            to_install += NEPTUNE_LEGION
+        elif device_type == "2btn":
+            to_install += NEPTUNE_2BTN
+        else:
+            # legion_go_s, generic -> standard Neptune
+            to_install += NEPTUNE_STANDARD
+    else:
+        # LCD, OLED -> standard Neptune
+        to_install += NEPTUNE_STANDARD
+
     os.makedirs(TEMPLATES_DIR, exist_ok=True)
 
-    for filename in TEMPLATES:
+    for filename in to_install:
         src  = os.path.join(ASSETS_DIR, filename)
         dest = os.path.join(TEMPLATES_DIR, filename)
 
