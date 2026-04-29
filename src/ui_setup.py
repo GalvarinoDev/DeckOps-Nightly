@@ -260,7 +260,7 @@ class SetupFlowScreen(QWidget):
         nl.addSpacing(12)
         self._name_input = QLineEdit()
         self._name_input.setPlaceholderText("Player")
-        self._name_input.setMaxLength(24)
+        self._name_input.setMaxLength(32)
         self._name_input.setFixedHeight(48)
         self._name_input.setFont(font(14))
         self._name_input.setStyleSheet(
