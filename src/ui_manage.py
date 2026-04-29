@@ -206,7 +206,7 @@ class ManagementScreen(QWidget):
         )
         hl.addWidget(nightly_lbl)
         hl.addStretch()
-        guide_btn = _btn("📋  Guide", C_BLUE_BTN, size=11, h=36); guide_btn.setFixedWidth(100)
+        guide_btn = _btn("📋  Guide", C_BLUE_BTN, size=10, h=36); guide_btn.setFixedWidth(90)
         guide_btn.clicked.connect(lambda: go_to(self.stack, "ControllerInfoScreen"))
         hl.addWidget(guide_btn)
         hl.addSpacing(8)
@@ -746,13 +746,18 @@ class ControllerInfoScreen(QWidget):
 class ConfigureScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.screen_name = "ConfigureScreen"
-        lay = QVBoxLayout(self); lay.setContentsMargins(60,40,60,40); lay.setSpacing(14)
-        t = QLabel("SETTINGS"); t.setFont(font(36,True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
-        lay.addWidget(_hdiv())
+        lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
+        t = QLabel("SETTINGS"); t.setFont(font(28,True)); t.setAlignment(Qt.AlignCenter)
+        t.setStyleSheet("color:#FFF;background:transparent;padding:20px 0 10px 0;"); lay.addWidget(t)
+
+        # Scroll area for all settings content
+        scroll = QScrollArea(); scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+        inner = QWidget()
+        sl = QVBoxLayout(inner); sl.setContentsMargins(60,10,60,30); sl.setSpacing(18)
 
         # ── Background Music ──────────────────────────────────────────────
-        lay.addWidget(_lbl("Background Music", 14, "#CCC", align=Qt.AlignLeft))
+        sl.addWidget(_lbl("Background Music", 13, "#CCC", align=Qt.AlignLeft))
         mr = QHBoxLayout(); mr.setSpacing(12)
         self._music_on = _music_enabled
         self._music_toggle = _btn(
@@ -768,17 +773,18 @@ class ConfigureScreen(QWidget):
         self._vol_label.setFixedWidth(40)
         self._vol_slider.valueChanged.connect(self._set_volume)
         mr.addWidget(self._music_toggle); mr.addWidget(self._vol_slider,stretch=1); mr.addWidget(self._vol_label)
-        lay.addLayout(mr)
-        lay.addWidget(_hdiv())
+        sl.addLayout(mr)
+        sl.addWidget(_hdiv())
 
         # ── Controller Profiles ───────────────────────────────────────────
-        lay.addWidget(_lbl("Controller Profiles", 14, "#CCC", align=Qt.AlignLeft))
+        sl.addWidget(_lbl("Controller Profiles", 13, "#CCC", align=Qt.AlignLeft))
         gr = QHBoxLayout(); gr.setSpacing(8)
         gr.addWidget(_lbl("Gyro:", 12, "#AAA", wrap=False))
         self._gyro_btns = {}
-        # SD LCD/OLED get 4 modes; others get 2. Hold/toggle hidden dynamically in showEvent.
+        # SD LCD/OLED and Steam Machine get 4 modes; others get 2.
+        # Hold/toggle hidden dynamically in showEvent.
         for mode in ("on", "hold", "toggle", "off"):
-            labels = {"on": "ADS", "hold": "Hold", "toggle": "Toggle", "off": "Gyro Off"}
+            labels = {"on": "ADS", "hold": "Hold", "toggle": "Toggle", "off": "Off"}
             b = _btn(labels[mode], C_DARK_BTN, size=11, h=36)
             b.setFixedWidth(90)
             b.clicked.connect(lambda checked, m=mode: self._set_gyro(m))
@@ -789,11 +795,11 @@ class ConfigureScreen(QWidget):
         ctrl_btn.clicked.connect(self._apply_controller_profiles)
         gr.addWidget(ctrl_btn)
         gr.addStretch()
-        lay.addLayout(gr)
-        lay.addWidget(_hdiv())
+        sl.addLayout(gr)
+        sl.addWidget(_hdiv())
 
         # ── Player Name ───────────────────────────────────────────────────
-        lay.addWidget(_lbl("Player Name", 14, "#CCC", align=Qt.AlignLeft))
+        sl.addWidget(_lbl("Player Name", 13, "#CCC", align=Qt.AlignLeft))
         nr = QHBoxLayout(); nr.setSpacing(12)
         self._name_input = QLineEdit()
         self._name_input.setPlaceholderText("Enter player name...")
@@ -808,26 +814,26 @@ class ConfigureScreen(QWidget):
         save_btn.setFixedWidth(80)
         save_btn.clicked.connect(self._save_name)
         nr.addWidget(self._name_input, stretch=1); nr.addWidget(save_btn)
-        lay.addLayout(nr)
+        sl.addLayout(nr)
         self._name_note = _lbl("Sets your name in CoD4x, IW4x, AlterWare (Ghosts, AW), T7X, and Plutonium offline. Does not affect Plutonium online or CleanOps (uses Steam name).", 10, C_DIM, align=Qt.AlignLeft)
-        lay.addWidget(self._name_note)
-        lay.addWidget(_hdiv())
+        sl.addWidget(self._name_note)
+        sl.addWidget(_hdiv())
 
         # ── Shader Cache (LCD only) ───────────────────────────────────────
         self._shader_row = QWidget()
         sr_lay = QVBoxLayout(self._shader_row); sr_lay.setContentsMargins(0,0,0,0); sr_lay.setSpacing(8)
-        sr_lay.addWidget(_lbl("Shader Cache", 14, "#CCC", align=Qt.AlignLeft))
+        sr_lay.addWidget(_lbl("Shader Cache", 13, "#CCC", align=Qt.AlignLeft))
         sc_btn = _btn("Clear Shader Cache", C_DARK_BTN, size=12, h=36)
         sc_btn.setFixedWidth(220)
         sc_btn.clicked.connect(self._clear_shader_cache)
         sr_h = QHBoxLayout(); sr_h.addWidget(sc_btn); sr_h.addStretch()
         sr_lay.addLayout(sr_h)
-        lay.addWidget(self._shader_row)
+        sl.addWidget(self._shader_row)
         self._shader_hdiv = _hdiv()
-        lay.addWidget(self._shader_hdiv)
+        sl.addWidget(self._shader_hdiv)
 
         # ── Links ─────────────────────────────────────────────────────────
-        lay.addWidget(_lbl("Links", 14, "#CCC", align=Qt.AlignLeft))
+        sl.addWidget(_lbl("Links", 13, "#CCC", align=Qt.AlignLeft))
         lr = QHBoxLayout(); lr.setSpacing(12)
         discord_btn = _btn("Discord", "#5865F2", size=12, h=36)
         discord_btn.setFixedWidth(100)
@@ -839,30 +845,36 @@ class ConfigureScreen(QWidget):
         nightly_btn.setFixedWidth(100)
         nightly_btn.clicked.connect(lambda: self._open_url("https://github.com/GalvarinoDev/DeckOps-Nightly"))
         lr.addWidget(discord_btn); lr.addWidget(stable_btn); lr.addWidget(nightly_btn); lr.addStretch()
-        lay.addLayout(lr)
-        lay.addWidget(_hdiv())
+        sl.addLayout(lr)
+        sl.addWidget(_hdiv())
 
         # ── Danger Zone ──────────────────────────────────────────────────
-        lay.addWidget(_lbl("Danger Zone", 14, C_TREY, align=Qt.AlignLeft))
+        sl.addWidget(_lbl("Danger Zone", 13, C_TREY, align=Qt.AlignLeft))
         dr = QHBoxLayout(); dr.setSpacing(12)
         uninstall_btn = _btn("Full Uninstall", C_RED_BTN, size=12, h=40)
         reset_cfg_btn = _btn("Reset DeckOps Config", C_RED_BTN, size=12, h=40)
         uninstall_btn.clicked.connect(self._confirm_uninstall)
         reset_cfg_btn.clicked.connect(self._confirm_reset)
         dr.addWidget(uninstall_btn); dr.addWidget(reset_cfg_btn); dr.addStretch()
-        lay.addLayout(dr)
-        lay.addWidget(_hdiv())
+        sl.addLayout(dr)
+        sl.addWidget(_hdiv())
 
         # ── About ─────────────────────────────────────────────────────────
         self._about_label = _lbl("", 11, C_DIM, align=Qt.AlignLeft)
-        lay.addWidget(self._about_label)
+        sl.addWidget(self._about_label)
 
-        lay.addStretch()
+        sl.addStretch()
         self.status = _lbl("", 12, C_DIM)
-        lay.addWidget(self.status)
+        sl.addWidget(self.status)
+
+        scroll.setWidget(inner)
+        lay.addWidget(scroll, stretch=1)
+
+        # Back button stays outside the scroll area
         back = _btn("<< Back", C_DARK_BTN, h=48); back.setFixedWidth(160)
         back.clicked.connect(lambda: go_to(self.stack, "ManagementScreen"))
-        bw = QHBoxLayout(); bw.addWidget(back); bw.addStretch()
+        bw = QHBoxLayout(); bw.setContentsMargins(60,8,60,16)
+        bw.addWidget(back); bw.addStretch()
         lay.addLayout(bw)
 
     def showEvent(self, event):
@@ -874,17 +886,17 @@ class ConfigureScreen(QWidget):
         player = cfg.get_player_name() or "Player"
         self._name_input.setText(player if player != "Player" else "")
 
-        # Show hold/toggle only for Steam Deck LCD/OLED
-        is_sd = model in ("lcd", "oled")
-        self._gyro_btns["hold"].setVisible(is_sd)
-        self._gyro_btns["toggle"].setVisible(is_sd)
-        # Relabel ADS button for non-SD devices
-        self._gyro_btns["on"].setText("ADS" if is_sd else "Gyro On")
+        # Show hold/toggle only for Steam Deck LCD/OLED and Steam Machine
+        has_full_modes = model in ("lcd", "oled", "steam_machine")
+        self._gyro_btns["hold"].setVisible(has_full_modes)
+        self._gyro_btns["toggle"].setVisible(has_full_modes)
+        # Relabel ADS button for non-SD/SM devices
+        self._gyro_btns["on"].setText("ADS" if has_full_modes else "Gyro On")
 
         # Gyro highlight
         gyro = cfg.get_gyro_mode() or "on"
-        # If non-SD device has hold/toggle saved, treat as "on" for highlight
-        if not is_sd and gyro in ("hold", "toggle"):
+        # If non-SD/SM device has hold/toggle saved, treat as "on" for highlight
+        if not has_full_modes and gyro in ("hold", "toggle"):
             gyro = "on"
         for mode, btn in self._gyro_btns.items():
             if mode == gyro:
@@ -908,7 +920,9 @@ class ConfigureScreen(QWidget):
                 pass
 
         # Device display name for about label
-        if model == "other":
+        if model == "steam_machine":
+            device_display = "Steam Machine"
+        elif model == "other":
             other_dev = cfg.get_other_device() or "unknown"
             _DEVICE_NAMES = {
                 "1920x1200": "Other (1920×1200)",
@@ -917,6 +931,10 @@ class ConfigureScreen(QWidget):
                 "1280x720": "Other (1280×720)",
             }
             device_display = _DEVICE_NAMES.get(other_dev, f"Other ({other_dev})")
+        elif model == "oled":
+            device_display = "Steam Deck OLED"
+        elif model == "lcd":
+            device_display = "Steam Deck LCD"
         else:
             device_display = f"Steam Deck {model.upper()}"
 
