@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Bringing ~~the Golden Age of~~ a lot of Call of Duty games to your ~~Steam Deck~~ Immutable Linux device, no tinkering required.
+  Bringing <del>the Golden Age of</del> a lot of Call of Duty games to your <del>Steam Deck</del> Immutable Linux device, no tinkering required.
 </p>
 
 ---
