@@ -1538,22 +1538,144 @@ def apply_steam_artwork(selected_keys: list, on_progress=None):
     prog(f"✓ Steam artwork applied for {len(to_apply)} game(s).")
 
 
-def create_own_shortcuts(own_games: dict, selected_keys: list,
-                        gyro_mode: str, on_progress=None, steam_root: str = None):
+def enrich_own_games(own_games: dict, selected_keys: list,
+                     on_progress=None):
     """
-    Create non-Steam shortcuts for games detected via find_own_installed().
+    Compute shortcut appids, compatdata paths, resolved exe paths, and
+    launch options for own games — WITHOUT writing any VDF entries,
+    artwork, controller configs, or compat tool mappings.
 
-    DeckOps controls the shortcut name and exe path, so the appid is
-    deterministic and artwork, controller configs, and compat tools all
-    land in the right place from the start. No rename step needed.
+    Must run early in the install flow so prefix creation can use the
+    computed compatdata_path. The actual shortcut writing is deferred to
+    write_own_shortcuts(), which should run AFTER all mod client installs
+    so every target exe exists on disk.
 
-    own_games     — dict from detect_games.find_own_installed()
+    own_games     — dict {key: game_dict} from detect_games / OwnScanScreen
+    selected_keys — list of game keys the user selected
+    on_progress   — optional callback(msg: str)
+
+    Returns own_games dict enriched with:
+      shortcut_appid, compatdata_path, source, current_name,
+      _own_actual_exe, _own_launch_options
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    _PLUT_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp",
+                  "iw5mp"}
+
+    for key in selected_keys:
+        if key not in OWN_SHORTCUTS:
+            continue
+        if key not in own_games:
+            continue
+        game = own_games[key]
+        install_dir = game.get("install_dir")
+        if not install_dir:
+            continue
+
+        shortcut_def = OWN_SHORTCUTS[key]
+        name         = shortcut_def["name"]
+        exe_path     = game["exe_path"]
+
+        # Calculate appid from quoted exe + canonical name.
+        quoted_exe     = f'"{exe_path}"'
+        shortcut_appid = _calc_shortcut_appid(quoted_exe, name)
+
+        # Own games always get their own CRC-based prefix keyed on the
+        # shortcut appid.
+        compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
+
+        # Enrich the game dict so downstream code has the appid and paths
+        game["shortcut_appid"]  = shortcut_appid
+        game["compatdata_path"] = compatdata_path
+        game["source"]          = "own"
+        game["current_name"]    = name
+
+        # ── Resolve the actual exe and launch options per client type ──
+        if key in _PLUT_KEYS:
+            import config as _cfg
+            if _cfg.is_lcd():
+                # LCD Plutonium: shortcut handled separately by heroic.py.
+                # Still enrich the dict — install_plutonium needs the paths.
+                game["_own_actual_exe"]      = None
+                game["_own_launch_options"]  = None
+                prog(f"  → {name}  (LCD path — shortcut handled separately)")
+                continue
+
+            plut_dir = os.path.join(
+                compatdata_path,
+                "pfx", "drive_c", "users", "steamuser",
+                "AppData", "Local", "Plutonium",
+            )
+            actual_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
+            launch_options = (
+                f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                f'%command% "plutonium://play/{key}"'
+            )
+
+        elif key == "iw4mp":
+            actual_exe = os.path.join(install_dir, "iw4x.exe")
+            launch_options = ""
+
+        elif key == "cod4sp":
+            actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
+            launch_options = ""
+
+        elif key == "t7":
+            actual_exe = exe_path
+            launch_options = 'WINEDLLOVERRIDES="d3d11=n,b" %command%'
+
+        elif key == "t7x":
+            actual_exe = os.path.join(install_dir, "t7x.exe")
+            launch_options = ""
+
+        elif key in ("iw6mp", "iw6sp"):
+            actual_exe = os.path.join(install_dir, "iw6-mod.exe")
+            launch_options = "-multiplayer" if key == "iw6mp" else "-singleplayer"
+
+        elif key in ("s1mp", "s1sp"):
+            actual_exe = os.path.join(install_dir, "s1-mod.exe")
+            launch_options = "-multiplayer" if key == "s1mp" else "-singleplayer"
+
+        else:
+            actual_exe = exe_path
+            launch_options = ""
+
+        # Recalculate appid from actual_exe (mod client exe may differ
+        # from the original game exe used above).
+        quoted_actual = f'"{actual_exe}"'
+        final_appid   = _calc_shortcut_appid(quoted_actual, name)
+        if final_appid != shortcut_appid:
+            shortcut_appid  = final_appid
+            compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
+            game["shortcut_appid"]  = shortcut_appid
+            game["compatdata_path"] = compatdata_path
+
+        # Store resolved values for write_own_shortcuts() to use later
+        game["_own_actual_exe"]     = actual_exe
+        game["_own_launch_options"] = launch_options
+
+        prog(f"  → {name}  appid: {shortcut_appid}")
+
+    return own_games
+
+
+def write_own_shortcuts(own_games: dict, selected_keys: list,
+                        gyro_mode: str, on_progress=None):
+    """
+    Write non-Steam shortcut VDF entries, download artwork, assign
+    controller configs, and set GE-Proton compat tool for own games.
+
+    Must run AFTER all mod client installs so every target exe exists
+    on disk. Reads enrichment data (shortcut_appid, _own_actual_exe,
+    _own_launch_options) previously set by enrich_own_games().
+
+    own_games     — dict {key: game_dict} enriched by enrich_own_games()
     selected_keys — list of game keys the user selected
     gyro_mode     — "on" or "off"
     on_progress   — optional callback(msg: str)
-
-    Returns own_games dict enriched with shortcut_appid, compatdata_path,
-    and source fields so the install flow can use them directly.
     """
     def prog(msg):
         if on_progress:
@@ -1563,8 +1685,6 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
     # writing new entries. Safe to call every time -- no-ops if clean.
     cleanup_orphan_shortcuts(on_progress=on_progress)
 
-    # Plutonium keys that use the Plutonium launcher/bootstrapper instead
-    # of the original game exe. The shortcut points at the Plutonium binary.
     _PLUT_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp",
                   "iw5mp"}
 
@@ -1575,22 +1695,24 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
         if key not in own_games:
             continue
         game = own_games[key]
-        install_dir = game.get("install_dir")
-        if not install_dir:
+        if not game.get("install_dir"):
+            continue
+        # Skip LCD Plutonium keys — handled separately by heroic.py
+        if game.get("_own_actual_exe") is None and key in _PLUT_KEYS:
             continue
         to_create[key] = (OWN_SHORTCUTS[key], game)
 
     if not to_create:
-        prog("No non-Steam game shortcuts to create.")
-        return own_games
+        prog("No non-Steam game shortcuts to write.")
+        return
 
     uids = _find_all_steam_uids()
     if not uids:
         prog("⚠ No Steam user accounts found — own shortcuts skipped.")
-        return own_games
+        return
 
     for uid in uids:
-        prog(f"Creating own game shortcuts for user {uid}...")
+        prog(f"Writing own game shortcuts for user {uid}...")
 
         shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
         grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
@@ -1598,12 +1720,7 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
         existing_raw = _read_shortcuts_raw(shortcuts_path)
 
         # Strip any existing entries whose AppName matches a shortcut we're
-        # about to write. Without this, name collisions were a no-op and
-        # left stale Exe / LaunchOptions / StartDir fields in place across
-        # reinstalls. For LCD Plutonium keys (which skip the write below
-        # and are handled later by _create_heroic_steam_shortcut), the
-        # strip is still correct -- add_shortcut will see a clean slate
-        # and write fresh.
+        # about to write so reinstalls replace stale entries cleanly.
         names_to_write = {d["name"] for d, _ in to_create.values()}
         existing_raw, stripped = _strip_entries_by_name(
             existing_raw, names_to_write
@@ -1611,8 +1728,6 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
         if stripped:
             prog(f"  Replacing {len(stripped)} stale shortcut(s)...")
 
-        # Re-read names after the strip so the defensive fallback below
-        # reflects the post-strip state of the file.
         existing_names = [
             n for n in _read_existing_shortcuts(shortcuts_path)
             if n not in stripped
@@ -1623,145 +1738,26 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
         new_entries = []
 
         for key, (shortcut_def, game) in to_create.items():
-            name        = shortcut_def["name"]
-            install_dir = game["install_dir"]
-            exe_path    = game["exe_path"]
+            name          = shortcut_def["name"]
+            install_dir   = game["install_dir"]
+            actual_exe    = game["_own_actual_exe"]
+            launch_options = game["_own_launch_options"]
+            shortcut_appid = game["shortcut_appid"]
 
-            # Calculate appid from quoted exe + canonical name.
-            # We control both, so this is deterministic.
-            quoted_exe     = f'"{exe_path}"'
-            shortcut_appid = _calc_shortcut_appid(quoted_exe, name)
-            icon_path      = os.path.join(grid_dir, f"{shortcut_appid}_icon.{shortcut_def['icon_ext']}")
+            icon_path = os.path.join(
+                grid_dir, f"{shortcut_appid}_icon.{shortcut_def['icon_ext']}"
+            )
 
-            # ── Resolve compatdata path ───────────────────────────────────
-            # Own games always get their own CRC-based prefix keyed on the
-            # shortcut appid. Never reuse a Steam game prefix — the user
-            # may not own the game on Steam, and each shortcut should have
-            # an independently preloaded prefix.
-            compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
-
-            # Enrich the game dict so downstream code has the appid and paths
-            game["shortcut_appid"]  = shortcut_appid
-            game["compatdata_path"] = compatdata_path
-            game["source"]          = "own"
-            game["current_name"]    = name
-
-            # ── Resolve the actual exe and launch options per client type ──
-            # Own games may be missing original exes (e.g. MS Store copies,
-            # old installs where the user replaced exes with Plutonium).
-            # Plutonium games point at the Plutonium client directly.
-            # iw4x/iw3sp point at the client exe dropped by the installer.
-            # cod4x and vanilla keys still need the original game exe.
-
-            if key in _PLUT_KEYS:
-                import config as _cfg
-                # LCD Plutonium games are handled by the LCD launch path
-                # (heroic.py setup_heroic_game) during install_plutonium().
-                # That module creates the Steam shortcut, downloads artwork,
-                # assigns the controller profile, and sets the compat tool.
-                # Nothing to do here -- the game dict has already been
-                # enriched with shortcut_appid and compatdata_path above,
-                # which install_plutonium needs to copy Plutonium files
-                # into the prefix.
-                if _cfg.is_lcd():
-                    prog(f"  → {name}")
-                    prog(f"    LCD path - shortcut handled separately")
-                    continue
-
-                # OLED / Other: point at the Plutonium launcher directly
-                plut_dir = os.path.join(
-                    compatdata_path,
-                    "pfx", "drive_c", "users", "steamuser",
-                    "AppData", "Local", "Plutonium",
-                )
-                actual_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
-                launch_options = (
-                    f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                    f'%command% "plutonium://play/{key}"'
-                )
-
-            elif key == "iw4mp":
-                # iw4x -- point at iw4x.exe (dropped by installer, no rename)
-                actual_exe = os.path.join(install_dir, "iw4x.exe")
-                launch_options = ""
-
-            elif key == "cod4sp":
-                # iw3sp-mod -- point at iw3sp_mod.exe (dropped by installer, no rename)
-                actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
-                launch_options = ""
-
-            elif key == "t7":
-                # CleanOps -- uses original exe with Wine DLL override for d3d11.dll
-                actual_exe = exe_path
-                launch_options = 'WINEDLLOVERRIDES="d3d11=n,b" %command%'
-
-            elif key == "t7x":
-                # T7X (AlterWare) -- standalone exe in the DeckOps-T7X
-                # sibling dir. GE-Proton compat tool handles everything;
-                # no launch options needed.
-                actual_exe = os.path.join(install_dir, "t7x.exe")
-                launch_options = ""
-
-            elif key in ("iw6mp", "iw6sp"):
-                # AlterWare Ghosts -- point at iw6-mod.exe, pass mode flag
-                # The built-in launcher UI crashes under Proton; the mode
-                # flag bypasses it and loads directly into the correct mode.
-                actual_exe = os.path.join(install_dir, "iw6-mod.exe")
-                launch_options = "-multiplayer" if key == "iw6mp" else "-singleplayer"
-
-            elif key in ("s1mp", "s1sp"):
-                # AlterWare Advanced Warfare -- point at s1-mod.exe, pass mode flag
-                actual_exe = os.path.join(install_dir, "s1-mod.exe")
-                launch_options = "-multiplayer" if key == "s1mp" else "-singleplayer"
-
-            else:
-                # cod4mp (cod4x patches iw3mp.exe in place), iw4sp, iw5sp,
-                # t6sp (T6SP-MOD replaces exe in place)
-                # -- these use the original game exe path with no launch options
-                actual_exe = exe_path
-                launch_options = ""
-
-            # For non-Plutonium keys, warn if the target exe is missing.
-            # Plutonium exes won't exist yet -- they get created when the
-            # bootstrapper runs for the first time inside the prefix.
-            # We still create the shortcut either way so artwork, controller
-            # configs, and compat tools are in place. The user can drop the
-            # exe in later and it will just work.
-
-            # ── Recalculate appid from actual_exe ─────────────────────────
-            # The preliminary appid above used the original game exe, but
-            # the shortcut Exe field uses actual_exe (which may be a mod
-            # client like iw6-mod.exe or s1-mod.exe). Steam derives the
-            # shortcut's internal appid from the Exe field, so the CRC
-            # must match. Recalculate and update all dependent state.
-            quoted_actual   = f'"{actual_exe}"'
-            final_appid     = _calc_shortcut_appid(quoted_actual, name)
-            if final_appid != shortcut_appid:
-                shortcut_appid  = final_appid
-                icon_path       = os.path.join(grid_dir, f"{shortcut_appid}_icon.{shortcut_def['icon_ext']}")
-                compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
-                game["shortcut_appid"]  = shortcut_appid
-                game["compatdata_path"] = compatdata_path
-                # Re-resolve launch options with updated compatdata_path.
-                # Most own-game keys have no compatdata_path in their launch
-                # options, so only keys that reference it need re-resolving.
-                # Currently only Plutonium OLED keys use it, and those are
-                # handled above the continue. This block is kept as a
-                # defensive no-op for future keys that might need it.
-
-            if key not in _PLUT_KEYS and not os.path.exists(actual_exe):
+            if not os.path.exists(actual_exe):
                 prog(f"  → {name}")
-                prog(f"    ⚠ {os.path.basename(actual_exe)} not found -- shortcut will be created anyway")
+                prog(f"    ⚠ {os.path.basename(actual_exe)} not found — shortcut will be created anyway")
             else:
                 prog(f"  → {name}")
             prog(f"    appid: {shortcut_appid}")
 
             if name in existing_names:
-                # names_to_write already stripped all matching entries from
-                # existing_raw at the top of the UID loop, so this branch
-                # is unreachable in practice. Kept as a defensive fallback
-                # in case the strip helper ever fails to match an entry.
                 prog(f"    ⚠ Unexpected name collision after strip")
+
             entry = {
                 "appid":               _to_signed32(shortcut_appid),
                 "AppName":             name,
@@ -1814,7 +1810,23 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
         else:
             prog(f"  ✓ No new shortcuts needed")
 
-    prog("✓ Own game shortcuts created.")
+    prog("✓ Own game shortcuts written.")
+
+
+def create_own_shortcuts(own_games: dict, selected_keys: list,
+                        gyro_mode: str, on_progress=None, steam_root: str = None):
+    """
+    Legacy wrapper — enriches own game dicts AND writes shortcuts in one
+    call. Kept for backward compatibility. New code should call
+    enrich_own_games() early and write_own_shortcuts() after installs.
+
+    Returns own_games dict enriched with shortcut_appid, compatdata_path,
+    and source fields.
+    """
+    own_games = enrich_own_games(own_games, selected_keys,
+                                 on_progress=on_progress)
+    write_own_shortcuts(own_games, selected_keys, gyro_mode,
+                        on_progress=on_progress)
     return own_games
 
 
