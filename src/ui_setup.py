@@ -42,6 +42,7 @@ DEVICES = {
     "xbox_ally_x":  {"label": "ROG Xbox Ally X",       "deck_model": "other", "other_device": "1920x1080",       "other_device_type": "2btn",       "has_gyro": True},
     "msi_claw_8":   {"label": "MSI Claw 8",           "deck_model": "other", "other_device": "1920x1200",       "other_device_type": "2btn",       "has_gyro": True},
     "general_pc":   {"label": "PC",                    "deck_model": "other", "other_device": None,              "other_device_type": "generic",    "has_gyro": True},
+    "steam_machine":{"label": "Steam Machine",         "deck_model": "steam_machine", "other_device": None,  "other_device_type": "steam_machine", "has_gyro": True},
 }
 
 
@@ -58,6 +59,7 @@ class SetupFlowScreen(QWidget):
         self._selected_os = None      # "steamos", "bazzite", "cachyos", "other_linux"
         self._selected_device = None  # key from DEVICES
         self._is_general_pc = False
+        self._is_steam_machine = False
 
         main_lay = QVBoxLayout(self)
         main_lay.setContentsMargins(0, 0, 0, 0)
@@ -113,11 +115,13 @@ class SetupFlowScreen(QWidget):
         mrow = QHBoxLayout(); mrow.setSpacing(20)
         lcd_btn  = _btn("Steam Deck LCD",  C_IW, h=56)
         oled_btn = _btn("Steam Deck OLED", C_IW, h=56)
+        sm_btn   = _btn("Steam Machine",   C_IW, h=56)
         other_btn = _btn("Other Device",   C_TREY, h=56)
         lcd_btn.clicked.connect(lambda: self._pick_device("sd_lcd"))
         oled_btn.clicked.connect(lambda: self._pick_device("sd_oled"))
+        sm_btn.clicked.connect(lambda: self._pick_device("steam_machine"))
         other_btn.clicked.connect(self._show_device_picker)
-        mrow.addWidget(lcd_btn); mrow.addWidget(oled_btn); mrow.addWidget(other_btn)
+        mrow.addWidget(lcd_btn); mrow.addWidget(oled_btn); mrow.addWidget(sm_btn); mrow.addWidget(other_btn)
         ml.addLayout(mrow)
         ml.addSpacing(40)
         main_lay.addWidget(self._model_section)
@@ -558,6 +562,7 @@ class SetupFlowScreen(QWidget):
         self._selected_device = dev_key
         dev = DEVICES[dev_key]
         self._is_general_pc = (dev_key == "general_pc")
+        self._is_steam_machine = (dev_key == "steam_machine")
 
         # Save device config
         cfg.set_deck_model(dev["deck_model"])
@@ -585,7 +590,7 @@ class SetupFlowScreen(QWidget):
 
     def _back_to_device_from_gyro(self):
         dev = DEVICES.get(self._selected_device, {})
-        if dev.get("deck_model") in ("lcd", "oled"):
+        if dev.get("deck_model") in ("lcd", "oled", "steam_machine"):
             self._show("_model_section")
         else:
             self._show("_device_section")
@@ -593,15 +598,15 @@ class SetupFlowScreen(QWidget):
     def _gyro_yes(self):
         """User wants gyro — show the mode picker.
 
-        Steam Deck LCD/OLED: 3 options (ADS, Hold, Toggle)
+        Steam Deck LCD/OLED and Steam Machine: 3 options (ADS, Hold, Toggle)
         All other devices:   skip mode picker, apply 'on' (ADS) directly
         """
-        is_sd = self._selected_device in ("sd_lcd", "sd_oled")
-        if not is_sd:
-            # Non-SD devices only support ADS mode
+        has_full_modes = self._selected_device in ("sd_lcd", "sd_oled", "steam_machine")
+        if not has_full_modes:
+            # Non-SD/SM devices only support ADS mode
             self._pick_gyro("on")
             return
-        # SD: show mode picker with Hold/Toggle visible
+        # SD/SM: show mode picker with Hold/Toggle visible
         self._gyro_hold_btn.setVisible(True)
         self._gyro_toggle_btn.setVisible(True)
         self._gyro_mode_desc_lbl.setText(
@@ -628,8 +633,8 @@ class SetupFlowScreen(QWidget):
         # the mode picker — go back there. If they picked "off" (No) they
         # skipped it — go back to the Yes/No screen.
         gyro = cfg.get_gyro_mode()
-        is_sd = self._selected_device in ("sd_lcd", "sd_oled")
-        if gyro != "off" and is_sd:
+        has_full_modes = self._selected_device in ("sd_lcd", "sd_oled", "steam_machine")
+        if gyro != "off" and has_full_modes:
             self._show("_gyro_mode_section")
         else:
             self._show("_gyro_section")
@@ -659,6 +664,10 @@ class SetupFlowScreen(QWidget):
         # Routing depends on OS and device
         if self._needs_primary_controller():
             self._show("_primary_controller_section")
+        elif self._is_steam_machine:
+            # Steam Machine: need resolution, no controller or play mode
+            self._res_title_lbl.setText("What resolution is your display?")
+            self._show("_resolution_section")
         elif self._is_general_pc:
             # PC: go to resolution, then controller
             self._res_title_lbl.setText("What resolution is your display?")
@@ -756,7 +765,10 @@ class SetupFlowScreen(QWidget):
     # ── Resolution ────────────────────────────────────────────────────────
 
     def _back_to_prev_from_res(self):
-        if self._is_general_pc:
+        if self._is_steam_machine:
+            # Steam Machine: back to source (no controller or decky step)
+            self._show("_source_section")
+        elif self._is_general_pc:
             # PC: back to controller
             self._show("_primary_controller_section")
         else:
@@ -764,6 +776,11 @@ class SetupFlowScreen(QWidget):
             self._show("_decky_section")
 
     def _pick_resolution(self, resolution):
+        if self._is_steam_machine:
+            # Steam Machine: store resolution in other_device for config dir resolution
+            cfg.set_other_device(resolution)
+            self._finish()
+            return
         cfg.set_docked_resolution(resolution)
         if self._is_general_pc:
             # PC already picked controller — done

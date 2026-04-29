@@ -20,6 +20,10 @@ Neptune templates (4 standard + 4 hold/toggle + 4 Legion + 4 2btn = 16 total):
         controller_neptune_deckops_2btn_{ads,off}.vdf
         controller_neptune_deckops_2btn_other_{ads,off}.vdf
 
+Steam Machine uses triton templates as its PRIMARY controller (not external).
+    assign_controller_profiles() returns triton VDFs via _profile_filename()
+    instead of Neptune. Full hold/toggle support like standard Neptune.
+
 External controller templates (28 total):
     PS5:       controller_ps5_deckops{,_ads,_other,_other_ads}.vdf
     PS5 Edge:  controller_ps5_edge_deckops{,_ads,_other,_other_ads}.vdf
@@ -267,20 +271,23 @@ def _get_deck_serial() -> str | None:
 
 
 def _profile_filename(profile_type: str, gyro_mode: str) -> list[str]:
-    """Return the list of Neptune VDF filenames for a given profile type and gyro mode.
+    """Return the list of primary controller VDF filenames for a profile type and gyro mode.
+
+    Steam Machine uses triton templates as its primary controller:
+        Supports full hold/toggle (same suffix mapping as standard Neptune).
 
     Checks other_device_type when the device is "other" (non-Steam Deck):
         legion_go  -> Neptune Legion templates (no left touchpad)
         2btn       -> Neptune 2btn templates (2 paddles, no touchpad)
         legion_go_s / generic -> standard Neptune (fallback)
 
-    Gyro mode mapping for standard Neptune (SD LCD/OLED, Legion Go S, generic):
+    Gyro mode mapping for standard Neptune and triton:
         "on"     -> ads   (gyro activates on ADS / left trigger pull)
         "hold"   -> hold  (gyro active while holding a button)
         "toggle" -> toggle (gyro toggled on/off with a button press)
         "off"    -> off   (no gyro)
 
-    Hold and toggle VDFs only exist for standard Neptune (Steam Deck).
+    Hold and toggle VDFs only exist for standard Neptune, and triton.
     Legion and 2btn devices only have ads/off variants — hold/toggle
     falls back to ads for those devices.
     """
@@ -288,8 +295,15 @@ def _profile_filename(profile_type: str, gyro_mode: str) -> list[str]:
     _SUFFIX_MAP = {"on": "ads", "hold": "hold", "toggle": "toggle"}
     suffix = _SUFFIX_MAP.get(gyro_mode, "off")
 
-    # Check if this is a non-Deck device with a specific controller variant
     import config as cfg
+
+    # Steam Machine: triton is the primary controller (full hold/toggle support)
+    if cfg.is_steam_machine():
+        if profile_type == "other":
+            return [f"controller_triton_deckops_other_{suffix}.vdf"]
+        return [f"controller_triton_deckops_{suffix}.vdf"]
+
+    # Check if this is a non-Deck device with a specific controller variant
     if cfg.is_other():
         device_type = cfg.get_other_device_type()
         # Legion and 2btn only have ads/off — no hold/toggle VDFs
