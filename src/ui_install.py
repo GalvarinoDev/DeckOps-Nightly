@@ -1181,7 +1181,7 @@ class OwnInstallScreen(QWidget):
 
     def _run_inner(self):
         from wrapper import get_proton_path, find_compatdata, kill_steam, set_compat_tool
-        from shortcut import create_own_shortcuts
+        from shortcut import enrich_own_games, write_own_shortcuts
         from cod4x import install_cod4x
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
@@ -1351,20 +1351,21 @@ class OwnInstallScreen(QWidget):
                     break
 
         # ── Enrich own game dicts (shortcut_appid, compatdata_path) ───────
-        # create_own_shortcuts computes CRC-based appids and prefix paths
-        # that prefix init needs. Must run before ensure_all_prefix_deps.
-        self._s.progress.emit(20, "Creating shortcuts and downloading artwork...")
-        self._s.log.emit("Creating non-Steam shortcuts...")
+        # enrich_own_games computes CRC-based appids, prefix paths, and
+        # resolved exe/launch options WITHOUT writing any VDF entries.
+        # Must run before ensure_all_prefix_deps. Actual shortcut writing
+        # is deferred to write_own_shortcuts() after all mod clients are
+        # installed so every target exe exists on disk.
+        self._s.progress.emit(20, "Computing own game shortcuts...")
+        self._s.log.emit("Enriching own game data...")
         gyro_mode = cfg.get_gyro_mode() or "on"
         own_games_dict = {k: g for k, g in self.own_selected.items()}
-        own_games_dict = create_own_shortcuts(
+        own_games_dict = enrich_own_games(
             own_games=own_games_dict,
             selected_keys=[k for k in self.own_selected],
-            gyro_mode=gyro_mode,
             on_progress=lambda msg: self._s.log.emit(msg),
-            steam_root=self.steam_root,
         )
-        _log_to_file("[BREADCRUMB] create_own_shortcuts returned")
+        _log_to_file("[BREADCRUMB] enrich_own_games returned")
 
         # Update self.selected with enriched own game dicts (shortcut_appid etc)
         self.selected = [
@@ -1716,23 +1717,25 @@ class OwnInstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Steam Input setup skipped: {ex}")
 
-        # ── Ensure newest GE-Proton is set for own shortcut appids ─────────
-        if ge_version:
+        # ── Write own game shortcuts (VDF, artwork, controllers, compat) ──
+        # All mod client exes now exist on disk. write_own_shortcuts reads
+        # the enrichment data set by enrich_own_games() earlier and writes
+        # the actual VDF entries, downloads artwork, assigns controller
+        # configs, and sets GE-Proton compat tool per shortcut.
+        if self.own_selected:
+            self._s.progress.emit(88, "Writing own game shortcuts...")
             try:
-                shortcut_appids = [
-                    str(g.get("shortcut_appid", ""))
-                    for g in own_games.values()
-                    if g.get("shortcut_appid")
-                ]
-                if shortcut_appids:
-                    set_compat_tool(shortcut_appids, ge_version)
-                    self._s.log.emit(f"✓  {ge_version} set for non-Steam game shortcuts")
+                write_own_shortcuts(
+                    own_games=own_games,
+                    selected_keys=[k for k in self.own_selected],
+                    gyro_mode=gyro_mode,
+                    on_progress=lambda msg: self._s.log.emit(msg),
+                )
             except Exception as ex:
-                self._s.log.emit(f"  GE-Proton compat mapping skipped: {ex}")
+                self._s.log.emit(f"  Own shortcuts failed: {ex}")
 
         # ── Non-Steam shortcuts for Steam games (mixed flow) ─────────────
-        # OwnInstallScreen calls create_own_shortcuts() for own games above,
-        # but Steam games also need their non-Steam shortcuts (e.g. WaW MP,
+        # Steam games also need their non-Steam shortcuts (e.g. WaW MP,
         # CoD4 MP) created via create_shortcuts(). Without this, Steam games
         # in the mixed flow don't get their mod client shortcuts.
         if self.steam_selected:
