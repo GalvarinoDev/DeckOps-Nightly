@@ -32,6 +32,11 @@ import os
 import shutil
 import sys
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
+
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -109,7 +114,7 @@ def _nuke_shader_cache_dir(appid_str: str):
         try:
             shutil.rmtree(cache_dir)
         except OSError:
-            pass
+            _log.debug("cache dir removal failed", exc_info=True)
 
 
 def cleanup_shader_cache(game_key: str, source: str):
@@ -177,7 +182,7 @@ def launch_game(game_key: str, source: str):
         )
         time.sleep(1)
     except Exception:
-        pass
+        _log.debug("cache rebuild trigger failed", exc_info=True)
 
     # Run flatpak and wait for it to exit. This keeps the parent
     # process alive so Steam sees the game as running. Without this,

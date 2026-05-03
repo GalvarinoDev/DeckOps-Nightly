@@ -25,6 +25,11 @@ import threading
 import time
 import urllib.request
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 STEAM_ROOT     = os.path.expanduser("~/.local/share/Steam")
@@ -408,7 +413,7 @@ def _get_deck_serial() -> str | None:
         if match:
             return match.group(1)
     except Exception:
-        pass
+        _log.debug("serial number read failed", exc_info=True)
     return None
 
 
@@ -439,6 +444,7 @@ def _download(url: str, dest: str) -> bool:
                 f.write(r.read())
         return True
     except Exception:
+        _log.debug("artwork download failed", exc_info=True)
         return False
 
 
@@ -483,6 +489,7 @@ def _read_existing_shortcuts(path: str) -> list:
         with open(path, 'rb') as f:
             data = f.read()
     except Exception:
+        _log.debug("operation failed", exc_info=True)
         return []
     
     # Extract AppName values
@@ -502,6 +509,7 @@ def _read_shortcuts_raw(path: str) -> bytes:
         with open(path, 'rb') as f:
             data = f.read()
     except Exception:
+        _log.debug("shortcuts.vdf read failed", exc_info=True)
         return b''
     
     # Strip header (b'\x00shortcuts\x00') and footer (b'\x08\x08')
@@ -542,7 +550,7 @@ def _get_next_index(raw_data: bytes) -> int:
                         if idx_str.isdigit():
                             indices.append(int(idx_str))
                     except (UnicodeDecodeError, ValueError):
-                        pass
+                        _log.debug("shortcut index parse failed", exc_info=True)
                 i = end + 1
             else:
                 i += 1
@@ -558,7 +566,7 @@ def _backup_file(path: str):
         try:
             shutil.copy2(path, path + ".bak")
         except OSError:
-            pass
+            _log.debug("shortcuts.vdf backup failed", exc_info=True)
 
 
 def _write_shortcuts_vdf(path: str, existing_raw: bytes, new_entries: list):
@@ -604,9 +612,9 @@ def _download_artwork(grid_dir: str, appid: int, shortcut_def: dict, prog,
                 try:
                     os.remove(f)
                 except OSError:
-                    pass
+                    _log.debug("file removal failed", exc_info=True)
         except Exception:
-            pass
+            _log.debug("file removal failed", exc_info=True)
     
     artwork_map = [
         ("icon_url",  f"{appid_str}_icon.{shortcut_def['icon_ext']}",  "icon"),
@@ -649,7 +657,7 @@ def _download_artwork(grid_dir: str, appid: int, shortcut_def: dict, prog,
             try:
                 fut.result()
             except Exception:
-                pass
+                _log.debug("artwork download task failed", exc_info=True)
 
 
 # ── Controller template assignment ────────────────────────────────────────────
@@ -780,6 +788,7 @@ def get_shortcut_appid(name: str) -> int | None:
             with open(shortcuts_path, "rb") as f:
                 data = f.read()
         except Exception:
+            _log.debug("shortcuts.vdf read failed", exc_info=True)
             continue
 
         idx = data.find(name_bytes)
@@ -1055,6 +1064,7 @@ def remove_shortcut(name: str, exe_path: str, artwork_def: dict = None,
             with open(shortcuts_path, "rb") as f:
                 data = f.read()
         except OSError:
+            _log.debug("shortcuts.vdf read failed", exc_info=True)
             continue
 
         header = b'\x00shortcuts\x00'
@@ -1117,7 +1127,7 @@ def remove_shortcut(name: str, exe_path: str, artwork_def: dict = None,
                     try:
                         os.remove(art_path)
                     except OSError:
-                        pass
+                        _log.debug("file removal failed", exc_info=True)
 
 
 # ── Orphan shortcut cleanup ──────────────────────────────────────────────────
@@ -1183,6 +1193,7 @@ def cleanup_orphan_shortcuts(on_progress=None):
             with open(shortcuts_path, "rb") as f:
                 data = f.read()
         except OSError:
+            _log.debug("shortcuts.vdf read failed", exc_info=True)
             continue
 
         header = b'\x00shortcuts\x00'
@@ -1248,7 +1259,7 @@ def cleanup_orphan_shortcuts(on_progress=None):
                         if f.startswith(appid_str):
                             os.remove(os.path.join(grid_dir, f))
                 except OSError:
-                    pass
+                    _log.debug("file removal failed", exc_info=True)
 
     # Remove shader caches for orphan appids
     shadercache_dir = os.path.join(STEAM_ROOT, "steamapps", "shadercache")
@@ -1260,7 +1271,7 @@ def cleanup_orphan_shortcuts(on_progress=None):
                     shutil.rmtree(cache_dir)
                     prog(f"  Removed shader cache for orphan appid {appid}")
                 except OSError:
-                    pass
+                    _log.debug("directory removal failed", exc_info=True)
 
     if total_removed > 0:
         prog(f"Cleaned {total_removed} orphan shortcut(s)")
@@ -1982,17 +1993,17 @@ def create_launcher_shortcut(on_progress=None):
                         try:
                             os.remove(_f)
                         except OSError:
-                            pass
+                            _log.debug("file removal failed", exc_info=True)
                     prog(f"  Cleaned old launcher artwork (appid {_old_py_appid})")
                 except Exception:
-                    pass
+                    _log.debug("file removal failed", exc_info=True)
 
             # Clear stale compat tool entry for old appid
             try:
                 _clear_compat_tool(str(_old_py_appid))
                 prog(f"  Cleared old compat tool entry (appid {_old_py_appid})")
             except Exception:
-                pass
+                _log.debug("operation failed", exc_info=True)
 
         next_idx = _get_next_index(existing_raw)
 
@@ -2104,6 +2115,7 @@ def remove_launcher_shortcut(on_progress=None):
             with open(shortcuts_path, "rb") as f:
                 data = f.read()
         except OSError:
+            _log.debug("shortcuts.vdf read failed", exc_info=True)
             continue
 
         header = b'\x00shortcuts\x00'
@@ -2162,7 +2174,7 @@ def remove_launcher_shortcut(on_progress=None):
                     try:
                         os.remove(art_path)
                     except OSError:
-                        pass
+                        _log.debug("file removal failed", exc_info=True)
 
 
 # ── CLI for testing ───────────────────────────────────────────────────────────

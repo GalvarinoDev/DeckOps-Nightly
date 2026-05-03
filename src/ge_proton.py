@@ -24,6 +24,11 @@ import tarfile
 import tempfile
 import urllib.request
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
+
 GITHUB_API   = "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest"
 COMPAT_DIR   = os.path.expanduser("~/.local/share/Steam/compatibilitytools.d")
 

@@ -4,6 +4,11 @@ import stat
 import shutil
 import subprocess
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
+
 
 def _backup_file(path: str):
     """Write a .bak copy before modifying a Steam config file."""
@@ -11,7 +16,7 @@ def _backup_file(path: str):
         try:
             shutil.copy2(path, path + ".bak")
         except OSError:
-            pass
+            _log.debug("VDF backup failed for config file", exc_info=True)
 
 
 def _find_block_end(text, start):

@@ -44,6 +44,11 @@ import re
 import shutil
 import binascii
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 _HERE         = os.path.dirname(os.path.abspath(__file__))
@@ -282,7 +287,7 @@ def _get_deck_serial() -> str | None:
         if match:
             return match.group(1)
     except Exception:
-        pass
+        _log.debug("serial number read failed", exc_info=True)
     return None
 
 
