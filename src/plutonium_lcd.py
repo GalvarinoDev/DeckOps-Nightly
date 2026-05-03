@@ -42,6 +42,11 @@ import subprocess
 import time
 import urllib.request
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
+
 from shortcut import add_shortcut, remove_shortcut
 
 
@@ -388,6 +393,7 @@ def is_heroic_installed() -> bool:
         )
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
+        _log.debug("heroic install check failed", exc_info=True)
         return False
 
 
@@ -474,7 +480,7 @@ def _grant_heroic_filesystem_access(paths: list, on_progress=None):
                 timeout=10,
             )
         except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+            _log.debug("heroic flatpak operation failed", exc_info=True)
 
 
 # ── Heroic library.json management ──────────────────────────────────────────
@@ -705,6 +711,7 @@ def is_plutonium_ready_lcd() -> bool:
             for d in os.listdir(storage)
         )
     except OSError:
+        _log.debug("operation failed", exc_info=True)
         return False
 
 
@@ -773,7 +780,7 @@ def _write_metadata_lcd(install_dir: str, data: dict):
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
     except OSError:
-        pass
+        _log.debug("operation failed", exc_info=True)
 
 
 # ── LCD offline mode ─────────────────────────────────────────────────────────
@@ -1504,7 +1511,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
                 os.remove(old_path)
                 prog(55, f"Removed stale shared wrapper: {old_name}")
             except OSError:
-                pass
+                _log.debug("stale wrapper removal failed", exc_info=True)
 
     lan_wrapper_path = None
     if source == "own":

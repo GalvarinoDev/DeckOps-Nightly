@@ -33,6 +33,11 @@ import tempfile
 
 from net import download as _download
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
+
 # ── constants ─────────────────────────────────────────────────────────────────
 
 _SETUP_EXE_URL = "https://cod4x.ovh/uploads/short-url/2V3RsE0Pp5Jakc1VE9Yuh5yb4lE.exe"
@@ -618,7 +623,7 @@ def uninstall_cod4x(game: dict, compatdata_path: str = None):
                     meta = json.load(f)
                 compatdata_path = meta.get("compatdata_path")
             except (json.JSONDecodeError, IOError):
-                pass
+                _log.debug("failed to read cod4x metadata", exc_info=True)
 
     if compatdata_path:
         appdata_dir = _get_appdata_dir(compatdata_path)

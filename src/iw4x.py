@@ -37,6 +37,11 @@ import threading
 
 from net import download as _download
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
+
 # iw4x.dll comes from the client repo, everything else from rawfiles.
 # release.zip contains iw4x.exe, all iwd files, zone patches,
 # and other assets. No separate downloads needed.
@@ -158,7 +163,7 @@ def install_iw4x_dlc(install_dir: str, on_progress=None):
                              f"Skipped {name} (already exists)")
                     return
             except OSError:
-                pass
+                _log.debug("size check failed", exc_info=True)
 
         _download(url, dest, None, name, timeout=120)
         with dl_lock:

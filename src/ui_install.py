@@ -26,6 +26,10 @@ from ui_constants import (
     go_to, get_screen,
 )
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
 
 # ── WelcomeScreen ─────────────────────────────────────────────────────────────
 class WelcomeScreen(QWidget):

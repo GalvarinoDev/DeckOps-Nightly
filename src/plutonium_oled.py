@@ -29,6 +29,11 @@ import json
 import subprocess
 import urllib.request
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
+
 
 # ── dedicated prefix ──────────────────────────────────────────────────────────
 # DeckOps manages its own Wine prefix for the initial Plutonium install.
@@ -692,7 +697,7 @@ def _write_oled_lan_wrapper(game: dict, game_key: str, steam_root: str,
             try:
                 os.remove(old_path)
             except OSError:
-                pass
+                _log.debug("old wrapper cleanup failed", exc_info=True)
 
     try:
         import config as _cfg

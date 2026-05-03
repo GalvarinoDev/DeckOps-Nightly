@@ -33,6 +33,10 @@ from ui_constants import (
     go_to, get_screen,
 )
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
 
 # ── ManagementCard ────────────────────────────────────────────────────────────
 class ManagementCard(QFrame):
@@ -184,7 +188,7 @@ class ManagementCard(QFrame):
                 self._raw_pixmap = pix
                 QTimer.singleShot(0, self._scale_image)
         except Exception:
-            pass
+            _log.debug("image load failed", exc_info=True)
 
 
 # ── ManagementScreen ──────────────────────────────────────────────────────────
@@ -917,7 +921,7 @@ class ConfigureScreen(QWidget):
                 with open(build_path, "r") as f:
                     build = f.read().strip() or "dev"
             except Exception:
-                pass
+                _log.debug("BUILD file read failed", exc_info=True)
 
         # Device display name for about label
         if model == "steam_machine":

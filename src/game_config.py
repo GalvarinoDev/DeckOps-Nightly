@@ -27,6 +27,11 @@ import os
 import glob
 import shutil
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 _HERE        = os.path.dirname(os.path.abspath(__file__))
@@ -70,7 +75,7 @@ def _compatdata(steam_root, appid, game_install_dir=None):
         if result:
             return result
     except Exception:
-        pass
+        _log.debug("config dest lookup failed", exc_info=True)
 
     # Fallback — prefix may not exist yet (os.makedirs will create it later)
     return os.path.join(steam_root, "steamapps", "compatdata", str(appid))
@@ -143,6 +148,7 @@ def _launcher_mirror_path(compatdata_dest):
         launcher_local = os.path.dirname(launcher_plut)
         return os.path.join(launcher_local, *tail.split(os.sep))
     except Exception:
+        _log.debug("launcher prefix config lookup failed", exc_info=True)
         return None
 
 

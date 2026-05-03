@@ -21,6 +21,11 @@ import os
 
 from net import download as _download
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
+
 # ── CleanOps constants ────────────────────────────────────────────────────────
 
 DLL_URL       = "https://raw.githubusercontent.com/notnightwolf/cleanopsT7/main/d3d11.dll"
@@ -118,4 +123,4 @@ def uninstall_cleanops(game: dict, steam_root: str = None):
             from wrapper import clear_launch_options
             clear_launch_options(steam_root, APPID)
         except Exception:
-            pass
+            _log.debug("failed to clear launch options", exc_info=True)

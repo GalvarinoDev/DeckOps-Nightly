@@ -14,6 +14,9 @@ from PyQt5.QtCore import Qt, pyqtSignal, QObject
 from PyQt5.QtGui import QFont, QFontDatabase
 
 import config as cfg
+from log import get_logger
+
+_log = get_logger(__name__)
 
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -33,14 +36,12 @@ os.makedirs(LOG_DIR, exist_ok=True)
 # ── Logging ───────────────────────────────────────────────────────────────────
 
 def _log_to_file(text: str):
-    """Append a timestamped line to the install log file."""
-    from datetime import datetime
-    try:
-        with open(LOG_PATH, "a", encoding="utf-8") as f:
-            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            f.write(f"[{ts}] {text}\n")
-    except Exception:
-        pass
+    """Append a line to the install log via the logging framework.
+
+    Kept as a thin bridge so existing callers in ui_install.py and
+    ui_manage.py continue to work without changes.
+    """
+    _log.info(text)
 
 
 # ── Colors ────────────────────────────────────────────────────────────────────
@@ -243,7 +244,7 @@ def _kill_audio():
             pygame.mixer.music.stop()
             pygame.mixer.quit()
     except Exception:
-        pass
+        _log.debug("audio shutdown failed", exc_info=True)
 
 def _start_audio():
     if not _music_enabled or not _pygame_available():
@@ -260,7 +261,7 @@ def _start_audio():
             pygame.mixer.music.set_volume(_music_volume)
             pygame.mixer.music.play(-1)
     except Exception:
-        pass
+        _log.debug("audio start failed", exc_info=True)
 
 def _set_audio_volume(vol: float):
     global _music_volume
@@ -273,7 +274,7 @@ def _set_audio_volume(vol: float):
         if pygame.mixer.get_init():
             pygame.mixer.music.set_volume(vol)
     except Exception:
-        pass
+        _log.debug("audio volume change failed", exc_info=True)
 
 def _set_audio_enabled(enabled: bool):
     global _music_enabled
@@ -333,7 +334,7 @@ def _detached_open(args):
             # Parent — reap the first child immediately
             os.waitpid(pid, 0)
     except OSError:
-        pass
+        _log.warning("detached_open failed for %s", args, exc_info=True)
 
 
 # ── Install dialogs ───────────────────────────────────────────────────────────

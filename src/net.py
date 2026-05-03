@@ -9,6 +9,11 @@ UA string and retry/backoff logic so changes propagate everywhere.
 import time
 import urllib.request
 
+from log import get_logger
+
+_log = get_logger(__name__)
+
+
 
 BROWSER_UA = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -52,4 +57,5 @@ def download(url: str, dest: str, on_progress=None, label: str = "",
         except Exception:
             if attempt == 2:
                 raise
+            _log.debug("download retry %d for %s", attempt + 1, url)
             time.sleep(2 ** attempt)
