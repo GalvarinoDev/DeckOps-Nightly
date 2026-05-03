@@ -96,7 +96,7 @@ check_for_updates() {
         rm -rf "$TMPDIR_EXTRACT"
     else
         # Download only changed files
-        echo "$CHANGED_FILES" | while IFS= read -r filepath; do
+        while IFS= read -r filepath; do
             # Skip protected paths
             case "$filepath" in
                 logs/*) continue ;;
@@ -115,7 +115,7 @@ check_for_updates() {
                 FAILED=1
                 break
             fi
-        done
+        done < <(echo "$CHANGED_FILES")
     fi
 
     if [ "$FAILED" -ne 0 ]; then
@@ -153,7 +153,7 @@ check_for_updates() {
         fi
     else
         # Partial update — copy only changed files
-        echo "$CHANGED_FILES" | while IFS= read -r filepath; do
+        while IFS= read -r filepath; do
             case "$filepath" in
                 logs/*) continue ;;
                 assets/music/background.mp3) continue ;;
@@ -163,7 +163,7 @@ check_for_updates() {
                 mkdir -p "$INSTALL_DIR/$(dirname "$filepath")"
                 cp "$UPDATE_DIR/$filepath" "$INSTALL_DIR/$filepath"
             fi
-        done
+        done < <(echo "$CHANGED_FILES")
     fi
 
     rm -rf "$UPDATE_DIR"
