@@ -267,15 +267,6 @@ if not restored:
 PYEOF
 echo ""
 
-# ── SAVE BACKUP SNIPPET FOR deckops_uninstall.sh ──────────────────────────────
-#
-# Insert this block at line 269 of deckops_uninstall.sh,
-# right BEFORE: info "Removing iw4x / cod4x client files..."
-#
-# It backs up player save data to ~/.local/share/deckops/save_backup/
-# before any game files are deleted.
-# ──────────────────────────────────────────────────────────────────────────────
-
 info "Backing up player save data before cleanup..."
 
 DECKOPS_SRC="$HOME/DeckOps-Nightly/src"
