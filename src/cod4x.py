@@ -44,6 +44,30 @@ _SETUP_EXE_URL = "https://cod4x.ovh/uploads/short-url/2V3RsE0Pp5Jakc1VE9Yuh5yb4l
 
 METADATA_FILE = "deckops_cod4x.json"
 
+# ── GitHub fallback ──────────────────────────────────────────────────────────
+# If the setup.exe download from cod4x.ovh fails, we fall back to downloading
+# the individual 21.3 release assets from the official CoD4x GitHub repo and
+# placing them manually. This replicates what setup.exe + its embedded
+# install-cod4x-userfiles.bat do together.
+
+_GITHUB_RELEASE_BASE = (
+    "https://github.com/callofduty4x/CoD4x_Client_pub/releases/download/21.3"
+)
+
+# Maps GitHub asset name → (destination subdirectory, final filename)
+# relative to the AppData/Local/CallofDuty4MW tree inside the prefix.
+_GITHUB_ASSETS = {
+    "cod4x_021.dll":    ("bin/cod4x_021", "cod4x_021.dll"),
+    "core":             ("bin",           "launcher.dll"),
+    "jcod4x_00.iwd":   ("main",          "jcod4x_00.iwd"),
+    "cod4x_ambfix.ff":  ("zone",          "cod4x_ambfix.ff"),
+    "cod4x_patch.ff":   ("zone",          "cod4x_patch.ff"),
+    "cod4x_patchv2.ff": ("zone",          "cod4x_patchv2.ff"),
+}
+
+# The chain-loader DLL that replaces the game's mss32.dll.
+_GITHUB_MSS_ASSET = "mss"
+
 # The AppData subfolder name inside the Wine prefix. This is where the CoD4x
 # launcher expects to find its DLLs, zone files, and iwd assets.
 _APPDATA_FOLDER = "CallofDuty4MW"
@@ -416,6 +440,105 @@ def _collect_inno_log(compatdata_path: str, on_progress=None):
     return None
 
 
+# ── GitHub fallback: manual install ──────────────────────────────────────────
+
+def _manual_install(install_dir: str, compatdata_path: str, on_progress=None):
+    """
+    Fallback installer: download individual CoD4x 21.3 assets from the
+    official GitHub release and place them manually.
+
+    This replicates the file layout created by setup.exe +
+    install-cod4x-userfiles.bat:
+
+      Game directory:
+        mss32.dll           ← chain-loader (original backed up as miles32.dll)
+
+      Prefix  AppData/Local/CallofDuty4MW/:
+        bin/launcher.dll
+        bin/cod4x_021/cod4x_021.dll
+        main/jcod4x_00.iwd
+        zone/cod4x_ambfix.ff
+        zone/cod4x_patch.ff
+        zone/cod4x_patchv2.ff
+
+      Prefix  ProgramData/CallofDuty4MW/:
+        (same files staged flat — runtime fallback location)
+    """
+    def prog(pct, msg):
+        if on_progress:
+            on_progress(pct, msg)
+
+    def log(msg):
+        if on_progress:
+            on_progress(0, msg)
+
+    log("  ℹ Setup.exe unavailable — using GitHub release fallback")
+
+    # ── AppData tree inside the prefix ────────────────────────────────────
+    appdata_base = os.path.join(
+        compatdata_path, "pfx", "drive_c", "users", "steamuser",
+        "AppData", "Local", _APPDATA_FOLDER,
+    )
+    # ── ProgramData staging area (matches setup.exe behaviour) ────────────
+    progdata_base = os.path.join(
+        compatdata_path, "pfx", "drive_c", "ProgramData", _APPDATA_FOLDER,
+    )
+
+    # Create all target directories
+    for subdir in ("bin/cod4x_021", "main", "zone"):
+        os.makedirs(os.path.join(appdata_base, subdir), exist_ok=True)
+    os.makedirs(progdata_base, exist_ok=True)
+
+    # ── Download and place the chain-loader mss32.dll ─────────────────────
+    prog(15, "Downloading CoD4x chain-loader...")
+    mss_url = f"{_GITHUB_RELEASE_BASE}/{_GITHUB_MSS_ASSET}"
+    mss_dest = os.path.join(install_dir, "mss32.dll")
+    miles_dest = os.path.join(install_dir, "miles32.dll")
+
+    # Back up the original mss32.dll before overwriting
+    if os.path.exists(mss_dest) and not os.path.exists(miles_dest):
+        shutil.copy2(mss_dest, miles_dest)
+        log("  ✓ Backed up original mss32.dll → miles32.dll")
+
+    _download(
+        mss_url, mss_dest,
+        on_progress=lambda pct, lbl: prog(15 + int(pct * 0.10), lbl),
+        label="CoD4x chain-loader (mss)",
+        timeout=60,
+    )
+    log("  ✓ Chain-loader mss32.dll placed")
+
+    # ── Download remaining assets ─────────────────────────────────────────
+    asset_names = list(_GITHUB_ASSETS.keys())
+    total = len(asset_names)
+
+    for idx, asset_name in enumerate(asset_names):
+        subdir, final_name = _GITHUB_ASSETS[asset_name]
+        pct_base = 25 + int(idx / total * 55)
+        prog(pct_base, f"Downloading {final_name}...")
+
+        url = f"{_GITHUB_RELEASE_BASE}/{asset_name}"
+
+        # Place into AppData tree (proper runtime location)
+        appdata_dest = os.path.join(appdata_base, subdir, final_name)
+        _download(
+            url, appdata_dest,
+            on_progress=lambda pct, lbl, _b=pct_base: prog(
+                _b + int(pct * (55 // total) / 100), lbl),
+            label=final_name,
+            timeout=60,
+        )
+
+        # Also stage into ProgramData (flat — matches setup.exe layout)
+        progdata_dest = os.path.join(progdata_base, final_name)
+        shutil.copy2(appdata_dest, progdata_dest)
+
+        log(f"  ✓ {final_name}")
+
+    prog(85, "GitHub fallback install complete.")
+    log("  ✓ All CoD4x files placed via GitHub fallback")
+
+
 # ── public API ───────────────────────────────────────────────────────────────
 
 def install_cod4x(game: dict, steam_root: str, proton_path: str,
@@ -468,6 +591,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     prog(10, "Downloading CoD4x installer...")
     setup_dir = tempfile.mkdtemp(prefix="deckops_cod4x_")
     setup_exe = os.path.join(setup_dir, "CoD4x_Setup.exe")
+    _used_fallback = False
     try:
         _download(
             _SETUP_EXE_URL, setup_exe,
@@ -477,65 +601,75 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         )
     except Exception as e:
         shutil.rmtree(setup_dir, ignore_errors=True)
-        raise RuntimeError(f"Failed to download CoD4x installer: {e}")
+        log(f"  ⚠ Setup.exe download failed: {e}")
+        log("  ℹ Falling back to GitHub release assets...")
+        try:
+            _manual_install(install_dir, compatdata_path, on_progress=on_progress)
+            _used_fallback = True
+        except Exception as e2:
+            raise RuntimeError(
+                f"CoD4x install failed. Primary (cod4x.ovh): {e} — "
+                f"Fallback (GitHub): {e2}"
+            )
 
-    # ── Step 3: Run setup.exe through Proton ─────────────────────────────
-    # We pass /DIR= with the Wine Z: drive path so Inno Setup knows where
-    # to install. We also pre-wrote the registry key (step 1b) as a safety
-    # net in case /DIR is ignored by the installer's custom script.
-    #
-    # /LOG tells Inno Setup to write a detailed log to the prefix's temp
-    # directory. We collect it after the run for debugging.
-    prog(55, "Running CoD4x installer...")
-    _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
+    # ── Step 3: Run setup.exe through Proton (skipped if fallback used) ──
+    if not _used_fallback:
+        # We pass /DIR= with the Wine Z: drive path so Inno Setup knows where
+        # to install. We also pre-wrote the registry key (step 1b) as a safety
+        # net in case /DIR is ignored by the installer's custom script.
+        #
+        # /LOG tells Inno Setup to write a detailed log to the prefix's temp
+        # directory. We collect it after the run for debugging.
+        prog(55, "Running CoD4x installer...")
+        _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
 
-    wine_install_dir = _linux_to_wine_path(install_dir)
-    log(f"  Install dir (Wine): {wine_install_dir}")
+        wine_install_dir = _linux_to_wine_path(install_dir)
+        log(f"  Install dir (Wine): {wine_install_dir}")
 
-    env = os.environ.copy()
-    env["STEAM_COMPAT_DATA_PATH"] = compatdata_path
-    env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
+        env = os.environ.copy()
+        env["STEAM_COMPAT_DATA_PATH"] = compatdata_path
+        env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
 
-    try:
-        result = subprocess.run(
-            [
-                proton_path, "run", setup_exe,
-                "/VERYSILENT", "/SUPPRESSMSGBOXES",
-                f"/DIR={wine_install_dir}",
-                "/LOG",
-            ],
-            env=env,
-            capture_output=True,
-            timeout=600,
-            cwd=install_dir,
-        )
-        # The setup.exe may return non-zero even on success (Inno Setup quirk)
-        # so we don't check returncode — we verify file placement below
-        log("  ✓ CoD4x installer completed")
-        if result.returncode != 0:
-            log(f"  ℹ setup.exe exit code: {result.returncode} (non-zero is normal for Inno Setup)")
-    except subprocess.TimeoutExpired:
-        shutil.rmtree(setup_dir, ignore_errors=True)
-        raise RuntimeError("CoD4x installer timed out after 10 minutes")
-    except Exception as e:
-        shutil.rmtree(setup_dir, ignore_errors=True)
-        raise RuntimeError(f"CoD4x installer failed: {e}")
-    finally:
-        # Clean up the setup exe regardless of outcome
-        shutil.rmtree(setup_dir, ignore_errors=True)
+        try:
+            result = subprocess.run(
+                [
+                    proton_path, "run", setup_exe,
+                    "/VERYSILENT", "/SUPPRESSMSGBOXES",
+                    f"/DIR={wine_install_dir}",
+                    "/LOG",
+                ],
+                env=env,
+                capture_output=True,
+                timeout=600,
+                cwd=install_dir,
+            )
+            # The setup.exe may return non-zero even on success (Inno Setup quirk)
+            # so we don't check returncode — we verify file placement below
+            log("  ✓ CoD4x installer completed")
+            if result.returncode != 0:
+                log(f"  ℹ setup.exe exit code: {result.returncode} (non-zero is normal for Inno Setup)")
+        except subprocess.TimeoutExpired:
+            shutil.rmtree(setup_dir, ignore_errors=True)
+            raise RuntimeError("CoD4x installer timed out after 10 minutes")
+        except Exception as e:
+            shutil.rmtree(setup_dir, ignore_errors=True)
+            raise RuntimeError(f"CoD4x installer failed: {e}")
+        finally:
+            # Clean up the setup exe regardless of outcome
+            shutil.rmtree(setup_dir, ignore_errors=True)
 
-    # ── Step 3b: Collect Inno Setup log ──────────────────────────────────
-    _collect_inno_log(compatdata_path, on_progress=log)
+        # ── Step 3b: Collect Inno Setup log ──────────────────────────────
+        _collect_inno_log(compatdata_path, on_progress=log)
 
-    # ── Step 3c: Relocate chain-loader to real game directory ────────────
-    # If /DIR worked, setup.exe placed files directly in install_dir and
-    # this is a no-op. If /DIR was ignored, files ended up in the prefix's
-    # Program Files fallback path — this function copies them over.
-    prog(65, "Placing chain-loader...")
-    relocated = _relocate_chainloader(compatdata_path, install_dir, on_progress=log)
-    if not relocated:
-        log("  ⚠ Chain-loader relocation failed — CoD4x may not work")
-        log("  ℹ Check logs/cod4x_inno_setup.log for details")
+        # ── Step 3c: Relocate chain-loader to real game directory ────────
+        # If /DIR worked, setup.exe placed files directly in install_dir and
+        # this is a no-op. If /DIR was ignored, files ended up in the prefix's
+        # Program Files fallback path — this function copies them over.
+        prog(65, "Placing chain-loader...")
+        relocated = _relocate_chainloader(compatdata_path, install_dir, on_progress=log)
+        if not relocated:
+            log("  ⚠ Chain-loader relocation failed — CoD4x may not work")
+            log("  ℹ Check logs/cod4x_inno_setup.log for details")
 
     # ── Step 4: Write registry keys (post-setup) ─────────────────────────
     # The Proton run may have created a fresh user.reg, so write keys again
@@ -575,7 +709,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     prog(95, "Saving metadata...")
     _write_metadata(install_dir, {
         "version": "21.3",
-        "method": "setup_exe",
+        "method": "github_fallback" if _used_fallback else "setup_exe",
         "appdata_dir": appdata_dir,
         "compatdata_path": compatdata_path,
     })
@@ -629,6 +763,13 @@ def uninstall_cod4x(game: dict, compatdata_path: str = None):
         appdata_dir = _get_appdata_dir(compatdata_path)
         if os.path.isdir(appdata_dir):
             shutil.rmtree(appdata_dir, ignore_errors=True)
+
+        # Also clean up the ProgramData staging area (setup.exe + fallback)
+        progdata_dir = os.path.join(
+            compatdata_path, "pfx", "drive_c", "ProgramData", _APPDATA_FOLDER,
+        )
+        if os.path.isdir(progdata_dir):
+            shutil.rmtree(progdata_dir, ignore_errors=True)
 
     # ── Remove metadata ───────────────────────────────────────────────────
     meta_file = os.path.join(install_dir, METADATA_FILE)
