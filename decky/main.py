@@ -1,9 +1,16 @@
 """
 DeckOps Decky Plugin — Python Backend
 
-Toggles game display configs between handheld (1280x800) and docked
-(auto-detected via xrandr). Patches r_mode, r_aspectRatio,
-r_aspectRatioWindow, and r_displayRefresh in all deployed game config files.
+Toggles game display configs between handheld and docked modes.
+Patches r_mode, r_aspectRatio, r_aspectRatioWindow, and r_displayRefresh
+in all deployed game config files.
+
+Handheld resolution is derived from the user's device:
+  - Steam Deck LCD/OLED → 1280x800
+  - Legion Go / Go S / Go 2, MSI Claw 8 → 1920x1200
+  - ROG Ally / Ally X / Xbox Ally X → 1920x1080
+  - Steam Machine / General PC → user-configured resolution
+Docked resolution is auto-detected via xrandr/DRM or user-configured.
 
 Requires DeckOps to be installed at ~/DeckOps-Nightly/.
 """
@@ -32,8 +39,6 @@ import detect_games
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
-HANDHELD_RES = "1280x800"
-
 # Supported docked resolutions grouped by aspect ratio
 SUPPORTED_RESOLUTIONS = {
     "16:9":  ["1920x1080", "1280x720"],
@@ -60,13 +65,6 @@ ASPECT_RATIO_WINDOW = {
     "21:9":  "2.37037",
 }
 
-# Refresh rates for handheld mode by deck model
-# Format includes " Hz" suffix to match what games expect
-HANDHELD_REFRESH = {
-    "lcd":  "60 Hz",
-    "oled": "90 Hz",
-}
-
 # Docked refresh = empty string (auto-detect from monitor)
 DOCKED_REFRESH = ""
 
@@ -79,6 +77,82 @@ CONFIG_FILENAMES = {
     "plutonium_mp.cfg",
     "plutonium_zm.cfg",
 }
+
+
+# ── Device-aware handheld resolution + refresh ───────────────────────────────
+
+def _get_handheld_info():
+    """
+    Determine handheld resolution and refresh rate from the user's device
+    config. Reads deck_model and other_device from deckops.json.
+
+    Returns (resolution, refresh_rate, aspect_ratio_category).
+
+    Device mapping:
+      lcd                       → 1280x800   @ 60 Hz  (16:10)
+      oled                      → 1280x800   @ 90 Hz  (16:10)
+      other + 1920x1080         → 1920x1080  @ 60 Hz  (16:9)   ROG Ally, Ally X, Xbox Ally X
+      other + 1920x1200         → 1920x1200  @ 60 Hz  (16:10)  Legion Go, Go S, MSI Claw 8
+      other + 1920x1200_144hz   → 1920x1200  @ 144 Hz (16:10)  Legion Go 2
+      other + None (general_pc) → fallback to docked_resolution or 1920x1080
+      steam_machine + res       → user-configured resolution
+      steam_machine + None      → fallback to 1280x720
+    """
+    deckops_cfg = cfg.load()
+    deck_model = deckops_cfg.get("deck_model", "lcd")
+    other_device = deckops_cfg.get("other_device")
+
+    # ── Steam Deck LCD / OLED ────────────────────────────────────────────
+    if deck_model == "lcd":
+        return "1280x800", "60 Hz", "16:10"
+
+    if deck_model == "oled":
+        return "1280x800", "90 Hz", "16:10"
+
+    # ── Other devices (Legion Go, ROG Ally, MSI Claw 8, General PC) ──────
+    if deck_model == "other":
+        if other_device:
+            # Handle resolution keys with refresh suffix (e.g. "1920x1200_144hz")
+            if "_" in other_device:
+                res_part, refresh_part = other_device.rsplit("_", 1)
+                # Extract numeric Hz value (e.g. "144hz" → "144 Hz")
+                hz_match = re.match(r"(\d+)hz", refresh_part, re.IGNORECASE)
+                refresh = f"{hz_match.group(1)} Hz" if hz_match else "60 Hz"
+                resolution = res_part
+            else:
+                resolution = other_device
+                refresh = "60 Hz"
+
+            ratio = _classify_aspect_ratio(
+                *map(int, resolution.split("x"))
+            )
+            return resolution, refresh, ratio or "16:9"
+
+        # General PC with no preset resolution — use docked_resolution
+        # as a best guess, or fall back to 1920x1080
+        fallback = deckops_cfg.get("docked_resolution") or "1920x1080"
+        ratio = _classify_aspect_ratio(*map(int, fallback.split("x")))
+        decky.logger.info(
+            f"General PC: no handheld resolution set, using {fallback}"
+        )
+        return fallback, "60 Hz", ratio or "16:9"
+
+    # ── Steam Machine ────────────────────────────────────────────────────
+    if deck_model == "steam_machine":
+        if other_device and "_" not in other_device:
+            ratio = _classify_aspect_ratio(
+                *map(int, other_device.split("x"))
+            )
+            return other_device, "60 Hz", ratio or "16:9"
+
+        # No resolution configured — safe default
+        return "1280x720", "60 Hz", "16:9"
+
+    # ── Unknown device — safe fallback ───────────────────────────────────
+    decky.logger.warning(
+        f"Unknown deck_model '{deck_model}', falling back to 1280x800"
+    )
+    return "1280x800", "60 Hz", "16:10"
 
 
 # ── DRM-based external display detection ────────────────────────────────────
@@ -184,8 +258,8 @@ def _detect_external_display():
 
     Game Mode strategy:
       - DISPLAY=:0 is Gamescope's external output (if connected)
-      - DISPLAY=:1 is the internal Deck screen
-      - If :0 reports a resolution different from 1280x800, it's external
+      - DISPLAY=:1 is the internal screen
+      - If :0 reports a resolution different from the device's native, it's external
       - Also checks DRM connectors to confirm external is connected
 
     Desktop Mode strategy:
@@ -224,7 +298,11 @@ def _detect_external_display():
 
         if res_d0 and drm_connector:
             width, height = res_d0
-            if (width, height) != (1280, 800) or drm_connector:
+            # Get the device's native handheld resolution for comparison
+            handheld_res, _, _ = _get_handheld_info()
+            handheld_w, handheld_h = map(int, handheld_res.split("x"))
+
+            if (width, height) != (handheld_w, handheld_h) or drm_connector:
                 result["connected"] = True
                 result["resolution"] = f"{width}x{height}"
                 result["aspect_ratio"] = _classify_aspect_ratio(width, height)
@@ -488,13 +566,8 @@ def _apply_mode(mode, resolution=None):
 
     Returns dict with results.
     """
-    deckops_cfg = cfg.load()
-    deck_model = deckops_cfg.get("deck_model", "lcd")
-
     if mode == "handheld":
-        target_res = HANDHELD_RES
-        target_refresh = HANDHELD_REFRESH.get(deck_model, "60 Hz")
-        target_ratio_cat = "16:10"
+        target_res, target_refresh, target_ratio_cat = _get_handheld_info()
     else:
         # Docked mode
         if resolution:
@@ -559,6 +632,9 @@ class Plugin:
         # Check for external display
         display_info = _detect_external_display()
 
+        # Get device-aware handheld info for status display
+        handheld_res, handheld_refresh, _ = _get_handheld_info()
+
         return {
             "mode": play_mode,
             "deck_model": deck_model,
@@ -568,11 +644,12 @@ class Plugin:
             "external_aspect_ratio": display_info["aspect_ratio"],
             "matched_resolution": display_info["matched_res"],
             "needs_testing": display_info["needs_testing"],
-            "handheld_refresh": HANDHELD_REFRESH.get(deck_model, "60 Hz"),
+            "handheld_refresh": handheld_refresh,
+            "handheld_resolution": handheld_res,
         }
 
     async def set_handheld(self):
-        """Switch all game configs to handheld mode (1280x800)."""
+        """Switch all game configs to handheld mode."""
         return _apply_mode("handheld")
 
     async def set_docked(self, resolution=None):

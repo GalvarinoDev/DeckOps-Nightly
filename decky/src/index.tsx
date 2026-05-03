@@ -25,6 +25,7 @@ const getStatus = callable<[], {
   matched_resolution: string | null;
   needs_testing: boolean;
   handheld_refresh: string;
+  handheld_resolution: string;
 }>("get_status");
 
 const setHandheld = callable<[], {
@@ -65,6 +66,8 @@ function Content() {
   const [isDocked, setIsDocked] = useState(false);
   const [currentRes, setCurrentRes] = useState("1280x800");
   const [refreshRate, setRefreshRate] = useState("60 Hz");
+  const [handheldRes, setHandheldRes] = useState("1280x800");
+  const [handheldRefresh, setHandheldRefresh] = useState("60 Hz");
   const [externalConnected, setExternalConnected] = useState(false);
   const [externalRes, setExternalRes] = useState<string | null>(null);
   const [matchedRes, setMatchedRes] = useState<string | null>(null);
@@ -83,6 +86,8 @@ function Content() {
     try {
       const status = await getStatus();
       setIsDocked(status.mode === "docked");
+      setHandheldRes(status.handheld_resolution);
+      setHandheldRefresh(status.handheld_refresh);
       setRefreshRate(
         status.mode === "docked"
           ? "auto"
@@ -92,7 +97,7 @@ function Content() {
       if (status.mode === "docked" && status.docked_resolution) {
         setCurrentRes(status.docked_resolution);
       } else {
-        setCurrentRes("1280x800");
+        setCurrentRes(status.handheld_resolution);
       }
 
       setExternalConnected(status.external_connected);
@@ -125,7 +130,7 @@ function Content() {
         title: "DeckOps Display",
         body: docked
           ? `Docked: ${result.resolution} (${result.patched} configs updated)`
-          : `Handheld: 1280x800 (${result.patched} configs updated)`,
+          : `Handheld: ${result.resolution} (${result.patched} configs updated)`,
       });
     } catch (e) {
       console.error("DeckOps: Failed to toggle mode", e);
@@ -171,7 +176,7 @@ function Content() {
           description={
             isDocked
               ? `${currentRes} @ ${refreshRate}`
-              : `Handheld: 1280x800 @ ${refreshRate}`
+              : `Handheld: ${handheldRes} @ ${handheldRefresh}`
           }
           checked={isDocked}
           disabled={loading}
