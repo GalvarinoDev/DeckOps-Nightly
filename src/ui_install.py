@@ -942,21 +942,6 @@ class InstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Game configs skipped: {ex}")
 
-        # ── Restore saved player data (if backups exist) ─────────────────────
-        try:
-            from save_backup import restore_saves, has_backups
-            if has_backups():
-                self._s.log.emit("Restoring saved player data...")
-                restored = restore_saves(
-                    steam_root=self.steam_root,
-                    installed_games={k: g for k, gd, g in self.selected if g},
-                    on_progress=lambda msg: self._s.log.emit(msg),
-                )
-                if restored:
-                    self._s.log.emit(f"✓  Restored saves for {len(restored)} game(s)")
-        except Exception as ex:
-            self._s.log.emit(f"  Save restore skipped: {ex}")
-
         # ── Controller templates + profiles (after all games) ─────────────────
         self._s.progress.emit(90, "Installing controller templates...")
         self._s.log.emit("Installing controller templates...")
@@ -1698,21 +1683,6 @@ class OwnInstallScreen(QWidget):
                                  + (f", {failed} failed" if failed else ""))
         except Exception as ex:
             self._s.log.emit(f"  Game configs skipped: {ex}")
-
-        # ── Restore saved player data (if backups exist) ─────────────────────
-        try:
-            from save_backup import restore_saves, has_backups
-            if has_backups():
-                self._s.log.emit("Restoring saved player data...")
-                restored = restore_saves(
-                    steam_root=self.steam_root,
-                    installed_games={k: g for k, gd, g in self.selected if g},
-                    on_progress=lambda msg: self._s.log.emit(msg),
-                )
-                if restored:
-                    self._s.log.emit(f"✓  Restored saves for {len(restored)} game(s)")
-        except Exception as ex:
-            self._s.log.emit(f"  Save restore skipped: {ex}")
 
         # ── Controller templates ──────────────────────────────────────────
         self._s.progress.emit(88, "Installing controller templates...")
