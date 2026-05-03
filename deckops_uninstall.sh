@@ -267,6 +267,45 @@ if not restored:
 PYEOF
 echo ""
 
+# ── SAVE BACKUP SNIPPET FOR deckops_uninstall.sh ──────────────────────────────
+#
+# Insert this block at line 269 of deckops_uninstall.sh,
+# right BEFORE: info "Removing iw4x / cod4x client files..."
+#
+# It backs up player save data to ~/.local/share/deckops/save_backup/
+# before any game files are deleted.
+# ──────────────────────────────────────────────────────────────────────────────
+
+info "Backing up player save data before cleanup..."
+
+DECKOPS_SRC="$HOME/DeckOps-Nightly/src"
+DECKOPS_VENV="$HOME/DeckOps-Nightly/.venv/bin/python3"
+
+if [ -f "$DECKOPS_SRC/save_backup.py" ]; then
+    # Prefer the venv Python (has PyQt5, all deps) but fall back to system
+    if [ -x "$DECKOPS_VENV" ]; then
+        _PYBIN="$DECKOPS_VENV"
+    else
+        _PYBIN="python3"
+    fi
+
+    cd "$DECKOPS_SRC" && "$_PYBIN" save_backup.py backup "$STEAM_ROOT" 2>&1 | while IFS= read -r line; do
+        echo "         $line"
+    done
+    _backup_exit=${PIPESTATUS[0]}
+
+    if [ "$_backup_exit" -eq 0 ]; then
+        success "Save backup complete."
+    else
+        warn "Save backup had errors (saves may be incomplete)."
+    fi
+else
+    skip "save_backup.py not found — skipping save backup."
+fi
+echo ""
+
+# ── (existing code continues below: info "Removing iw4x / cod4x client files...") ──
+
 info "Removing iw4x / cod4x client files..."
 
 if [ -n "$STEAM_ROOT" ]; then
