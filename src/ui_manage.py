@@ -704,6 +704,42 @@ class ControllerInfoScreen(QWidget):
         lay.addStretch()
         lay.addSpacing(4)
 
+        # ── Restore player saves (visible only when backups exist) ────────
+        self._restore_div = _hdiv()
+        self._restore_hdr = _lbl("💾  Restore Player Saves", 13, C_IW, bold=True, align=Qt.AlignLeft)
+        self._restore_body = _lbl(
+            "Backups from a previous install were found. "
+            "Restore your configs, stats, and custom classes?",
+            11, C_DIM, align=Qt.AlignLeft)
+        self._restore_status = _lbl("", 11, C_IW, align=Qt.AlignLeft)
+        self._restore_status.setVisible(False)
+
+        self._restore_btn = _btn("Restore Saves", C_IW, size=12, h=40)
+        self._restore_btn.setFixedWidth(200)
+        self._restore_btn.clicked.connect(self._do_restore)
+        self._restore_skip = _btn("Skip", C_DARK_BTN, size=12, h=40)
+        self._restore_skip.setFixedWidth(120)
+        self._restore_skip.clicked.connect(self._skip_restore)
+
+        rbw = QHBoxLayout(); rbw.setSpacing(12)
+        rbw.addWidget(self._restore_btn)
+        rbw.addWidget(self._restore_skip)
+        rbw.addStretch()
+
+        lay.addWidget(self._restore_div)
+        lay.addWidget(self._restore_hdr)
+        lay.addWidget(self._restore_body)
+        lay.addLayout(rbw)
+        lay.addWidget(self._restore_status)
+
+        # Group all restore widgets for easy show/hide
+        self._restore_widgets = [
+            self._restore_div, self._restore_hdr, self._restore_body,
+            self._restore_btn, self._restore_skip,
+        ]
+
+        lay.addSpacing(4)
+
         self._safe_lbl = _lbl("✅  It is now safe to open Steam.", 13, C_IW, bold=True)
         self._safe_lbl.setVisible(False)
         lay.addWidget(self._safe_lbl)
@@ -739,6 +775,59 @@ class ControllerInfoScreen(QWidget):
         self._lcd_div.setVisible(is_lcd)
         self._lcd_hdr.setVisible(is_lcd)
         self._lcd_body.setVisible(is_lcd)
+        # Show restore section only when backups exist
+        try:
+            from save_backup import has_backups
+            show_restore = has_backups()
+        except Exception:
+            show_restore = False
+        for w in self._restore_widgets:
+            w.setVisible(show_restore)
+        self._restore_status.setVisible(False)
+
+    def _do_restore(self):
+        """Run save restore in a background thread."""
+        self._restore_btn.setEnabled(False)
+        self._restore_skip.setEnabled(False)
+        self._restore_status.setText("Restoring saves...")
+        self._restore_status.setVisible(True)
+
+        def _run():
+            try:
+                from save_backup import restore_saves
+                steam_root = find_steam_root()
+                restored = restore_saves(
+                    steam_root=steam_root,
+                    on_progress=lambda msg: None,
+                )
+                count = len(restored) if restored else 0
+                if count > 0:
+                    groups = ", ".join(restored.keys())
+                    self._s.done.emit(True)
+                    QTimer.singleShot(0, lambda: self._restore_finished(
+                        f"✓  Restored saves for {count} group(s): {groups}"))
+                else:
+                    QTimer.singleShot(0, lambda: self._restore_finished(
+                        "No matching save data found to restore."))
+            except Exception as ex:
+                QTimer.singleShot(0, lambda: self._restore_finished(
+                    f"⚠  Restore failed: {ex}"))
+
+        self._s = _Sigs()
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _restore_finished(self, message):
+        self._restore_status.setText(message)
+        self._restore_status.setVisible(True)
+        self._restore_btn.setVisible(False)
+        self._restore_skip.setVisible(False)
+        self._restore_body.setVisible(False)
+
+    def _skip_restore(self):
+        """Hide the restore section without restoring."""
+        for w in self._restore_widgets:
+            w.setVisible(False)
+        self._restore_status.setVisible(False)
 
     def _go_management(self):
         root = find_steam_root()
