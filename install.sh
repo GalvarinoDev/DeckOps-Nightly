@@ -224,13 +224,10 @@ else
     success "No stale plut_lan.sh sidecars found."
 fi
 
-# ── step 8: launch DeckOps ────────────────────────────────────────────────────
+# ── step 8: done ─────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}  Installation complete! Welcome to DeckOps.${CLEAR}"
 echo ""
-echo -e "  ${CYAN}Launching DeckOps now...${CLEAR}"
+echo -e "  ${CYAN}Please open DeckOps from your desktop and close this window.${CLEAR}"
 echo ""
-
-nohup "$VENV_PYTHON" "$ENTRY_POINT" > /dev/null 2>&1 &
-disown
 exit 0
