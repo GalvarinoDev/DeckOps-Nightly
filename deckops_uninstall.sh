@@ -337,6 +337,14 @@ if [ -n "$STEAM_ROOT" ]; then
     else
         skip "CoD4 Wine prefix AppData not found"
     fi
+
+    # Remove CoD4x ProgramData staging area (setup.exe + GitHub fallback)
+    COD4_PROGDATA="$STEAM_ROOT/steamapps/compatdata/7940/pfx/drive_c/ProgramData/CallofDuty4MW"
+    if [ -d "$COD4_PROGDATA" ]; then
+        rm -rf "$COD4_PROGDATA" && success "Removed CoD4 Wine prefix ProgramData" || warn "Failed to remove CoD4 Wine prefix ProgramData"
+    else
+        skip "CoD4 Wine prefix ProgramData not found"
+    fi
 fi
 echo ""
 
