@@ -269,6 +269,16 @@ echo ""
 
 info "Backing up player save data before cleanup..."
 
+zenity --question \
+    --title="DeckOps Nightly Uninstaller" \
+    --text="Would you like to back up your save data before uninstalling?\n\nThis preserves player configs, stats, and custom classes\nso they can be restored if you reinstall later." \
+    --ok-label="Yes, Back Up" \
+    --cancel-label="No, Skip" 2>/dev/null
+
+if [ $? -ne 0 ]; then
+    skip "Save backup skipped by user."
+else
+
 DECKOPS_SRC="$HOME/DeckOps-Nightly/src"
 DECKOPS_VENV="$HOME/DeckOps-Nightly/.venv/bin/python3"
 
@@ -292,6 +302,8 @@ if [ -f "$DECKOPS_SRC/save_backup.py" ]; then
     fi
 else
     skip "save_backup.py not found — skipping save backup."
+fi
+
 fi
 echo ""
 

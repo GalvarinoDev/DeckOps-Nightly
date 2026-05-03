@@ -228,6 +228,13 @@ fi
 echo ""
 echo -e "${GREEN}${BOLD}  Installation complete! Welcome to DeckOps.${CLEAR}"
 echo ""
-echo -e "  ${CYAN}Please open DeckOps from your desktop and close this window.${CLEAR}"
+echo -e "  ${CYAN}Please open DeckOps from your desktop.${CLEAR}"
+echo -e "  ${CYAN}This window will close automatically.${CLEAR}"
+echo ""
+
+for i in 10 9 8 7 6 5 4 3 2 1; do
+    printf "\r  Closing in %d seconds...  " "$i"
+    sleep 1
+done
 echo ""
 exit 0
