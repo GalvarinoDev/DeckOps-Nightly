@@ -46,25 +46,64 @@ from PyQt5.QtCore import (
 #   LCD  → Heroic shared prefix (~/Games/Heroic/Prefixes/default)
 #   OLED → per-game Steam compatdata prefix
 # Both are resolved via deckops.json at startup.
+#
+# All paths are derived from the exe location so they work on any Linux
+# username, not just "deck".  The exe lives at:
+#   ~/DeckOps-Nightly/assets/LAN/DeckOps_Offline.exe
+# so walking four parents up gives us the Linux home directory via Z:.
+
+
+def _detect_linux_home() -> str:
+    """Derive the Linux home directory (as a Wine Z: path) from the exe location.
+
+    PyInstaller sets sys.executable to the .exe path, which sits at:
+        Z:\\home\\<user>\\DeckOps-Nightly\\assets\\LAN\\DeckOps_Offline.exe
+
+    Walking four parents up (LAN → assets → DeckOps-Nightly → home dir)
+    gives us Z:\\home\\<user>.
+
+    Falls back to Z:\\home\\deck if detection fails.
+    """
+    try:
+        exe = os.path.abspath(sys.executable)
+        # exe  = .../DeckOps-Nightly/assets/LAN/DeckOps_Offline.exe
+        # We want four levels up: exe → LAN → assets → DeckOps-Nightly → home
+        home = os.path.dirname(os.path.dirname(os.path.dirname(
+            os.path.dirname(exe)
+        )))
+        # Sanity check: the DeckOps-Nightly dir should exist one level down
+        deckops_dir = os.path.join(home, "DeckOps-Nightly")
+        if os.path.isdir(deckops_dir):
+            return home
+    except Exception:
+        pass
+    return r"Z:\home\deck"
+
+
+_LINUX_HOME = _detect_linux_home()
 
 # DeckOps config lives on the Linux filesystem
-_DECKOPS_JSON = r"Z:\home\deck\DeckOps-Nightly\deckops.json"
+_LINUX_PROJECT_ROOT = os.path.join(_LINUX_HOME, "DeckOps-Nightly")
+_DECKOPS_JSON = os.path.join(_LINUX_PROJECT_ROOT, "deckops.json")
 
-# Assets are on the Linux filesystem
-_LINUX_PROJECT_ROOT = r"Z:\home\deck\DeckOps-Nightly"
+# Assets
 FONTS_DIR  = os.path.join(_LINUX_PROJECT_ROOT, "assets", "fonts")
 HEROES_DIR = os.path.join(_LINUX_PROJECT_ROOT, "assets", "images", "heroes")
 MUSIC_PATH = os.path.join(_LINUX_PROJECT_ROOT, "assets", "music",
                            "background.mp3")
 
 # LCD Heroic prefix Plutonium path (Wine path via Z: drive)
-_LCD_PLUT_DIR = (r"Z:\home\deck\Games\Heroic\Prefixes\default\pfx\drive_c"
-                 r"\users\steamuser\AppData\Local\Plutonium")
+_LCD_PLUT_DIR = os.path.join(
+    _LINUX_HOME, "Games", "Heroic", "Prefixes", "default", "pfx",
+    "drive_c", "users", "steamuser", "AppData", "Local", "Plutonium",
+)
 
 # OLED uses per-game compatdata — each game has its own prefix with its
 # own config.json containing only that game's path. We need to merge
 # config.json from ALL prefixes to get the complete picture.
-_OLED_COMPATDATA_BASE = r"Z:\home\deck\.local\share\Steam\steamapps\compatdata"
+_OLED_COMPATDATA_BASE = os.path.join(
+    _LINUX_HOME, ".local", "share", "Steam", "steamapps", "compatdata",
+)
 _OLED_PLUT_SUFFIX = os.path.join(
     "pfx", "drive_c", "users", "steamuser",
     "AppData", "Local", "Plutonium",
@@ -272,7 +311,7 @@ PLUT_GAMES = [
 
 # ── debug logger ─────────────────────────────────────────────────────────────
 
-_LOG_PATH = r"Z:\home\deck\gamepad.log"
+_LOG_PATH = os.path.join(_LINUX_HOME, "gamepad.log")
 _LOG_LOCK = threading.Lock()
 _LOG_INITIALIZED = False
 
