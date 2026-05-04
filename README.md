@@ -29,7 +29,7 @@
 | Black Ops II | SP/ZM/MP | [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) + [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
 | Ghosts | SP/MP | [AlterWare](https://alterware.dev) | ✅ | ✅ | ✅ |
 | Advanced Warfare | SP/MP | [AlterWare](https://alterware.dev) | ✅ | ✅ | ✅ |
-| Black Ops III | SP/MP/ZM | [CleanOps](https://github.com/notnightwolf/cleanopsT7) + [T7x](https://github.com/Starter-Pack/T7x) | ✅ | ✅ | ✅ |
+| Black Ops III | SP/MP/ZM | [CleanOps](https://github.com/notnightwolf/cleanopsT7) + [T7x](https://alterware.dev) | ✅ | ✅ | ✅ |
 
 > All titles support controller and gyro via Steam Input. During setup you choose whether to enable gyro and which activation mode you want (ADS, Hold, or Toggle). Aim assist is unavailable for MW1 MP, MW2 SP, and MW3 SP.
 
