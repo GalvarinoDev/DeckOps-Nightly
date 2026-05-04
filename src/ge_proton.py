@@ -514,9 +514,42 @@ def _overlay_prefix(source_pfx_dir: str, dest_prefix_path: str,
                 dst_dirpath = os.path.join(dest_pfx_dir, rel)
                 os.makedirs(dst_dirpath, exist_ok=True)
 
+                # Handle symlinked directories (e.g. dosdevices/c: -> ../drive_c,
+                # d: -> /run/media/deck/...). Recreate as symlinks in the
+                # destination instead of descending into the target.
+                real_dirnames = []
+                for dname in dirnames:
+                    src_dir = os.path.join(src_dirpath, dname)
+                    if os.path.islink(src_dir):
+                        dst_dir = os.path.join(dst_dirpath, dname)
+                        link_target = os.readlink(src_dir)
+                        if os.path.islink(dst_dir) or os.path.exists(dst_dir):
+                            skipped += 1
+                        else:
+                            os.symlink(link_target, dst_dir)
+                            copied += 1
+                    else:
+                        real_dirnames.append(dname)
+                dirnames[:] = real_dirnames
+
                 for fname in filenames:
                     src_file = os.path.join(src_dirpath, fname)
                     dst_file = os.path.join(dst_dirpath, fname)
+
+                    # Handle symlinked files (e.g. dosdevices/h:: -> /dev/sda2).
+                    # Proton maps drive letters and block devices as symlinks
+                    # in dosdevices/. These vary by hardware (nvme, sda, mmcblk)
+                    # and distro (SteamOS, Bazzite, CachyOS). Copy them as
+                    # symlinks rather than trying to read the target.
+                    if os.path.islink(src_file):
+                        link_target = os.readlink(src_file)
+                        if os.path.islink(dst_file) or os.path.exists(dst_file):
+                            skipped += 1
+                        else:
+                            os.symlink(link_target, dst_file)
+                            copied += 1
+                        continue
+
                     if os.path.exists(dst_file):
                         try:
                             if os.path.getsize(dst_file) == os.path.getsize(src_file):

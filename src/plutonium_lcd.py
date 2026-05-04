@@ -397,6 +397,38 @@ def is_heroic_installed() -> bool:
         return False
 
 
+def _ensure_flathub_remote(on_progress=None):
+    """
+    Ensure the Flathub remote is configured for the current user.
+    SteamOS ships with Flathub system-wide, but it can be missing or
+    broken after OS updates, manual removal, or on non-SteamOS distros
+    (Bazzite, CachyOS). --if-not-exists makes this a no-op when Flathub
+    is already present.
+    """
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    try:
+        result = subprocess.run(
+            [
+                "flatpak", "remote-add", "--user", "--if-not-exists",
+                "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo",
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+        if result.returncode == 0:
+            prog("Flathub remote verified.")
+        else:
+            stderr = result.stderr.decode(errors="replace")
+            prog(f"Flathub remote setup warning: {stderr[:200]}")
+    except FileNotFoundError:
+        prog("Flatpak not found - cannot configure Flathub.")
+    except subprocess.TimeoutExpired:
+        prog("Flathub remote setup timed out.")
+
+
 def install_heroic(on_progress=None) -> bool:
     """
     Install Heroic Games Launcher via Flatpak from Flathub.
@@ -409,6 +441,10 @@ def install_heroic(on_progress=None) -> bool:
     if is_heroic_installed():
         prog("Heroic Games Launcher already installed.")
         return True
+
+    # Ensure Flathub remote is configured before attempting install.
+    # Handles missing/broken remotes from OS updates or non-SteamOS distros.
+    _ensure_flathub_remote(on_progress=on_progress)
 
     prog("Installing Heroic Games Launcher from Flathub...")
     try:
