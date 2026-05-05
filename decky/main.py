@@ -12,7 +12,9 @@ Handheld resolution is derived from the user's device:
   - Steam Machine / General PC → user-configured resolution
 Docked resolution is auto-detected via xrandr/DRM or user-configured.
 
-Requires DeckOps to be installed at ~/DeckOps-Nightly/.
+If DeckOps is not installed, the plugin exposes a download_deckops()
+method to fetch and run install.sh. Display features are only available
+after DeckOps is installed at ~/DeckOps-Nightly/.
 """
 
 import os
@@ -24,18 +26,52 @@ import glob
 
 import decky
 
-# ── Import DeckOps modules ───────────────────────────────────────────────────
+# ── Deferred DeckOps module imports ──────────────────────────────────────────
 # The plugin runs from ~/homebrew/plugins/DeckOps/ but DeckOps source lives
-# at ~/DeckOps-Nightly/src/. Add it to sys.path so we can import config and
-# game_config directly.
+# at ~/DeckOps-Nightly/src/. We add it to sys.path at load time (harmless if
+# the directory doesn't exist yet), but defer the actual imports until first
+# use so the plugin can load even when DeckOps is not installed.
 
 DECKOPS_SRC = os.path.expanduser("~/DeckOps-Nightly/src")
 if DECKOPS_SRC not in sys.path:
     sys.path.insert(0, DECKOPS_SRC)
 
-import config as cfg
-import game_config
-import detect_games
+DECKOPS_INSTALL_DIR = os.path.expanduser("~/DeckOps-Nightly")
+DECKOPS_ENTRY_POINT = os.path.join(DECKOPS_INSTALL_DIR, "src", "main.py")
+
+INSTALL_SH_URL = (
+    "https://raw.githubusercontent.com/GalvarinoDev/"
+    "DeckOps-Nightly/main/install.sh"
+)
+
+cfg = None
+game_config = None
+detect_games = None
+
+
+def _ensure_deckops_imports():
+    """
+    Lazily import DeckOps modules on first use. Returns True if imports
+    succeeded, False if DeckOps is not installed.
+    """
+    global cfg, game_config, detect_games
+
+    if cfg is not None:
+        return True
+
+    try:
+        import config as _cfg
+        import game_config as _game_config
+        import detect_games as _detect_games
+
+        cfg = _cfg
+        game_config = _game_config
+        detect_games = _detect_games
+        return True
+    except ImportError as e:
+        decky.logger.warning(f"DeckOps modules not available: {e}")
+        return False
+
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
@@ -620,10 +656,124 @@ def _apply_mode(mode, resolution=None):
 
 class Plugin:
 
+    async def is_installed(self):
+        """
+        Check whether DeckOps is installed on the device.
+        Returns {"installed": bool}.
+        """
+        installed = os.path.isfile(DECKOPS_ENTRY_POINT)
+        decky.logger.info(f"DeckOps installed: {installed}")
+        return {"installed": installed}
+
+    async def download_deckops(self):
+        """
+        Download and run install.sh to install DeckOps.
+
+        Downloads install.sh from GitHub, executes it in a subprocess,
+        and returns success/failure with output.
+        """
+        import tempfile
+
+        decky.logger.info("Starting DeckOps download...")
+
+        # ── Download install.sh ──────────────────────────────────────────
+        try:
+            tmp_script = tempfile.mktemp(suffix=".sh", prefix="deckops_install_")
+            result = subprocess.run(
+                ["curl", "-sSL", INSTALL_SH_URL, "-o", tmp_script],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                decky.logger.error(f"curl failed: {result.stderr}")
+                return {
+                    "success": False,
+                    "message": "Failed to download installer. Check your internet connection.",
+                }
+        except subprocess.TimeoutExpired:
+            decky.logger.error("curl timed out downloading install.sh")
+            return {
+                "success": False,
+                "message": "Download timed out. Check your internet connection.",
+            }
+        except Exception as e:
+            decky.logger.error(f"Download error: {e}")
+            return {
+                "success": False,
+                "message": f"Download failed: {e}",
+            }
+
+        # ── Run install.sh ───────────────────────────────────────────────
+        try:
+            os.chmod(tmp_script, 0o755)
+            result = subprocess.run(
+                ["bash", tmp_script],
+                capture_output=True, text=True, timeout=300,
+                env={**os.environ, "TERM": "dumb"},
+            )
+
+            # Clean up temp script
+            try:
+                os.remove(tmp_script)
+            except OSError:
+                pass
+
+            if result.returncode != 0:
+                decky.logger.error(
+                    f"install.sh failed (rc={result.returncode}): "
+                    f"{result.stderr[-500:]}"
+                )
+                return {
+                    "success": False,
+                    "message": "Installation failed. Check the Decky log for details.",
+                }
+
+            # Verify install succeeded
+            if os.path.isfile(DECKOPS_ENTRY_POINT):
+                decky.logger.info("DeckOps installed successfully")
+                return {
+                    "success": True,
+                    "message": (
+                        "DeckOps downloaded! Switch to Desktop Mode "
+                        "and open DeckOps to set up your games."
+                    ),
+                }
+            else:
+                decky.logger.error(
+                    "install.sh completed but entry point not found"
+                )
+                return {
+                    "success": False,
+                    "message": "Installation completed but DeckOps files not found.",
+                }
+
+        except subprocess.TimeoutExpired:
+            decky.logger.error("install.sh timed out after 300s")
+            try:
+                os.remove(tmp_script)
+            except OSError:
+                pass
+            return {
+                "success": False,
+                "message": "Installation timed out.",
+            }
+        except Exception as e:
+            decky.logger.error(f"install.sh error: {e}")
+            try:
+                os.remove(tmp_script)
+            except OSError:
+                pass
+            return {
+                "success": False,
+                "message": f"Installation failed: {e}",
+            }
+
     async def get_status(self):
         """
         Return current display mode status for the frontend.
         """
+        if not _ensure_deckops_imports():
+            return {"error": "DeckOps is not installed"}
+
         deckops_cfg = cfg.load()
         play_mode = deckops_cfg.get("play_mode", "handheld") or "handheld"
         deck_model = deckops_cfg.get("deck_model", "lcd")
@@ -650,6 +800,8 @@ class Plugin:
 
     async def set_handheld(self):
         """Switch all game configs to handheld mode."""
+        if not _ensure_deckops_imports():
+            return {"error": "DeckOps is not installed"}
         return _apply_mode("handheld")
 
     async def set_docked(self, resolution=None):
@@ -657,6 +809,8 @@ class Plugin:
         Switch all game configs to docked mode.
         If resolution is None, auto-detects from xrandr.
         """
+        if not _ensure_deckops_imports():
+            return {"error": "DeckOps is not installed"}
         return _apply_mode("docked", resolution)
 
 
@@ -672,6 +826,9 @@ class Plugin:
         Intended to be surfaced in the UI as "Allow Game Config Editing",
         sitting beneath the handheld/docked resolution toggle.
         """
+        if not _ensure_deckops_imports():
+            return {"error": "DeckOps is not installed"}
+
         configs = _find_deployed_configs()
         unlocked = 0
         failed = 0
