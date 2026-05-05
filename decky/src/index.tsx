@@ -15,6 +15,15 @@ import { FaTv } from "react-icons/fa";
 
 // ── Python backend calls ────────────────────────────────────────────────────
 
+const isInstalled = callable<[], {
+  installed: boolean;
+}>("is_installed");
+
+const downloadDeckops = callable<[], {
+  success: boolean;
+  message: string;
+}>("download_deckops");
+
 const getStatus = callable<[], {
   mode: string;
   deck_model: string;
@@ -63,6 +72,8 @@ const enableFileEditing = callable<[], {
 // ── Main UI Component ───────────────────────────────────────────────────────
 
 function Content() {
+  const [installed, setInstalled] = useState<boolean | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const [isDocked, setIsDocked] = useState(false);
   const [currentRes, setCurrentRes] = useState("1280x800");
   const [refreshRate, setRefreshRate] = useState("60 Hz");
@@ -77,10 +88,49 @@ function Content() {
   const [configCount, setConfigCount] = useState(0);
   const [editingEnabled, setEditingEnabled] = useState(false);
 
-  // Load current status on mount
+  // Check install status on mount
   useEffect(() => {
-    loadStatus();
+    checkInstalled();
   }, []);
+
+  const checkInstalled = async () => {
+    try {
+      const result = await isInstalled();
+      setInstalled(result.installed);
+      if (result.installed) {
+        loadStatus();
+      }
+    } catch (e) {
+      console.error("DeckOps: Failed to check install status", e);
+      setInstalled(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const result = await downloadDeckops();
+      if (result.success) {
+        setInstalled(true);
+        toaster.toast({
+          title: "DeckOps",
+          body: result.message,
+        });
+      } else {
+        toaster.toast({
+          title: "DeckOps",
+          body: result.message,
+        });
+      }
+    } catch (e) {
+      console.error("DeckOps: Download failed", e);
+      toaster.toast({
+        title: "DeckOps",
+        body: "Download failed. Check your internet connection.",
+      });
+    }
+    setDownloading(false);
+  };
 
   const loadStatus = async () => {
     try {
@@ -168,6 +218,51 @@ function Content() {
     }
   };
 
+  // ── Loading state (checking install) ──────────────────────────────────
+  if (installed === null) {
+    return (
+      <PanelSection title="DeckOps">
+        <PanelSectionRow>
+          <div style={{ fontSize: "12px", color: "#b8bcbf", padding: "0 16px" }}>
+            Checking installation...
+          </div>
+        </PanelSectionRow>
+      </PanelSection>
+    );
+  }
+
+  // ── Not installed — show download UI ──────────────────────────────────
+  if (!installed) {
+    return (
+      <PanelSection title="DeckOps">
+        <PanelSectionRow>
+          <div style={{ fontSize: "12px", color: "#b8bcbf", padding: "0 16px" }}>
+            DeckOps is not installed. Download it to set up Call of Duty on your device.
+          </div>
+        </PanelSectionRow>
+
+        <PanelSectionRow>
+          <ButtonItem
+            layout="below"
+            onClick={handleDownload}
+            disabled={downloading}
+          >
+            {downloading ? "Downloading DeckOps..." : "Download DeckOps"}
+          </ButtonItem>
+        </PanelSectionRow>
+
+        {downloading && (
+          <PanelSectionRow>
+            <div style={{ fontSize: "11px", color: "#7c7e80", padding: "0 16px" }}>
+              This may take a minute. Please don't close this menu.
+            </div>
+          </PanelSectionRow>
+        )}
+      </PanelSection>
+    );
+  }
+
+  // ── Installed — show display toggle UI ────────────────────────────────
   return (
     <PanelSection title="Display Mode">
       <PanelSectionRow>
@@ -249,7 +344,7 @@ export default definePlugin(() => {
 
   return {
     name: "DeckOps",
-    titleView: <div className={staticClasses.Title}>DeckOps Display</div>,
+    titleView: <div className={staticClasses.Title}>DeckOps</div>,
     content: <Content />,
     icon: <FaTv />,
     onDismount() {
