@@ -46,6 +46,77 @@ def _find_block_end(text, start):
     return -1
 
 
+def _validate_vdf(path: str) -> bool:
+    """
+    Read a VDF file back after writing and verify brace balance.
+
+    Walks the entire file using the same quote-aware brace parser that
+    _find_block_end uses. A valid VDF file has every { matched by a }.
+    Returns True if balanced, False if corrupt.
+
+    On failure, automatically restores from .bak if available and logs
+    the error. This catches corruption before Steam ever sees the file.
+    """
+    try:
+        with open(path, "r", errors="replace") as f:
+            data = f.read()
+    except OSError:
+        _log.error("VDF validation: cannot read %s", path)
+        return False
+
+    depth = 0
+    in_quote = False
+    for i, c in enumerate(data):
+        if c == '"' and (i == 0 or data[i - 1] != '\\'):
+            in_quote = not in_quote
+        elif not in_quote:
+            if c == '{':
+                depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth < 0:
+                    break
+
+    if depth != 0:
+        _log.error(
+            "VDF validation FAILED for %s (brace depth %d) — restoring backup",
+            path, depth,
+        )
+        bak = path + ".bak"
+        if os.path.exists(bak):
+            try:
+                shutil.copy2(bak, path)
+                _log.info("VDF restored from %s", bak)
+            except OSError:
+                _log.error("VDF restore failed for %s", path, exc_info=True)
+        return False
+
+    return True
+
+
+def _write_and_validate_vdf(path: str, data: str, encoding: str = "utf-8",
+                            errors: str | None = None) -> bool:
+    """
+    Write VDF data to path, then validate brace balance.
+
+    Backs up before writing. If validation fails, the backup is
+    automatically restored. Returns True if the write is clean.
+
+    encoding / errors — passed to open(). Use errors="replace" for
+    localconfig.vdf which can contain non-UTF-8 bytes.
+    """
+    _backup_file(path)
+    open_kwargs = {"encoding": encoding}
+    if errors:
+        open_kwargs = {"errors": errors}
+    with open(path, "w", **open_kwargs) as f:
+        f.write(data)
+    if not _validate_vdf(path):
+        _log.error("VDF corruption detected in %s after write", path)
+        return False
+    return True
+
+
 def get_proton_path(steam_root):
     """
     Find the best available Proton binary for running Windows executables.
@@ -290,9 +361,7 @@ def set_launch_options(steam_root, appid, options):
             content[app_close:]
         )
 
-        _backup_file(vdf_path)
-        with open(vdf_path, "w", errors="replace") as f:
-            f.write(new_content)
+        _write_and_validate_vdf(vdf_path, new_content, errors="replace")
 
 
 def clear_launch_options(steam_root, appid):
@@ -356,9 +425,7 @@ def clear_launch_options(steam_root, appid):
             content[app_close:]
         )
 
-        _backup_file(vdf_path)
-        with open(vdf_path, "w", errors="replace") as f:
-            f.write(new_content)
+        _write_and_validate_vdf(vdf_path, new_content, errors="replace")
 
 
 def kill_steam():
@@ -385,7 +452,13 @@ def kill_steam():
             capture_output=True
         )
         if r.returncode != 0:
-            time.sleep(1)  # Brief extra wait for localconfig.vdf write to complete
+            # Steam process is gone. Wait for config writes to flush to disk.
+            # Steam writes config.vdf and localconfig.vdf during shutdown and
+            # the kernel may still be buffering those writes after the process
+            # exits. sync forces all pending I/O to complete before we touch
+            # any VDF files.
+            time.sleep(3)
+            subprocess.run(["sync"], capture_output=True)
             return
         time.sleep(1)
 
@@ -394,6 +467,7 @@ def kill_steam():
     subprocess.run(["pkill", "-9", "-f", "steamwebhelper"],      capture_output=True)
     subprocess.run(["pkill", "-9", "-f", "steam.sh"],            capture_output=True)
     time.sleep(3)
+    subprocess.run(["sync"], capture_output=True)
 
 
 def set_steam_input_enabled(steam_root, appids=None):
@@ -489,9 +563,7 @@ def set_steam_input_enabled(steam_root, appids=None):
             modified = True
 
         if modified:
-            _backup_file(vdf_path)
-            with open(vdf_path, "w", errors="replace") as f:
-                f.write(content)
+            _write_and_validate_vdf(vdf_path, content, errors="replace")
 
 
 STEAM_CONFIG = os.path.expanduser("~/.local/share/Steam/config/config.vdf")
@@ -562,9 +634,7 @@ def set_compat_tool(appids, version):
                     count=1,
                 )
 
-    _backup_file(STEAM_CONFIG)
-    with open(STEAM_CONFIG, "w", encoding="utf-8") as f:
-        f.write(data)
+    _write_and_validate_vdf(STEAM_CONFIG, data)
 
 
 def clear_compat_tool(appids):
@@ -603,9 +673,7 @@ def clear_compat_tool(appids):
             modified = True
 
     if modified:
-        _backup_file(STEAM_CONFIG)
-        with open(STEAM_CONFIG, "w", encoding="utf-8") as f:
-            f.write(data)
+        _write_and_validate_vdf(STEAM_CONFIG, data)
 
 
 def set_default_launch_option(steam_root, appids_config):
@@ -744,6 +812,4 @@ def set_default_launch_option(steam_root, appids_config):
                         modified = True
 
         if modified:
-            _backup_file(vdf_path)
-            with open(vdf_path, "w", errors="replace") as f:
-                f.write(content)
+            _write_and_validate_vdf(vdf_path, content, errors="replace")
