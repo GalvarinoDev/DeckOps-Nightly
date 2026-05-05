@@ -28,7 +28,6 @@ import sys
 import subprocess
 import threading
 import urllib.request
-import time
 import json
 
 from PyQt5.QtWidgets import (
@@ -309,26 +308,6 @@ PLUT_GAMES = [
 ]
 
 
-# ── debug logger ─────────────────────────────────────────────────────────────
-
-_LOG_PATH = os.path.join(_LINUX_HOME, "gamepad.log")
-_LOG_LOCK = threading.Lock()
-_LOG_INITIALIZED = False
-
-
-def _log(msg: str):
-    global _LOG_INITIALIZED
-    try:
-        with _LOG_LOCK:
-            mode = "a" if _LOG_INITIALIZED else "w"
-            _LOG_INITIALIZED = True
-            with open(_LOG_PATH, mode) as f:
-                ts = time.strftime("%H:%M:%S")
-                f.write(f"[{ts}] {msg}\n")
-    except Exception:
-        pass
-
-
 # ── XInput gamepad polling ────────────────────────────────────────────────────
 # Uses XInput-Python to read the Steam Deck's gamepad inside Wine/Proton.
 # Steam Deck presents as an XInput controller in Game Mode.
@@ -378,9 +357,7 @@ class GamepadPoller:
 
     def start(self):
         if not _XINPUT_AVAILABLE:
-            _log("GamepadPoller: XInput not available, skipping")
             return
-        _log("GamepadPoller: starting XInput polling")
         self._timer.start()
 
     def stop(self):
@@ -423,8 +400,8 @@ class GamepadPoller:
 
             self._prev_buttons = buttons
 
-        except Exception as ex:
-            _log(f"GamepadPoller: error: {ex}")
+        except Exception:
+            pass
 
     def _fire(self, btn):
         cb = self._callbacks.get(btn)
@@ -575,12 +552,6 @@ def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
 
     plut_dir, bootstrapper = _resolve_game_plut_dir(game_key)
 
-    _log(f"_launch_lan: game_key={game_key}")
-    _log(f"_launch_lan: game_dir={game_dir_wine}")
-    _log(f"_launch_lan: plut_dir={plut_dir}")
-    _log(f"_launch_lan: bootstrapper={bootstrapper}")
-    _log(f"_launch_lan: bootstrapper exists={os.path.exists(bootstrapper)}")
-
     try:
         subprocess.Popen(
             [
@@ -592,9 +563,8 @@ def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
             ],
             cwd=plut_dir,
         )
-        _log("_launch_lan: Popen succeeded")
-    except Exception as ex:
-        _log(f"_launch_lan: FAILED: {ex}")
+    except Exception:
+        pass
 
     # Quit the launcher after a short delay to let the game take over
     def _clear():
@@ -653,10 +623,8 @@ def _get_setup_plut_keys() -> dict:
                     "player_name": player_name,
                 }
 
-        _log(f"_get_setup_plut_keys: found {len(result)} games")
         return result
-    except Exception as ex:
-        _log(f"_get_setup_plut_keys: error: {ex}")
+    except Exception:
         return {}
 
 
@@ -772,16 +740,11 @@ class GameRow(QWidget):
         return len(self._mode_buttons)
 
     def trigger_focused_button(self):
-        _log(f"trigger_focused_button: _focused_btn_idx={self._focused_btn_idx} "
-             f"_mode_buttons={len(self._mode_buttons)}")
         if self._focused_btn_idx is None:
-            _log("trigger_focused_button: bailing — _focused_btn_idx is None")
             return
         if 0 <= self._focused_btn_idx < len(self._mode_buttons):
             btn, _ = self._mode_buttons[self._focused_btn_idx]
             btn.click()
-        else:
-            _log(f"trigger_focused_button: index out of range")
 
     def set_row_focused(self, focused: bool):
         if self._row_focused == focused:
@@ -865,7 +828,6 @@ class LauncherWindow(QWidget):
         self.setStyleSheet(f"background:{C_BG};")
 
         setup_info = _get_setup_plut_keys()
-        _log(f"LauncherWindow: setup_info has {len(setup_info)} entries")
 
         root_lay = QVBoxLayout(self)
         root_lay.setContentsMargins(0, 0, 0, 0)
@@ -940,7 +902,6 @@ class LauncherWindow(QWidget):
 
         # ── keyboard focus tracking ──
         self._focus_rows = [r for r in installed if r.launchable_count() > 0]
-        _log(f"LauncherWindow: _focus_rows has {len(self._focus_rows)} entries")
         self._row_idx = 0
         if self._focus_rows:
             self._focus_rows[0].set_row_focused(True)
@@ -961,7 +922,6 @@ class LauncherWindow(QWidget):
 
     def keyPressEvent(self, event):
         key = event.key()
-        _log(f"keyPressEvent: key={key}")
 
         if key == Qt.Key_Escape:
             self._quit_with_fade()
@@ -986,8 +946,6 @@ class LauncherWindow(QWidget):
 
     @pyqtSlot(int)
     def on_move_row(self, delta: int):
-        _log(f"on_move_row: delta={delta} cur={self._row_idx} "
-             f"rows={len(self._focus_rows)}")
         if not self._focus_rows:
             return
         new_idx = max(0, min(len(self._focus_rows) - 1, self._row_idx + delta))
@@ -1000,7 +958,6 @@ class LauncherWindow(QWidget):
 
     @pyqtSlot(int)
     def on_move_btn(self, delta: int):
-        _log(f"on_move_btn: delta={delta}")
         if not self._focus_rows:
             return
         row = self._focus_rows[self._row_idx]
@@ -1013,14 +970,12 @@ class LauncherWindow(QWidget):
 
     @pyqtSlot()
     def _activate_focused(self):
-        _log("_activate_focused called")
         if not self._focus_rows:
             return
         self._focus_rows[self._row_idx].trigger_focused_button()
 
     @pyqtSlot()
     def _quit_with_fade(self):
-        _log("_quit_with_fade called")
         _fadeout_audio()
         QTimer.singleShot(FADEOUT_MS, QApplication.instance().quit)
 
@@ -1028,15 +983,6 @@ class LauncherWindow(QWidget):
 # ── main ─────────────────────────────────────────────────────────────────────
 
 def main():
-    _log("=" * 60)
-    _log(f"main: starting launcher_plut_win.py (Windows/Proton)")
-    _log(f"main: argv={sys.argv}")
-    _log(f"main: python={sys.executable}")
-    _log(f"main: cwd={os.getcwd()}")
-    _log(f"main: PLUT_DIR={_PLUT_DIR}")
-    _log(f"main: bootstrapper exists={os.path.exists(_BOOTSTRAPPER)}")
-    _log(f"main: config.json exists={os.path.exists(os.path.join(_PLUT_DIR, 'config.json'))}")
-
     app = QApplication(sys.argv)
     _load_font()
 
@@ -1047,7 +993,6 @@ def main():
     win.setFocus()
     _start_audio()
 
-    _log("main: entering Qt event loop")
     sys.exit(app.exec_())
 
 
