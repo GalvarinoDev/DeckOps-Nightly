@@ -637,7 +637,9 @@ class ControllerInfoScreen(QWidget):
         lay.addWidget(_lbl("⏳  First Launch", 13, "#5B9BD5", bold=True, align=Qt.AlignLeft))
         lay.addWidget(_lbl(
             "All games may take a while to launch the first time — this is normal. "
-            "They will run fine after the initial launch.",
+            "They will run fine after the initial launch.\n\n"
+            "Plutonium games must be launched once before they can be used "
+            "with the offline LAN launcher.",
             11, C_DIM, align=Qt.AlignLeft))
 
         lay.addWidget(_hdiv())
@@ -671,17 +673,6 @@ class ControllerInfoScreen(QWidget):
         lay.addWidget(self._lcd_body)
 
         lay.addWidget(_hdiv())
-
-        # ── Controller Profiles & GE-Proton ───────────────────────────────────
-        lay.addWidget(_lbl("🎮  Controller Profiles & GE-Proton", 13, C_IW, bold=True, align=Qt.AlignLeft))
-        # gyro_desc is set dynamically in showEvent so it always reflects the
-        # user's actual choice, not whatever was in config at construction time.
-        self._gyro_lbl = _lbl("", 11, C_DIM, align=Qt.AlignLeft)
-        lay.addWidget(self._gyro_lbl)
-        lay.addWidget(_lbl(
-            "Newest GE-Proton installed and set for all games. "
-            "Change Hold, ADS, or Toggle anytime in Settings — Re-apply Controller Profiles.",
-            11, "#666", align=Qt.AlignLeft))
 
         # ── Decky Loader note (docked users only) ─────────────────────────────
         self._decky_div  = _hdiv()
@@ -740,11 +731,6 @@ class ControllerInfoScreen(QWidget):
 
         lay.addSpacing(4)
 
-        self._safe_lbl = _lbl("✅  It is now safe to open Steam.", 13, C_IW, bold=True)
-        self._safe_lbl.setVisible(False)
-        lay.addWidget(self._safe_lbl)
-        lay.addSpacing(4)
-
         cont = _btn("Continue  >>", C_IW, h=52)
         cont.clicked.connect(self._go_management)
         cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(cont, stretch=1); cw.addStretch()
@@ -752,18 +738,6 @@ class ControllerInfoScreen(QWidget):
 
     def showEvent(self, e):
         super().showEvent(e)
-        self._safe_lbl.setVisible(True)
-        gyro_mode = cfg.get_gyro_mode() or "on"
-        _GYRO_DESCS = {
-            "on": "gyro on ADS",
-            "hold": "gyro on hold",
-            "toggle": "gyro on toggle",
-            "off": "gyro off",
-        }
-        gyro_desc = _GYRO_DESCS.get(gyro_mode, "gyro off")
-        self._gyro_lbl.setText(
-            f"Standard gamepad layout with {gyro_desc} assigned to all games. "
-        )
         # Only show the Decky section for docked users
         is_docked = cfg.is_docked()
         self._decky_div.setVisible(is_docked)
