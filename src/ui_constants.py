@@ -429,6 +429,8 @@ class _Sigs(QObject):
     plut_go     = pyqtSignal()
     pulse_start = pyqtSignal(str)
     pulse_stop  = pyqtSignal()
+    # Manual download fallback: (url, dest_folder, filename, label)
+    manual_dl   = pyqtSignal(str, str, str, str)
 
 
 # ── App stylesheet ────────────────────────────────────────────────────────────

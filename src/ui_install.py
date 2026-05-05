@@ -5,17 +5,18 @@ Screens: WelcomeScreen, SetupScreen, InstallScreen, OwnInstallScreen, OwnScanScr
 Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
 """
 
-import os, threading
+import os, subprocess, threading
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
     QLabel, QPushButton, QCheckBox, QProgressBar,
-    QPlainTextEdit, QFileDialog,
+    QPlainTextEdit, QFileDialog, QMessageBox,
 )
 from PyQt5.QtCore import Qt, QTimer
 
 from detect_games import find_steam_root, parse_library_folders, find_installed_games
 import config as cfg
+from net import DownloadError
 
 from ui_constants import (
     C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN,
@@ -352,6 +353,8 @@ class InstallScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.selected=[]; self.steam_root=""; self.screen_name = "InstallScreen"
         self._plut_event = threading.Event()
+        self._manual_dl_event = threading.Event()
+        self._manual_dl_ok = False
         self._return_to_management = False
         self.install_t7x_opt = False
 
@@ -418,6 +421,7 @@ class InstallScreen(QWidget):
         self._s.plut_go.connect(self._hide_plut_wait)
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
+        self._s.manual_dl.connect(self._show_manual_dl_dialog)
 
         self._pulse_timer = QTimer()
         self._pulse_timer.timeout.connect(self._do_pulse)
@@ -458,6 +462,8 @@ class InstallScreen(QWidget):
         self.plut_warn.setVisible(False)
         self._stop_pulse()
         self._plut_event.clear()
+        self._manual_dl_event.clear()
+        self._manual_dl_ok = False
         # Route the continue button based on whether this was triggered
         # from ManagementScreen (return to My Games) or the first-run
         # wizard (go to ControllerInfoScreen).
@@ -477,6 +483,56 @@ class InstallScreen(QWidget):
 
     def _confirm_plut(self):
         self._plut_event.set()
+
+    def _show_manual_dl_dialog(self, url, dest_folder, filename, label):
+        """
+        Show a dialog telling the user to manually download a file.
+        Runs on the main thread (called via signal from worker).
+        """
+        os.makedirs(dest_folder, exist_ok=True)
+        dest_path = os.path.join(dest_folder, filename)
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle(f"{label} — Download Failed")
+        msg.setTextFormat(Qt.RichText)
+        msg.setText(
+            f"<b>{label}</b> could not be downloaded automatically.<br><br>"
+            f'Download it manually here:<br>'
+            f'<a href="{url}">{url}</a><br><br>'
+            f'Then place <b>{filename}</b> in:<br>'
+            f'<code>{dest_folder}</code><br><br>'
+            f'Click <b>Open Folder</b> to open the destination, then '
+            f'<b>I\'ve Placed It</b> when the file is in place.'
+        )
+        open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
+        done_btn = msg.addButton("I've Placed It", QMessageBox.AcceptRole)
+        skip_btn = msg.addButton("Skip", QMessageBox.RejectRole)
+
+        # Keep dialog open until user clicks Done or Skip
+        while True:
+            msg.exec_()
+            clicked = msg.clickedButton()
+            if clicked == open_btn:
+                subprocess.Popen(["xdg-open", dest_folder])
+                # Re-show the dialog
+                continue
+            elif clicked == done_btn:
+                if os.path.exists(dest_path) and os.path.getsize(dest_path) > 0:
+                    self._manual_dl_ok = True
+                    self._manual_dl_event.set()
+                    return
+                # File not there yet — tell user and loop
+                QMessageBox.warning(
+                    self, "File Not Found",
+                    f"{filename} was not found in:\n{dest_folder}\n\n"
+                    "Make sure the file is downloaded and placed in the correct folder.",
+                )
+                continue
+            else:
+                # Skip
+                self._manual_dl_ok = False
+                self._manual_dl_event.set()
+                return
 
     def _on_done(self, _):
         self._stop_pulse()
@@ -658,6 +714,21 @@ class InstallScreen(QWidget):
                             on_progress=lambda p, m: self._s.progress.emit(p, m),
                             steam_root=self.steam_root,
                         )
+                except DownloadError as dl_ex:
+                    self._s.log.emit(f"⚠  {dl_ex.label} download failed — manual download needed")
+                    self._manual_dl_event.clear()
+                    self._manual_dl_ok = False
+                    self._s.manual_dl.emit(
+                        dl_ex.url,
+                        os.path.dirname(dl_ex.dest),
+                        os.path.basename(dl_ex.dest),
+                        dl_ex.label,
+                    )
+                    self._manual_dl_event.wait()
+                    if not self._manual_dl_ok:
+                        self._s.log.emit("  ✗  Skipped by user.")
+                        self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
+                    self._s.log.emit(f"  ✓  {dl_ex.label} placed manually")
                 except Exception as ex:
                     self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
                     self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
@@ -830,6 +901,21 @@ class InstallScreen(QWidget):
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
+                except DownloadError as dl_ex:
+                    self._s.log.emit(f"⚠  {dl_ex.label} download failed — manual download needed")
+                    self._manual_dl_event.clear()
+                    self._manual_dl_ok = False
+                    self._s.manual_dl.emit(
+                        dl_ex.url,
+                        os.path.dirname(dl_ex.dest),
+                        os.path.basename(dl_ex.dest),
+                        dl_ex.label,
+                    )
+                    self._manual_dl_event.wait()
+                    if not self._manual_dl_ok:
+                        self._s.log.emit(f"  ✗  {base_name} skipped by user.")
+                    else:
+                        self._s.log.emit(f"  ✓  {dl_ex.label} placed manually — re-run install to finish setup")
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
@@ -1030,6 +1116,8 @@ class OwnInstallScreen(QWidget):
         self.steam_selected  = []   # list of (key, gd, game), set by SetupScreen
         self.steam_root = ""
         self._plut_event = threading.Event()
+        self._manual_dl_event = threading.Event()
+        self._manual_dl_ok = False
         self._return_to_management = False
         self.install_t7x_opt = False
 
@@ -1094,6 +1182,7 @@ class OwnInstallScreen(QWidget):
         self._s.plut_go.connect(self._hide_plut_wait)
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
+        self._s.manual_dl.connect(self._show_manual_dl_dialog)
 
         self._pulse_timer = QTimer()
         self._pulse_timer.timeout.connect(self._do_pulse)
@@ -1134,6 +1223,8 @@ class OwnInstallScreen(QWidget):
         self.plut_warn.setVisible(False)
         self.cont_btn.setVisible(False)
         self._plut_event.clear()
+        self._manual_dl_event.clear()
+        self._manual_dl_ok = False
         self._stop_pulse()
         # Route the continue button based on whether this was triggered
         # from ManagementScreen (return to My Games) or the first-run
@@ -1159,6 +1250,52 @@ class OwnInstallScreen(QWidget):
 
     def _confirm_plut(self):
         self._plut_event.set()
+
+    def _show_manual_dl_dialog(self, url, dest_folder, filename, label):
+        """
+        Show a dialog telling the user to manually download a file.
+        Runs on the main thread (called via signal from worker).
+        """
+        os.makedirs(dest_folder, exist_ok=True)
+        dest_path = os.path.join(dest_folder, filename)
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle(f"{label} — Download Failed")
+        msg.setTextFormat(Qt.RichText)
+        msg.setText(
+            f"<b>{label}</b> could not be downloaded automatically.<br><br>"
+            f'Download it manually here:<br>'
+            f'<a href="{url}">{url}</a><br><br>'
+            f'Then place <b>{filename}</b> in:<br>'
+            f'<code>{dest_folder}</code><br><br>'
+            f'Click <b>Open Folder</b> to open the destination, then '
+            f'<b>I\'ve Placed It</b> when the file is in place.'
+        )
+        open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
+        done_btn = msg.addButton("I've Placed It", QMessageBox.AcceptRole)
+        skip_btn = msg.addButton("Skip", QMessageBox.RejectRole)
+
+        while True:
+            msg.exec_()
+            clicked = msg.clickedButton()
+            if clicked == open_btn:
+                subprocess.Popen(["xdg-open", dest_folder])
+                continue
+            elif clicked == done_btn:
+                if os.path.exists(dest_path) and os.path.getsize(dest_path) > 0:
+                    self._manual_dl_ok = True
+                    self._manual_dl_event.set()
+                    return
+                QMessageBox.warning(
+                    self, "File Not Found",
+                    f"{filename} was not found in:\n{dest_folder}\n\n"
+                    "Make sure the file is downloaded and placed in the correct folder.",
+                )
+                continue
+            else:
+                self._manual_dl_ok = False
+                self._manual_dl_event.set()
+                return
 
     def _on_done(self, _):
         self._stop_pulse()
@@ -1271,6 +1408,21 @@ class OwnInstallScreen(QWidget):
                             on_progress=lambda p, m: self._s.progress.emit(p, m),
                             steam_root=self.steam_root,
                         )
+                except DownloadError as dl_ex:
+                    self._s.log.emit(f"⚠  {dl_ex.label} download failed — manual download needed")
+                    self._manual_dl_event.clear()
+                    self._manual_dl_ok = False
+                    self._s.manual_dl.emit(
+                        dl_ex.url,
+                        os.path.dirname(dl_ex.dest),
+                        os.path.basename(dl_ex.dest),
+                        dl_ex.label,
+                    )
+                    self._manual_dl_event.wait()
+                    if not self._manual_dl_ok:
+                        self._s.log.emit("  ✗  Skipped by user.")
+                        self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
+                    self._s.log.emit(f"  ✓  {dl_ex.label} placed manually")
                 except Exception as ex:
                     self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
                     self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
@@ -1581,6 +1733,21 @@ class OwnInstallScreen(QWidget):
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
+                except DownloadError as dl_ex:
+                    self._s.log.emit(f"⚠  {dl_ex.label} download failed — manual download needed")
+                    self._manual_dl_event.clear()
+                    self._manual_dl_ok = False
+                    self._s.manual_dl.emit(
+                        dl_ex.url,
+                        os.path.dirname(dl_ex.dest),
+                        os.path.basename(dl_ex.dest),
+                        dl_ex.label,
+                    )
+                    self._manual_dl_event.wait()
+                    if not self._manual_dl_ok:
+                        self._s.log.emit(f"  ✗  {base_name} skipped by user.")
+                    else:
+                        self._s.log.emit(f"  ✓  {dl_ex.label} placed manually — re-run install to finish setup")
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 

@@ -23,6 +23,29 @@ BROWSER_UA = {
 }
 
 
+class DownloadError(RuntimeError):
+    """
+    Raised when a download fails after all retries.
+
+    Carries the URL, destination path, and a human-readable label so the
+    UI can offer a manual-download fallback dialog with a clickable link
+    and a target folder for the user to place the file in.
+
+    Attributes:
+        url       -- the URL that failed to download
+        dest      -- the local file path the download was targeting
+        label     -- human-readable name (e.g. "Plutonium bootstrapper")
+    """
+    def __init__(self, url: str, dest: str, label: str, cause: Exception):
+        self.url   = url
+        self.dest  = dest
+        self.label = label
+        self.cause = cause
+        super().__init__(
+            f"{label} download failed after retries: {cause}"
+        )
+
+
 def download(url: str, dest: str, on_progress=None, label: str = "",
              timeout: int = 60):
     """
