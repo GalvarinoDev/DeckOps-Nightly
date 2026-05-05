@@ -226,9 +226,9 @@ fi
 
 # ── step 8: done ─────────────────────────────────────────────────────────────
 echo ""
-echo -e "${GREEN}${BOLD}  Installation complete! Welcome to DeckOps.${CLEAR}"
+echo -e "${GREEN}${BOLD}  Download Complete! Welcome to DeckOps.${CLEAR}"
 echo ""
-echo -e "  ${CYAN}Please open DeckOps from your desktop.${CLEAR}"
+echo -e "  ${CYAN}Please open DeckOps from your desktop to setup your games.${CLEAR}"
 echo -e "  ${CYAN}This window will close automatically.${CLEAR}"
 echo ""
 
