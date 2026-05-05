@@ -43,6 +43,7 @@ import time
 import urllib.request
 
 from log import get_logger
+from net import DownloadError
 
 _log = get_logger(__name__)
 
@@ -1085,7 +1086,12 @@ def _download_plutonium_exe(dest_dir: str, on_progress=None) -> str:
             return dest
         except Exception as ex:
             if attempt == 2:
-                raise
+                raise DownloadError(
+                    url=PLUT_BOOTSTRAPPER_URL,
+                    dest=dest,
+                    label="Plutonium bootstrapper",
+                    cause=ex,
+                )
             time.sleep(2 ** attempt)
     return dest
 
@@ -1362,6 +1368,8 @@ def launch_bootstrapper_lcd(on_progress=None):
             DECKOPS_PLUT_DIR,
             on_progress=lambda m: prog(15, m),
         )
+    except DownloadError:
+        raise
     except Exception as ex:
         raise RuntimeError(f"Failed to download plutonium.exe: {ex}")
 

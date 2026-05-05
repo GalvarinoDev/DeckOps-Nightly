@@ -31,7 +31,7 @@ import shutil
 import subprocess
 import tempfile
 
-from net import download as _download
+from net import download as _download, DownloadError
 
 from log import get_logger
 
@@ -607,9 +607,13 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
             _manual_install(install_dir, compatdata_path, on_progress=on_progress)
             _used_fallback = True
         except Exception as e2:
-            raise RuntimeError(
-                f"CoD4x install failed. Primary (cod4x.ovh): {e} — "
-                f"Fallback (GitHub): {e2}"
+            raise DownloadError(
+                url="https://cod4x.ovh",
+                dest=setup_exe,
+                label="CoD4x installer",
+                cause=RuntimeError(
+                    f"Primary (cod4x.ovh): {e} — Fallback (GitHub): {e2}"
+                ),
             )
 
     # ── Step 3: Run setup.exe through Proton (skipped if fallback used) ──

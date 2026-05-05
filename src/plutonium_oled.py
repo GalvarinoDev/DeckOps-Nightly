@@ -30,6 +30,7 @@ import subprocess
 import urllib.request
 
 from log import get_logger
+from net import DownloadError
 
 _log = get_logger(__name__)
 
@@ -216,7 +217,12 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
             break
         except Exception as ex:
             if attempt == 2:
-                raise
+                raise DownloadError(
+                    url=PLUT_BOOTSTRAPPER_URL,
+                    dest=bootstrapper,
+                    label="Plutonium bootstrapper",
+                    cause=ex,
+                )
             time.sleep(2 ** attempt)
     prog(15, "Launching Plutonium , please log in, then close the window when done.")
 
