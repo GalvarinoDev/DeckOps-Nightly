@@ -6,7 +6,7 @@ Screens: ManagementCard, ManagementScreen, ControllerInfoScreen,
 Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
 """
 
-import os, subprocess, threading
+import os, subprocess, threading, json, urllib.request
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
@@ -915,6 +915,19 @@ class ConfigureScreen(QWidget):
         sl.addLayout(lr)
         sl.addWidget(_hdiv())
 
+        # ── Check for Updates ─────────────────────────────────────────────
+        sl.addWidget(_lbl("Updates", 13, "#CCC", align=Qt.AlignLeft))
+        ur = QHBoxLayout(); ur.setSpacing(12)
+        self._update_btn = _btn("Check for Updates", C_BLUE_BTN, size=12, h=40)
+        self._update_btn.setFixedWidth(220)
+        self._update_btn.clicked.connect(self._check_for_updates)
+        ur.addWidget(self._update_btn)
+        self._update_status = _lbl("", 11, C_DIM, wrap=False)
+        ur.addWidget(self._update_status, stretch=1)
+        ur.addStretch()
+        sl.addLayout(ur)
+        sl.addWidget(_hdiv())
+
         # ── Danger Zone ──────────────────────────────────────────────────
         sl.addWidget(_lbl("Danger Zone", 13, C_TREY, align=Qt.AlignLeft))
         dr = QHBoxLayout(); dr.setSpacing(12)
@@ -1164,6 +1177,94 @@ class ConfigureScreen(QWidget):
                 QApplication.instance().quit()
             except Exception as ex:
                 self.status.setText(f"✗  Could not launch uninstaller: {ex}")
+
+    # ── Update check ────────────────────────────────────────────────────────
+    _GITHUB_USER = "GalvarinoDev"
+    _GITHUB_REPO = "DeckOps-Nightly"
+
+    def _check_for_updates(self):
+        """Hit GitHub API to compare local SHA against remote HEAD."""
+        self._update_btn.setEnabled(False)
+        self._update_status.setText("Checking...")
+        self._update_status.setStyleSheet(f"color:{C_DIM};")
+        threading.Thread(target=self._update_worker, daemon=True).start()
+
+    def _update_worker(self):
+        try:
+            version_file = os.path.join(PROJECT_ROOT, "VERSION")
+            local_sha = "0"
+            if os.path.isfile(version_file):
+                with open(version_file) as f:
+                    local_sha = f.read().strip() or "0"
+
+            req = urllib.request.Request(
+                f"https://api.github.com/repos/{self._GITHUB_USER}/{self._GITHUB_REPO}/commits/main",
+                headers={"User-Agent": "DeckOps"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read())
+            remote_sha = data.get("sha", "")
+
+            if not remote_sha:
+                QTimer.singleShot(0, lambda: self._update_result("Could not reach GitHub.", False))
+                return
+
+            if local_sha == remote_sha:
+                QTimer.singleShot(0, lambda: self._update_result("You're up to date!", False))
+                return
+
+            # Get changed file count
+            file_count = "unknown"
+            if local_sha != "0":
+                try:
+                    creq = urllib.request.Request(
+                        f"https://api.github.com/repos/{self._GITHUB_USER}/{self._GITHUB_REPO}/compare/{local_sha}...{remote_sha}",
+                        headers={"User-Agent": "DeckOps"},
+                    )
+                    with urllib.request.urlopen(creq, timeout=15) as r2:
+                        cdata = json.loads(r2.read())
+                    files = cdata.get("files", [])
+                    file_count = str(len(files))
+                except Exception:
+                    pass
+
+            QTimer.singleShot(0, lambda fc=file_count: self._update_result(
+                f"Update available — {fc} file(s) changed.", True))
+
+        except Exception as ex:
+            _log.warning("Update check failed: %s", ex)
+            QTimer.singleShot(0, lambda: self._update_result("Update check failed.", False))
+
+    def _update_result(self, msg, update_available):
+        self._update_btn.setEnabled(True)
+        self._update_status.setText(msg)
+        if update_available:
+            self._update_status.setStyleSheet(f"color:{C_IW};")
+            self._update_btn.setText("Update && Restart")
+            try:
+                self._update_btn.clicked.disconnect()
+            except TypeError:
+                pass
+            self._update_btn.clicked.connect(self._apply_update)
+        else:
+            self._update_status.setStyleSheet(f"color:{C_DIM};")
+
+    def _apply_update(self):
+        reply = QMessageBox.question(
+            self, "Update DeckOps",
+            "DeckOps will close, download the update, and relaunch.\n\nContinue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        flag = os.path.expanduser("~/.deckops_update_requested")
+        with open(flag, "w") as f:
+            f.write("1")
+        _log.info("Update requested — wrote flag file, exiting for launcher to handle")
+        _kill_audio()
+        QApplication.instance().quit()
 
     def _confirm_reset(self):
         reply = QMessageBox.warning(

@@ -224,7 +224,20 @@ else
     success "No stale plut_lan.sh sidecars found."
 fi
 
-# ── step 8: done ─────────────────────────────────────────────────────────────
+# ── step 8: write initial version SHA ─────────────────────────────────────────
+# So the first launch doesn't redundantly re-download everything.
+info "Recording current version..."
+INITIAL_SHA=$(curl -sf --max-time 10 \
+    "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/commits/main" \
+    | grep -m1 '"sha"' | cut -d'"' -f4)
+if [ -n "$INITIAL_SHA" ]; then
+    echo "$INITIAL_SHA" > "$INSTALL_DIR/VERSION"
+    success "Version recorded."
+else
+    warn "Could not fetch version SHA — will be set on first update."
+fi
+
+# ── step 9: done ─────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}${BOLD}  Download Complete! Welcome to DeckOps.${CLEAR}"
 echo ""

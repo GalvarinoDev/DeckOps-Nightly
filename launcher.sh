@@ -20,6 +20,7 @@ fi
 # ── Update check ──────────────────────────────────────────────────────────────
 check_for_updates() {
     local LOCAL_SHA REMOTE_SHA CHANGED_FILES FILE_COUNT
+    local FORCE="${1:-}"
 
     # Read local version (commit SHA). "0" means never updated.
     LOCAL_SHA="0"
@@ -49,16 +50,18 @@ check_for_updates() {
         FILE_COUNT=$(echo "$CHANGED_FILES" | wc -l)
     fi
 
-    # Ask user
-    zenity --question \
-        --title="DeckOps Nightly Update" \
-        --text="An update is available.\n${FILE_COUNT} file(s) changed.\n\nUpdate now?" \
-        --ok-label="Update" \
-        --cancel-label="Skip" \
-        --width=300 \
-        2>/dev/null
+    # Ask user (skip if triggered from in-app update button)
+    if [ "$FORCE" != "force" ]; then
+        zenity --question \
+            --title="DeckOps Nightly Update" \
+            --text="An update is available.\n${FILE_COUNT} file(s) changed.\n\nUpdate now?" \
+            --ok-label="Update" \
+            --cancel-label="Skip" \
+            --width=300 \
+            2>/dev/null
 
-    [ $? -ne 0 ] && return 0
+        [ $? -ne 0 ] && return 0
+    fi
 
     # ── Download changed files to staging dir ─────────────────────────────
     rm -rf "$UPDATE_DIR"
@@ -206,7 +209,20 @@ case "$choice" in
         VENV_PYTHON="$INSTALL_DIR/.venv/bin/python3"
         ENTRY_POINT="$INSTALL_DIR/src/main.py"
         if [ -f "$VENV_PYTHON" ] && [ -f "$ENTRY_POINT" ]; then
-            exec "$VENV_PYTHON" "$ENTRY_POINT"
+            "$VENV_PYTHON" "$ENTRY_POINT"
+
+            # ── In-app update request ─────────────────────────────────────
+            # If the Python app wrote this flag, the user clicked
+            # "Update & Restart" from the settings screen.
+            UPDATE_FLAG="$HOME/.deckops_update_requested"
+            if [ -f "$UPDATE_FLAG" ]; then
+                rm -f "$UPDATE_FLAG"
+                check_for_updates force
+                # Relaunch after update
+                if [ -f "$VENV_PYTHON" ] && [ -f "$ENTRY_POINT" ]; then
+                    exec "$VENV_PYTHON" "$ENTRY_POINT"
+                fi
+            fi
         else
             zenity --error --title="DeckOps Nightly" \
                 --text="DeckOps Nightly installation appears incomplete.\nTry reinstalling." \
