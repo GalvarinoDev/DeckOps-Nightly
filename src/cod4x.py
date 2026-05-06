@@ -44,29 +44,34 @@ _SETUP_EXE_URL = "https://cod4x.ovh/uploads/short-url/2V3RsE0Pp5Jakc1VE9Yuh5yb4l
 
 METADATA_FILE = "deckops_cod4x.json"
 
-# ── GitHub fallback ──────────────────────────────────────────────────────────
-# If the setup.exe download from cod4x.ovh fails, we fall back to downloading
-# the individual 21.3 release assets from the official CoD4x GitHub repo and
-# placing them manually. This replicates what setup.exe + its embedded
-# install-cod4x-userfiles.bat do together.
-
-_GITHUB_RELEASE_BASE = (
-    "https://github.com/callofduty4x/CoD4x_Client_pub/releases/download/21.3"
+# ── Archive.org fallback ─────────────────────────────────────────────────────
+# If the setup.exe download from cod4x.ovh times out (60 s), fall back to
+# this archived copy of the official 21.3 installer and continue the normal
+# setup.exe flow.
+_ARCHIVE_FALLBACK_URL = (
+    "https://archive.org/download/co-d-4x.-21.3.-setup/CoD4x.21.3.Setup.exe"
 )
 
-# Maps GitHub asset name → (destination subdirectory, final filename)
-# relative to the AppData/Local/CallofDuty4MW tree inside the prefix.
-_GITHUB_ASSETS = {
-    "cod4x_021.dll":    ("bin/cod4x_021", "cod4x_021.dll"),
-    "core":             ("bin",           "launcher.dll"),
-    "jcod4x_00.iwd":   ("main",          "jcod4x_00.iwd"),
-    "cod4x_ambfix.ff":  ("zone",          "cod4x_ambfix.ff"),
-    "cod4x_patch.ff":   ("zone",          "cod4x_patch.ff"),
-    "cod4x_patchv2.ff": ("zone",          "cod4x_patchv2.ff"),
-}
-
-# The chain-loader DLL that replaces the game's mss32.dll.
-_GITHUB_MSS_ASSET = "mss"
+# ── GitHub fallback (disabled) ───────────────────────────────────────────────
+# Replaced by the archive.org fallback above.  Kept here for reference.
+#
+# _GITHUB_RELEASE_BASE = (
+#     "https://github.com/callofduty4x/CoD4x_Client_pub/releases/download/21.3"
+# )
+#
+# # Maps GitHub asset name → (destination subdirectory, final filename)
+# # relative to the AppData/Local/CallofDuty4MW tree inside the prefix.
+# _GITHUB_ASSETS = {
+#     "cod4x_021.dll":    ("bin/cod4x_021", "cod4x_021.dll"),
+#     "core":             ("bin",           "launcher.dll"),
+#     "jcod4x_00.iwd":   ("main",          "jcod4x_00.iwd"),
+#     "cod4x_ambfix.ff":  ("zone",          "cod4x_ambfix.ff"),
+#     "cod4x_patch.ff":   ("zone",          "cod4x_patch.ff"),
+#     "cod4x_patchv2.ff": ("zone",          "cod4x_patchv2.ff"),
+# }
+#
+# # The chain-loader DLL that replaces the game's mss32.dll.
+# _GITHUB_MSS_ASSET = "mss"
 
 # The AppData subfolder name inside the Wine prefix. This is where the CoD4x
 # launcher expects to find its DLLs, zone files, and iwd assets.
@@ -440,103 +445,104 @@ def _collect_inno_log(compatdata_path: str, on_progress=None):
     return None
 
 
-# ── GitHub fallback: manual install ──────────────────────────────────────────
+# ── GitHub fallback: manual install (disabled) ───────────────────────────────
+# Replaced by archive.org setup.exe fallback.  Function body preserved below.
 
-def _manual_install(install_dir: str, compatdata_path: str, on_progress=None):
-    """
-    Fallback installer: download individual CoD4x 21.3 assets from the
-    official GitHub release and place them manually.
-
-    This replicates the file layout created by setup.exe +
-    install-cod4x-userfiles.bat:
-
-      Game directory:
-        mss32.dll           ← chain-loader (original backed up as miles32.dll)
-
-      Prefix  AppData/Local/CallofDuty4MW/:
-        bin/launcher.dll
-        bin/cod4x_021/cod4x_021.dll
-        main/jcod4x_00.iwd
-        zone/cod4x_ambfix.ff
-        zone/cod4x_patch.ff
-        zone/cod4x_patchv2.ff
-
-      Prefix  ProgramData/CallofDuty4MW/:
-        (same files staged flat — runtime fallback location)
-    """
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
-
-    def log(msg):
-        if on_progress:
-            on_progress(0, msg)
-
-    log("  ℹ Setup.exe unavailable — using GitHub release fallback")
-
-    # ── AppData tree inside the prefix ────────────────────────────────────
-    appdata_base = os.path.join(
-        compatdata_path, "pfx", "drive_c", "users", "steamuser",
-        "AppData", "Local", _APPDATA_FOLDER,
-    )
-    # ── ProgramData staging area (matches setup.exe behaviour) ────────────
-    progdata_base = os.path.join(
-        compatdata_path, "pfx", "drive_c", "ProgramData", _APPDATA_FOLDER,
-    )
-
-    # Create all target directories
-    for subdir in ("bin/cod4x_021", "main", "zone"):
-        os.makedirs(os.path.join(appdata_base, subdir), exist_ok=True)
-    os.makedirs(progdata_base, exist_ok=True)
-
-    # ── Download and place the chain-loader mss32.dll ─────────────────────
-    prog(15, "Downloading CoD4x chain-loader...")
-    mss_url = f"{_GITHUB_RELEASE_BASE}/{_GITHUB_MSS_ASSET}"
-    mss_dest = os.path.join(install_dir, "mss32.dll")
-    miles_dest = os.path.join(install_dir, "miles32.dll")
-
-    # Back up the original mss32.dll before overwriting
-    if os.path.exists(mss_dest) and not os.path.exists(miles_dest):
-        shutil.copy2(mss_dest, miles_dest)
-        log("  ✓ Backed up original mss32.dll → miles32.dll")
-
-    _download(
-        mss_url, mss_dest,
-        on_progress=lambda pct, lbl: prog(15 + int(pct * 0.10), lbl),
-        label="CoD4x chain-loader (mss)",
-        timeout=60,
-    )
-    log("  ✓ Chain-loader mss32.dll placed")
-
-    # ── Download remaining assets ─────────────────────────────────────────
-    asset_names = list(_GITHUB_ASSETS.keys())
-    total = len(asset_names)
-
-    for idx, asset_name in enumerate(asset_names):
-        subdir, final_name = _GITHUB_ASSETS[asset_name]
-        pct_base = 25 + int(idx / total * 55)
-        prog(pct_base, f"Downloading {final_name}...")
-
-        url = f"{_GITHUB_RELEASE_BASE}/{asset_name}"
-
-        # Place into AppData tree (proper runtime location)
-        appdata_dest = os.path.join(appdata_base, subdir, final_name)
-        _download(
-            url, appdata_dest,
-            on_progress=lambda pct, lbl, _b=pct_base: prog(
-                _b + int(pct * (55 // total) / 100), lbl),
-            label=final_name,
-            timeout=60,
-        )
-
-        # Also stage into ProgramData (flat — matches setup.exe layout)
-        progdata_dest = os.path.join(progdata_base, final_name)
-        shutil.copy2(appdata_dest, progdata_dest)
-
-        log(f"  ✓ {final_name}")
-
-    prog(85, "GitHub fallback install complete.")
-    log("  ✓ All CoD4x files placed via GitHub fallback")
+# def _manual_install(install_dir: str, compatdata_path: str, on_progress=None):
+#     """
+#     Fallback installer: download individual CoD4x 21.3 assets from the
+#     official GitHub release and place them manually.
+#
+#     This replicates the file layout created by setup.exe +
+#     install-cod4x-userfiles.bat:
+#
+#       Game directory:
+#         mss32.dll           ← chain-loader (original backed up as miles32.dll)
+#
+#       Prefix  AppData/Local/CallofDuty4MW/:
+#         bin/launcher.dll
+#         bin/cod4x_021/cod4x_021.dll
+#         main/jcod4x_00.iwd
+#         zone/cod4x_ambfix.ff
+#         zone/cod4x_patch.ff
+#         zone/cod4x_patchv2.ff
+#
+#       Prefix  ProgramData/CallofDuty4MW/:
+#         (same files staged flat — runtime fallback location)
+#     """
+#     def prog(pct, msg):
+#         if on_progress:
+#             on_progress(pct, msg)
+#
+#     def log(msg):
+#         if on_progress:
+#             on_progress(0, msg)
+#
+#     log("  ℹ Setup.exe unavailable — using GitHub release fallback")
+#
+#     # ── AppData tree inside the prefix ────────────────────────────────────
+#     appdata_base = os.path.join(
+#         compatdata_path, "pfx", "drive_c", "users", "steamuser",
+#         "AppData", "Local", _APPDATA_FOLDER,
+#     )
+#     # ── ProgramData staging area (matches setup.exe behaviour) ────────────
+#     progdata_base = os.path.join(
+#         compatdata_path, "pfx", "drive_c", "ProgramData", _APPDATA_FOLDER,
+#     )
+#
+#     # Create all target directories
+#     for subdir in ("bin/cod4x_021", "main", "zone"):
+#         os.makedirs(os.path.join(appdata_base, subdir), exist_ok=True)
+#     os.makedirs(progdata_base, exist_ok=True)
+#
+#     # ── Download and place the chain-loader mss32.dll ─────────────────────
+#     prog(15, "Downloading CoD4x chain-loader...")
+#     mss_url = f"{_GITHUB_RELEASE_BASE}/{_GITHUB_MSS_ASSET}"
+#     mss_dest = os.path.join(install_dir, "mss32.dll")
+#     miles_dest = os.path.join(install_dir, "miles32.dll")
+#
+#     # Back up the original mss32.dll before overwriting
+#     if os.path.exists(mss_dest) and not os.path.exists(miles_dest):
+#         shutil.copy2(mss_dest, miles_dest)
+#         log("  ✓ Backed up original mss32.dll → miles32.dll")
+#
+#     _download(
+#         mss_url, mss_dest,
+#         on_progress=lambda pct, lbl: prog(15 + int(pct * 0.10), lbl),
+#         label="CoD4x chain-loader (mss)",
+#         timeout=60,
+#     )
+#     log("  ✓ Chain-loader mss32.dll placed")
+#
+#     # ── Download remaining assets ─────────────────────────────────────────
+#     asset_names = list(_GITHUB_ASSETS.keys())
+#     total = len(asset_names)
+#
+#     for idx, asset_name in enumerate(asset_names):
+#         subdir, final_name = _GITHUB_ASSETS[asset_name]
+#         pct_base = 25 + int(idx / total * 55)
+#         prog(pct_base, f"Downloading {final_name}...")
+#
+#         url = f"{_GITHUB_RELEASE_BASE}/{asset_name}"
+#
+#         # Place into AppData tree (proper runtime location)
+#         appdata_dest = os.path.join(appdata_base, subdir, final_name)
+#         _download(
+#             url, appdata_dest,
+#             on_progress=lambda pct, lbl, _b=pct_base: prog(
+#                 _b + int(pct * (55 // total) / 100), lbl),
+#             label=final_name,
+#             timeout=60,
+#         )
+#
+#         # Also stage into ProgramData (flat — matches setup.exe layout)
+#         progdata_dest = os.path.join(progdata_base, final_name)
+#         shutil.copy2(appdata_dest, progdata_dest)
+#
+#         log(f"  ✓ {final_name}")
+#
+#     prog(85, "GitHub fallback install complete.")
+#     log("  ✓ All CoD4x files placed via GitHub fallback")
 
 
 # ── public API ───────────────────────────────────────────────────────────────
@@ -597,22 +603,27 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
             _SETUP_EXE_URL, setup_exe,
             on_progress=lambda pct, lbl: prog(10 + int(pct * 0.40), lbl),
             label="CoD4x installer",
-            timeout=120,
+            timeout=60,
         )
     except Exception as e:
-        shutil.rmtree(setup_dir, ignore_errors=True)
         log(f"  ⚠ Setup.exe download failed: {e}")
-        log("  ℹ Falling back to GitHub release assets...")
+        log("  ℹ Falling back to archive.org mirror...")
         try:
-            _manual_install(install_dir, compatdata_path, on_progress=on_progress)
-            _used_fallback = True
+            _download(
+                _ARCHIVE_FALLBACK_URL, setup_exe,
+                on_progress=lambda pct, lbl: prog(10 + int(pct * 0.40), lbl),
+                label="CoD4x installer (archive.org)",
+                timeout=300,
+            )
+            log("  ✓ Archive.org fallback download complete")
         except Exception as e2:
+            shutil.rmtree(setup_dir, ignore_errors=True)
             raise DownloadError(
-                url="https://cod4x.ovh",
+                url=_ARCHIVE_FALLBACK_URL,
                 dest=setup_exe,
                 label="CoD4x installer",
                 cause=RuntimeError(
-                    f"Primary (cod4x.ovh): {e} — Fallback (GitHub): {e2}"
+                    f"Primary (cod4x.ovh): {e} — Fallback (archive.org): {e2}"
                 ),
             )
 
@@ -713,7 +724,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     prog(95, "Saving metadata...")
     _write_metadata(install_dir, {
         "version": "21.3",
-        "method": "github_fallback" if _used_fallback else "setup_exe",
+        "method": "archive_fallback" if _used_fallback else "setup_exe",
         "appdata_dir": appdata_dir,
         "compatdata_path": compatdata_path,
     })
