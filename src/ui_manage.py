@@ -1182,8 +1182,14 @@ class ConfigureScreen(QWidget):
     _GITHUB_USER = "GalvarinoDev"
     _GITHUB_REPO = "DeckOps-Nightly"
 
+    def _init_update_signals(self):
+        """Connect the update result signal (call once during __init__)."""
+        self._update_sig = _Sigs()
+        self._update_sig.log.connect(self._on_update_signal)
+
     def _check_for_updates(self):
         """Hit GitHub API to compare local SHA against remote HEAD."""
+        self._init_update_signals()
         self._update_btn.setEnabled(False)
         self._update_status.setText("Checking...")
         self._update_status.setStyleSheet(f"color:{C_DIM};")
@@ -1206,11 +1212,11 @@ class ConfigureScreen(QWidget):
             remote_sha = data.get("sha", "")
 
             if not remote_sha:
-                QTimer.singleShot(0, lambda: self._update_result("Could not reach GitHub.", False))
+                self._update_sig.log.emit("FAIL|Could not reach GitHub.")
                 return
 
             if local_sha == remote_sha:
-                QTimer.singleShot(0, lambda: self._update_result("You're up to date!", False))
+                self._update_sig.log.emit("OK|You're up to date!")
                 return
 
             # Get changed file count
@@ -1228,12 +1234,16 @@ class ConfigureScreen(QWidget):
                 except Exception:
                     pass
 
-            QTimer.singleShot(0, lambda fc=file_count: self._update_result(
-                f"Update available — {fc} file(s) changed.", True))
+            self._update_sig.log.emit(f"UPDATE|Update available — {file_count} file(s) changed.")
 
         except Exception as ex:
             _log.warning("Update check failed: %s", ex)
-            QTimer.singleShot(0, lambda: self._update_result("Update check failed.", False))
+            self._update_sig.log.emit("FAIL|Update check failed.")
+
+    def _on_update_signal(self, msg):
+        """Slot that runs on the main thread via pyqtSignal."""
+        kind, text = msg.split("|", 1)
+        self._update_result(text, kind == "UPDATE")
 
     def _update_result(self, msg, update_available):
         self._update_btn.setEnabled(True)
