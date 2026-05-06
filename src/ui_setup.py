@@ -80,6 +80,8 @@ class SetupFlowScreen(QWidget):
             "You do NOT need to launch each game through Steam first.",
             "⚠   If you plan to play Plutonium titles online (WaW, BO1, BO2, MW3), "
             "create a free Plutonium account at plutonium.pw before continuing.",
+            "⚠   Make sure you have a stable internet connection before installing. "
+            "If the install fails, don't re-run it repeatedly, join the Discord for help instead.",
         ]:
             lay.addWidget(_lbl(warn, 13, C_TREY, align=Qt.AlignLeft))
         lay.addSpacing(16)
@@ -253,9 +255,9 @@ class SetupFlowScreen(QWidget):
         nl.addWidget(_lbl("What's your player name?", 15, "#CCC"))
         nl.addSpacing(4)
         nl.addWidget(_lbl(
-            "This is your in-game name for most mod clients — CoD4x, IW4x, "
+            "This is your in-game name for most mod clients: CoD4x, IW4x, "
             "AlterWare (Ghosts, AW), T7X, and Plutonium (LCD offline mode). "
-            "Your Steam display name is filled in by default — change it to whatever you want.",
+            "Your Steam display name is filled in by default. Change it to whatever you want.",
             13, C_DIM, align=Qt.AlignLeft))
         nl.addSpacing(12)
         self._name_input = QLineEdit()
@@ -367,10 +369,10 @@ class SetupFlowScreen(QWidget):
         pcl.addWidget(self._ctrl_title_lbl)
         pcl.addSpacing(4)
         self._ctrl_desc_lbl = _lbl(
-            "PlayStation  —  PS5 or PS4 DualShock/DualSense. Includes gyro aiming.\n"
-            "Xbox  —  Xbox 360, Xbox One, or Xbox Elite. Standard layout, no gyro.\n"
-            "Steam Controller  —  Steam Controller 2 (Triton). Dual trackpads, gyro, 4 back buttons.\n"
-            "Other  —  Generic or 8BitDo controller. Standard layout, no gyro.",
+            "PlayStation:  PS5 or PS4 DualShock/DualSense. Includes gyro aiming.\n"
+            "Xbox:  Xbox 360, Xbox One, or Xbox Elite. Standard layout, no gyro.\n"
+            "Steam Controller:  Steam Controller 2 (Triton). Dual trackpads, gyro, 4 back buttons.\n"
+            "Other:  Generic or 8BitDo controller. Standard layout, no gyro.",
             13, C_DIM, align=Qt.AlignLeft)
         pcl.addWidget(self._ctrl_desc_lbl)
         pcl.addSpacing(12)
@@ -446,10 +448,10 @@ class SetupFlowScreen(QWidget):
         pl.addWidget(_lbl("How do you play?", 15, "#CCC"))
         pl.addSpacing(4)
         pl.addWidget(_lbl(
-            "Handheld Only  —  you play exclusively on the device screen.\n"
-            "Also Docked  —  you also connect to a TV or monitor with an external controller.\n"
+            "Handheld Only:  you play exclusively on the device screen.\n"
+            "Also Docked:  you also connect to a TV or monitor with an external controller.\n"
             "Choosing Docked will install the DeckOps Decky plugin. "
-            "Decky Loader is required — you can install it after setup from decky.xyz.",
+            "Decky Loader is required, you can install it after setup from decky.xyz.",
             13, C_DIM, align=Qt.AlignLeft))
         pl.addSpacing(12)
         prow = QHBoxLayout(); prow.setSpacing(20)
@@ -522,10 +524,10 @@ class SetupFlowScreen(QWidget):
         dcl.addWidget(_lbl("What external controller do you use?", 15, "#CCC"))
         dcl.addSpacing(4)
         dcl.addWidget(_lbl(
-            "PlayStation  —  PS5 or PS4 DualShock/DualSense. Includes gyro aiming.\n"
-            "Xbox  —  Xbox 360, Xbox One, or Xbox Elite. Standard layout, no gyro.\n"
-            "Steam Controller  —  Steam Controller 2 (Triton). Dual trackpads, gyro, 4 back buttons.\n"
-            "Other  —  Generic or 8BitDo controller. Standard layout, no gyro.",
+            "PlayStation:  PS5 or PS4 DualShock/DualSense. Includes gyro aiming.\n"
+            "Xbox:  Xbox 360, Xbox One, or Xbox Elite. Standard layout, no gyro.\n"
+            "Steam Controller:  Steam Controller 2 (Triton). Dual trackpads, gyro, 4 back buttons.\n"
+            "Other:  Generic or 8BitDo controller. Standard layout, no gyro.",
             13, C_DIM, align=Qt.AlignLeft))
         dcl.addSpacing(12)
         dcrow = QHBoxLayout(); dcrow.setSpacing(20)
@@ -621,9 +623,9 @@ class SetupFlowScreen(QWidget):
         self._gyro_hold_btn.setVisible(True)
         self._gyro_toggle_btn.setVisible(True)
         self._gyro_mode_desc_lbl.setText(
-            "ADS  —  gyro activates when you aim down sights (left trigger).\n"
-            "Hold  —  gyro active while holding L5.\n"
-            "Toggle  —  press L5 to toggle gyro on and off."
+            "ADS:  gyro activates when you aim down sights (left trigger).\n"
+            "Hold:  gyro active while holding L5.\n"
+            "Toggle:  press L5 to toggle gyro on and off."
         )
         self._show("_gyro_mode_section")
 
