@@ -6,7 +6,7 @@ Screens: ManagementCard, ManagementScreen, ControllerInfoScreen,
 Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
 """
 
-import os, subprocess, sys, shutil, stat, threading, json, urllib.request
+import os, subprocess, sys, shutil, stat, threading, json, urllib.request, urllib.error
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
@@ -1401,6 +1401,15 @@ class ConfigureScreen(QWidget):
                         )
                         with urllib.request.urlopen(req, timeout=30) as r, open(dest, "wb") as f:
                             f.write(r.read())
+                    except urllib.error.HTTPError as ex:
+                        if ex.code == 404:
+                            # File was deleted or renamed — skip it
+                            _log.info("Skipping deleted/renamed file: %s", filepath)
+                            continue
+                        _log.warning("Failed to download %s: %s", filepath, ex)
+                        shutil.rmtree(update_dir, ignore_errors=True)
+                        self._apply_sig.log.emit(f"FAIL|Download failed: {filepath}")
+                        return
                     except Exception as ex:
                         _log.warning("Failed to download %s: %s", filepath, ex)
                         shutil.rmtree(update_dir, ignore_errors=True)
