@@ -6,7 +6,7 @@ Screens: ManagementCard, ManagementScreen, ControllerInfoScreen,
 Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
 """
 
-import os, subprocess, threading, json, urllib.request
+import os, subprocess, sys, shutil, stat, threading, json, urllib.request
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
@@ -1262,19 +1262,214 @@ class ConfigureScreen(QWidget):
     def _apply_update(self):
         reply = QMessageBox.question(
             self, "Update DeckOps",
-            "DeckOps will close, download the update, and relaunch.\n\nContinue?",
+            "DeckOps will download the update and relaunch.\n\nContinue?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )
         if reply != QMessageBox.Yes:
             return
 
-        flag = os.path.expanduser("~/.deckops_update_requested")
-        with open(flag, "w") as f:
-            f.write("1")
-        _log.info("Update requested — wrote flag file, exiting for launcher to handle")
-        _kill_audio()
-        QApplication.instance().quit()
+        self._update_btn.setEnabled(False)
+        self._update_btn.setText("Updating...")
+        self._update_status.setText("Downloading update...")
+        self._update_status.setStyleSheet(f"color:{C_DIM};")
+
+        self._apply_sig = _Sigs()
+        self._apply_sig.log.connect(self._on_apply_signal)
+        threading.Thread(target=self._apply_worker, daemon=True).start()
+
+    def _apply_worker(self):
+        """Download changed files, stage, apply, then signal relaunch."""
+        github_user = self._GITHUB_USER
+        github_repo = self._GITHUB_REPO
+        github_raw = f"https://raw.githubusercontent.com/{github_user}/{github_repo}/main"
+        install_dir = PROJECT_ROOT
+        update_dir = os.path.join(install_dir, ".update")
+        version_file = os.path.join(install_dir, "VERSION")
+
+        # Protected paths — never overwritten
+        protected = {"logs", "deckops.json", "assets/music/background.mp3"}
+
+        def is_protected(filepath):
+            if filepath.startswith("logs/"):
+                return True
+            return filepath in protected
+
+        try:
+            # Read local SHA
+            local_sha = "0"
+            if os.path.isfile(version_file):
+                with open(version_file) as f:
+                    local_sha = f.read().strip() or "0"
+
+            # Get remote SHA
+            req = urllib.request.Request(
+                f"https://api.github.com/repos/{github_user}/{github_repo}/commits/main",
+                headers={"User-Agent": "DeckOps"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read())
+            remote_sha = data.get("sha", "")
+
+            if not remote_sha or local_sha == remote_sha:
+                self._apply_sig.log.emit("FAIL|Already up to date.")
+                return
+
+            # Get changed files list
+            changed_files = []
+            if local_sha != "0":
+                try:
+                    creq = urllib.request.Request(
+                        f"https://api.github.com/repos/{github_user}/{github_repo}/compare/{local_sha}...{remote_sha}",
+                        headers={"User-Agent": "DeckOps"},
+                    )
+                    with urllib.request.urlopen(creq, timeout=15) as r2:
+                        cdata = json.loads(r2.read())
+                    changed_files = [f["filename"] for f in cdata.get("files", [])]
+                except Exception:
+                    pass
+
+            # Clean staging dir
+            if os.path.isdir(update_dir):
+                shutil.rmtree(update_dir)
+            os.makedirs(update_dir, exist_ok=True)
+
+            if not changed_files:
+                # No compare available — full zip download
+                self._apply_sig.log.emit("PROG|Downloading full update...")
+                import tempfile, zipfile
+                tmp_zip = tempfile.mktemp(suffix=".zip", prefix="deckops_update_")
+                req = urllib.request.Request(
+                    f"https://github.com/{github_user}/{github_repo}/archive/refs/heads/main.zip",
+                    headers={"User-Agent": "DeckOps"},
+                )
+                with urllib.request.urlopen(req, timeout=120) as r, open(tmp_zip, "wb") as f:
+                    f.write(r.read())
+
+                tmp_extract = tempfile.mkdtemp(prefix="deckops_extract_")
+                with zipfile.ZipFile(tmp_zip, "r") as zf:
+                    zf.extractall(tmp_extract)
+                os.remove(tmp_zip)
+
+                # Find the extracted folder (GitHub zips have a top-level dir)
+                entries = [e for e in os.listdir(tmp_extract)
+                           if os.path.isdir(os.path.join(tmp_extract, e))]
+                extracted = os.path.join(tmp_extract, entries[0]) if entries else tmp_extract
+
+                # Copy to staging
+                shutil.copytree(extracted, update_dir, dirs_exist_ok=True)
+                shutil.rmtree(tmp_extract, ignore_errors=True)
+
+                # Apply: copy everything, then restore protected files
+                saved_config = None
+                config_path = os.path.join(install_dir, "deckops.json")
+                if os.path.isfile(config_path):
+                    with open(config_path) as f:
+                        saved_config = f.read()
+
+                saved_music = None
+                music_path = os.path.join(install_dir, "assets", "music", "background.mp3")
+                if os.path.isfile(music_path):
+                    saved_music = music_path + ".bak"
+                    shutil.copy2(music_path, saved_music)
+
+                # Copy staged files into install dir
+                shutil.copytree(update_dir, install_dir, dirs_exist_ok=True)
+
+                # Restore protected
+                if saved_config is not None:
+                    with open(config_path, "w") as f:
+                        f.write(saved_config)
+                if saved_music and os.path.isfile(saved_music):
+                    shutil.move(saved_music, music_path)
+            else:
+                # Partial update — download only changed files
+                total = len(changed_files)
+                for idx, filepath in enumerate(changed_files):
+                    if is_protected(filepath):
+                        continue
+                    self._apply_sig.log.emit(
+                        f"PROG|Downloading ({idx+1}/{total}): {os.path.basename(filepath)}")
+
+                    dest = os.path.join(update_dir, filepath)
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+
+                    try:
+                        req = urllib.request.Request(
+                            f"{github_raw}/{filepath}",
+                            headers={"User-Agent": "DeckOps"},
+                        )
+                        with urllib.request.urlopen(req, timeout=30) as r, open(dest, "wb") as f:
+                            f.write(r.read())
+                    except Exception as ex:
+                        _log.warning("Failed to download %s: %s", filepath, ex)
+                        shutil.rmtree(update_dir, ignore_errors=True)
+                        self._apply_sig.log.emit(f"FAIL|Download failed: {filepath}")
+                        return
+
+                # Apply staged files
+                for filepath in changed_files:
+                    if is_protected(filepath):
+                        continue
+                    staged = os.path.join(update_dir, filepath)
+                    if os.path.isfile(staged):
+                        target = os.path.join(install_dir, filepath)
+                        os.makedirs(os.path.dirname(target), exist_ok=True)
+                        shutil.copy2(staged, target)
+
+            # Cleanup staging
+            shutil.rmtree(update_dir, ignore_errors=True)
+
+            # Write new version SHA
+            with open(version_file, "w") as f:
+                f.write(remote_sha)
+
+            # chmod +x shell scripts
+            for script in ("launcher.sh", "deckops_uninstall.sh", "install.sh"):
+                spath = os.path.join(install_dir, script)
+                if os.path.isfile(spath):
+                    os.chmod(spath, os.stat(spath).st_mode | stat.S_IEXEC)
+
+            # Clean up stale flag file if present
+            flag = os.path.expanduser("~/.deckops_update_requested")
+            if os.path.isfile(flag):
+                os.remove(flag)
+
+            _log.info("Update applied successfully — SHA %s", remote_sha)
+            self._apply_sig.log.emit("RELAUNCH|Update complete! Relaunching...")
+
+        except Exception as ex:
+            _log.error("Update failed: %s", ex)
+            shutil.rmtree(update_dir, ignore_errors=True)
+            self._apply_sig.log.emit(f"FAIL|Update failed: {ex}")
+
+    def _on_apply_signal(self, msg):
+        kind, text = msg.split("|", 1)
+        if kind == "PROG":
+            self._update_status.setText(text)
+        elif kind == "RELAUNCH":
+            self._update_status.setText(text)
+            self._update_status.setStyleSheet(f"color:{C_IW};")
+            _kill_audio()
+            QTimer.singleShot(1000, self._relaunch)
+        else:
+            # FAIL
+            self._update_btn.setEnabled(True)
+            self._update_btn.setText("Check for Updates")
+            try:
+                self._update_btn.clicked.disconnect()
+            except TypeError:
+                pass
+            self._update_btn.clicked.connect(self._check_for_updates)
+            self._update_status.setText(text)
+            self._update_status.setStyleSheet(f"color:{C_TREY};")
+
+    def _relaunch(self):
+        """Relaunch DeckOps by exec-ing the same Python + main.py."""
+        python = sys.executable
+        entry = os.path.join(PROJECT_ROOT, "src", "main.py")
+        _log.info("Relaunching: %s %s", python, entry)
+        os.execv(python, [python, entry])
 
     def _confirm_reset(self):
         reply = QMessageBox.warning(
