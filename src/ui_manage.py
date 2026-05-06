@@ -865,8 +865,8 @@ class ConfigureScreen(QWidget):
         sl.addLayout(gr)
         sl.addWidget(_hdiv())
 
-        # ── Player Name ───────────────────────────────────────────────────
-        sl.addWidget(_lbl("Player Name", 13, "#CCC", align=Qt.AlignLeft))
+        # ── Player Name & Links ───────────────────────────────────────────
+        sl.addWidget(_lbl("Player Name & Links", 13, "#CCC", align=Qt.AlignLeft))
         nr = QHBoxLayout(); nr.setSpacing(12)
         self._name_input = QLineEdit()
         self._name_input.setPlaceholderText("Enter player name...")
@@ -881,8 +881,18 @@ class ConfigureScreen(QWidget):
         save_btn.setFixedWidth(80)
         save_btn.clicked.connect(self._save_name)
         nr.addWidget(self._name_input, stretch=1); nr.addWidget(save_btn)
+        discord_btn = _btn("Discord", "#5865F2", size=12, h=36)
+        discord_btn.setFixedWidth(100)
+        discord_btn.clicked.connect(lambda: self._open_url("https://discord.gg/bkSQeq5Azk"))
+        stable_btn = _btn("Stable", C_DARK_BTN, size=12, h=36)
+        stable_btn.setFixedWidth(100)
+        stable_btn.clicked.connect(lambda: self._open_url("https://github.com/GalvarinoDev/DeckOps"))
+        nightly_btn = _btn("Nightly", C_DARK_BTN, size=12, h=36)
+        nightly_btn.setFixedWidth(100)
+        nightly_btn.clicked.connect(lambda: self._open_url("https://github.com/GalvarinoDev/DeckOps-Nightly"))
+        nr.addWidget(discord_btn); nr.addWidget(stable_btn); nr.addWidget(nightly_btn)
         sl.addLayout(nr)
-        self._name_note = _lbl("Sets your name in CoD4x, IW4x, AlterWare (Ghosts, AW), T7X, and Plutonium offline. Does not affect Plutonium online or CleanOps (uses Steam name).", 10, C_DIM, align=Qt.AlignLeft)
+        self._name_note = _lbl("Sets your offline name for CoD4x, IW4x, AlterWare, T7X, and Plutonium. Does not affect CleanOps.", 10, C_DIM, align=Qt.AlignLeft)
         sl.addWidget(self._name_note)
         sl.addWidget(_hdiv())
 
@@ -898,22 +908,6 @@ class ConfigureScreen(QWidget):
         sl.addWidget(self._shader_row)
         self._shader_hdiv = _hdiv()
         sl.addWidget(self._shader_hdiv)
-
-        # ── Links ─────────────────────────────────────────────────────────
-        sl.addWidget(_lbl("Links", 13, "#CCC", align=Qt.AlignLeft))
-        lr = QHBoxLayout(); lr.setSpacing(12)
-        discord_btn = _btn("Discord", "#5865F2", size=12, h=36)
-        discord_btn.setFixedWidth(100)
-        discord_btn.clicked.connect(lambda: self._open_url("https://discord.gg/bkSQeq5Azk"))
-        stable_btn = _btn("Stable", C_DARK_BTN, size=12, h=36)
-        stable_btn.setFixedWidth(100)
-        stable_btn.clicked.connect(lambda: self._open_url("https://github.com/GalvarinoDev/DeckOps"))
-        nightly_btn = _btn("Nightly", C_DARK_BTN, size=12, h=36)
-        nightly_btn.setFixedWidth(100)
-        nightly_btn.clicked.connect(lambda: self._open_url("https://github.com/GalvarinoDev/DeckOps-Nightly"))
-        lr.addWidget(discord_btn); lr.addWidget(stable_btn); lr.addWidget(nightly_btn); lr.addStretch()
-        sl.addLayout(lr)
-        sl.addWidget(_hdiv())
 
         # ── Updates & Danger Zone (single row) ────────────────────────────
         sl.addWidget(_lbl("Updates & Danger Zone", 13, "#CCC", align=Qt.AlignLeft))
@@ -1468,6 +1462,10 @@ class ConfigureScreen(QWidget):
 
     def _relaunch(self):
         """Relaunch DeckOps by exec-ing the same Python + main.py."""
+        # Clear bytecode cache so updated .py files are re-imported
+        pycache = os.path.join(PROJECT_ROOT, "src", "__pycache__")
+        if os.path.isdir(pycache):
+            shutil.rmtree(pycache, ignore_errors=True)
         python = sys.executable
         entry = os.path.join(PROJECT_ROOT, "src", "main.py")
         _log.info("Relaunching: %s %s", python, entry)
