@@ -209,20 +209,7 @@ case "$choice" in
         VENV_PYTHON="$INSTALL_DIR/.venv/bin/python3"
         ENTRY_POINT="$INSTALL_DIR/src/main.py"
         if [ -f "$VENV_PYTHON" ] && [ -f "$ENTRY_POINT" ]; then
-            "$VENV_PYTHON" "$ENTRY_POINT"
-
-            # ── In-app update request ─────────────────────────────────────
-            # If the Python app wrote this flag, the user clicked
-            # "Update & Restart" from the settings screen.
-            UPDATE_FLAG="$HOME/.deckops_update_requested"
-            if [ -f "$UPDATE_FLAG" ]; then
-                rm -f "$UPDATE_FLAG"
-                check_for_updates force
-                # Relaunch after update
-                if [ -f "$VENV_PYTHON" ] && [ -f "$ENTRY_POINT" ]; then
-                    exec "$VENV_PYTHON" "$ENTRY_POINT"
-                fi
-            fi
+            exec "$VENV_PYTHON" "$ENTRY_POINT"
         else
             zenity --error --title="DeckOps Nightly" \
                 --text="DeckOps Nightly installation appears incomplete.\nTry reinstalling." \
