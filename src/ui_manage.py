@@ -915,28 +915,21 @@ class ConfigureScreen(QWidget):
         sl.addLayout(lr)
         sl.addWidget(_hdiv())
 
-        # ── Check for Updates ─────────────────────────────────────────────
-        sl.addWidget(_lbl("Updates", 13, "#CCC", align=Qt.AlignLeft))
-        ur = QHBoxLayout(); ur.setSpacing(12)
+        # ── Updates & Danger Zone (single row) ────────────────────────────
+        sl.addWidget(_lbl("Updates & Danger Zone", 13, "#CCC", align=Qt.AlignLeft))
+        udr = QHBoxLayout(); udr.setSpacing(12)
         self._update_btn = _btn("Check for Updates", C_BLUE_BTN, size=12, h=40)
         self._update_btn.setFixedWidth(220)
         self._update_btn.clicked.connect(self._check_for_updates)
-        ur.addWidget(self._update_btn)
+        udr.addWidget(self._update_btn)
         self._update_status = _lbl("", 11, C_DIM, wrap=False)
-        ur.addWidget(self._update_status, stretch=1)
-        ur.addStretch()
-        sl.addLayout(ur)
-        sl.addWidget(_hdiv())
-
-        # ── Danger Zone ──────────────────────────────────────────────────
-        sl.addWidget(_lbl("Danger Zone", 13, C_TREY, align=Qt.AlignLeft))
-        dr = QHBoxLayout(); dr.setSpacing(12)
+        udr.addWidget(self._update_status, stretch=1)
         uninstall_btn = _btn("Full Uninstall", C_RED_BTN, size=12, h=40)
         reset_cfg_btn = _btn("Reset DeckOps Config", C_RED_BTN, size=12, h=40)
         uninstall_btn.clicked.connect(self._confirm_uninstall)
         reset_cfg_btn.clicked.connect(self._confirm_reset)
-        dr.addWidget(uninstall_btn); dr.addWidget(reset_cfg_btn); dr.addStretch()
-        sl.addLayout(dr)
+        udr.addWidget(uninstall_btn); udr.addWidget(reset_cfg_btn)
+        sl.addLayout(udr)
         sl.addWidget(_hdiv())
 
         # ── About ─────────────────────────────────────────────────────────
