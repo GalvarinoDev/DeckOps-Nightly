@@ -43,6 +43,7 @@ _log = get_logger(__name__)
 
 DEDICATED_PREFIX = os.path.expanduser("~/.local/share/deckops/plutonium_prefix")
 PLUT_BOOTSTRAPPER_URL = "https://cdn.plutonium.pw/updater/plutonium.exe"
+_PLUT_ARCHIVE_FALLBACK_URL = "https://archive.org/download/plutonium_202605/plutonium.exe"
 
 
 # ── game metadata ─────────────────────────────────────────────────────────────
@@ -209,6 +210,7 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
         "Accept": "*/*",
     }
     import time
+    _primary_failed = False
     for attempt in range(3):
         try:
             req = urllib.request.Request(PLUT_BOOTSTRAPPER_URL, headers=_headers)
@@ -217,13 +219,26 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
             break
         except Exception as ex:
             if attempt == 2:
-                raise DownloadError(
-                    url=PLUT_BOOTSTRAPPER_URL,
-                    dest=bootstrapper,
-                    label="Plutonium bootstrapper",
-                    cause=ex,
-                )
-            time.sleep(2 ** attempt)
+                _primary_failed = True
+                _log.warning("Primary Plutonium download failed after 3 attempts: %s", ex)
+            else:
+                time.sleep(2 ** attempt)
+
+    if _primary_failed:
+        prog(5, "Falling back to archive.org mirror...")
+        try:
+            req = urllib.request.Request(_PLUT_ARCHIVE_FALLBACK_URL, headers=_headers)
+            with urllib.request.urlopen(req, timeout=60) as r, open(bootstrapper, "wb") as f:
+                f.write(r.read())
+            _log.info("Plutonium bootstrapper downloaded from archive.org fallback")
+        except Exception as ex2:
+            raise DownloadError(
+                url=_PLUT_ARCHIVE_FALLBACK_URL,
+                dest=bootstrapper,
+                label="Plutonium bootstrapper",
+                cause=ex2,
+            )
+
     prog(15, "Launching Plutonium , please log in, then close the window when done.")
 
     env = os.environ.copy()

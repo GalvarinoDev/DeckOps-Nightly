@@ -90,6 +90,7 @@ DECKOPS_PLUT_DIR           = os.path.join(HEROIC_GAMES_DIR, "deckops_plutonium")
 LCD_WRAPPER_DIR = os.path.expanduser("~/.local/share/deckops/lcd_wrappers")
 
 PLUT_BOOTSTRAPPER_URL = "https://cdn.plutonium.pw/updater/plutonium.exe"
+_PLUT_ARCHIVE_FALLBACK_URL = "https://archive.org/download/plutonium_202605/plutonium.exe"
 
 # Deterministic sideload app_name for the one-off login entry. Not hashed
 # so it's easy to spot in Heroic's library if testers need to debug.
@@ -1075,6 +1076,7 @@ def _download_plutonium_exe(dest_dir: str, on_progress=None) -> str:
 
     prog("  Downloading Plutonium bootstrapper...")
     import time
+    _primary_failed = False
     for attempt in range(3):
         try:
             req = urllib.request.Request(PLUT_BOOTSTRAPPER_URL,
@@ -1086,13 +1088,29 @@ def _download_plutonium_exe(dest_dir: str, on_progress=None) -> str:
             return dest
         except Exception as ex:
             if attempt == 2:
-                raise DownloadError(
-                    url=PLUT_BOOTSTRAPPER_URL,
-                    dest=dest,
-                    label="Plutonium bootstrapper",
-                    cause=ex,
-                )
-            time.sleep(2 ** attempt)
+                _primary_failed = True
+                _log.warning("Primary Plutonium download failed after 3 attempts: %s", ex)
+            else:
+                time.sleep(2 ** attempt)
+
+    if _primary_failed:
+        prog("  Falling back to archive.org mirror...")
+        try:
+            req = urllib.request.Request(_PLUT_ARCHIVE_FALLBACK_URL,
+                                          headers=_BROWSER_UA)
+            with urllib.request.urlopen(req, timeout=60) as r, \
+                 open(dest, "wb") as f:
+                f.write(r.read())
+            _log.info("Plutonium bootstrapper downloaded from archive.org fallback")
+            prog(f"  Downloaded plutonium.exe from archive.org ({os.path.getsize(dest)} bytes)")
+            return dest
+        except Exception as ex2:
+            raise DownloadError(
+                url=_PLUT_ARCHIVE_FALLBACK_URL,
+                dest=dest,
+                label="Plutonium bootstrapper",
+                cause=ex2,
+            )
     return dest
 
 
