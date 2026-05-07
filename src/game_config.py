@@ -181,6 +181,9 @@ def _build_config_map(steam_root, installed_games=None):
 
         # ── MW1 MP (CoD4x) ────────────────────────────────────────────────────
         # Config lives in install_dir/players/profiles/Player/ (same as SP).
+        # CoD4x copies this to AppData/Local/CallofDuty4MW/players/profiles/
+        # on first launch. active.txt in the profiles/ dir controls the
+        # displayed player name — written by _write_cod4_active_txt().
         # NOT in prefix AppData — only Plutonium uses prefix paths.
         "cod4mp": [
             ("MW1/config_mp.cfg", None),
@@ -399,6 +402,33 @@ def _replace_player_name(filepath, player_name):
         pass  # Non-fatal — config still works with current name
 
 
+def _write_cod4_active_txt(profiles_dir, player_name):
+    """
+    Write (or overwrite) the active.txt file in a CoD4 profiles directory.
+
+    CoD4 / CoD4x reads active.txt to determine the active profile name
+    displayed in-game. Without this file, or if it still says "Player",
+    the player name will show as "Player" regardless of the seta name
+    cvar in config_mp.cfg.
+
+    profiles_dir — the .../players/profiles/ directory (not the profile
+                   subfolder itself).
+    player_name  — the name to write into active.txt. Does nothing if
+                   None or empty.
+    """
+    if not player_name:
+        return
+
+    try:
+        os.makedirs(profiles_dir, exist_ok=True)
+        active_path = os.path.join(profiles_dir, "active.txt")
+        safe_name = player_name.replace('"', '')
+        with open(active_path, "w", encoding="utf-8") as f:
+            f.write(safe_name)
+    except (IOError, OSError):
+        pass  # Non-fatal
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def apply_game_configs(selected_keys, installed_games, steam_root,
@@ -512,6 +542,13 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
                 _replace_player_name(dest, player_name)
                 prog(f"  + {key}: {os.path.basename(src)} -> {dest_dir}")
                 applied += 1
+
+                # CoD4 / CoD4x uses active.txt in the profiles directory
+                # to determine the displayed player name. Write it after
+                # every config deploy so the profile name stays in sync.
+                if key in ("cod4sp", "cod4mp") and player_name:
+                    _write_cod4_active_txt(os.path.dirname(dest_dir), player_name)
+
             except Exception as ex:
                 prog(f"  - {key}: failed to copy {os.path.basename(src)}: {ex}")
                 failed += 1
@@ -624,6 +661,22 @@ def rename_player(player_name, steam_root, installed_games=None,
                 _replace_player_name(dest, player_name)
                 updated += 1
                 prog(f"  + {key}: renamed in {os.path.basename(dest)}")
+
+                # Update active.txt for CoD4 / CoD4x in the install dir
+                if key in ("cod4sp", "cod4mp"):
+                    _write_cod4_active_txt(os.path.dirname(dest_dir), player_name)
+
+            # CoD4x also reads from the AppData prefix — update active.txt
+            # there too so the profile name is correct after first launch.
+            if key in ("cod4sp", "cod4mp") and install_dir:
+                appdata_profiles = _pfx_local(
+                    steam_root, 7940,
+                    "CallofDuty4MW", "players", "profiles",
+                    game_install_dir=install_dir,
+                )
+                if os.path.isdir(appdata_profiles):
+                    _write_cod4_active_txt(appdata_profiles, player_name)
+                    prog(f"  + {key}: updated active.txt in AppData prefix")
 
             # Heroic mirror
             if fixed_dest:
