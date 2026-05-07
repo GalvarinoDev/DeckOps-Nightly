@@ -342,14 +342,15 @@ def _build_config_map(steam_root, installed_games=None):
 
 # ── Install-dir based dest resolvers ──────────────────────────────────────────
 
-def _dest_from_install(game_key, install_dir):
+def _dest_from_install(game_key, install_dir, player_name=None):
     """
     For game keys whose destination is relative to install_dir,
     return the correct absolute destination directory.
     Returns None for keys that use a fixed compatdata path instead.
     """
     if game_key in ("cod4sp", "cod4mp"):
-        return os.path.join(install_dir, "players", "profiles", "Player")
+        profile = player_name.replace('"', '') if player_name else "Player"
+        return os.path.join(install_dir, "players", "profiles", profile)
     if game_key in ("iw4sp", "iw4mp"):
         return os.path.join(install_dir, "players")
     if game_key == "iw5sp":
@@ -527,7 +528,8 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
                     prog(f"  - {key}: install_dir unknown, skipping")
                     skipped += 1
                     continue
-                dest_dir = _dest_from_install(key, install_dir)
+                dest_dir = _dest_from_install(key, install_dir,
+                                             player_name=player_name)
                 if not dest_dir:
                     prog(f"  - {key}: could not resolve destination, skipping")
                     skipped += 1
@@ -662,7 +664,49 @@ def rename_player(player_name, steam_root, installed_games=None,
             else:
                 if not install_dir:
                     continue
-                dest_dir = _dest_from_install(key, install_dir)
+                # For CoD4, we need to find the OLD profile folder first
+                # (could be "Player" or a previous custom name) and rename it.
+                if key in ("cod4sp", "cod4mp"):
+                    profiles_dir = os.path.join(install_dir, "players", "profiles")
+                    new_profile = player_name.replace('"', '')
+                    new_profile_dir = os.path.join(profiles_dir, new_profile)
+                    # Find the existing profile folder — check active.txt first,
+                    # then fall back to any single subfolder.
+                    old_profile_dir = None
+                    active_path = os.path.join(profiles_dir, "active.txt")
+                    if os.path.exists(active_path):
+                        try:
+                            with open(active_path, "r", encoding="utf-8") as f:
+                                old_name = f.read().strip()
+                            candidate = os.path.join(profiles_dir, old_name)
+                            if os.path.isdir(candidate):
+                                old_profile_dir = candidate
+                        except (IOError, OSError):
+                            pass
+                    if not old_profile_dir:
+                        # Fall back: look for any existing profile subfolder
+                        try:
+                            subdirs = [
+                                d for d in os.listdir(profiles_dir)
+                                if os.path.isdir(os.path.join(profiles_dir, d))
+                            ]
+                            if len(subdirs) == 1:
+                                old_profile_dir = os.path.join(profiles_dir, subdirs[0])
+                        except (IOError, OSError):
+                            pass
+
+                    if old_profile_dir and old_profile_dir != new_profile_dir:
+                        try:
+                            os.rename(old_profile_dir, new_profile_dir)
+                            prog(f"  + {key}: renamed profile folder "
+                                 f"{os.path.basename(old_profile_dir)} -> {new_profile}")
+                        except (IOError, OSError) as ex:
+                            prog(f"  ⚠ {key}: could not rename profile folder: {ex}")
+
+                    dest_dir = new_profile_dir
+                else:
+                    dest_dir = _dest_from_install(key, install_dir,
+                                                 player_name=player_name)
                 if not dest_dir:
                     continue
 
