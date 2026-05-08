@@ -639,7 +639,7 @@ info "Removing DeckOps Deck configurator launch defaults from localconfig.vdf...
 
 # Mirrors: wrapper.py set_default_launch_option()
 python3 - << 'PYEOF'
-import os, re
+import os, re, shutil
 
 # Appids whose DefaultLaunchOption DeckOps writes via set_default_launch_option.
 # These live in the Deck_ConfiguratorInterstitialApps "apps" block, not the
@@ -667,6 +667,19 @@ def find_block_end(text, start):
                 if depth == 0: return i
         i += 1
     return -1
+
+def validate_vdf(data):
+    """Check brace balance using the same quote-aware parser."""
+    depth = 0; in_quote = False
+    for i, c in enumerate(data):
+        if c == '"' and (i == 0 or data[i-1] != '\\'):
+            in_quote = not in_quote
+        elif not in_quote:
+            if c == '{': depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth < 0: return False
+    return depth == 0
 
 for uid in os.listdir(userdata):
     if not uid.isdigit() or int(uid) < 10000:
@@ -711,9 +724,27 @@ for uid in os.listdir(userdata):
         print(f"  uid {uid}: removed DefaultLaunchOption for appid {appid}")
 
     if modified:
-        content = content[:apps_open + 1] + apps_block + content[apps_close:]
+        new_content = content[:apps_open + 1] + apps_block + content[apps_close:]
+
+        # Backup before writing
+        bak = vdf_path + ".deckops_uninstall.bak"
+        if not os.path.exists(bak):
+            try:
+                shutil.copy2(vdf_path, bak)
+            except Exception:
+                pass
+
         with open(vdf_path, "w", errors="replace") as f:
-            f.write(content)
+            f.write(new_content)
+
+        # Validate — if corrupt, restore backup and leave edits in place
+        if not validate_vdf(new_content):
+            print(f"  uid {uid}: VDF validation FAILED — restoring backup")
+            if os.path.exists(bak):
+                try:
+                    shutil.copy2(bak, vdf_path)
+                except Exception:
+                    print(f"  uid {uid}: backup restore also failed")
     else:
         print(f"  uid {uid}: no DeckOps configurator defaults found")
 PYEOF
@@ -728,7 +759,7 @@ info "Clearing DeckOps launch options from localconfig.vdf..."
 # CleanOps DLL injection, LCD Plutonium Heroic launch, and any future
 # launch options DeckOps writes.
 python3 - << 'PYEOF'
-import os, re
+import os, re, shutil
 
 MANAGED_STEAM_APPIDS = [
     "7940", "10090", "10180", "10190", "42680", "42690", "42750",
@@ -757,6 +788,19 @@ def find_block_end(text, start):
                 if depth == 0: return i
         i += 1
     return -1
+
+def validate_vdf(data):
+    """Check brace balance using the same quote-aware parser."""
+    depth = 0; in_quote = False
+    for i, c in enumerate(data):
+        if c == '"' and (i == 0 or data[i-1] != '\\'):
+            in_quote = not in_quote
+        elif not in_quote:
+            if c == '{': depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth < 0: return False
+    return depth == 0
 
 cleared = 0
 for uid in os.listdir(userdata):
@@ -818,12 +862,22 @@ for uid in os.listdir(userdata):
         bak = vdf_path + ".deckops_uninstall.bak"
         if not os.path.exists(bak):
             try:
-                import shutil
                 shutil.copy2(vdf_path, bak)
             except Exception:
                 pass
+
         with open(vdf_path, "w", errors="replace") as f:
             f.write(content)
+
+        # Validate — if corrupt, restore backup and leave edits in place
+        if not validate_vdf(content):
+            print(f"  uid {uid}: VDF validation FAILED — restoring backup")
+            if os.path.exists(bak):
+                try:
+                    shutil.copy2(bak, vdf_path)
+                    cleared = 0  # don't report cleared if we had to restore
+                except Exception:
+                    print(f"  uid {uid}: backup restore also failed")
 
 if cleared == 0:
     print("  No DeckOps launch options found — nothing to clear.")
