@@ -30,27 +30,29 @@ fi
 
 echo ""
 
-info "Checking if Steam is running..."
+info "Closing Steam..."
 
-# DeckOps never closes Steam for the user. Closing Steam externally can
-# corrupt localconfig.vdf and trigger the SteamOS first-run wizard.
-# Instead, ask the user to close it themselves and verify with pgrep.
-while pgrep -x "steam" > /dev/null 2>&1 || pgrep -f "steam.sh" > /dev/null 2>&1; do
-    zenity --warning \
-        --title="DeckOps Uninstaller" \
-        --text="Steam is still running.\n\nPlease close Steam before continuing.\n(Right-click the Steam icon in your taskbar and select Quit Steam)" \
-        --width=400 2>/dev/null
+# Use Steam's own shutdown command for a clean exit. This ensures Steam
+# flushes config files and syncs cloud saves before exiting.
+if pgrep -x "steam" > /dev/null 2>&1 || pgrep -f "steam.sh" > /dev/null 2>&1; then
+    steam -shutdown 2>/dev/null
 
-    # Re-check after the user clicks OK
-    if pgrep -x "steam" > /dev/null 2>&1 || pgrep -f "steam.sh" > /dev/null 2>&1; then
-        warn "Steam is still running. Please close it and try again."
-    fi
-done
-
-# Give Steam time to finish writing config files after clean exit
-sleep 3
-sync
-success "Steam is closed."
+    # Wait for Steam to finish closing
+    deadline=$((SECONDS + 120))
+    while pgrep -x "steam" > /dev/null 2>&1 || pgrep -f "steam.sh" > /dev/null 2>&1; do
+        if [ $SECONDS -ge $deadline ]; then
+            warn "Steam did not close within 120 seconds."
+            warn "Please close Steam manually and re-run the uninstaller."
+            exit 1
+        fi
+        sleep 1
+    done
+    sleep 3
+    sync
+    success "Steam closed."
+else
+    skip "Steam was not running."
+fi
 
 echo ""
 
@@ -1855,17 +1857,41 @@ for _exe, _title in [
 with open(STEAM_CONFIG, "r", encoding="utf-8") as f:
     data = f.read()
 
-original = data
-for appid in all_appids:
-    pattern = rf'\t+"{re.escape(appid)}"\n\t+\{{[^}}]*\}}\n?'
-    data = re.sub(pattern, "", data, flags=re.MULTILINE)
+# Only remove entries inside the CompatToolMapping block — never touch
+# other parts of config.vdf. The old unscoped regex could delete blocks
+# elsewhere in the file that happen to share an appid key, gutting
+# Steam's configuration and triggering the SteamOS first-run wizard.
+ctm_match = re.search(r'("CompatToolMapping"\s*\{)', data)
+if ctm_match:
+    ctm_start = ctm_match.start()
+    # Find the matching closing brace for CompatToolMapping
+    depth = 0
+    ctm_end = ctm_match.end()
+    for i in range(ctm_match.end() - 1, len(data)):
+        if data[i] == '{':
+            depth += 1
+        elif data[i] == '}':
+            depth -= 1
+            if depth == 0:
+                ctm_end = i + 1
+                break
 
-if data != original:
-    with open(STEAM_CONFIG, "w", encoding="utf-8") as f:
-        f.write(data)
-    print("  CompatToolMapping entries removed from config.vdf")
+    ctm_block = data[ctm_start:ctm_end]
+    original_block = ctm_block
+
+    for appid in all_appids:
+        pattern = rf'\t+"{re.escape(appid)}"\n\t+\{{[^}}]*\}}\n?'
+        ctm_block = re.sub(pattern, "", ctm_block, flags=re.MULTILINE)
+
+    if ctm_block != original_block:
+        data = data[:ctm_start] + ctm_block + data[ctm_end:]
+        with open(STEAM_CONFIG, "w", encoding="utf-8") as f:
+            f.write(data)
+        print("  CompatToolMapping entries removed from config.vdf")
+    else:
+        print("  No DeckOps CompatToolMapping entries found")
 else:
-    print("  No DeckOps CompatToolMapping entries found")
+    print("  No CompatToolMapping block found in config.vdf")
 PYEOF
 
 echo ""
@@ -2000,17 +2026,37 @@ with open(appids_file) as f:
 with open(config_vdf, "r", encoding="utf-8") as f:
     data = f.read()
 
+# Only remove entries inside the CompatToolMapping block — same scoped
+# approach as the main compat tool cleanup above.
 removed = 0
-for appid in appids:
-    pattern = rf'\t+"{re.escape(appid)}"\n\t+\{{[^}}]*\}}\n?'
-    new_data, n = re.subn(pattern, "", data, flags=re.MULTILINE | re.DOTALL)
-    if n > 0:
-        data = new_data
+ctm_match = re.search(r'("CompatToolMapping"\s*\{)', data)
+if ctm_match:
+    ctm_start = ctm_match.start()
+    depth = 0
+    ctm_end = ctm_match.end()
+    for i in range(ctm_match.end() - 1, len(data)):
+        if data[i] == '{':
+            depth += 1
+        elif data[i] == '}':
+            depth -= 1
+            if depth == 0:
+                ctm_end = i + 1
+                break
+
+    ctm_block = data[ctm_start:ctm_end]
+    original_block = ctm_block
+
+    for appid in appids:
+        pattern = rf'\t+"{re.escape(appid)}"\n\t+\{{[^}}]*\}}\n?'
+        ctm_block, n = re.subn(pattern, "", ctm_block, flags=re.MULTILINE)
         removed += n
 
+    if ctm_block != original_block:
+        data = data[:ctm_start] + ctm_block + data[ctm_end:]
+        with open(config_vdf, "w", encoding="utf-8") as f:
+            f.write(data)
+
 if removed > 0:
-    with open(config_vdf, "w", encoding="utf-8") as f:
-        f.write(data)
     print(f"  Cleared {removed} LCD CompatToolMapping entries")
 else:
     print("  No LCD CompatToolMapping entries found")
