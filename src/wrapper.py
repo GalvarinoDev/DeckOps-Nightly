@@ -380,7 +380,7 @@ def set_launch_options(steam_root, appid, options):
         # Steam reads LaunchOptions from here — the cloud sub-block value
         # is NOT shown in Steam properties and should never be written to.
         launch_pattern = re.compile(
-            r'("LaunchOptions"\s*")([^"]*?)(")',
+            r'("LaunchOptions"\s*")((?:[^"\\]|\\.)*)(")',
             re.IGNORECASE
         )
 
@@ -474,7 +474,7 @@ def clear_launch_options(steam_root, appid):
         flat_section = app_inner[:subblock_match.start()] if subblock_match else app_inner
 
         launch_pattern = re.compile(
-            r'("LaunchOptions"\s*")([^"]*?)(")',
+            r'("LaunchOptions"\s*")((?:[^"\\]|\\.)*)(")',
             re.IGNORECASE
         )
         launch_match = launch_pattern.search(flat_section)
@@ -618,7 +618,7 @@ def set_steam_input_enabled(steam_root, appids=None):
             app_block = content[app_open + 1:app_close]
 
             si_pattern = re.compile(
-                r'("UseSteamControllerConfig"\s*")([^"]*?)(")',
+                r'("UseSteamControllerConfig"\s*")((?:[^"\\]|\\.)*)(")',
                 re.IGNORECASE
             )
 
@@ -807,7 +807,7 @@ def set_default_launch_option(steam_root, appids_config):
         # ── Step 1: set the checkbox to "1" so the Deck configurator treats
         # the launch choice as confirmed and stops showing the picker ──────────
         checkbox_pattern = re.compile(
-            r'("Deck_ConfiguratorInterstitialsCheckbox_AppLauncherInteractionIssues"\s*")([^"]*?)(")',
+            r'("Deck_ConfiguratorInterstitialsCheckbox_AppLauncherInteractionIssues"\s*")((?:[^"\\]|\\.)*)(")',
             re.IGNORECASE
         )
         if checkbox_pattern.search(content):

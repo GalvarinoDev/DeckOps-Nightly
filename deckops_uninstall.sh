@@ -747,7 +747,7 @@ for uid, apps in lc_edits.items():
                 flat_section = app_inner[:subblock_match.start()] if subblock_match else app_inner
 
                 val_pattern = re.compile(
-                    r'("' + re.escape(key_name) + r'"\s*")([^"]*?)(")',
+                    r'("' + re.escape(key_name) + r'"\s*")((?:[^"\\]|\\.)*)(")',
                     re.IGNORECASE
                 )
                 val_match = val_pattern.search(flat_section)
@@ -1056,7 +1056,7 @@ for uid in os.listdir(userdata):
         flat_section = app_inner[:subblock_match.start()] if subblock_match else app_inner
 
         launch_pattern = re.compile(
-            r'("LaunchOptions"\s*")([^"]*?)(")',
+            r'("LaunchOptions"\s*")((?:[^"\\]|\\.)*)(")',
             re.IGNORECASE
         )
         launch_match = launch_pattern.search(flat_section)
