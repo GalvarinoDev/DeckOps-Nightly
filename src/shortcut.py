@@ -748,18 +748,12 @@ def _clear_compat_tool(appid_str: str):
 
     Used for shortcuts that must NOT have a Steam compat tool — e.g. HGL
     shortcuts where Steam's compat tool sandboxes flatpak away from the host.
+
+    Delegates to wrapper.clear_compat_tool() so the write goes through
+    _write_and_validate_vdf() with brace-balance checking and auto-restore.
     """
-    steam_config = os.path.join(STEAM_ROOT, "config", "config.vdf")
-    if not os.path.exists(steam_config):
-        return
-    with open(steam_config, "r", encoding="utf-8") as f:
-        data = f.read()
-    pattern = rf'\t+"{re.escape(appid_str)}"\n\t+\{{[^}}]*\}}\n?'
-    if re.search(pattern, data, re.MULTILINE | re.DOTALL):
-        data = re.sub(pattern, "", data, flags=re.MULTILINE | re.DOTALL)
-        _backup_file(steam_config)
-        with open(steam_config, "w", encoding="utf-8") as f:
-            f.write(data)
+    from wrapper import clear_compat_tool
+    clear_compat_tool([appid_str])
 
 
 # ── Shortcut appid lookup ────────────────────────────────────────────────────
