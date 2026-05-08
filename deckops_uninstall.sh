@@ -30,36 +30,27 @@ fi
 
 echo ""
 
-info "Closing Steam before uninstall..."
+info "Checking if Steam is running..."
 
-# Use pkill targeting the steam binary directly rather than `steam -shutdown`
-# which on SteamOS hands control back to Game Mode.
-if pgrep -x "steam" > /dev/null 2>&1 || pgrep -f "steam.sh" > /dev/null 2>&1; then
-    pkill -TERM -f "steam.sh" 2>/dev/null
-    pkill -TERM -x "steam"    2>/dev/null
-    # Wait up to 120 seconds for Steam to exit cleanly — never force-kill.
-    # Force-killing (SIGKILL) can corrupt localconfig.vdf and trigger the
-    # SteamOS first-run wizard on next boot.
-    deadline=$((SECONDS + 120))
-    while pgrep -x "steam" > /dev/null 2>&1 || pgrep -f "steam.sh" > /dev/null 2>&1; do
-        if [ $SECONDS -ge $deadline ]; then
-            warn "Steam did not close within 120 seconds."
-            warn "Please close Steam manually and re-run the uninstaller."
-            exit 1
-        fi
-        # Show progress every 10 seconds
-        elapsed=$((SECONDS % 10))
-        if [ "$elapsed" -eq 0 ]; then
-            info "Waiting for Steam to safely close itself..."
-        fi
-        sleep 1
-    done
-    sleep 3
-    sync
-    success "Steam closed."
-else
-    skip "Steam was not running."
-fi
+# DeckOps never closes Steam for the user. Closing Steam externally can
+# corrupt localconfig.vdf and trigger the SteamOS first-run wizard.
+# Instead, ask the user to close it themselves and verify with pgrep.
+while pgrep -x "steam" > /dev/null 2>&1 || pgrep -f "steam.sh" > /dev/null 2>&1; do
+    zenity --warning \
+        --title="DeckOps Uninstaller" \
+        --text="Steam is still running.\n\nPlease close Steam before continuing.\n(Right-click the Steam icon in your taskbar and select Quit Steam)" \
+        --width=400 2>/dev/null
+
+    # Re-check after the user clicks OK
+    if pgrep -x "steam" > /dev/null 2>&1 || pgrep -f "steam.sh" > /dev/null 2>&1; then
+        warn "Steam is still running. Please close it and try again."
+    fi
+done
+
+# Give Steam time to finish writing config files after clean exit
+sleep 3
+sync
+success "Steam is closed."
 
 echo ""
 
