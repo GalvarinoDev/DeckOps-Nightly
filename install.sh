@@ -242,14 +242,8 @@ echo ""
 echo -e "${GREEN}${BOLD}  Download Complete! Welcome to DeckOps.${CLEAR}"
 echo ""
 echo -e "  ${CYAN}Launching DeckOps...${CLEAR}"
-echo -e "  ${CYAN}This window will close automatically.${CLEAR}"
 echo ""
 
-nohup gtk-launch deckops-nightly >/dev/null 2>&1 &
-
-for i in 5 4 3 2 1; do
-    printf "\r  Closing in %d seconds...  " "$i"
-    sleep 1
-done
-echo ""
+nohup "$VENV_PYTHON" "$ENTRY_POINT" > /dev/null 2>&1 &
+disown
 exit 0
