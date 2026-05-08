@@ -245,7 +245,7 @@ echo -e "  ${CYAN}Launching DeckOps...${CLEAR}"
 echo -e "  ${CYAN}This window will close automatically.${CLEAR}"
 echo ""
 
-gtk-launch deckops-nightly &
+nohup gtk-launch deckops-nightly >/dev/null 2>&1 &
 
 for i in 5 4 3 2 1; do
     printf "\r  Closing in %d seconds...  " "$i"
