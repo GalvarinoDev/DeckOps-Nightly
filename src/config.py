@@ -15,6 +15,7 @@ The config file tracks:
 import os
 import json
 import re
+import threading
 from datetime import datetime
 
 CONFIG_PATH = os.path.expanduser("~/DeckOps-Nightly/deckops.json")
@@ -43,30 +44,67 @@ DEFAULTS = {
 }
 
 
+# ── In-memory cache ──────────────────────────────────────────────────────────
+# Avoids re-reading and re-parsing deckops.json on every getter call.
+# The cache is invalidated on save() and on external file changes (mtime check).
+# Thread-safe: all cache access is guarded by _lock.
+
+_lock = threading.Lock()
+_cache = None        # cached merged dict, or None if invalidated
+_cache_mtime = 0.0   # mtime of CONFIG_PATH when _cache was populated
+
+
 def load() -> dict:
     """
-    Load config from disk. Returns defaults if file doesn't exist yet.
+    Load config from disk with in-memory caching.
+
+    Returns a fresh copy of the cached config if the file hasn't changed
+    since the last read (mtime check). Re-reads from disk if the file
+    was modified externally or if save() invalidated the cache.
+
+    Returns defaults if the file doesn't exist or is corrupt.
     """
-    if not os.path.exists(CONFIG_PATH):
-        return dict(DEFAULTS)
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            data = json.load(f)
-        # Merge with defaults so new keys are always present
-        merged = dict(DEFAULTS)
-        merged.update(data)
-        return merged
-    except (json.JSONDecodeError, IOError):
-        return dict(DEFAULTS)
+    global _cache, _cache_mtime
+
+    with _lock:
+        # Check if file exists
+        try:
+            current_mtime = os.path.getmtime(CONFIG_PATH)
+        except OSError:
+            # File doesn't exist or can't be stat'd — return defaults
+            return dict(DEFAULTS)
+
+        # Return cached copy if file hasn't changed
+        if _cache is not None and current_mtime == _cache_mtime:
+            return dict(_cache)
+
+        # Cache miss or stale — re-read from disk
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                data = json.load(f)
+            merged = dict(DEFAULTS)
+            merged.update(data)
+            _cache = merged
+            _cache_mtime = current_mtime
+            return dict(_cache)
+        except (json.JSONDecodeError, IOError):
+            return dict(DEFAULTS)
 
 
 def save(config: dict):
     """
-    Write config to disk. Creates the directory if needed.
+    Write config to disk and invalidate the cache.
+    Creates the directory if needed.
     """
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, "w") as f:
-        json.dump(config, f, indent=2)
+    global _cache, _cache_mtime
+
+    with _lock:
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        with open(CONFIG_PATH, "w") as f:
+            json.dump(config, f, indent=2)
+        # Invalidate cache so the next load() picks up the fresh write
+        _cache = None
+        _cache_mtime = 0.0
 
 
 def is_first_run() -> bool:
@@ -428,5 +466,10 @@ def reset():
     """
     Wipe the config and start fresh. Useful for testing or reinstalling.
     """
-    if os.path.exists(CONFIG_PATH):
-        os.remove(CONFIG_PATH)
+    global _cache, _cache_mtime
+
+    with _lock:
+        if os.path.exists(CONFIG_PATH):
+            os.remove(CONFIG_PATH)
+        _cache = None
+        _cache_mtime = 0.0
