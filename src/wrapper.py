@@ -1,4 +1,5 @@
 import os
+import json
 import re
 import stat
 import shutil
@@ -7,6 +8,73 @@ import subprocess
 from log import get_logger
 
 _log = get_logger(__name__)
+
+# ── VDF edit ledger ──────────────────────────────────────────────────────────
+# Records every VDF edit DeckOps makes so the uninstaller can reverse them
+# precisely instead of regex-sweeping entire files.
+
+LEDGER_PATH = os.path.expanduser("~/.config/deckops-nightly/vdf_edits.json")
+
+
+def _read_ledger() -> dict:
+    """Read the VDF edit ledger, returning empty dict if missing/corrupt."""
+    if not os.path.exists(LEDGER_PATH):
+        return {}
+    try:
+        with open(LEDGER_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        _log.debug("VDF ledger read failed, starting fresh", exc_info=True)
+        return {}
+
+
+def _write_ledger(data: dict):
+    """Write the VDF edit ledger. Failures are logged but non-fatal."""
+    try:
+        os.makedirs(os.path.dirname(LEDGER_PATH), exist_ok=True)
+        with open(LEDGER_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except OSError:
+        _log.debug("VDF ledger write failed", exc_info=True)
+
+
+def _record_localconfig(uid: str, appid: str, key: str, value: str):
+    """Record a localconfig.vdf edit in the ledger."""
+    ledger = _read_ledger()
+    lc = ledger.setdefault("localconfig", {})
+    uid_block = lc.setdefault(uid, {})
+    app_block = uid_block.setdefault(appid, {})
+    app_block[key] = value
+    _write_ledger(ledger)
+
+
+def _record_config_vdf(appid: str, key: str, value: str):
+    """Record a config.vdf edit in the ledger."""
+    ledger = _read_ledger()
+    cv = ledger.setdefault("config_vdf", {})
+    section = cv.setdefault(key, {})
+    section[appid] = value
+    _write_ledger(ledger)
+
+
+def _remove_config_vdf(appid: str, key: str):
+    """Remove a config.vdf entry from the ledger (for clear operations)."""
+    ledger = _read_ledger()
+    cv = ledger.get("config_vdf", {})
+    section = cv.get(key, {})
+    section.pop(appid, None)
+    if not section:
+        cv.pop(key, None)
+    _write_ledger(ledger)
+
+
+def _record_configset(configset_filename: str, key: str, template_name: str):
+    """Record a configset VDF edit in the ledger."""
+    ledger = _read_ledger()
+    cs = ledger.setdefault("configsets", {})
+    file_block = cs.setdefault(configset_filename, {})
+    file_block[key] = template_name
+    _write_ledger(ledger)
 
 
 
@@ -362,6 +430,7 @@ def set_launch_options(steam_root, appid, options):
         )
 
         _write_and_validate_vdf(vdf_path, new_content, errors="replace")
+        _record_localconfig(uid, appid, "LaunchOptions", vdf_options)
 
 
 def clear_launch_options(steam_root, appid):
@@ -426,6 +495,7 @@ def clear_launch_options(steam_root, appid):
         )
 
         _write_and_validate_vdf(vdf_path, new_content, errors="replace")
+        _record_localconfig(uid, appid, "LaunchOptions", "")
 
 
 def kill_steam(on_progress=None):
@@ -530,6 +600,7 @@ def set_steam_input_enabled(steam_root, appids=None):
             content = f.read()
 
         modified = False
+        modified_appids = []
         for appid in appids:
             key_pattern = re.compile(
                 r'"' + re.escape(appid) + r'"\s*\{',
@@ -577,9 +648,12 @@ def set_steam_input_enabled(steam_root, appids=None):
                 content[app_close:]
             )
             modified = True
+            modified_appids.append(appid)
 
         if modified:
             _write_and_validate_vdf(vdf_path, content, errors="replace")
+            for appid in modified_appids:
+                _record_localconfig(uid, appid, "UseSteamControllerConfig", "1")
 
 
 STEAM_CONFIG = os.path.expanduser("~/.local/share/Steam/config/config.vdf")
@@ -651,6 +725,8 @@ def set_compat_tool(appids, version):
                 )
 
     _write_and_validate_vdf(STEAM_CONFIG, data)
+    for appid in appids:
+        _record_config_vdf(str(appid), "CompatToolMapping", version)
 
 
 def clear_compat_tool(appids):
@@ -690,6 +766,8 @@ def clear_compat_tool(appids):
 
     if modified:
         _write_and_validate_vdf(STEAM_CONFIG, data)
+        for appid in appids:
+            _remove_config_vdf(str(appid), "CompatToolMapping")
 
 
 def set_default_launch_option(steam_root, appids_config):
@@ -829,3 +907,8 @@ def set_default_launch_option(steam_root, appids_config):
 
         if modified:
             _write_and_validate_vdf(vdf_path, content, errors="replace")
+            for appid, (hash_key, index) in appids_config.items():
+                _record_localconfig(
+                    uid, appid, "DefaultLaunchOption",
+                    json.dumps({"hash_key": hash_key, "index": index})
+                )
