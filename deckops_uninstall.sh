@@ -635,6 +635,227 @@ if not cleaned:
 PYEOF
 echo ""
 
+info "Removing DeckOps VDF edits using edit ledger (if available)..."
+
+# The VDF edit ledger records every edit DeckOps made to localconfig.vdf and
+# config.vdf at install time. If present, we use it for precise removal
+# instead of regex-sweeping. The legacy regex blocks below still run as
+# fallback for installs that predate the ledger.
+python3 - << 'PYEOF'
+import os, re, json, shutil
+
+LEDGER_PATH = os.path.expanduser("~/.config/deckops-nightly/vdf_edits.json")
+steam_dir   = os.path.expanduser("~/.local/share/Steam")
+userdata    = os.path.join(steam_dir, "userdata")
+
+if not os.path.exists(LEDGER_PATH):
+    print("  No VDF edit ledger found — falling back to legacy cleanup.")
+    exit(0)
+
+try:
+    with open(LEDGER_PATH, "r", encoding="utf-8") as f:
+        ledger = json.load(f)
+except (json.JSONDecodeError, OSError) as ex:
+    print(f"  Ledger read failed ({ex}) — falling back to legacy cleanup.")
+    exit(0)
+
+def validate_vdf(data):
+    """Check brace balance using a quote-aware parser."""
+    depth = 0; in_quote = False
+    for i, c in enumerate(data):
+        if c == '"' and (i == 0 or data[i-1] != '\\'):
+            in_quote = not in_quote
+        elif not in_quote:
+            if c == '{': depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth < 0: return False
+    return depth == 0
+
+def find_block_end(text, start):
+    depth = 0; i = start; in_quote = False
+    while i < len(text):
+        c = text[i]
+        if c == '"' and (i == 0 or text[i-1] != '\\'):
+            in_quote = not in_quote
+        elif not in_quote:
+            if c == '{': depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0: return i
+        i += 1
+    return -1
+
+# ── localconfig.vdf edits ────────────────────────────────────────────────
+lc_edits = ledger.get("localconfig", {})
+for uid, apps in lc_edits.items():
+    vdf_path = os.path.join(userdata, uid, "config", "localconfig.vdf")
+    if not os.path.exists(vdf_path):
+        continue
+
+    with open(vdf_path, "r", errors="replace") as f:
+        content = f.read()
+
+    modified = False
+    for appid, keys in apps.items():
+        for key_name, recorded_value in keys.items():
+            if key_name == "DefaultLaunchOption":
+                # Remove the appid entry from the Deck configurator apps block
+                interstitial_pattern = re.compile(
+                    r'"Deck_ConfiguratorInterstitialApps_AppLauncherInteractionIssues"'
+                    r'\s*"[^"]*"\s*"apps"\s*\{',
+                    re.IGNORECASE
+                )
+                m = interstitial_pattern.search(content)
+                if not m:
+                    continue
+                apps_open  = m.end() - 1
+                apps_close = find_block_end(content, apps_open)
+                if apps_close == -1:
+                    continue
+                apps_block = content[apps_open + 1:apps_close]
+                appid_pat = re.compile(r'"' + re.escape(appid) + r'"\s*\{', re.IGNORECASE)
+                am = appid_pat.search(apps_block)
+                if not am:
+                    continue
+                entry_open  = am.start()
+                entry_close = find_block_end(apps_block, am.end() - 1)
+                if entry_close == -1:
+                    continue
+                apps_block = apps_block[:entry_open] + apps_block[entry_close + 1:]
+                content = content[:apps_open + 1] + apps_block + content[apps_close:]
+                modified = True
+                print(f"  uid {uid}: [ledger] removed DefaultLaunchOption for appid {appid}")
+
+            elif key_name in ("LaunchOptions", "UseSteamControllerConfig"):
+                # Find the appid block, then blank or remove the key
+                key_pattern = re.compile(
+                    r'"' + re.escape(appid) + r'"\s*\{',
+                    re.IGNORECASE
+                )
+                key_match = key_pattern.search(content)
+                if not key_match:
+                    continue
+                app_open  = key_match.end() - 1
+                app_close = find_block_end(content, app_open)
+                if app_close == -1:
+                    continue
+                app_inner = content[app_open + 1:app_close]
+
+                # Only touch the flat section, not inside sub-blocks
+                subblock_match = re.search(r'"[^"]+"\s*\{', app_inner)
+                flat_section = app_inner[:subblock_match.start()] if subblock_match else app_inner
+
+                val_pattern = re.compile(
+                    r'("' + re.escape(key_name) + r'"\s*")([^"]*?)(")',
+                    re.IGNORECASE
+                )
+                val_match = val_pattern.search(flat_section)
+                if not val_match:
+                    continue
+                current_value = val_match.group(2)
+
+                # For LaunchOptions, check if the recorded value is still in there
+                if key_name == "LaunchOptions":
+                    if recorded_value and recorded_value not in current_value:
+                        print(f"  uid {uid}: [ledger] appid {appid} LaunchOptions changed — skipping")
+                        continue
+                    # Clear to empty
+                    new_flat = val_pattern.sub(r'\g<1>\g<3>', flat_section, count=1)
+                else:
+                    # UseSteamControllerConfig — clear to empty
+                    new_flat = val_pattern.sub(r'\g<1>\g<3>', flat_section, count=1)
+
+                if subblock_match:
+                    new_app_inner = new_flat + app_inner[subblock_match.start():]
+                else:
+                    new_app_inner = new_flat
+                content = content[:app_open + 1] + new_app_inner + content[app_close:]
+                modified = True
+                print(f"  uid {uid}: [ledger] cleared {key_name} for appid {appid}")
+
+    if modified:
+        bak = vdf_path + ".deckops_uninstall.bak"
+        if not os.path.exists(bak):
+            try:
+                shutil.copy2(vdf_path, bak)
+            except Exception:
+                pass
+        with open(vdf_path, "w", errors="replace") as f:
+            f.write(content)
+        if not validate_vdf(content):
+            print(f"  uid {uid}: [ledger] VDF validation FAILED — restoring backup")
+            if os.path.exists(bak):
+                try:
+                    shutil.copy2(bak, vdf_path)
+                except Exception:
+                    print(f"  uid {uid}: backup restore also failed")
+
+# ── config.vdf CompatToolMapping edits ────────────────────────────────────
+cv_edits = ledger.get("config_vdf", {})
+compat_edits = cv_edits.get("CompatToolMapping", {})
+if compat_edits:
+    config_vdf = os.path.join(steam_dir, "config", "config.vdf")
+    if os.path.exists(config_vdf):
+        with open(config_vdf, "r", encoding="utf-8") as f:
+            data = f.read()
+        cv_modified = False
+        for appid in compat_edits:
+            pattern = rf'\t+"{re.escape(appid)}"\n\t+\{{[^}}]*\}}\n?'
+            if re.search(pattern, data, re.MULTILINE | re.DOTALL):
+                data = re.sub(pattern, "", data, flags=re.MULTILINE | re.DOTALL)
+                cv_modified = True
+                print(f"  [ledger] removed CompatToolMapping for appid {appid}")
+        if cv_modified:
+            bak = config_vdf + ".bak"
+            try:
+                shutil.copy2(config_vdf, bak)
+            except Exception:
+                pass
+            with open(config_vdf, "w", encoding="utf-8") as f:
+                f.write(data)
+
+# ── configset VDF edits ───────────────────────────────────────────────────
+cs_edits = ledger.get("configsets", {})
+for cs_filename, keys in cs_edits.items():
+    # Search across all UIDs for this configset file
+    if not os.path.isdir(userdata):
+        break
+    for uid in os.listdir(userdata):
+        if not uid.isdigit() or int(uid) < 10000:
+            continue
+        steam_cfg_root = os.path.join(
+            steam_dir, "steamapps", "common",
+            "Steam Controller Configs", uid, "config"
+        )
+        cs_path = os.path.join(steam_cfg_root, cs_filename)
+        if not os.path.exists(cs_path):
+            continue
+        with open(cs_path, "r", encoding="utf-8", errors="replace") as f:
+            cs_content = f.read()
+        cs_modified = False
+        for key in keys:
+            pattern = rf'\t"{re.escape(key)}"\n\t\{{[^}}]*\}}\n?'
+            if re.search(pattern, cs_content, re.MULTILINE | re.DOTALL):
+                cs_content = re.sub(pattern, "", cs_content, flags=re.MULTILINE | re.DOTALL)
+                cs_modified = True
+                print(f"  uid {uid}: [ledger] removed {key} from {cs_filename}")
+        if cs_modified:
+            with open(cs_path, "w", encoding="utf-8") as f:
+                f.write(cs_content)
+
+# Clean up the ledger file itself
+try:
+    os.remove(LEDGER_PATH)
+    print("  Ledger file removed.")
+except Exception:
+    pass
+
+print("  Ledger-based VDF cleanup complete.")
+PYEOF
+
+echo ""
+
 info "Removing DeckOps Deck configurator launch defaults from localconfig.vdf..."
 
 # Mirrors: wrapper.py set_default_launch_option()

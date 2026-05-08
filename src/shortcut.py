@@ -713,6 +713,16 @@ def _assign_controller_config(uid: str, appid: int, shortcut_def: dict,
     prog(f"    ✓ Controller: {template_filename}")
 
 
+def _record_configset_edit(configset_path: str, key: str, template_name: str):
+    """Record a configset VDF edit in the wrapper ledger."""
+    try:
+        from wrapper import _record_configset
+        filename = os.path.basename(configset_path)
+        _record_configset(filename, key, template_name)
+    except Exception:
+        _log.debug("configset ledger record failed", exc_info=True)
+
+
 def _patch_configset(configset_path: str, key: str, template_name: str):
     """
     Patch configset_controller_neptune.vdf to set our template as default.
@@ -725,6 +735,7 @@ def _patch_configset(configset_path: str, key: str, template_name: str):
         os.makedirs(os.path.dirname(configset_path), exist_ok=True)
         with open(configset_path, "w", encoding="utf-8") as f:
             f.write('"controller_config"\n{\n' + entry + '}\n')
+        _record_configset_edit(configset_path, key, template_name)
         return
 
     with open(configset_path, "r", encoding="utf-8", errors="replace") as f:
@@ -740,6 +751,7 @@ def _patch_configset(configset_path: str, key: str, template_name: str):
 
     with open(configset_path, "w", encoding="utf-8") as f:
         f.write(content)
+    _record_configset_edit(configset_path, key, template_name)
 
 
 def _clear_compat_tool(appid_str: str):

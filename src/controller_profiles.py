@@ -49,6 +49,16 @@ from log import get_logger
 _log = get_logger(__name__)
 
 
+def _record_configset_edit(configset_path: str, key: str, template_name: str):
+    """Record a configset VDF edit in the wrapper ledger."""
+    try:
+        from wrapper import _record_configset
+        filename = os.path.basename(configset_path)
+        _record_configset(filename, key, template_name)
+    except Exception:
+        _log.debug("configset ledger record failed", exc_info=True)
+
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 _HERE         = os.path.dirname(os.path.abspath(__file__))
@@ -418,6 +428,7 @@ def _patch_configset(configset_path: str, key: str, template_name: str):
         os.makedirs(os.path.dirname(configset_path), exist_ok=True)
         with open(configset_path, "w", encoding="utf-8") as f:
             f.write('"controller_config"\n{\n' + entry + '}')
+        _record_configset_edit(configset_path, key, template_name)
         return
 
     with open(configset_path, "r", encoding="utf-8", errors="replace") as f:
@@ -437,6 +448,7 @@ def _patch_configset(configset_path: str, key: str, template_name: str):
 
     with open(configset_path, "w", encoding="utf-8") as f:
         f.write(content)
+    _record_configset_edit(configset_path, key, template_name)
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
