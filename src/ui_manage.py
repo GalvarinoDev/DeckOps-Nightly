@@ -1051,7 +1051,7 @@ class ConfigureScreen(QWidget):
                 from controller_profiles import install_controller_templates, assign_controller_profiles, assign_external_controller_profiles
                 from wrapper import kill_steam, set_steam_input_enabled
                 s.log.emit("Closing Steam...")
-                kill_steam()
+                kill_steam(on_progress=lambda msg: s.log.emit(f"  {msg}"))
                 install_controller_templates(
                     on_progress=lambda msg: s.log.emit(msg)
                 )
@@ -1582,7 +1582,7 @@ class UpdateScreen(QWidget):
             self._s.progress.emit(5, "Closing Steam...")
             self._s.log.emit("Closing Steam...")
             try:
-                kill_steam()
+                kill_steam(on_progress=lambda msg: self._s.log.emit(f"  {msg}"))
                 self._s.log.emit("  ✓ Steam closed.")
             except Exception as ex:
                 self._s.log.emit(f"  Could not close Steam: {ex}")

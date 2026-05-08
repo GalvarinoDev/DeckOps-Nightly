@@ -582,7 +582,7 @@ class InstallScreen(QWidget):
                 self._s.progress.emit(28, "Closing Steam...")
                 self._s.log.emit("Closing Steam...")
                 try:
-                    kill_steam()
+                    kill_steam(on_progress=lambda msg: self._s.log.emit(f"  {msg}"))
                     self._s.log.emit("  ✓ Steam closed.")
                 except Exception as ex:
                     self._s.log.emit(f"  Could not close Steam: {ex}")
@@ -1457,7 +1457,7 @@ class OwnInstallScreen(QWidget):
         self._s.progress.emit(18, "Closing Steam...")
         self._s.log.emit("Closing Steam...")
         try:
-            kill_steam()
+            kill_steam(on_progress=lambda msg: self._s.log.emit(f"  {msg}"))
             self._s.log.emit("  ✓ Steam closed.")
         except Exception as ex:
             self._s.log.emit(f"  Could not close Steam: {ex}")
