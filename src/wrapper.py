@@ -428,24 +428,39 @@ def clear_launch_options(steam_root, appid):
         _write_and_validate_vdf(vdf_path, new_content, errors="replace")
 
 
-def kill_steam():
+def kill_steam(on_progress=None):
     """
-    Terminate the Steam desktop client without triggering the SteamOS
-    session manager (which would switch back to Game Mode).
+    Gracefully close the Steam desktop client without triggering the
+    SteamOS session manager (which would switch back to Game Mode).
 
-    Targets ubuntu12_32/steam directly — this is the actual main Steam
-    process on SteamOS. Killing it triggers a graceful shutdown that writes
-    localconfig.vdf cleanly, matching what happens when the user closes
-    Steam manually. All child processes (steamwebhelper, srt-logger etc.)
-    die automatically when the parent is terminated.
+    Sends SIGTERM to ubuntu12_32/steam and waits for Steam to shut
+    itself down cleanly. Never force-kills (SIGKILL) because that can
+    corrupt localconfig.vdf and trigger the SteamOS first-run wizard.
+
+    on_progress — optional callback(str) for status messages while
+                  waiting for Steam to exit.
+
+    Raises TimeoutError after 120 seconds if Steam refuses to close.
     """
     import time
+
+    # Check if Steam is even running
+    r = subprocess.run(
+        ["pgrep", "-f", "ubuntu12_32/steam"],
+        capture_output=True
+    )
+    if r.returncode != 0:
+        return  # Steam is not running
 
     # SIGTERM to the main Steam process triggers graceful shutdown + config write
     subprocess.run(["pkill", "-TERM", "-f", "ubuntu12_32/steam"], capture_output=True)
 
-    # Wait for all Steam processes to fully exit
-    deadline = time.time() + 20
+    if on_progress:
+        on_progress("Waiting for Steam to safely close itself...")
+
+    # Wait for Steam to exit on its own — never force-kill
+    deadline = time.time() + 120
+    elapsed = 0
     while time.time() < deadline:
         r = subprocess.run(
             ["pgrep", "-f", "ubuntu12_32/steam"],
@@ -461,13 +476,14 @@ def kill_steam():
             subprocess.run(["sync"], capture_output=True)
             return
         time.sleep(1)
+        elapsed += 1
+        if on_progress and elapsed % 10 == 0:
+            on_progress("Still waiting for Steam to close safely...")
 
-    # Force kill if graceful shutdown timed out
-    subprocess.run(["pkill", "-9", "-f", "ubuntu12_32/steam"],  capture_output=True)
-    subprocess.run(["pkill", "-9", "-f", "steamwebhelper"],      capture_output=True)
-    subprocess.run(["pkill", "-9", "-f", "steam.sh"],            capture_output=True)
-    time.sleep(3)
-    subprocess.run(["sync"], capture_output=True)
+    raise TimeoutError(
+        "Steam did not close within 120 seconds. "
+        "Please close Steam manually and try again."
+    )
 
 
 def set_steam_input_enabled(steam_root, appids=None):

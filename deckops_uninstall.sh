@@ -37,18 +37,25 @@ info "Closing Steam before uninstall..."
 if pgrep -x "steam" > /dev/null 2>&1 || pgrep -f "steam.sh" > /dev/null 2>&1; then
     pkill -TERM -f "steam.sh" 2>/dev/null
     pkill -TERM -x "steam"    2>/dev/null
-    # Wait up to 15 seconds for Steam to exit cleanly
-    deadline=$((SECONDS + 15))
+    # Wait up to 120 seconds for Steam to exit cleanly — never force-kill.
+    # Force-killing (SIGKILL) can corrupt localconfig.vdf and trigger the
+    # SteamOS first-run wizard on next boot.
+    deadline=$((SECONDS + 120))
     while pgrep -x "steam" > /dev/null 2>&1 || pgrep -f "steam.sh" > /dev/null 2>&1; do
         if [ $SECONDS -ge $deadline ]; then
-            warn "Steam did not close in time — force killing..."
-            pkill -9 -f "steam.sh" 2>/dev/null
-            pkill -9 -x "steam"    2>/dev/null
-            sleep 2
-            break
+            warn "Steam did not close within 120 seconds."
+            warn "Please close Steam manually and re-run the uninstaller."
+            exit 1
+        fi
+        # Show progress every 10 seconds
+        elapsed=$((SECONDS % 10))
+        if [ "$elapsed" -eq 0 ]; then
+            info "Waiting for Steam to safely close itself..."
         fi
         sleep 1
     done
+    sleep 3
+    sync
     success "Steam closed."
 else
     skip "Steam was not running."
