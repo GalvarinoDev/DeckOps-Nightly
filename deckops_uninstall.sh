@@ -1282,6 +1282,23 @@ for uid in os.listdir(userdata):
         print(f"  uid {uid}: nothing to remove")
         continue
 
+    # Sanity check: if we have non-DeckOps shortcuts but kept is empty,
+    # the parser desynchronized and we'd wipe the user's entire library.
+    total_shortcuts = len(names_found)
+    non_deckops = total_shortcuts - removed
+    if non_deckops > 0 and len(kept) == 0:
+        print(f"  uid {uid}: parser error — expected {non_deckops} non-DeckOps entries but kept 0, skipping write")
+        continue
+
+    # Backup before writing
+    import shutil
+    bak = vdf_path + ".deckops_uninstall.bak"
+    if not os.path.exists(bak):
+        try:
+            shutil.copy2(vdf_path, bak)
+        except Exception:
+            pass
+
     new_data = header + b''.join(kept) + b'\x08\x08'
     with open(vdf_path, "wb") as f:
         f.write(new_data)
