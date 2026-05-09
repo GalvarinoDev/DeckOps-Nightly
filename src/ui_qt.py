@@ -27,7 +27,7 @@ from ui_constants import (
 
 from ui_setup import SetupFlowScreen
 from ui_install import WelcomeScreen, SetupScreen, InstallScreen, OwnInstallScreen, OwnScanScreen
-from ui_manage import ManagementScreen, ConfigureScreen, ControllerInfoScreen, UpdateScreen
+from ui_manage import ManagementScreen, ConfigureScreen, SetupCompleteScreen, UpdateScreen
 
 
 # ── BootstrapScreen ───────────────────────────────────────────────────────────
@@ -100,7 +100,7 @@ class DeckOpsWindow(QMainWindow):
             OwnScanScreen,
             ManagementScreen,
             ConfigureScreen,
-            ControllerInfoScreen,
+            SetupCompleteScreen,
             UpdateScreen,
         ]:
             self.stack.addWidget(cls(self.stack))

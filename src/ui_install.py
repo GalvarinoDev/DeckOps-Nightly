@@ -408,7 +408,7 @@ class InstallScreen(QWidget):
 
         self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
         self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
-        self.cont_btn.clicked.connect(lambda: go_to(self.stack, "ControllerInfoScreen"))
+        self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
         cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont_btn); cw.addStretch()
         clay.addLayout(cw)
         lay.addWidget(content, stretch=1)
@@ -466,7 +466,7 @@ class InstallScreen(QWidget):
         self._manual_dl_ok = False
         # Route the continue button based on whether this was triggered
         # from ManagementScreen (return to My Games) or the first-run
-        # wizard (go to ControllerInfoScreen).
+        # wizard (go to SetupCompleteScreen).
         try:
             self.cont_btn.clicked.disconnect()
         except Exception:
@@ -477,7 +477,7 @@ class InstallScreen(QWidget):
             self._return_to_management = False
         else:
             self.cont_btn.setText("Continue  >>")
-            self.cont_btn.clicked.connect(lambda: go_to(self.stack, "ControllerInfoScreen"))
+            self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
         _log_to_file("── Install started ──")
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
@@ -1171,7 +1171,7 @@ class OwnInstallScreen(QWidget):
 
         self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
         self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
-        self.cont_btn.clicked.connect(lambda: go_to(self.stack, "ControllerInfoScreen"))
+        self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
         cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont_btn); cw.addStretch()
         clay.addLayout(cw)
         lay.addWidget(content, stretch=1)
@@ -1230,7 +1230,7 @@ class OwnInstallScreen(QWidget):
         self._stop_pulse()
         # Route the continue button based on whether this was triggered
         # from ManagementScreen (return to My Games) or the first-run
-        # wizard (go to ControllerInfoScreen).
+        # wizard (go to SetupCompleteScreen).
         try:
             self.cont_btn.clicked.disconnect()
         except Exception:
@@ -1247,7 +1247,7 @@ class OwnInstallScreen(QWidget):
             self._return_to_management = False
         else:
             self.cont_btn.setText("Continue  >>")
-            self.cont_btn.clicked.connect(lambda: go_to(self.stack, "ControllerInfoScreen"))
+            self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
         _log_to_file("── Own Install started ──")
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
