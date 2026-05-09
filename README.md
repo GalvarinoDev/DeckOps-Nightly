@@ -103,7 +103,13 @@ If Steam asks about cloud saves, choose **Keep Local**. If asked about launching
 
 - **MW1 MP** requires two Steam launches to finish setup, then runs normally on the third.
 - **First launch:** All games may take a while to launch the first time. This is normal. They will run fine after the initial launch.
-- **Black Ops III:** CleanOps and T7X install on their first run, which takes a bit and may slow down your device temporarily. Wiggle the analog sticks to keep the screen from turning off while you wait.
+- **Black Ops III:** CleanOps and T7X finish installing on their first run. For the best experience, do the first launch in Desktop Mode:
+  1. If you installed T7X, launch it first. Once it loads, close it.
+  2. Launch Black Ops III — CleanOps will patch the game. This takes a while and the game won't launch after patching. This is normal.
+  3. Press the blue Stop button in Steam, then launch Black Ops III again to verify it works.
+  4. After this, both work fine in Game Mode.
+
+  If you only installed CleanOps, skip step 1.
 
 ---
 
