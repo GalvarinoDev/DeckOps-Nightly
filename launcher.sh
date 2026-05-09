@@ -1,9 +1,23 @@
 #!/bin/bash
 # launcher.sh — DeckOps entry point
 
-INSTALL_DIR="$HOME/DeckOps-Nightly"
-GITHUB_USER="GalvarinoDev"
-GITHUB_REPO="DeckOps-Nightly"
+# Source deckops_identity.sh if available, otherwise fallback
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/deckops_identity.sh" ]; then
+    source "$SCRIPT_DIR/deckops_identity.sh"
+elif [ -f "$HOME/DeckOps-Nightly/deckops_identity.sh" ]; then
+    source "$HOME/DeckOps-Nightly/deckops_identity.sh"
+elif [ -f "$HOME/DeckOps/deckops_identity.sh" ]; then
+    source "$HOME/DeckOps/deckops_identity.sh"
+else
+    GITHUB_USER="GalvarinoDev"
+    GITHUB_REPO="DeckOps-Nightly"
+    INSTALL_DIR="$HOME/DeckOps-Nightly"
+    VENV_PYTHON="$INSTALL_DIR/.venv/bin/python3"
+    ENTRY_POINT="$INSTALL_DIR/src/main.py"
+    APP_TITLE="DeckOps Nightly"
+fi
+
 GITHUB_RAW="https://raw.githubusercontent.com/$GITHUB_USER/$GITHUB_REPO/main"
 LOCKFILE="$HOME/.deckops_installing"
 VERSION_FILE="$INSTALL_DIR/VERSION"
@@ -53,7 +67,7 @@ check_for_updates() {
     # Ask user (skip if triggered from in-app update button)
     if [ "$FORCE" != "force" ]; then
         zenity --question \
-            --title="DeckOps Nightly Update" \
+            --title="$APP_TITLE Update" \
             --text="An update is available.\n${FILE_COUNT} file(s) changed.\n\nUpdate now?" \
             --ok-label="Update" \
             --cancel-label="Skip" \
@@ -80,7 +94,7 @@ check_for_updates() {
         if [ $? -ne 0 ]; then
             rm -f "$TMPZIP"
             rm -rf "$UPDATE_DIR"
-            zenity --error --title="DeckOps Nightly" \
+            zenity --error --title="$APP_TITLE" \
                 --text="Update download failed.\nContinuing with current version." \
                 2>/dev/null
             return 0
@@ -123,7 +137,7 @@ check_for_updates() {
 
     if [ "$FAILED" -ne 0 ]; then
         rm -rf "$UPDATE_DIR"
-        zenity --error --title="DeckOps Nightly" \
+        zenity --error --title="$APP_TITLE" \
             --text="Update download failed.\nContinuing with current version." \
             2>/dev/null
         return 0
@@ -179,7 +193,7 @@ check_for_updates() {
     chmod +x "$INSTALL_DIR/deckops_uninstall.sh" 2>/dev/null
     chmod +x "$INSTALL_DIR/install.sh" 2>/dev/null
 
-    zenity --info --title="DeckOps Nightly" \
+    zenity --info --title="$APP_TITLE" \
         --text="Update complete!" \
         --width=200 \
         2>/dev/null
@@ -190,8 +204,8 @@ check_for_updates() {
 # ── Already installed — ask what to do ───────────────────────────────────────
 choice=$(zenity \
     --list \
-    --title="DeckOps Nightly" \
-    --text="DeckOps Nightly is already installed.\nWhat would you like to do?" \
+    --title="$APP_TITLE" \
+    --text="$APP_TITLE is already installed.\nWhat would you like to do?" \
     --column="Action" \
     --hide-header \
     "Launch DeckOps" \
@@ -211,8 +225,8 @@ case "$choice" in
         if [ -f "$VENV_PYTHON" ] && [ -f "$ENTRY_POINT" ]; then
             exec "$VENV_PYTHON" "$ENTRY_POINT"
         else
-            zenity --error --title="DeckOps Nightly" \
-                --text="DeckOps Nightly installation appears incomplete.\nTry reinstalling." \
+            zenity --error --title="$APP_TITLE" \
+                --text="$APP_TITLE installation appears incomplete.\nTry reinstalling." \
                 2>/dev/null
         fi
         ;;
