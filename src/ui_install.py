@@ -128,6 +128,24 @@ class WelcomeScreen(QWidget):
 
     def _go_next(self):
         if cfg.is_first_run():
+            # Advanced flow with no Steam games: skip the blank SetupScreen
+            # and route straight to OwnInstallScreen (mirrors SetupScreen._go_install
+            # zero-selection logic).
+            if self._steam_only and cfg.get_game_source() == "own" \
+                    and not self.steam_installed:
+                own_screen = get_screen(self.stack, "OwnInstallScreen")
+                own_screen.steam_selected = []
+                own_screen.steam_root = self.steam_root
+                _own_sel = own_screen.own_selected or {}
+                _own_tmp = []
+                for _k, _g in _own_sel.items():
+                    for _gd in ALL_GAMES:
+                        if _k in _active_keys(_gd):
+                            _own_tmp.append((_k, _gd, _g)); break
+                own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, _own_tmp)
+                own_screen.install_t7x_opt = _ask_t7x_install(self, _own_tmp)
+                go_to(self.stack, "OwnInstallScreen")
+                return
             s = get_screen(self.stack, "SetupScreen")
             s.steam_installed = self.steam_installed
             s.own_installed   = self.own_installed
