@@ -204,54 +204,72 @@ KEY_MODE_LABEL = {
 SP_IMAGE_URLS = {
     7940:   "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/library_600x900_2x.jpg",
     10180:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
-    10190:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10190/library_600x900_2x.jpg",
+    10190:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
     42680:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",
-    42690:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42690/library_600x900_2x.jpg",
-    42700:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_600x900_2x.jpg",
+    42690:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",
     10090:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/library_600x900_2x.jpg",
+    42700:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_600x900_2x.jpg",
     202970: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
-    202990: "https://shared.steamstatic.com/store_item_assets/steam/apps/202990/library_600x900_2x.jpg",
+    202990: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
     311210: "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/library_600x900_2x.jpg",
     209160: "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/library_600x900_2x.jpg",
     209650: "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/library_600x900_2x.jpg",
 }
 
+IMG_RATIO = 1.5
+BTN_RATIO = 0.20
+CARD_COLS  = 5
+CARD_MAX_W = 187
+
+MUSIC_URL = "https://archive.org/download/adrenaline-klickaud/Adrenaline_KLICKAUD.mp3"
+
 
 # ── Audio ─────────────────────────────────────────────────────────────────────
 
-_audio_started = False
-_music_enabled = True
+_music_volume  = cfg.get_music_volume()
+_music_enabled = cfg.get_music_enabled()
 
-def _start_audio():
-    """Start background music once at app launch. No-op on subsequent calls."""
-    global _audio_started, _music_enabled
-    if _audio_started:
-        return
-    _audio_started = True
-    _music_enabled = cfg.get_music_enabled()
-
+def _pygame_available():
     try:
         import pygame
-        pygame.mixer.init()
-        if os.path.isfile(MUSIC_PATH):
-            pygame.mixer.music.load(MUSIC_PATH)
-            vol = cfg.get_music_volume()
-            pygame.mixer.music.set_volume(vol)
-            if _music_enabled:
-                pygame.mixer.music.play(-1)
-    except Exception:
-        _log.debug("audio init failed", exc_info=True)
+        return True
+    except ImportError:
+        return False
 
 def _kill_audio():
+    if not _pygame_available():
+        return
     try:
         import pygame
         if pygame.mixer.get_init():
             pygame.mixer.music.stop()
             pygame.mixer.quit()
     except Exception:
-        pass
+        _log.debug("audio shutdown failed", exc_info=True)
+
+def _start_audio():
+    if not _music_enabled or not _pygame_available():
+        return
+    try:
+        import pygame
+        if not pygame.mixer.get_init():
+            pygame.mixer.init()
+        if not pygame.mixer.music.get_busy():
+            if os.path.exists(MUSIC_PATH):
+                pygame.mixer.music.load(MUSIC_PATH)
+            else:
+                return
+            pygame.mixer.music.set_volume(_music_volume)
+            pygame.mixer.music.play(-1)
+    except Exception:
+        _log.debug("audio start failed", exc_info=True)
 
 def _set_audio_volume(vol: float):
+    global _music_volume
+    _music_volume = vol
+    cfg.set_music_volume(vol)
+    if not _pygame_available():
+        return
     try:
         import pygame
         if pygame.mixer.get_init():
