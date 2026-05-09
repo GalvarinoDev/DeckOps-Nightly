@@ -650,7 +650,7 @@ class SetupCompleteScreen(QWidget):
         self._mw2own_hdr = _lbl("🎮  MW2 Multiplayer (Non-Steam)", 12, C_IW, bold=True, align=Qt.AlignLeft)
         self._mw2own_body = _lbl(
             "MW2 Multiplayer (IW4x) needs to be launched twice on initial "
-            "installation. The first launch will fail — this is normal. "
+            "installation. The first launch will fail, this is normal. "
             "Launch it again and it will work.",
             11, C_DIM, align=Qt.AlignLeft)
         sl.addWidget(self._mw2own_div)
