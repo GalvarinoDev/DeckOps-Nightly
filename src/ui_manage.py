@@ -1,7 +1,7 @@
 """
 ui_manage.py — Post-install management screens for DeckOps
 
-Screens: ManagementCard, ManagementScreen, ControllerInfoScreen,
+Screens: ManagementCard, ManagementScreen, SetupCompleteScreen,
          ConfigureScreen, UpdateScreen
 Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
 """
@@ -212,7 +212,7 @@ class ManagementScreen(QWidget):
         hl.addWidget(nightly_lbl)
         hl.addStretch()
         guide_btn = _btn("📋  Guide", C_BLUE_BTN, size=10, h=36); guide_btn.setFixedWidth(90)
-        guide_btn.clicked.connect(lambda: go_to(self.stack, "ControllerInfoScreen"))
+        guide_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
         hl.addWidget(guide_btn)
         hl.addSpacing(8)
         cfg_btn = _btn("⚙  Settings", C_DARK_BTN, size=11, h=36); cfg_btn.setFixedWidth(120)
@@ -596,98 +596,92 @@ class ManagementScreen(QWidget):
                     self._status.setText("Could not resolve Plutonium mods folder.")
 
 
-# ── ControllerInfoScreen ─────────────────────────────────────────────────────
-class ControllerInfoScreen(QWidget):
+# ── SetupCompleteScreen ──────────────────────────────────────────────────────
+class SetupCompleteScreen(QWidget):
     def __init__(self, stack):
-        super().__init__(); self.stack = stack; self.screen_name = "ControllerInfoScreen"
-        lay = QVBoxLayout(self); lay.setContentsMargins(60,30,60,30); lay.setSpacing(8)
+        super().__init__(); self.stack = stack; self.screen_name = "SetupCompleteScreen"
+        lay = QVBoxLayout(self); lay.setContentsMargins(60,20,60,20); lay.setSpacing(0)
 
-        t = QLabel("SETUP COMPLETE"); t.setFont(font(32, True)); t.setAlignment(Qt.AlignCenter)
+        t = QLabel("SETUP COMPLETE"); t.setFont(font(28, True)); t.setAlignment(Qt.AlignCenter)
         t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
         lay.addWidget(_lbl(
-            "DeckOps has configured your games with controller profiles, GE-Proton, "
+            "Your games are configured with controller profiles, GE-Proton, "
             "and display settings. You're ready to play.",
-            13, C_DIM))
-        lay.addWidget(_hdiv())
+            12, C_DIM))
+
+        # ── Scrollable content area ───────────────────────────────────────────
+        scroll = QScrollArea(); scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
+        inner = QWidget()
+        sl = QVBoxLayout(inner); sl.setContentsMargins(0,8,0,8); sl.setSpacing(6)
 
         # ── Cloud saves ───────────────────────────────────────────────────────
-        lay.addWidget(_lbl("⚠  Steam Cloud Saves", 13, C_TREY, bold=True, align=Qt.AlignLeft))
-        lay.addWidget(_lbl(
+        sl.addWidget(_hdiv())
+        sl.addWidget(_lbl("⚠  Steam Cloud Saves", 12, C_TREY, bold=True, align=Qt.AlignLeft))
+        sl.addWidget(_lbl(
             "If Steam asks about cloud saves, choose Keep Local. "
             "If a game asks for Safe Mode, choose No.",
             11, C_DIM, align=Qt.AlignLeft))
-        lay.addWidget(_hdiv())
 
         # ── MW1 / WaW shortcuts ───────────────────────────────────────────────
-        lay.addWidget(_lbl("🎮  Modern Warfare 1 & World at War", 13, C_IW, bold=True, align=Qt.AlignLeft))
-        lay.addWidget(_lbl(
-            "MW1 and WaW each have a separate multiplayer shortcut in your Steam library "
-            "created by DeckOps. Launch the main game entry for singleplayer/campaign. "
-            "Launch the DeckOps shortcut for multiplayer.",
-            11, C_DIM, align=Qt.AlignLeft))
-        lay.addWidget(_lbl(
-            "MW1 Singleplayer (IW3SP-MOD): On your first launch, "
-            "the game will ask you to select a profile. Choose \"Player\" -- "
-            "this is the profile DeckOps created with your display settings. "
-            "Creating a new profile will use default settings instead.",
+        sl.addWidget(_hdiv())
+        sl.addWidget(_lbl("🎮  MW1 & WaW Multiplayer", 12, C_IW, bold=True, align=Qt.AlignLeft))
+        sl.addWidget(_lbl(
+            "MW1 and WaW have separate DeckOps multiplayer shortcuts in your "
+            "Steam library. Use the main game entry for singleplayer and the "
+            "DeckOps shortcut for multiplayer.\n\n"
+            "MW1 Singleplayer: on first launch, select the \"Player\" profile. "
+            "This is the profile DeckOps created with your display settings.",
             11, C_DIM, align=Qt.AlignLeft))
 
-        lay.addWidget(_hdiv())
-
-        # ── First launch note ────────────────────────────────────────────────
-        lay.addWidget(_lbl("⏳  First Launch", 13, "#5B9BD5", bold=True, align=Qt.AlignLeft))
-        lay.addWidget(_lbl(
-            "All games may take a while to launch the first time — this is normal. "
-            "They will run fine after the initial launch.\n\n"
+        # ── First launch ─────────────────────────────────────────────────────
+        sl.addWidget(_hdiv())
+        sl.addWidget(_lbl("⏳  First Launch", 12, "#5B9BD5", bold=True, align=Qt.AlignLeft))
+        sl.addWidget(_lbl(
+            "All games take longer to launch the first time. This is normal "
+            "and they will be faster on subsequent launches.\n\n"
             "Plutonium games must be launched once before they can be used "
             "with the offline LAN launcher.",
             11, C_DIM, align=Qt.AlignLeft))
 
-        lay.addWidget(_hdiv())
-
-        # ── BO3 first launch note ────────────────────────────────────────────
-        lay.addWidget(_lbl("🎮  Black Ops III — First Launch", 13, C_TREY, bold=True, align=Qt.AlignLeft))
-        lay.addWidget(_lbl(
-            "CleanOps and T7X finish installing on their first run. For the smoothest "
-            "experience, do the first launch in Desktop Mode:\n\n"
-            "1. If you installed T7X, launch T7X first. Once it loads, close it.\n"
-            "2. Launch Black Ops III (CleanOps). It will patch the game — this takes a "
-            "while and may slow down the Deck temporarily. The game will not launch "
-            "after patching. This is normal.\n"
-            "3. Press the blue Stop button in Steam, then launch Black Ops III again "
-            "to verify it works.\n"
-            "4. After this initial setup, both T7X and CleanOps will work fine in "
-            "Game Mode going forward.\n\n"
-            "If you only installed CleanOps (no T7X), skip step 1.",
+        # ── BO3 first launch ─────────────────────────────────────────────────
+        sl.addWidget(_hdiv())
+        sl.addWidget(_lbl("🎮  Black Ops III: First Launch", 12, C_TREY, bold=True, align=Qt.AlignLeft))
+        sl.addWidget(_lbl(
+            "CleanOps and T7X finish installing on their first run. Do the "
+            "first launch in Desktop Mode:\n\n"
+            "1. If you installed T7X, launch it first, then close it.\n"
+            "2. Launch Black Ops III (CleanOps). It will patch the game and "
+            "may slow the Deck temporarily. It will not launch after "
+            "patching. This is normal.\n"
+            "3. Press the blue Stop button in Steam, then relaunch to "
+            "verify it works.\n\n"
+            "Skip step 1 if you only installed CleanOps.",
             11, C_DIM, align=Qt.AlignLeft))
 
-        lay.addWidget(_hdiv())
-
-        # ── LCD launch delay note (LCD users only) ────────────────────────────
+        # ── LCD notes (LCD users only) ────────────────────────────────────────
         self._lcd_div = _hdiv()
-        self._lcd_hdr = _lbl("⚠  LCD Steam Deck - Important Notes", 13, C_TREY, bold=True, align=Qt.AlignLeft)
+        self._lcd_hdr = _lbl("⚠  LCD Steam Deck Notes", 12, C_TREY, bold=True, align=Qt.AlignLeft)
         self._lcd_body = _lbl(
-            "• Launch delay: Plutonium games on LCD may take a moment to launch. "
-            "A cleanup script runs before each launch to clear the shader cache. "
-            "If the game doesn't start right away, please be patient or try launching again.\n\n"
-            "• Vulkan shaders: If Steam tries to compile Vulkan shaders before launching, "
-            "skip it — these shaders are not used by LCD Plutonium games and just waste time.\n\n"
-            "• Closing games: When you're done playing, quit from the in-game menu instead of "
-            "using the Steam overlay. Closing through Steam can be slow and buggy on LCD "
-            "(it won't break anything, but quitting in-game is much faster).",
+            "Plutonium games on LCD may take a moment to launch while a "
+            "shader cache cleanup runs. If a game does not start right "
+            "away, be patient or try again.\n\n"
+            "If Steam tries to compile Vulkan shaders before launching, "
+            "skip it. These are not used by LCD Plutonium games.\n\n"
+            "Quit games from the in-game menu rather than the Steam "
+            "overlay for a faster exit.",
             11, C_DIM, align=Qt.AlignLeft)
-        lay.addWidget(self._lcd_div)
-        lay.addWidget(self._lcd_hdr)
-        lay.addWidget(self._lcd_body)
+        sl.addWidget(self._lcd_div)
+        sl.addWidget(self._lcd_hdr)
+        sl.addWidget(self._lcd_body)
 
-        lay.addWidget(_hdiv())
-
-        # ── Decky Loader note (docked users only) ─────────────────────────────
+        # ── Decky Loader (docked users only) ──────────────────────────────────
         self._decky_div  = _hdiv()
-        self._decky_hdr  = _lbl("🖥  Enable Docked Display Switching", 13, C_IW, bold=True, align=Qt.AlignLeft)
+        self._decky_hdr  = _lbl("🖥  Docked Display Switching", 12, C_IW, bold=True, align=Qt.AlignLeft)
         self._decky_body = _lbl(
-            "The DeckOps Decky plugin automatically switches your display settings when you "
-            "connect or disconnect a monitor. Decky Loader is required to use it.",
+            "The DeckOps Decky plugin auto-switches display settings when "
+            "you connect or disconnect a monitor. Decky Loader is required.",
             11, C_DIM, align=Qt.AlignLeft)
         self._decky_btn  = _btn("Get Decky Loader  →  decky.xyz", C_BLUE_BTN, size=12, h=40)
         self._decky_btn.setFixedWidth(320)
@@ -695,17 +689,14 @@ class ControllerInfoScreen(QWidget):
             ["xdg-open", "https://decky.xyz/"]
         ))
         dbw = QHBoxLayout(); dbw.addWidget(self._decky_btn); dbw.addStretch()
-        lay.addWidget(self._decky_div)
-        lay.addWidget(self._decky_hdr)
-        lay.addWidget(self._decky_body)
-        lay.addLayout(dbw)
+        sl.addWidget(self._decky_div)
+        sl.addWidget(self._decky_hdr)
+        sl.addWidget(self._decky_body)
+        sl.addLayout(dbw)
 
-        lay.addStretch()
-        lay.addSpacing(4)
-
-        # ── Restore player saves (visible only when backups exist) ────────
+        # ── Restore player saves (visible only when backups exist) ────────────
         self._restore_div = _hdiv()
-        self._restore_hdr = _lbl("💾  Restore Player Saves", 13, C_IW, bold=True, align=Qt.AlignLeft)
+        self._restore_hdr = _lbl("💾  Restore Player Saves", 12, C_IW, bold=True, align=Qt.AlignLeft)
         self._restore_body = _lbl(
             "Backups from a previous install were found. "
             "Restore your configs, stats, and custom classes?",
@@ -725,20 +716,23 @@ class ControllerInfoScreen(QWidget):
         rbw.addWidget(self._restore_skip)
         rbw.addStretch()
 
-        lay.addWidget(self._restore_div)
-        lay.addWidget(self._restore_hdr)
-        lay.addWidget(self._restore_body)
-        lay.addLayout(rbw)
-        lay.addWidget(self._restore_status)
+        sl.addWidget(self._restore_div)
+        sl.addWidget(self._restore_hdr)
+        sl.addWidget(self._restore_body)
+        sl.addLayout(rbw)
+        sl.addWidget(self._restore_status)
 
-        # Group all restore widgets for easy show/hide
         self._restore_widgets = [
             self._restore_div, self._restore_hdr, self._restore_body,
             self._restore_btn, self._restore_skip,
         ]
 
-        lay.addSpacing(4)
+        sl.addStretch()
+        scroll.setWidget(inner)
+        lay.addWidget(scroll, stretch=1)
 
+        # ── Continue button (pinned outside scroll) ───────────────────────────
+        lay.addSpacing(8)
         cont = _btn("Continue  >>", C_IW, h=52)
         cont.clicked.connect(self._go_management)
         cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(cont, stretch=1); cw.addStretch()
@@ -746,18 +740,15 @@ class ControllerInfoScreen(QWidget):
 
     def showEvent(self, e):
         super().showEvent(e)
-        # Only show the Decky section for docked users
         is_docked = cfg.is_docked()
         self._decky_div.setVisible(is_docked)
         self._decky_hdr.setVisible(is_docked)
         self._decky_body.setVisible(is_docked)
         self._decky_btn.setVisible(is_docked)
-        # Only show the LCD launch delay note for LCD users
         is_lcd = cfg.is_lcd()
         self._lcd_div.setVisible(is_lcd)
         self._lcd_hdr.setVisible(is_lcd)
         self._lcd_body.setVisible(is_lcd)
-        # Show restore section only when backups exist
         try:
             from save_backup import has_backups
             show_restore = has_backups()
@@ -813,7 +804,6 @@ class ControllerInfoScreen(QWidget):
 
     def _go_management(self):
         # Restart Steam so shortcuts and compat tool changes take effect.
-        # gtk-launch mimics clicking the Steam desktop icon — no child process.
         os.system("gtk-launch steam.desktop &")
         root = find_steam_root()
         get_screen(self.stack, "ManagementScreen").set_installed(find_installed_games(parse_library_folders(root)))
