@@ -2398,3 +2398,8 @@ for i in 10 9 8 7 6 5 4 3 2 1; do
     sleep 1
 done
 echo ""
+
+# Restart Steam so the cleaned-up shortcuts and configs take effect.
+# gtk-launch mimics clicking the Steam desktop icon — no child process.
+info "Starting Steam..."
+gtk-launch steam.desktop &

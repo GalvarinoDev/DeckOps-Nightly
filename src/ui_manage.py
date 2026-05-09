@@ -812,6 +812,9 @@ class ControllerInfoScreen(QWidget):
         self._restore_status.setVisible(False)
 
     def _go_management(self):
+        # Restart Steam so shortcuts and compat tool changes take effect.
+        # gtk-launch mimics clicking the Steam desktop icon — no child process.
+        os.system("gtk-launch steam.desktop &")
         root = find_steam_root()
         get_screen(self.stack, "ManagementScreen").set_installed(find_installed_games(parse_library_folders(root)))
         go_to(self.stack, "ManagementScreen")
