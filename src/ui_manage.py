@@ -647,10 +647,17 @@ class ControllerInfoScreen(QWidget):
         # ── BO3 first launch note ────────────────────────────────────────────
         lay.addWidget(_lbl("🎮  Black Ops III — First Launch", 13, C_TREY, bold=True, align=Qt.AlignLeft))
         lay.addWidget(_lbl(
-            "CleanOps and T7X install on their first run, which takes a bit and may "
-            "slow down the Steam Deck temporarily. This is expected — do not worry. "
-            "Wiggle the analog sticks to keep the screen from turning off while you wait, "
-            "since the game hasn't officially launched yet.",
+            "CleanOps and T7X finish installing on their first run. For the smoothest "
+            "experience, do the first launch in Desktop Mode:\n\n"
+            "1. If you installed T7X, launch T7X first. Once it loads, close it.\n"
+            "2. Launch Black Ops III (CleanOps). It will patch the game — this takes a "
+            "while and may slow down the Deck temporarily. The game will not launch "
+            "after patching. This is normal.\n"
+            "3. Press the blue Stop button in Steam, then launch Black Ops III again "
+            "to verify it works.\n"
+            "4. After this initial setup, both T7X and CleanOps will work fine in "
+            "Game Mode going forward.\n\n"
+            "If you only installed CleanOps (no T7X), skip step 1.",
             11, C_DIM, align=Qt.AlignLeft))
 
         lay.addWidget(_hdiv())
