@@ -1,8 +1,8 @@
 """
 config.py - DeckOps configuration manager
 
-Handles reading and writing deckops.json which lives at:
-    ~/DeckOps-Nightly/deckops.json
+Handles reading and writing deckops.json which lives at the
+install directory (path provided by identity.py).
 
 The config file tracks:
     - Whether first-time setup has been completed
@@ -18,7 +18,7 @@ import re
 import threading
 from datetime import datetime
 
-CONFIG_PATH = os.path.expanduser("~/DeckOps-Nightly/deckops.json")
+from identity import CONFIG_PATH
 
 DEFAULTS = {
     "first_run_complete": False,

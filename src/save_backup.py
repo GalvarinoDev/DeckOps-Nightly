@@ -23,6 +23,7 @@ import os
 import shutil
 from datetime import datetime
 
+from identity import CONFIG_PATH
 from log import get_logger
 
 _log = get_logger(__name__)
@@ -31,7 +32,6 @@ _log = get_logger(__name__)
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 BACKUP_ROOT = os.path.expanduser("~/.local/share/deckops/save_backup")
-CONFIG_PATH = os.path.expanduser("~/DeckOps-Nightly/deckops.json")
 STEAM_ROOT_DEFAULT = os.path.expanduser("~/.local/share/Steam")
 HEROIC_PREFIX = os.path.expanduser("~/Games/Heroic/Prefixes/default")
 

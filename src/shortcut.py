@@ -25,6 +25,7 @@ import threading
 import time
 import urllib.request
 
+from identity import INSTALL_DIR, VENV_PYTHON, asset_url
 from log import get_logger
 
 _log = get_logger(__name__)
@@ -1404,9 +1405,7 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                     _cleanup_script = os.path.join(
                         os.path.dirname(os.path.abspath(__file__)), "cache_cleanup.py"
                     )
-                    _venv_python = os.path.join(
-                        os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3"
-                    )
+                    _venv_python = VENV_PYTHON
                     actual_exe     = _venv_python
                     start_dir      = os.path.dirname(_cleanup_script)
                     launch_options = f'"{_cleanup_script}" t4mp steam'
@@ -1860,27 +1859,25 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
 LAUNCHER_TITLE = "DeckOps: Plutonium Offline"
 
 # Path to the Windows exe relative to the DeckOps install directory.
-# install.sh pulls the repo to ~/DeckOps-Nightly, so the exe lands at:
-#   ~/DeckOps-Nightly/assets/LAN/DeckOps_Offline.exe
+# install.sh pulls the repo to ~/DeckOps[-Nightly], so the exe lands at:
+#   ~/DeckOps[-Nightly]/assets/LAN/DeckOps_Offline.exe
 _LAUNCHER_EXE_REL = os.path.join("assets", "LAN", "DeckOps_Offline.exe")
 
-# Custom DeckOps Plutonium launcher artwork. Hosted in the DeckOps-Nightly
-# repo so updates ship with the source. _download_artwork below always
-# re-downloads on install so URL/asset changes propagate to existing setups.
+# Custom DeckOps Plutonium launcher artwork. Hosted in the repo so updates
+# ship with the source. _download_artwork below always re-downloads on
+# install so URL/asset changes propagate to existing setups.
 LAUNCHER_ART = {
-    "icon_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/icon.png",
-    "grid_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/deckops_grid.png",
-    "wide_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/deckops_launcher_banner.png",
-    "hero_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/deckops_hero.png",
-    "logo_url":  "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/deckops.png",
+    "icon_url":  asset_url("assets/images/icon.png"),
+    "grid_url":  asset_url("assets/images/heroes/deckops_grid.png"),
+    "wide_url":  asset_url("assets/images/heroes/deckops_launcher_banner.png"),
+    "hero_url":  asset_url("assets/images/heroes/deckops_hero.png"),
+    "logo_url":  asset_url("assets/images/heroes/deckops.png"),
     "icon_ext": "png", "grid_ext": "png", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
 }
 
 # Old exe path used by the python3-based launcher. Needed so migration can
 # calculate the old appid and strip stale artwork / compat tool entries.
-_OLD_LAUNCHER_EXE = os.path.join(
-    os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3"
-)
+_OLD_LAUNCHER_EXE = VENV_PYTHON
 
 
 def get_launcher_appid() -> int:
@@ -1891,8 +1888,7 @@ def get_launcher_appid() -> int:
     to locate the launcher's compatdata prefix and copy configs into it
     so the offline launcher can see all installed games.
     """
-    deckops_dir = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly")
-    launcher_exe = os.path.join(deckops_dir, _LAUNCHER_EXE_REL)
+    launcher_exe = os.path.join(INSTALL_DIR, _LAUNCHER_EXE_REL)
     exe_path = f'"{launcher_exe}"'
     return _calc_shortcut_appid(exe_path, LAUNCHER_TITLE)
 
@@ -1940,8 +1936,7 @@ def create_launcher_shortcut(on_progress=None):
         if on_progress:
             on_progress(msg)
 
-    deckops_dir = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly")
-    launcher_exe = os.path.join(deckops_dir, _LAUNCHER_EXE_REL)
+    launcher_exe = os.path.join(INSTALL_DIR, _LAUNCHER_EXE_REL)
 
     if not os.path.exists(launcher_exe):
         prog(f"  Launcher exe not found: {launcher_exe}")
@@ -2095,8 +2090,7 @@ def remove_launcher_shortcut(on_progress=None):
             on_progress(msg)
 
     # Current exe-based appid
-    deckops_dir = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly")
-    launcher_exe = os.path.join(deckops_dir, _LAUNCHER_EXE_REL)
+    launcher_exe = os.path.join(INSTALL_DIR, _LAUNCHER_EXE_REL)
     exe_path_new = f'"{launcher_exe}"'
     appid_new = _calc_shortcut_appid(exe_path_new, LAUNCHER_TITLE)
 

@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer
 
 import config as cfg
+from identity import GITHUB_USER, GITHUB_REPO
 
 from ui_constants import (
     C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN, C_BLUE_BTN,
@@ -775,7 +776,7 @@ class SetupFlowScreen(QWidget):
 
         def _run():
             import urllib.request
-            ZIP_URL  = "https://github.com/GalvarinoDev/DeckOps-Nightly/raw/main/DeckOps.zip"
+            ZIP_URL  = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/raw/main/DeckOps.zip"
             dl_dir   = os.path.expanduser("~/Downloads")
             zip_path = os.path.join(dl_dir, "DeckOps.zip")
             try:
