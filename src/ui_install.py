@@ -540,6 +540,8 @@ class InstallScreen(QWidget):
         self.cont_btn.setVisible(True)
 
     def _go_management(self):
+        # Restart Steam so shortcuts and compat tool changes take effect.
+        os.system("gtk-launch steam.desktop &")
         root = find_steam_root()
         get_screen(self.stack, "ManagementScreen").set_installed(find_installed_games(parse_library_folders(root)))
         go_to(self.stack, "ManagementScreen")
@@ -1236,6 +1238,7 @@ class OwnInstallScreen(QWidget):
         if self._return_to_management:
             self.cont_btn.setText("Back to My Games  >>")
             self.cont_btn.clicked.connect(lambda: (
+                os.system("gtk-launch steam.desktop &"),
                 get_screen(self.stack, "ManagementScreen").set_installed(
                     find_installed_games(parse_library_folders(find_steam_root()))
                 ),
