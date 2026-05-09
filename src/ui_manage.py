@@ -645,6 +645,18 @@ class SetupCompleteScreen(QWidget):
             "with the offline LAN launcher.",
             11, C_DIM, align=Qt.AlignLeft))
 
+        # ── MW2 MP own-game first launch ──────────────────────────────────────
+        self._mw2own_div = _hdiv()
+        self._mw2own_hdr = _lbl("🎮  MW2 Multiplayer (Non-Steam)", 12, C_IW, bold=True, align=Qt.AlignLeft)
+        self._mw2own_body = _lbl(
+            "MW2 Multiplayer (IW4x) needs to be launched twice on initial "
+            "installation. The first launch will fail — this is normal. "
+            "Launch it again and it will work.",
+            11, C_DIM, align=Qt.AlignLeft)
+        sl.addWidget(self._mw2own_div)
+        sl.addWidget(self._mw2own_hdr)
+        sl.addWidget(self._mw2own_body)
+
         # ── BO3 first launch ─────────────────────────────────────────────────
         sl.addWidget(_hdiv())
         sl.addWidget(_lbl("🎮  Black Ops III: First Launch", 12, C_TREY, bold=True, align=Qt.AlignLeft))
@@ -749,6 +761,11 @@ class SetupCompleteScreen(QWidget):
         self._lcd_div.setVisible(is_lcd)
         self._lcd_hdr.setVisible(is_lcd)
         self._lcd_body.setVisible(is_lcd)
+        show_mw2own = (cfg.get_game_source() == "own"
+                       and cfg.is_game_setup_for_source("iw4mp", "own"))
+        self._mw2own_div.setVisible(show_mw2own)
+        self._mw2own_hdr.setVisible(show_mw2own)
+        self._mw2own_body.setVisible(show_mw2own)
         try:
             from save_backup import has_backups
             show_restore = has_backups()
