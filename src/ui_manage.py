@@ -33,6 +33,7 @@ from ui_constants import (
     go_to, get_screen,
 )
 
+from identity import GITHUB_USER, GITHUB_REPO
 from log import get_logger
 
 _log = get_logger(__name__)
@@ -893,10 +894,10 @@ class ConfigureScreen(QWidget):
         discord_btn.clicked.connect(lambda: self._open_url("https://discord.gg/bkSQeq5Azk"))
         stable_btn = _btn("Stable", C_DARK_BTN, size=12, h=36)
         stable_btn.setFixedWidth(100)
-        stable_btn.clicked.connect(lambda: self._open_url("https://github.com/GalvarinoDev/DeckOps"))
+        stable_btn.clicked.connect(lambda: self._open_url(f"https://github.com/{GITHUB_USER}/DeckOps"))
         nightly_btn = _btn("Nightly", C_DARK_BTN, size=12, h=36)
         nightly_btn.setFixedWidth(100)
-        nightly_btn.clicked.connect(lambda: self._open_url("https://github.com/GalvarinoDev/DeckOps-Nightly"))
+        nightly_btn.clicked.connect(lambda: self._open_url(f"https://github.com/{GITHUB_USER}/DeckOps-Nightly"))
         nr.addWidget(discord_btn); nr.addWidget(stable_btn); nr.addWidget(nightly_btn)
         sl.addLayout(nr)
         self._name_note = _lbl("Sets your offline name for CoD4x, IW4x, AlterWare, T7X, and Plutonium. Does not affect CleanOps.", 10, C_DIM, align=Qt.AlignLeft)
@@ -1173,8 +1174,8 @@ class ConfigureScreen(QWidget):
                 self.status.setText(f"✗  Could not launch uninstaller: {ex}")
 
     # ── Update check ────────────────────────────────────────────────────────
-    _GITHUB_USER = "GalvarinoDev"
-    _GITHUB_REPO = "DeckOps-Nightly"
+    _GITHUB_USER = GITHUB_USER
+    _GITHUB_REPO = GITHUB_REPO
 
     def _init_update_signals(self):
         """Connect the update result signal (call once during __init__)."""

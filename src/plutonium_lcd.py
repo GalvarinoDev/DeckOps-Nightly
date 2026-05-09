@@ -42,6 +42,7 @@ import subprocess
 import time
 import urllib.request
 
+from identity import VENV_PYTHON
 from log import get_logger
 from net import DownloadError
 
@@ -1676,9 +1677,7 @@ def _set_heroic_steam_launch_options(game_key: str, steam_root: str,
     cleanup_script = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "cache_cleanup.py"
     )
-    venv_python = os.path.join(
-        os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3"
-    )
+    venv_python = VENV_PYTHON
 
     launch_opts = (
         f'{venv_python} {cleanup_script} {game_key} steam '
@@ -1742,9 +1741,7 @@ def _create_heroic_steam_shortcut(game_key: str, on_progress=None,
     cleanup_script = os.path.join(
         os.path.dirname(os.path.abspath(__file__)), "cache_cleanup.py"
     )
-    venv_python = os.path.join(
-        os.path.expanduser("~"), "DeckOps-Nightly", ".venv", "bin", "python3"
-    )
+    venv_python = VENV_PYTHON
 
     exe_path  = f'"{venv_python}"'
     start_dir = f'"{os.path.dirname(cleanup_script)}"'

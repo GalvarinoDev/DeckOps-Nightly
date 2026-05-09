@@ -14,6 +14,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QObject
 from PyQt5.QtGui import QFont, QFontDatabase
 
 import config as cfg
+from identity import BUILD_BADGE
 from log import get_logger
 
 _log = get_logger(__name__)
@@ -203,72 +204,54 @@ KEY_MODE_LABEL = {
 SP_IMAGE_URLS = {
     7940:   "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/library_600x900_2x.jpg",
     10180:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
-    10190:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
+    10190:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10190/library_600x900_2x.jpg",
     42680:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",
-    42690:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",
-    10090:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/library_600x900_2x.jpg",
+    42690:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42690/library_600x900_2x.jpg",
     42700:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42700/library_600x900_2x.jpg",
+    10090:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10090/library_600x900_2x.jpg",
     202970: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
-    202990: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",
+    202990: "https://shared.steamstatic.com/store_item_assets/steam/apps/202990/library_600x900_2x.jpg",
     311210: "https://shared.steamstatic.com/store_item_assets/steam/apps/311210/library_600x900_2x.jpg",
     209160: "https://shared.steamstatic.com/store_item_assets/steam/apps/209160/library_600x900_2x.jpg",
     209650: "https://shared.steamstatic.com/store_item_assets/steam/apps/209650/library_600x900_2x.jpg",
 }
 
-IMG_RATIO = 1.5
-BTN_RATIO = 0.20
-CARD_COLS  = 5
-CARD_MAX_W = 187
-
-MUSIC_URL = "https://archive.org/download/adrenaline-klickaud/Adrenaline_KLICKAUD.mp3"
-
 
 # ── Audio ─────────────────────────────────────────────────────────────────────
 
-_music_volume  = cfg.get_music_volume()
-_music_enabled = cfg.get_music_enabled()
+_audio_started = False
+_music_enabled = True
 
-def _pygame_available():
+def _start_audio():
+    """Start background music once at app launch. No-op on subsequent calls."""
+    global _audio_started, _music_enabled
+    if _audio_started:
+        return
+    _audio_started = True
+    _music_enabled = cfg.get_music_enabled()
+
     try:
         import pygame
-        return True
-    except ImportError:
-        return False
+        pygame.mixer.init()
+        if os.path.isfile(MUSIC_PATH):
+            pygame.mixer.music.load(MUSIC_PATH)
+            vol = cfg.get_music_volume()
+            pygame.mixer.music.set_volume(vol)
+            if _music_enabled:
+                pygame.mixer.music.play(-1)
+    except Exception:
+        _log.debug("audio init failed", exc_info=True)
 
 def _kill_audio():
-    if not _pygame_available():
-        return
     try:
         import pygame
         if pygame.mixer.get_init():
             pygame.mixer.music.stop()
             pygame.mixer.quit()
     except Exception:
-        _log.debug("audio shutdown failed", exc_info=True)
-
-def _start_audio():
-    if not _music_enabled or not _pygame_available():
-        return
-    try:
-        import pygame
-        if not pygame.mixer.get_init():
-            pygame.mixer.init()
-        if not pygame.mixer.music.get_busy():
-            if os.path.exists(MUSIC_PATH):
-                pygame.mixer.music.load(MUSIC_PATH)
-            else:
-                return
-            pygame.mixer.music.set_volume(_music_volume)
-            pygame.mixer.music.play(-1)
-    except Exception:
-        _log.debug("audio start failed", exc_info=True)
+        pass
 
 def _set_audio_volume(vol: float):
-    global _music_volume
-    _music_volume = vol
-    cfg.set_music_volume(vol)
-    if not _pygame_available():
-        return
     try:
         import pygame
         if pygame.mixer.get_init():
@@ -410,17 +393,17 @@ def _title_block(lay, main_size=56):
         f'</span>'
     )
     lay.addWidget(sub)
-    # Nightly build badge — shown on every screen so users always know
-    # they are running the experimental build and not the stable release.
-    nightly = QLabel("NIGHTLY BUILD")
-    nightly.setFont(font(10, bold=True))
-    nightly.setAlignment(Qt.AlignCenter)
-    nightly.setStyleSheet(
-        "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
-        "border-radius:4px;padding:2px 10px;"
-    )
-    nw = QHBoxLayout(); nw.addStretch(); nw.addWidget(nightly); nw.addStretch()
-    lay.addLayout(nw)
+    # Build badge — only shown for Nightly builds (None for Stable)
+    if BUILD_BADGE:
+        badge = QLabel(BUILD_BADGE)
+        badge.setFont(font(10, bold=True))
+        badge.setAlignment(Qt.AlignCenter)
+        badge.setStyleSheet(
+            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
+            "border-radius:4px;padding:2px 10px;"
+        )
+        bw = QHBoxLayout(); bw.addStretch(); bw.addWidget(badge); bw.addStretch()
+        lay.addLayout(bw)
 
 
 # ── Shared signals ────────────────────────────────────────────────────────────

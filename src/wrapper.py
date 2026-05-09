@@ -5,6 +5,7 @@ import stat
 import shutil
 import subprocess
 
+from identity import LEDGER_PATH
 from log import get_logger
 
 _log = get_logger(__name__)
@@ -12,8 +13,6 @@ _log = get_logger(__name__)
 # ── VDF edit ledger ──────────────────────────────────────────────────────────
 # Records every VDF edit DeckOps makes so the uninstaller can reverse them
 # precisely instead of regex-sweeping entire files.
-
-LEDGER_PATH = os.path.expanduser("~/.config/deckops-nightly/vdf_edits.json")
 
 
 def _read_ledger() -> dict:
@@ -209,241 +208,46 @@ def get_proton_path(steam_root):
     for ge_dir in ge_search_dirs:
         if not os.path.isdir(ge_dir):
             continue
-        ge_dirs = [
-            d for d in os.listdir(ge_dir)
-            if d.startswith("GE-Proton") and
-            os.path.exists(os.path.join(ge_dir, d, "proton"))
-        ]
-        if ge_dirs:
-            ge_dirs.sort(key=_version_key, reverse=True)
-            return os.path.join(ge_dir, ge_dirs[0], "proton")
+        candidates = sorted(
+            [d for d in os.listdir(ge_dir) if d.startswith("GE-Proton")],
+            key=_version_key,
+            reverse=True,
+        )
+        for name in candidates:
+            proton = os.path.join(ge_dir, name, "proton")
+            if os.path.isfile(proton):
+                return proton
 
-    # Fall back to vanilla Proton
+    # Check vanilla Proton in steamapps/common/
     common = os.path.join(steam_root, "steamapps", "common")
-    if not os.path.exists(common):
-        return None
+    if os.path.isdir(common):
+        candidates = sorted(
+            [d for d in os.listdir(common)
+             if d.startswith("Proton") and not d.startswith("Proton EasyAntiCheat")],
+            key=_version_key,
+            reverse=True,
+        )
+        for name in candidates:
+            proton = os.path.join(common, name, "proton")
+            if os.path.isfile(proton):
+                return proton
 
-    proton_dirs = [
-        d for d in os.listdir(common)
-        if d.startswith("Proton") and
-        os.path.exists(os.path.join(common, d, "proton"))
-    ]
-    if not proton_dirs:
-        return None
-
-    proton_dirs.sort(key=_version_key, reverse=True)
-    return os.path.join(common, proton_dirs[0], "proton")
-
-
-def find_compatdata(steam_root, appid, game_install_dir=None):
-    """
-    Find the Wine prefix folder for a given Steam appid.
-
-    Searches all Steam library folders (internal + SD card) so the correct
-    prefix is found regardless of where the game is installed.
-
-    When game_install_dir is provided, the prefix from the same library
-    folder as the game install is preferred. This fixes the bug where
-    both internal and SD card have compatdata for the same appid —
-    without this hint, the internal drive's prefix is always returned
-    first because _all_library_dirs lists it first.
-
-    Returns the path or None if not found.
-    """
-    from detect_games import _all_library_dirs
-
-    all_dirs = _all_library_dirs(steam_root)
-
-    # If we know where the game is installed, prefer the prefix from
-    # the same library folder. This ensures SD card games use the
-    # SD card prefix, not the internal drive's.
-    if game_install_dir:
-        game_norm = os.path.normpath(game_install_dir)
-        for steamapps_dir in all_dirs:
-            sa_norm = os.path.normpath(steamapps_dir)
-            # Check if the game's install_dir lives under this steamapps/
-            # e.g. /run/media/deck/SD1/steamapps/common/Call of Duty 4
-            #       starts with /run/media/deck/SD1/steamapps
-            if game_norm.startswith(sa_norm + os.sep) or game_norm.startswith(sa_norm + "/"):
-                candidate = os.path.join(steamapps_dir, "compatdata", str(appid))
-                if os.path.isdir(candidate):
-                    return candidate
-                # Game is here but no compatdata yet — break and fall
-                # through to the general scan (prefix may not exist yet)
-                break
-
-    for steamapps_dir in all_dirs:
-        candidate = os.path.join(steamapps_dir, "compatdata", str(appid))
-        if os.path.isdir(candidate):
-            return candidate
-
-    # Fallback to the default location (may not exist yet)
-    default = os.path.join(steam_root, "steamapps", "compatdata", str(appid))
-    if os.path.exists(default):
-        return default
     return None
 
 
-def get_plutonium_launcher(compatdata_path):
+def set_launch_options(steam_root, appid, launch_opts, game_key=None):
     """
-    Return the path to plutonium-launcher-win32.exe inside the given prefix,
-    or None if not found.
+    Set launch options for a Steam game in localconfig.vdf.
+
+    steam_root  — Steam root path (e.g. ~/.local/share/Steam)
+    appid       — Steam appid (string or int)
+    launch_opts — the launch option string to set
+    game_key    — optional game key for logging
     """
-    launcher = os.path.join(
-        compatdata_path,
-        "pfx", "drive_c", "users", "steamuser",
-        "AppData", "Local", "Plutonium", "bin",
-        "plutonium-launcher-win32.exe"
-    )
-    if os.path.exists(launcher):
-        return launcher
-    return None
-
-
-def write_wrapper_script(exe_path, script_content, original_size=None):
-    """
-    Write a bash wrapper script to replace the original exe.
-    Backs up the original first, then writes and chmod's the script.
-    Pads to original_size with null bytes so Steam's file validation passes.
-    """
-    backup_path = exe_path + ".bak"
-    if not os.path.exists(backup_path) and os.path.exists(exe_path):
-        shutil.copy2(exe_path, backup_path)
-
-    script_bytes = script_content.encode("utf-8")
-
-    if original_size and original_size > len(script_bytes):
-        script_bytes += b"\x00" * (original_size - len(script_bytes))
-
-    with open(exe_path, "wb") as f:
-        f.write(script_bytes)
-
-    os.chmod(exe_path, os.stat(exe_path).st_mode |
-             stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-
-def set_launch_options(steam_root, appid, options):
-    """
-    Set or append launch options for a Steam game in localconfig.vdf.
-
-    Finds all Steam user accounts under steam_root/userdata and updates
-    the LaunchOptions entry for the given appid in each one. Always writes
-    to the flat app block — NOT inside any cloud sub-block. Steam's UI reads
-    LaunchOptions from the flat block; writing to the cloud sub-block causes
-    the option to be invisible in Steam properties even if correctly written.
-
-    steam_root  — path to the Steam root directory
-    appid       — int or str Steam appid
-    options     — launch option string to set, e.g. "iw4x.exe %command%"
-    """
-    appid = str(appid)
-    # Escape double quotes so the value is valid inside a VDF quoted string
-    vdf_options = options.replace('"', '\\"')
+    appid_str = str(appid)
     userdata = os.path.join(steam_root, "userdata")
     if not os.path.exists(userdata):
-        return
-
-    for uid in os.listdir(userdata):
-        vdf_path = os.path.join(
-            userdata, uid, "config", "localconfig.vdf"
-        )
-        if not os.path.exists(vdf_path):
-            continue
-
-        with open(vdf_path, "r", errors="replace") as f:
-            content = f.read()
-
-        # Find the appid block using regex, then brace-depth parse to get its
-        # true boundaries.
-        #
-        # WARNING: Must skip braces inside quoted strings — VDF values like
-        # bash substitutions (e.g. ${@/iw3sp.exe/iw3sp_mod.exe}) contain
-        # { and } characters that must NOT be counted as block delimiters.
-        # Failure to do this will corrupt localconfig.vdf by cutting blocks
-        # short and trampling adjacent keys.
-        key_pattern = re.compile(
-            r'"' + re.escape(appid) + r'"\s*\{',
-            re.IGNORECASE
-        )
-        key_match = key_pattern.search(content)
-        if not key_match:
-            continue
-
-        app_open  = key_match.end() - 1
-        app_close = _find_block_end(content, app_open)
-        if app_close == -1:
-            continue
-
-        app_inner = content[app_open + 1:app_close]
-
-        # Always write LaunchOptions directly in the flat app block.
-        # Steam reads LaunchOptions from here — the cloud sub-block value
-        # is NOT shown in Steam properties and should never be written to.
-        launch_pattern = re.compile(
-            r'("LaunchOptions"\s*")((?:[^"\\]|\\.)*)(")',
-            re.IGNORECASE
-        )
-
-        # Only match LaunchOptions in the flat block, not inside sub-blocks.
-        # Find the first sub-block start so we only search before it.
-        subblock_match = re.search(r'"[^"]+"\s*\{', app_inner)
-        flat_section = app_inner[:subblock_match.start()] if subblock_match else app_inner
-
-        launch_match = launch_pattern.search(flat_section)
-
-        if launch_match:
-            existing = launch_match.group(2)
-            if vdf_options in existing:
-                continue
-            new_options = (existing.strip() + " " + vdf_options).strip()
-            # Replace only within flat_section, then reassemble app_inner so we
-            # never accidentally hit a LaunchOptions key inside a cloud sub-block.
-            new_flat = launch_pattern.sub(
-                lambda m: m.group(1) + new_options + m.group(3),
-                flat_section,
-                count=1
-            )
-            if subblock_match:
-                new_app_inner = new_flat + app_inner[subblock_match.start():]
-            else:
-                new_app_inner = new_flat
-        else:
-            # Insert before the first sub-block, or at end if no sub-blocks.
-            # Derive indent from existing flat keys so the entry aligns correctly
-            # regardless of how deeply nested this appid block is in the file.
-            indent_match = re.search(r'\n(\t+)"', flat_section)
-            if indent_match:
-                indent = indent_match.group(1)
-            else:
-                # Fall back: count tabs on the opening key line itself
-                key_line = key_match.group(0)
-                leading  = re.match(r'(\t*)', key_line)
-                indent   = (leading.group(1) if leading else '\t\t\t\t\t') + '\t'
-            insert_pos = subblock_match.start() if subblock_match else len(app_inner)
-            insert_str = f'{indent}"LaunchOptions"\t\t"{vdf_options}"\n'
-            new_app_inner = app_inner[:insert_pos] + insert_str + app_inner[insert_pos:]
-
-        new_content = (
-            content[:app_open + 1] +
-            new_app_inner +
-            content[app_close:]
-        )
-
-        _write_and_validate_vdf(vdf_path, new_content, errors="replace")
-        _record_localconfig(uid, appid, "LaunchOptions", vdf_options)
-
-
-def clear_launch_options(steam_root, appid):
-    """
-    Remove any LaunchOptions for a Steam game in localconfig.vdf.
-
-    Cleans up stale launch options left over from older DeckOps versions
-    that used launch commands instead of the exe rename strategy.
-    Must be called while Steam is closed.
-    """
-    appid = str(appid)
-    userdata = os.path.join(steam_root, "userdata")
-    if not os.path.exists(userdata):
+        _log.warning("userdata dir not found: %s", userdata)
         return
 
     for uid in os.listdir(userdata):
@@ -454,228 +258,72 @@ def clear_launch_options(steam_root, appid):
         with open(vdf_path, "r", errors="replace") as f:
             content = f.read()
 
-        key_pattern = re.compile(
-            r'"' + re.escape(appid) + r'"\s*\{',
-            re.IGNORECASE
-        )
-        key_match = key_pattern.search(content)
-        if not key_match:
+        # Find the apps block in localconfig
+        apps_pat = re.compile(r'"apps"\s*\{', re.IGNORECASE)
+        apps_match = apps_pat.search(content)
+        if not apps_match:
             continue
 
-        app_open  = key_match.end() - 1
-        app_close = _find_block_end(content, app_open)
-        if app_close == -1:
+        apps_open = apps_match.end() - 1
+        apps_close = _find_block_end(content, apps_open)
+        if apps_close == -1:
             continue
 
-        app_inner = content[app_open + 1:app_close]
+        apps_block = content[apps_open + 1:apps_close]
 
-        # Only touch LaunchOptions in the flat block, not inside sub-blocks.
-        subblock_match = re.search(r'"[^"]+"\s*\{', app_inner)
-        flat_section = app_inner[:subblock_match.start()] if subblock_match else app_inner
+        # Find the appid block inside apps
+        appid_pat = re.compile(rf'"{re.escape(appid_str)}"\s*\{{', re.IGNORECASE)
+        appid_match = appid_pat.search(apps_block)
 
-        launch_pattern = re.compile(
-            r'("LaunchOptions"\s*")((?:[^"\\]|\\.)*)(")',
-            re.IGNORECASE
-        )
-        launch_match = launch_pattern.search(flat_section)
-        if not launch_match or not launch_match.group(2).strip():
-            continue
-
-        # Clear the value to empty string
-        new_flat = launch_pattern.sub(r'\g<1>\g<3>', flat_section, count=1)
-        if subblock_match:
-            new_app_inner = new_flat + app_inner[subblock_match.start():]
-        else:
-            new_app_inner = new_flat
-
-        new_content = (
-            content[:app_open + 1] +
-            new_app_inner +
-            content[app_close:]
-        )
-
-        _write_and_validate_vdf(vdf_path, new_content, errors="replace")
-        _record_localconfig(uid, appid, "LaunchOptions", "")
-
-
-def kill_steam(on_progress=None):
-    """
-    Gracefully close the Steam desktop client without triggering the
-    SteamOS session manager (which would switch back to Game Mode).
-
-    Sends SIGTERM to ubuntu12_32/steam and waits for Steam to shut
-    itself down cleanly. Never force-kills (SIGKILL) because that can
-    corrupt localconfig.vdf and trigger the SteamOS first-run wizard.
-
-    on_progress — optional callback(str) for status messages while
-                  waiting for Steam to exit.
-
-    Raises TimeoutError after 120 seconds if Steam refuses to close.
-    """
-    import time
-
-    # Check if Steam is even running
-    r = subprocess.run(
-        ["pgrep", "-f", "ubuntu12_32/steam"],
-        capture_output=True
-    )
-    if r.returncode != 0:
-        return  # Steam is not running
-
-    # SIGTERM to the main Steam process triggers graceful shutdown + config write
-    subprocess.run(["pkill", "-TERM", "-f", "ubuntu12_32/steam"], capture_output=True)
-
-    if on_progress:
-        on_progress("Waiting for Steam to safely close itself...")
-
-    # Wait for Steam to exit on its own — never force-kill
-    deadline = time.time() + 120
-    elapsed = 0
-    while time.time() < deadline:
-        r = subprocess.run(
-            ["pgrep", "-f", "ubuntu12_32/steam"],
-            capture_output=True
-        )
-        if r.returncode != 0:
-            # Steam process is gone. Wait for config writes to flush to disk.
-            # Steam writes config.vdf and localconfig.vdf during shutdown and
-            # the kernel may still be buffering those writes after the process
-            # exits. sync forces all pending I/O to complete before we touch
-            # any VDF files.
-            time.sleep(3)
-            subprocess.run(["sync"], capture_output=True)
-            return
-        time.sleep(1)
-        elapsed += 1
-        if on_progress and elapsed % 10 == 0:
-            on_progress("Still waiting for Steam to close safely...")
-
-    raise TimeoutError(
-        "Steam did not close within 120 seconds. "
-        "Please close Steam manually and try again."
-    )
-
-
-def set_steam_input_enabled(steam_root, appids=None):
-    """
-    Enable Steam Input for the given appids by setting
-    UseSteamControllerConfig to "1" in each user's localconfig.vdf.
-
-    Must be called while Steam is closed.
-
-    steam_root — path to the Steam root directory
-    appids     — list of int or str appids; defaults to all DeckOps-managed games
-    """
-    # All regular Steam appids DeckOps manages
-    # (non-Steam shortcuts are handled separately via AllowDesktopConfig in shortcuts.vdf)
-    DEFAULT_APPIDS = [
-        "7940",    # CoD4
-        "10090",   # WaW
-        "10180",   # MW2 SP
-        "10190",   # MW2 MP
-        "42680",   # MW3 SP
-        "42690",   # MW3 MP
-        "42750",   # MW3 Dedicated Server
-        "42700",   # BO1
-        "42710",   # BO1 MP
-        "202970",  # BO2 SP
-        "202990",  # BO2 MP
-        "212910",  # BO2 ZM
-    ]
-
-    if appids is None:
-        appids = DEFAULT_APPIDS
-
-    appids = [str(a) for a in appids]
-    userdata = os.path.join(steam_root, "userdata")
-    if not os.path.exists(userdata):
-        return
-
-    for uid in os.listdir(userdata):
-        vdf_path = os.path.join(userdata, uid, "config", "localconfig.vdf")
-        if not os.path.exists(vdf_path):
-            continue
-
-        with open(vdf_path, "r", errors="replace") as f:
-            content = f.read()
-
-        modified = False
-        modified_appids = []
-        for appid in appids:
-            key_pattern = re.compile(
-                r'"' + re.escape(appid) + r'"\s*\{',
-                re.IGNORECASE
-            )
-            key_match = key_pattern.search(content)
-            if not key_match:
+        if appid_match:
+            # Appid block exists — find or replace LaunchOptions inside it
+            appid_open = appid_match.end() - 1
+            appid_close = _find_block_end(apps_block, appid_open)
+            if appid_close == -1:
                 continue
 
-            app_open  = key_match.end() - 1
-            app_close = _find_block_end(content, app_open)
-            if app_close == -1:
-                continue
-
-            app_block = content[app_open + 1:app_close]
-
-            si_pattern = re.compile(
-                r'("UseSteamControllerConfig"\s*")((?:[^"\\]|\\.)*)(")',
-                re.IGNORECASE
-            )
-
-            # Only patch the flat section, not inside any sub-blocks
-            subblock_match = re.search(r'"[^"]+"\s*\{', app_block)
-            flat_section = app_block[:subblock_match.start()] if subblock_match else app_block
-            si_match = si_pattern.search(flat_section)
-
-            if si_match:
-                if si_match.group(2) == "1":
-                    continue  # already enabled
-                new_block = si_pattern.sub(
-                    lambda m: m.group(1) + "1" + m.group(3),
-                    app_block,
-                    count=1,
-                )
+            inner = apps_block[appid_open + 1:appid_close]
+            lo_pat = re.compile(r'"LaunchOptions"\s+"[^"]*"', re.IGNORECASE)
+            if lo_pat.search(inner):
+                inner = lo_pat.sub(f'"LaunchOptions"\t\t"{launch_opts}"', inner)
             else:
-                indent_match = re.search(r'\n(\t+)"', flat_section)
-                indent = indent_match.group(1) if indent_match else '\t\t\t\t\t\t'
-                insert_pos = subblock_match.start() if subblock_match else len(app_block)
-                insert_str = f'{indent}"UseSteamControllerConfig"\t\t"1"\n'
-                new_block = app_block[:insert_pos] + insert_str + app_block[insert_pos:]
+                inner = inner.rstrip() + f'\n\t\t\t\t\t"LaunchOptions"\t\t"{launch_opts}"\n\t\t\t\t'
 
-            content = (
-                content[:app_open + 1] +
-                new_block +
-                content[app_close:]
+            apps_block = (
+                apps_block[:appid_open + 1] +
+                inner +
+                apps_block[appid_close:]
             )
-            modified = True
-            modified_appids.append(appid)
+        else:
+            # Appid block doesn't exist — create it
+            entry = (
+                f'\n\t\t\t\t"{appid_str}"\n'
+                f'\t\t\t\t{{\n'
+                f'\t\t\t\t\t"LaunchOptions"\t\t"{launch_opts}"\n'
+                f'\t\t\t\t}}'
+            )
+            apps_block = apps_block.rstrip() + entry + '\n\t\t\t'
 
-        if modified:
-            _write_and_validate_vdf(vdf_path, content, errors="replace")
-            for appid in modified_appids:
-                _record_localconfig(uid, appid, "UseSteamControllerConfig", "1")
+        content = content[:apps_open + 1] + apps_block + content[apps_close:]
+
+        _write_and_validate_vdf(vdf_path, content, errors="replace")
+        _record_localconfig(uid, appid_str, "LaunchOptions", launch_opts)
+        label = game_key or appid_str
+        _log.info("launch options set for %s (uid %s): %s", label, uid, launch_opts)
 
 
-STEAM_CONFIG = os.path.expanduser("~/.local/share/Steam/config/config.vdf")
-
-
-def set_compat_tool(appids, version):
+def set_compat_tool(steam_root, appids, version):
     """
-    Write CompatToolMapping entries in Steam's config.vdf for each appid.
-    Single source of truth — called from both ge_proton.py and shortcut.py
-    so the entries are written twice at different points in the install flow,
-    making it harder for Steam to override them.
+    Set CompatToolMapping for one or more appids in Steam's config.vdf.
 
-    Logic (in order, no overlap):
-      1. If the appid block already exists → replace it in place
-      2. Else if CompatToolMapping block exists → insert into it
-      3. Else → create the entire CompatToolMapping block from scratch
-
-    appids  — list of int or str appids, e.g. ["10190", "42690"]
-    version — GE-Proton version string, e.g. "GE-Proton10-32"
+    steam_root — Steam root path
+    appids     — list of int or str appids
+    version    — GE-Proton folder name (e.g. "GE-Proton10-32")
     """
+    STEAM_CONFIG = os.path.join(steam_root, "config", "config.vdf")
     if not os.path.exists(STEAM_CONFIG):
-        raise FileNotFoundError(f"Steam config not found: {STEAM_CONFIG}")
+        _log.warning("config.vdf not found at %s", STEAM_CONFIG)
+        return
 
     with open(STEAM_CONFIG, "r", encoding="utf-8") as f:
         data = f.read()
@@ -686,20 +334,18 @@ def set_compat_tool(appids, version):
             f'\t\t\t\t{{\n'
             f'\t\t\t\t\t"name"\t\t"{version}"\n'
             f'\t\t\t\t\t"config"\t\t""\n'
-            f'\t\t\t\t\t"Priority"\t\t"250"\n'
+            f'\t\t\t\t\t"priority"\t\t"250"\n'
             f'\t\t\t\t}}\n'
         )
 
-    has_mapping = '"CompatToolMapping"' in data
-
-    if not has_mapping:
-        # Create the entire CompatToolMapping block and all entries at once
+    if '"CompatToolMapping"' not in data:
+        # No CompatToolMapping section at all — create it
         block = '\t\t\t"CompatToolMapping"\n\t\t\t{\n'
         for appid in appids:
             block += _entry(str(appid))
         block += '\t\t\t}\n'
         data = re.sub(
-            r'("Steam"\s*\{)',
+            r'("Software"\s*\{)',
             r'\1\n' + block,
             data,
             count=1,

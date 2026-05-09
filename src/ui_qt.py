@@ -17,6 +17,7 @@ from PyQt5.QtCore import Qt, QTimer
 import bootstrap as _bootstrap
 from detect_games import find_steam_root, parse_library_folders, find_installed_games
 import config as cfg
+from identity import APP_TITLE
 
 from ui_constants import (
     C_DIM, font, _btn, _lbl, _title_block, _Sigs,
@@ -82,7 +83,7 @@ class BootstrapScreen(QWidget):
 class DeckOpsWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("DeckOps Nightly")
+        self.setWindowTitle(APP_TITLE)
         self.resize(1280, 800)
         self.setMinimumSize(800, 500)
         self.stack = QStackedWidget()

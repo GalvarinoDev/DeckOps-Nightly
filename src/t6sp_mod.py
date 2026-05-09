@@ -25,11 +25,12 @@ import os
 import json
 import shutil
 
+from identity import GITHUB_RAW
 from net import download as _download
 
-# T6SP-MOD files hosted on the DeckOps-Nightly repo.
+# T6SP-MOD files hosted on the DeckOps repo.
 # When Rattpak publishes the beta on his own GitHub, update these URLs.
-_BASE_URL = "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/main/assets/T6SP_BETA"
+_BASE_URL = f"{GITHUB_RAW}/assets/T6SP_BETA"
 _MOD_EXE_URL = f"{_BASE_URL}/t6sp.exe"
 _MOD_DLL_URL = f"{_BASE_URL}/t6sp-mod.dll"
 

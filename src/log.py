@@ -2,8 +2,8 @@
 log.py — DeckOps centralised logging
 
 Provides a single rotating file logger that every module can import.
-Zero internal DeckOps imports so it can be loaded first without
-circular-dependency risk.
+Only imports from identity.py (which itself has zero internal imports),
+so it can still be loaded early without circular-dependency risk.
 
 Usage in any module:
 
@@ -23,7 +23,8 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
-_LOG_DIR = os.path.expanduser("~/DeckOps-Nightly/logs")
+from identity import LOG_DIR as _LOG_DIR
+
 _LOG_PATH = os.path.join(_LOG_DIR, "install.log")
 
 # 2 MB per file, keep 3 old copies (install.log.1, .2, .3)

@@ -48,30 +48,37 @@ from PyQt5.QtCore import (
 #
 # All paths are derived from the exe location so they work on any Linux
 # username, not just "deck".  The exe lives at:
-#   ~/DeckOps-Nightly/assets/LAN/DeckOps_Offline.exe
+#   ~/<INSTALL_DIR_NAME>/assets/LAN/DeckOps_Offline.exe
 # so walking four parents up gives us the Linux home directory via Z:.
+
+# ── Branch identity (mirrors identity.py — keep in sync) ─────────────────────
+_BRANCH = "nightly"  # "nightly" or "stable"
+_INSTALL_DIR_NAME = "DeckOps-Nightly" if _BRANCH == "nightly" else "DeckOps"
+_GITHUB_USER = "GalvarinoDev"
+_GITHUB_REPO = "DeckOps-Nightly" if _BRANCH == "nightly" else "DeckOps"
+_GITHUB_RAW = f"https://raw.githubusercontent.com/{_GITHUB_USER}/{_GITHUB_REPO}/refs/heads/main"
 
 
 def _detect_linux_home() -> str:
     """Derive the Linux home directory (as a Wine Z: path) from the exe location.
 
     PyInstaller sets sys.executable to the .exe path, which sits at:
-        Z:\\home\\<user>\\DeckOps-Nightly\\assets\\LAN\\DeckOps_Offline.exe
+        Z:\\home\\<user>\\<INSTALL_DIR_NAME>\\assets\\LAN\\DeckOps_Offline.exe
 
-    Walking four parents up (LAN → assets → DeckOps-Nightly → home dir)
+    Walking four parents up (LAN → assets → <INSTALL_DIR_NAME> → home dir)
     gives us Z:\\home\\<user>.
 
     Falls back to Z:\\home\\deck if detection fails.
     """
     try:
         exe = os.path.abspath(sys.executable)
-        # exe  = .../DeckOps-Nightly/assets/LAN/DeckOps_Offline.exe
-        # We want four levels up: exe → LAN → assets → DeckOps-Nightly → home
+        # exe  = .../<INSTALL_DIR_NAME>/assets/LAN/DeckOps_Offline.exe
+        # We want four levels up: exe → LAN → assets → <INSTALL_DIR_NAME> → home
         home = os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.dirname(exe)
         )))
-        # Sanity check: the DeckOps-Nightly dir should exist one level down
-        deckops_dir = os.path.join(home, "DeckOps-Nightly")
+        # Sanity check: the install dir should exist one level down
+        deckops_dir = os.path.join(home, _INSTALL_DIR_NAME)
         if os.path.isdir(deckops_dir):
             return home
     except Exception:
@@ -82,7 +89,7 @@ def _detect_linux_home() -> str:
 _LINUX_HOME = _detect_linux_home()
 
 # DeckOps config lives on the Linux filesystem
-_LINUX_PROJECT_ROOT = os.path.join(_LINUX_HOME, "DeckOps-Nightly")
+_LINUX_PROJECT_ROOT = os.path.join(_LINUX_HOME, _INSTALL_DIR_NAME)
 _DECKOPS_JSON = os.path.join(_LINUX_PROJECT_ROOT, "deckops.json")
 
 # Assets
@@ -281,28 +288,28 @@ PLUT_GAMES = [
         "base": "Call of Duty: World at War",
         "dev": "trey",
         "modes": [("t4mp", "MP"), ("t4sp", "S/Z")],
-        "hero_url": "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/waw-banner.png",
+        "hero_url": f"{_GITHUB_RAW}/assets/images/heroes/waw-banner.png",
         "hero_file": "waw-banner.png",
     },
     {
         "base": "Call of Duty: Black Ops",
         "dev": "trey",
         "modes": [("t5mp", "MP"), ("t5sp", "S/Z")],
-        "hero_url": "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/bo1-banner.png",
+        "hero_url": f"{_GITHUB_RAW}/assets/images/heroes/bo1-banner.png",
         "hero_file": "bo1-banner.png",
     },
     {
         "base": "Call of Duty: Black Ops II",
         "dev": "trey",
         "modes": [("t6mp", "MP"), ("t6zm", "ZM")],
-        "hero_url": "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/bo2-banner.png",
+        "hero_url": f"{_GITHUB_RAW}/assets/images/heroes/bo2-banner.png",
         "hero_file": "bo2-banner.png",
     },
     {
         "base": "Call of Duty: Modern Warfare 3",
         "dev": "iw",
         "modes": [("iw5mp", "MP"), ("iw5mp_ds", "DS")],
-        "hero_url": "https://raw.githubusercontent.com/GalvarinoDev/DeckOps-Nightly/refs/heads/main/assets/images/heroes/mw3-banner.png",
+        "hero_url": f"{_GITHUB_RAW}/assets/images/heroes/mw3-banner.png",
         "hero_file": "mw3-banner.png",
     },
 ]
