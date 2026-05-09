@@ -1661,13 +1661,21 @@ def enrich_own_games(own_games: dict, selected_keys: list,
 
         # Recalculate appid from actual_exe (mod client exe may differ
         # from the original game exe used above).
-        quoted_actual = f'"{actual_exe}"'
-        final_appid   = _calc_shortcut_appid(quoted_actual, name)
-        if final_appid != shortcut_appid:
-            shortcut_appid  = final_appid
-            compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
-            game["shortcut_appid"]  = shortcut_appid
-            game["compatdata_path"] = compatdata_path
+        #
+        # Skip for Plutonium keys — their actual_exe path is built from
+        # compatdata_path which embeds the initial appid. Recalculating
+        # produces a *different* appid (different exe path → different CRC),
+        # causing the shortcut to point at a prefix that was never created.
+        # The initial appid is correct for Plutonium because the prefix,
+        # launch options, and exe path all reference it consistently.
+        if key not in _PLUT_KEYS:
+            quoted_actual = f'"{actual_exe}"'
+            final_appid   = _calc_shortcut_appid(quoted_actual, name)
+            if final_appid != shortcut_appid:
+                shortcut_appid  = final_appid
+                compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
+                game["shortcut_appid"]  = shortcut_appid
+                game["compatdata_path"] = compatdata_path
 
         # Store resolved values for write_own_shortcuts() to use later
         game["_own_actual_exe"]     = actual_exe
