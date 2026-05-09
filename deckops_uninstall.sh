@@ -13,18 +13,35 @@ success() { printf "${GREEN}${BOLD}[  OK  ]${CLEAR} %s\n" "$1"; }
 warn()    { printf "${YELLOW}${BOLD}[ WARN ]${CLEAR} %s\n" "$1"; }
 skip()    { printf "         %s\n" "$1"; }
 
+# ── Branch identity ──────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/deckops_identity.sh" ]; then
+    source "$SCRIPT_DIR/deckops_identity.sh"
+elif [ -f "$HOME/DeckOps-Nightly/deckops_identity.sh" ]; then
+    source "$HOME/DeckOps-Nightly/deckops_identity.sh"
+elif [ -f "$HOME/DeckOps/deckops_identity.sh" ]; then
+    source "$HOME/DeckOps/deckops_identity.sh"
+else
+    INSTALL_DIR_NAME="DeckOps-Nightly"
+    INSTALL_DIR="$HOME/DeckOps-Nightly"
+    VENV_PYTHON="$INSTALL_DIR/.venv/bin/python3"
+    APP_TITLE="DeckOps Nightly"
+    XDG_ID="deckops-nightly"
+    ENTRY_POINT="$INSTALL_DIR/src/main.py"
+fi
+
 echo ""
-echo -e "${BOLD}  DeckOps Nightly -- Full Uninstaller${CLEAR}"
+echo -e "${BOLD}  $APP_TITLE -- Full Uninstaller${CLEAR}"
 echo ""
 
 zenity --question \
-    --title="DeckOps Nightly Uninstaller" \
+    --title="$APP_TITLE Uninstaller" \
     --text="This will clear all DeckOps launch options, remove client files, and remove ALL DeckOps and Plutonium data from your Wine prefixes.\n\nContinue?" \
     --ok-label="Cancel" \
     --cancel-label="Yes, Uninstall" 2>/dev/null
 
 if [ $? -eq 0 ]; then
-    zenity --info --title="DeckOps Nightly" --text="Uninstall cancelled." 2>/dev/null
+    zenity --info --title="$APP_TITLE" --text="Uninstall cancelled." 2>/dev/null
     exit 0
 fi
 
@@ -270,7 +287,7 @@ echo ""
 info "Backing up player save data before cleanup..."
 
 zenity --question \
-    --title="DeckOps Nightly Uninstaller" \
+    --title="$APP_TITLE Uninstaller" \
     --text="Would you like to back up your save data before uninstalling?\n\nThis preserves player configs, stats, and custom classes\nso they can be restored if you reinstall later." \
     --ok-label="Yes, Back Up" \
     --cancel-label="No, Skip" 2>/dev/null
@@ -279,8 +296,8 @@ if [ $? -ne 0 ]; then
     skip "Save backup skipped by user."
 else
 
-DECKOPS_SRC="$HOME/DeckOps-Nightly/src"
-DECKOPS_VENV="$HOME/DeckOps-Nightly/.venv/bin/python3"
+DECKOPS_SRC="$INSTALL_DIR/src"
+DECKOPS_VENV="$VENV_PYTHON"
 
 if [ -f "$DECKOPS_SRC/save_backup.py" ]; then
     # Prefer the venv Python (has PyQt5, all deps) but fall back to system
@@ -645,6 +662,8 @@ python3 - << 'PYEOF'
 import os, re, json, shutil
 
 LEDGER_PATH = os.path.expanduser("~/.config/deckops-nightly/vdf_edits.json")
+if not os.path.exists(LEDGER_PATH):
+    LEDGER_PATH = os.path.expanduser("~/.config/deckops/vdf_edits.json")
 steam_dir   = os.path.expanduser("~/.local/share/Steam")
 userdata    = os.path.join(steam_dir, "userdata")
 
@@ -1327,11 +1346,13 @@ info "Removing DeckOps install directory and config..."
 
 DECKOPS_DIRS=(
     "$HOME/DeckOps-Nightly"
+    "$HOME/DeckOps"
     "$HOME/.local/share/deckops-nightly"
     "$HOME/.config/deckops-nightly"
     "$HOME/.local/share/deckops-nightly/plutonium_prefix"
     "$HOME/.local/share/deckops/plutonium_prefix"
     "$HOME/.local/share/deckops"
+    "$HOME/.config/deckops"
 )
 
 for d in "${DECKOPS_DIRS[@]}"; do
@@ -1665,11 +1686,20 @@ _launcher_exe_new = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly",
                                   "assets", "LAN", "DeckOps_Offline.exe")
 _launcher_exe_old = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly",
                                   ".venv", "bin", "python3")
+# Also check stable branch paths
+_launcher_exe_new_stable = os.path.join(os.path.expanduser("~"), "DeckOps",
+                                         "assets", "LAN", "DeckOps_Offline.exe")
+_launcher_exe_old_stable = os.path.join(os.path.expanduser("~"), "DeckOps",
+                                         ".venv", "bin", "python3")
 for _exe, _title in [
     (f'"{_launcher_exe_new}"', _LAUNCHER_TITLE),
     (f'"{_launcher_exe_old}"', _LAUNCHER_TITLE),
     (f'"{_launcher_exe_new}"', _OLD_LAUNCHER_TITLE),
     (f'"{_launcher_exe_old}"', _OLD_LAUNCHER_TITLE),
+    (f'"{_launcher_exe_new_stable}"', _LAUNCHER_TITLE),
+    (f'"{_launcher_exe_old_stable}"', _LAUNCHER_TITLE),
+    (f'"{_launcher_exe_new_stable}"', _OLD_LAUNCHER_TITLE),
+    (f'"{_launcher_exe_old_stable}"', _OLD_LAUNCHER_TITLE),
 ]:
     _appid = calc_shortcut_appid(_exe, _title)
     if _appid not in shortcut_appids:
@@ -2358,7 +2388,7 @@ echo ""
 
 # Show summary dialog in background while countdown runs in terminal
 zenity --info \
-    --title="DeckOps Nightly Uninstaller" \
+    --title="$APP_TITLE Uninstaller" \
     --text="DeckOps fully uninstalled.\n\nYour Steam games are untouched.\nAll Plutonium data removed from Wine prefixes.\nAll LCD HGL state and shortcuts removed.\nAll IW3SP-MOD and IW4x client files removed.\nAll DeckOps controller templates and profiles removed.\n\nIt is now safe to open Steam." \
     --timeout=12 \
     2>/dev/null &

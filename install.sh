@@ -20,16 +20,31 @@ die()     {
 }
 
 # ── config ────────────────────────────────────────────────────────────────────
-GITHUB_USER="GalvarinoDev"
-GITHUB_REPO="DeckOps-Nightly"
-INSTALL_DIR="$HOME/DeckOps-Nightly"
-VENV_DIR="$INSTALL_DIR/.venv"
-VENV_PYTHON="$VENV_DIR/bin/python3"
-ENTRY_POINT="$INSTALL_DIR/src/main.py"
-ICON_PATH="$INSTALL_DIR/assets/images/icon.png"
-MUSIC_DIR="$INSTALL_DIR/assets/music"
-DESKTOP_FILE="$HOME/.local/share/applications/deckops-nightly.desktop"
-DESKTOP_SHORTCUT="$HOME/Desktop/DeckOps-Nightly.desktop"
+# Source deckops_identity.sh if available (normal install path).
+# Fallback for curl-piped installs where identity.sh isn't on disk yet.
+# These fallback values must match deckops_identity.sh and be updated together.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$SCRIPT_DIR/deckops_identity.sh" ]; then
+    source "$SCRIPT_DIR/deckops_identity.sh"
+elif [ -f "$HOME/DeckOps-Nightly/deckops_identity.sh" ]; then
+    source "$HOME/DeckOps-Nightly/deckops_identity.sh"
+elif [ -f "$HOME/DeckOps/deckops_identity.sh" ]; then
+    source "$HOME/DeckOps/deckops_identity.sh"
+else
+    GITHUB_USER="GalvarinoDev"
+    GITHUB_REPO="DeckOps-Nightly"
+    INSTALL_DIR="$HOME/DeckOps-Nightly"
+    VENV_DIR="$INSTALL_DIR/.venv"
+    VENV_PYTHON="$VENV_DIR/bin/python3"
+    ENTRY_POINT="$INSTALL_DIR/src/main.py"
+    ICON_PATH="$INSTALL_DIR/assets/images/icon.png"
+    MUSIC_DIR="$INSTALL_DIR/assets/music"
+    APP_TITLE="DeckOps Nightly"
+    DESKTOP_COMMENT="DeckOps Nightly — Experimental build"
+    BUILD_FALLBACK="nightly"
+    DESKTOP_FILE="$HOME/.local/share/applications/deckops-nightly.desktop"
+    DESKTOP_SHORTCUT="$HOME/Desktop/DeckOps-Nightly.desktop"
+fi
 
 MUSIC_URL="https://archive.org/download/adrenaline-klickaud/Adrenaline_KLICKAUD.mp3"
 MUSIC_FILE="background.mp3"
@@ -43,7 +58,7 @@ echo -e "${BOLD}  ██║  ██║██╔══╝  ██║     ██�
 echo -e "${BOLD}  ██████╔╝███████╗╚██████╗██║  ██╗╚██████╔╝██║     ███████║${CLEAR}"
 echo -e "${BOLD}  ╚═════╝ ╚══════╝ ╚═════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝     ╚══════╝${CLEAR}"
 echo ""
-echo -e "  ${YELLOW}DeckOps Nightly — Installer${CLEAR}"
+echo -e "  ${YELLOW}${APP_TITLE:-DeckOps Nightly} — Installer${CLEAR}"
 echo ""
 
 # ── step 1: check core dependencies ──────────────────────────────────────────
@@ -85,9 +100,9 @@ success "DeckOps installed to $INSTALL_DIR"
 # Short commit hash + date, read by the Settings screen's About section.
 # Uses the downloaded archive's HEAD, not a local git repo.
 BUILD_DATE=$(date '+%b %d, %Y')
-BUILD_HASH="nightly"
+BUILD_HASH="${BUILD_FALLBACK:-nightly}"
 if command -v git &>/dev/null && [ -d "$INSTALL_DIR/.git" ]; then
-    BUILD_HASH=$(cd "$INSTALL_DIR" && git rev-parse --short HEAD 2>/dev/null || echo "nightly")
+    BUILD_HASH=$(cd "$INSTALL_DIR" && git rev-parse --short HEAD 2>/dev/null || echo "${BUILD_FALLBACK:-nightly}")
 fi
 echo "$BUILD_HASH ($BUILD_DATE)" > "$INSTALL_DIR/BUILD"
 success "Build info written: $BUILD_HASH ($BUILD_DATE)"
@@ -159,8 +174,8 @@ mkdir -p "$(dirname "$DESKTOP_FILE")"
 
 cat > "$DESKTOP_FILE" << DEOF
 [Desktop Entry]
-Name=DeckOps Nightly
-Comment=DeckOps Nightly — Experimental build
+Name=${APP_TITLE:-DeckOps Nightly}
+Comment=${DESKTOP_COMMENT:-DeckOps Nightly — Experimental build}
 Exec=$VENV_PYTHON $ENTRY_POINT
 Icon=$ICON_PATH
 Terminal=false
