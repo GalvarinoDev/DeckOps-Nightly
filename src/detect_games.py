@@ -372,27 +372,30 @@ _SENTINEL_SCAN_DEPTH = 3
 
 
 # ── Sentinel file map ─────────────────────────────────────────────────────────
-# Each sentinel group maps to a unique zone fastfile that only exists in that
-# specific CoD title. These never get modified by mod clients or launchers,
-# making them reliable for identifying game installs even when exes are
-# missing, renamed, or replaced.
+# Each sentinel group maps to a multiplayer map fastfile that only exists in
+# that specific CoD title. Using MP maps (not SP missions) ensures the game
+# install actually has the multiplayer data needed by mod clients (Plutonium,
+# iw4x, CoD4x, CleanOps, T7x, AlterWare). These never get modified by mod
+# clients or launchers, making them reliable for identifying game installs
+# even when exes are missing, renamed, or replaced.
 #
-# Confirmed against Steam installs on physical Deck (Session 14).
+# All sentinels are base-game launch maps — no DLC or pre-order content.
+# Confirmed against own-game installs on physical Deck.
 #
 # BO1 is special: Steam uses capitalized zone subdirs (English/, Common/)
 # but copies from other sources may use any casing. We do a case-insensitive
 # search for the sentinel filename under zone/ subdirs.
 
 GAME_SENTINELS = {
-    "cod4": "zone/english/ac130.ff",
-    "waw":  "zone/english/nazi_zombie_prototype.ff",
-    "mw2":  "zone/english/af_caves.ff",
-    "mw3":  "zone/english/so_survival_mp_dome.ff",
-    "bo1":  "vorkuta.ff",            # case-insensitive search under zone/*/
-    "bo2":  "zone/all/zm_transit.ff",
-    "bo3":  "zone/core_common.ff",
-    "ghosts": "nml.ff",              # root-level SP mission fastfile
-    "aw":     "detroit.ff",          # root-level SP mission fastfile
+    "cod4":   "zone/english/mp_crash.ff",       # Crash
+    "waw":    "zone/english/mp_asylum.ff",       # Asylum
+    "mw2":    "zone/english/mp_rust.ff",         # Rust
+    "mw3":    "zone/english/mp_dome.ff",         # Dome
+    "bo1":    "mp_nuked.ff",                     # Nuketown — case-insensitive search under zone/*/
+    "bo2":    "zone/all/mp_hijacked.ff",         # Hijacked
+    "bo3":    "zone/mp_infection.ff",            # Infection
+    "ghosts": "mp_strikezone.ff",                # Strikezone — root-level MP map fastfile
+    "aw":     "mp_comeback.ff",                  # Comeback — root-level MP map fastfile
 }
 
 # Maps each game key to its sentinel group. Multiple keys share a group
@@ -416,9 +419,9 @@ def _check_sentinel(candidate_dir, sentinel_group):
     Check if a sentinel file exists relative to candidate_dir.
 
     For most games this is a direct os.path.exists check on the known
-    relative path (e.g. zone/english/ac130.ff).
+    relative path (e.g. zone/english/mp_crash.ff).
 
-    For BO1 the sentinel is just a filename (vorkuta.ff) that needs a
+    For BO1 the sentinel is just a filename (mp_nuked.ff) that needs a
     case-insensitive search under zone/ subdirectories, because Steam
     uses capitalized dir names (English/, Common/) but other sources
     may use any casing.
@@ -430,7 +433,7 @@ def _check_sentinel(candidate_dir, sentinel_group):
         return False
 
     if sentinel_group == "bo1":
-        # Case-insensitive search: look for vorkuta.ff in any subdir of zone/
+        # Case-insensitive search: look for mp_nuked.ff in any subdir of zone/
         zone_dir = os.path.join(candidate_dir, "zone")
         if not os.path.isdir(zone_dir):
             return False
