@@ -2388,18 +2388,13 @@ echo "  All IW3SP-MOD and IW4x client files removed."
 echo "  All DeckOps controller templates and profiles removed."
 echo ""
 
-info "Uninstall complete — restarting Steam..."
+info "Uninstall complete."
 echo ""
-
-# Restart Steam so the cleaned-up shortcuts and configs take effect.
-# Launch before the countdown so Steam has time to spin up before the
-# terminal window closes.
-gtk-launch steam.desktop
 
 # Show summary dialog in background while countdown runs in terminal
 zenity --info \
     --title="$APP_TITLE Uninstaller" \
-    --text="DeckOps fully uninstalled.\n\nYour Steam games are untouched.\nAll Plutonium data removed from Wine prefixes.\nAll LCD HGL state and shortcuts removed.\nAll IW3SP-MOD and IW4x client files removed.\nAll DeckOps controller templates and profiles removed.\n\nSteam is restarting." \
+    --text="DeckOps fully uninstalled.\n\nYour Steam games are untouched.\nAll Plutonium data removed from Wine prefixes.\nAll LCD HGL state and shortcuts removed.\nAll IW3SP-MOD and IW4x client files removed.\nAll DeckOps controller templates and profiles removed.\n\nPlease restart Steam for changes to take effect." \
     --timeout=12 \
     2>/dev/null &
 
