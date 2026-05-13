@@ -663,13 +663,12 @@ class SetupCompleteScreen(QWidget):
         sl.addWidget(_lbl(
             "CleanOps and T7X finish installing on their first run. Do the "
             "first launch in Desktop Mode:\n\n"
-            "1. If you installed T7X, launch it first, then close it.\n"
-            "2. Launch Black Ops III (CleanOps). It will patch the game and "
-            "may slow the Deck temporarily. It will not launch after "
-            "patching. This is normal.\n"
-            "3. Press the blue Stop button in Steam, then relaunch to "
-            "verify it works.\n\n"
-            "Skip step 1 if you only installed CleanOps.",
+            "1. Launch Black Ops III (CleanOps). It will patch the game and "
+            "may slow the Deck temporarily.\n"
+            "2. If it does not launch, press the blue Stop button in Steam, "
+            "then relaunch to verify it works.\n"
+            "3. If you installed T7X, launch it after CleanOps is working.\n\n"
+            "Skip step 3 if you only installed CleanOps.",
             11, C_DIM, align=Qt.AlignLeft))
 
         # ── LCD notes (LCD users only) ────────────────────────────────────────

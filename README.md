@@ -96,7 +96,7 @@ If Steam asks about cloud saves, choose **Keep Local**. If asked about safe mode
 
 - **MW1 and WaW** have separate DeckOps multiplayer shortcuts. Use the main entry for SP, the DeckOps shortcut for MP. MW1 SP: select the "Player" profile on first launch.
 - **MW2 MP (Non-Steam).** IW4x must be launched twice on first install. The first launch will fail, relaunch and it works.
-- **Black Ops III.** Do the first launch in Desktop Mode. Launch T7X first if installed, close it, then launch BO3. CleanOps will patch the game and won't launch after patching. Press Stop in Steam and relaunch. After this, both work fine in Game Mode.
+- **Black Ops III.** Do the first launch in Desktop Mode. Launch Black Ops III first (CleanOps patches). If it doesn't launch after patching, press Stop in Steam and relaunch. If you installed T7X, launch it after CleanOps is working. After this, both work fine in Game Mode.
 - **LCD Steam Deck.** Plutonium games may take a moment to launch (shader cache cleanup). Skip Vulkan shader compilation if prompted. Quit from the in-game menu for a faster exit.
 
 ---

@@ -372,15 +372,15 @@ def _ask_t7x_install(parent, selected):
         return False
     reply = QMessageBox.question(
         parent,
-        "T7X — Additional BO3 Client",
-        "CleanOps is already included — it patches BO3 to protect against "
+        "T7X - Additional BO3 Client",
+        "CleanOps is already included. It patches BO3 to protect against "
         "exploits and adds dedicated servers alongside Activision's official servers.\n\n"
         "T7X is an optional additional client with its own dedicated server list. "
         "Using both is supported but not required.\n\n"
         "If you install both, do the first launch in Desktop Mode:\n"
-        "  1. Launch T7X first. Once it loads, close it.\n"
-        "  2. Launch BO3 (CleanOps patches). It won't launch after patching — "
-        "hit Stop in Steam and relaunch.\n"
+        "  1. Launch Black Ops III first (CleanOps patches). If it doesn't "
+        "launch after patching, hit Stop in Steam and relaunch.\n"
+        "  2. Launch T7X. Once it loads, close it.\n"
         "  3. After this, both work fine in Game Mode.\n\n"
         "If you're unsure, just pick one and skip the other.\n\n"
         "Download size: ~105 MB\n\n"
