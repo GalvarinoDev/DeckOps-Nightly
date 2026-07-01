@@ -26,7 +26,7 @@ jobs:
 
       - name: Build executable
         run: |
-          python -m nuitka --onefile --windows-console-mode=disable --include-module=XInput --output-filename=DeckOps_Offline.exe --output-dir=dist src/launcher_plut_win.py
+          python -m nuitka --onefile --assume-yes-for-downloads --windows-console-mode=disable --enable-plugin=pyqt5 --include-module=XInput --output-filename=DeckOps_Offline.exe --output-dir=dist src/launcher_plut_win.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
