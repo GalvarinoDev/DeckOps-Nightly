@@ -23,7 +23,6 @@ Return/Escape. Qt sees these as keyPressEvents. evdev is not available
 inside Wine, but the keyboard mapping works identically.
 """
 
-import ctypes
 import os
 import sys
 import subprocess
@@ -560,34 +559,27 @@ def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
 
     plut_dir, bootstrapper = _resolve_game_plut_dir(game_key)
 
-    # PyInstaller's bootloader calls SetDllDirectoryW to point the DLL
-    # search path at its temp extraction dir. Child processes inherit this,
-    # which can cause the bootstrapper/game to load wrong DLLs and crash
-    # (0xC0000005). Reset it before spawning the bootstrapper.
+    # Launch via a temporary batch file so the bootstrapper runs as a
+    # fully detached process, not as a child of this PyInstaller exe.
+    # PyInstaller inherits DLL search paths, handle tables, and other
+    # process state to children that can interfere with the game engine.
+    # Using "start" in a batch file creates a clean process context.
     try:
-        ctypes.windll.kernel32.SetDllDirectoryW(None)
-    except Exception:
-        pass
-
-    # Strip any PyInstaller _MEIPASS paths from PATH so the bootstrapper
-    # doesn't pick up bundled DLLs from the launcher's temp dir.
-    env = dict(os.environ)
-    meipass = getattr(sys, '_MEIPASS', None)
-    if meipass:
-        path_dirs = env.get('PATH', '').split(';')
-        env['PATH'] = ';'.join(d for d in path_dirs if meipass not in d)
-
-    try:
+        import tempfile
+        bat = os.path.join(tempfile.gettempdir(), "deckops_lan_launch.bat")
+        with open(bat, "w") as f:
+            f.write("@echo off\r\n")
+            f.write(f'cd /d "{plut_dir}"\r\n')
+            f.write(
+                f'start "" "{bootstrapper}"'
+                f' {_plut_key(game_key)}'
+                f' "{game_dir_wine}"'
+                f' +name "{player_name}"'
+                f' -lan\r\n'
+            )
         subprocess.Popen(
-            [
-                bootstrapper,
-                _plut_key(game_key),
-                game_dir_wine,
-                "+name", player_name,
-                "-lan",
-            ],
+            ["cmd.exe", "/c", bat],
             cwd=plut_dir,
-            env=env,
         )
     except Exception:
         pass
