@@ -579,7 +579,7 @@ def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
         _LAUNCH_FIRED = False
     QTimer.singleShot(_LAUNCH_DEBOUNCE_MS, _clear)
 
-    QTimer.singleShot(1500, lambda: QApplication.instance().quit())
+    QTimer.singleShot(4000, lambda: QApplication.instance().quit())
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
