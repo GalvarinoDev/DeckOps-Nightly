@@ -23,6 +23,7 @@ Return/Escape. Qt sees these as keyPressEvents. evdev is not available
 inside Wine, but the keyboard mapping works identically.
 """
 
+import ctypes
 import os
 import sys
 import subprocess
@@ -559,6 +560,23 @@ def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
 
     plut_dir, bootstrapper = _resolve_game_plut_dir(game_key)
 
+    # PyInstaller's bootloader calls SetDllDirectoryW to point the DLL
+    # search path at its temp extraction dir. Child processes inherit this,
+    # which can cause the bootstrapper/game to load wrong DLLs and crash
+    # (0xC0000005). Reset it before spawning the bootstrapper.
+    try:
+        ctypes.windll.kernel32.SetDllDirectoryW(None)
+    except Exception:
+        pass
+
+    # Strip any PyInstaller _MEIPASS paths from PATH so the bootstrapper
+    # doesn't pick up bundled DLLs from the launcher's temp dir.
+    env = dict(os.environ)
+    meipass = getattr(sys, '_MEIPASS', None)
+    if meipass:
+        path_dirs = env.get('PATH', '').split(';')
+        env['PATH'] = ';'.join(d for d in path_dirs if meipass not in d)
+
     try:
         subprocess.Popen(
             [
@@ -569,6 +587,7 @@ def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
                 "-lan",
             ],
             cwd=plut_dir,
+            env=env,
         )
     except Exception:
         pass
