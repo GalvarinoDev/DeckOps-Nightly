@@ -7,16 +7,10 @@ A lightweight PyQt5 app that shows installed Plutonium games and lets
 the user pick a mode (MP, S/Z, ZM) to launch in offline LAN mode.
 Designed to run as a non-Steam shortcut with Proton in Game Mode.
 
-This is a Windows executable built with Nuitka (compiled to native code).
-It runs inside the same Wine/Proton prefix as the Plutonium bootstrapper,
-so launching a game is a simple Windows-to-Windows subprocess call. No
-second Proton instance, no environment conflicts, no cgroup issues.
-
-Nuitka compiles Python to C and produces a native exe with no bootloader,
-no temp extraction directory, and no DLL search path interference. Child
-processes spawned via subprocess.Popen get a clean environment, which
-prevents the 0xC0000005 access violation crash that occurred with
-PyInstaller on T6 (BO2) due to inherited SetDllDirectoryW state.
+This is a Windows executable built with PyInstaller. It runs inside
+the same Wine/Proton prefix as the Plutonium bootstrapper, so launching
+a game is a simple Windows-to-Windows subprocess call. No second Proton
+instance, no environment conflicts, no cgroup issues.
 
 Flow:
   1. Read DeckOps deckops.json (via Wine Z: drive) to find Plutonium games.
@@ -58,7 +52,7 @@ from PyQt5.QtCore import (
 # so walking four parents up gives us the Linux home directory via Z:.
 
 # ── Branch identity (mirrors identity.py — keep in sync) ─────────────────────
-_BRANCH = "nightly"  # "nightly" or "stable"
+_BRANCH = "stable"  # "nightly" or "stable"
 _INSTALL_DIR_NAME = "DeckOps-Nightly" if _BRANCH == "nightly" else "DeckOps"
 _GITHUB_USER = "GalvarinoDev"
 _GITHUB_REPO = "DeckOps-Nightly" if _BRANCH == "nightly" else "DeckOps"
@@ -68,7 +62,7 @@ _GITHUB_RAW = f"https://raw.githubusercontent.com/{_GITHUB_USER}/{_GITHUB_REPO}/
 def _detect_linux_home() -> str:
     """Derive the Linux home directory (as a Wine Z: path) from the exe location.
 
-    Nuitka sets sys.executable to the compiled .exe path, which sits at:
+    PyInstaller sets sys.executable to the .exe path, which sits at:
         Z:\\home\\<user>\\<INSTALL_DIR_NAME>\\assets\\LAN\\DeckOps_Offline.exe
 
     Walking four parents up (LAN → assets → <INSTALL_DIR_NAME> → home dir)
@@ -552,10 +546,6 @@ def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
     Proton prefix. No bash, no second Proton instance, no environment
     stripping needed.
 
-    Nuitka produces a native exe with no bootloader interference, so
-    subprocess.Popen spawns a clean child process. No batch file
-    detach workaround is needed (unlike the old PyInstaller build).
-
     On OLED, resolves the correct per-game prefix so the bootstrapper
     runs from the same prefix that Steam/Proton initialized for that
     game, with matching DLLs and Proton state.
@@ -589,7 +579,7 @@ def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
         _LAUNCH_FIRED = False
     QTimer.singleShot(_LAUNCH_DEBOUNCE_MS, _clear)
 
-    QTimer.singleShot(4000, lambda: QApplication.instance().quit())
+    QTimer.singleShot(1500, lambda: QApplication.instance().quit())
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────

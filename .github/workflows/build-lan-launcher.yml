@@ -15,18 +15,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install nuitka PyQt5 pygame XInput-Python
+          pip install PyQt5 pygame pyinstaller XInput-Python
 
       - name: Build executable
         run: |
-          python -m nuitka --onefile --assume-yes-for-downloads --windows-console-mode=disable --enable-plugin=pyqt5 --include-module=XInput --output-filename=DeckOps_Offline.exe --output-dir=dist src/launcher_plut_win.py
+          pyinstaller --onefile --noconsole --hidden-import=XInput --name "DeckOps_Offline" src/launcher_plut_win.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
