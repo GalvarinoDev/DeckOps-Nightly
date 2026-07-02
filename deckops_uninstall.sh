@@ -1678,27 +1678,38 @@ if not shortcut_appids:
     print("  No shortcut appids to clean up.")
 
 # Add the DeckOps offline launcher shortcut appid. The launcher uses
-# DeckOps_Offline.exe as its exe path, and its appid is calculated from
-# the quoted exe path + title. We check both the current and old exe paths.
+# launcher_offline.sh as its exe path, and its appid is calculated from
+# the quoted exe path + title. We check current, old exe, and old python paths.
 _LAUNCHER_TITLE = "DeckOps: Plutonium Offline"
 _OLD_LAUNCHER_TITLE = "DeckOps: Plutonium Launcher"
+# Current: launcher_offline.sh wrapper
 _launcher_exe_new = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly",
+                                  "assets", "LAN", "launcher_offline.sh")
+# Old: Windows exe (prior to intent file bridge)
+_launcher_exe_win = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly",
                                   "assets", "LAN", "DeckOps_Offline.exe")
+# Oldest: python3-based launcher
 _launcher_exe_old = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly",
                                   ".venv", "bin", "python3")
-# Also check stable branch paths
+# Stable branch paths
 _launcher_exe_new_stable = os.path.join(os.path.expanduser("~"), "DeckOps",
+                                         "assets", "LAN", "launcher_offline.sh")
+_launcher_exe_win_stable = os.path.join(os.path.expanduser("~"), "DeckOps",
                                          "assets", "LAN", "DeckOps_Offline.exe")
 _launcher_exe_old_stable = os.path.join(os.path.expanduser("~"), "DeckOps",
                                          ".venv", "bin", "python3")
 for _exe, _title in [
     (f'"{_launcher_exe_new}"', _LAUNCHER_TITLE),
+    (f'"{_launcher_exe_win}"', _LAUNCHER_TITLE),
     (f'"{_launcher_exe_old}"', _LAUNCHER_TITLE),
     (f'"{_launcher_exe_new}"', _OLD_LAUNCHER_TITLE),
+    (f'"{_launcher_exe_win}"', _OLD_LAUNCHER_TITLE),
     (f'"{_launcher_exe_old}"', _OLD_LAUNCHER_TITLE),
     (f'"{_launcher_exe_new_stable}"', _LAUNCHER_TITLE),
+    (f'"{_launcher_exe_win_stable}"', _LAUNCHER_TITLE),
     (f'"{_launcher_exe_old_stable}"', _LAUNCHER_TITLE),
     (f'"{_launcher_exe_new_stable}"', _OLD_LAUNCHER_TITLE),
+    (f'"{_launcher_exe_win_stable}"', _OLD_LAUNCHER_TITLE),
     (f'"{_launcher_exe_old_stable}"', _OLD_LAUNCHER_TITLE),
 ]:
     _appid = calc_shortcut_appid(_exe, _title)
