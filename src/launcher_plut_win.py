@@ -52,7 +52,7 @@ from PyQt5.QtCore import (
 # so walking four parents up gives us the Linux home directory via Z:.
 
 # ── Branch identity (mirrors identity.py — keep in sync) ─────────────────────
-_BRANCH = "stable"  # "nightly" or "stable"
+_BRANCH = "nightly"  # "nightly" or "stable"
 _INSTALL_DIR_NAME = "DeckOps-Nightly" if _BRANCH == "nightly" else "DeckOps"
 _GITHUB_USER = "GalvarinoDev"
 _GITHUB_REPO = "DeckOps-Nightly" if _BRANCH == "nightly" else "DeckOps"
