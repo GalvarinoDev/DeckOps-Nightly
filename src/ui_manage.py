@@ -1517,6 +1517,7 @@ class UpdateScreen(QWidget):
         self.selected   = []
         self.steam_root = ""
         self._steam_closed = threading.Event()
+        self._cod4r_event = threading.Event()
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
         self.title = QLabel("UPDATE"); self.title.setFont(font(36, True))
@@ -1541,6 +1542,12 @@ class UpdateScreen(QWidget):
         sw = QHBoxLayout(); sw.addStretch(); sw.addWidget(self.steam_btn); sw.addStretch()
         lay.addLayout(sw)
 
+        self.cod4r_btn = _btn("I've closed the CoD4R launcher  ✓", C_TREY, size=13, h=52)
+        self.cod4r_btn.setFixedWidth(460); self.cod4r_btn.setVisible(False)
+        self.cod4r_btn.clicked.connect(lambda: self._cod4r_event.set())
+        c4w = QHBoxLayout(); c4w.addStretch(); c4w.addWidget(self.cod4r_btn); c4w.addStretch()
+        lay.addLayout(c4w)
+
         self.back_btn = _btn("<< Back to My Games", C_DARK_BTN, h=48)
         self.back_btn.setFixedWidth(220); self.back_btn.setVisible(False)
         self.back_btn.clicked.connect(self._go_back)
@@ -1553,6 +1560,8 @@ class UpdateScreen(QWidget):
         self._s.done.connect(self._on_done)
         self._s.plut_wait.connect(lambda: self.steam_btn.setVisible(True))
         self._s.plut_go.connect(lambda: self.steam_btn.setVisible(False))
+        self._s.cod4r_wait.connect(lambda: self.cod4r_btn.setVisible(True))
+        self._s.cod4r_go.connect(lambda: self.cod4r_btn.setVisible(False))
 
     def _append_log(self, text):
         self.log.appendPlainText(text)
@@ -1562,8 +1571,9 @@ class UpdateScreen(QWidget):
     def showEvent(self, e):
         super().showEvent(e)
         self.bar.setValue(0); self.log.clear()
-        self.steam_btn.setVisible(False); self.back_btn.setVisible(False)
+        self.steam_btn.setVisible(False); self.cod4r_btn.setVisible(False); self.back_btn.setVisible(False)
         self._steam_closed.clear()
+        self._cod4r_event.clear()
         _log_to_file("── Update started ──")
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
@@ -1664,6 +1674,13 @@ class UpdateScreen(QWidget):
                 if c == "cod4r":
                     install_cod4r(game, self.steam_root, proton, compat, op,
                                   appid=gd["appid"], source=source)
+                    self._s.log.emit(
+                        "Close the CoD4R launcher when the download is complete."
+                    )
+                    self._s.cod4r_wait.emit()
+                    self._cod4r_event.wait()
+                    self._cod4r_event.clear()
+                    self._s.cod4r_go.emit()
                 elif c == "cod4x":
                     install_cod4x(game, self.steam_root, proton, compat, op,
                                   appid=gd["appid"])

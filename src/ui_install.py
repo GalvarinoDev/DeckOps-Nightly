@@ -375,6 +375,7 @@ class InstallScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.selected=[]; self.steam_root=""; self.screen_name = "InstallScreen"
         self._plut_event = threading.Event()
+        self._cod4r_event = threading.Event()
         self._manual_dl_event = threading.Event()
         self._manual_dl_ok = False
         self._return_to_management = False
@@ -428,6 +429,12 @@ class InstallScreen(QWidget):
         pw = QHBoxLayout(); pw.addStretch(); pw.addWidget(self.plut_btn); pw.addStretch()
         clay.addLayout(pw)
 
+        self.cod4r_btn = _btn("I've closed the CoD4R launcher  ✓", C_TREY, size=13, h=52)
+        self.cod4r_btn.setFixedWidth(460); self.cod4r_btn.setVisible(False)
+        self.cod4r_btn.clicked.connect(self._confirm_cod4r)
+        c4w = QHBoxLayout(); c4w.addStretch(); c4w.addWidget(self.cod4r_btn); c4w.addStretch()
+        clay.addLayout(c4w)
+
         self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
         self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
         self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
@@ -441,6 +448,8 @@ class InstallScreen(QWidget):
         self._s.done.connect(self._on_done)
         self._s.plut_wait.connect(self._show_plut_wait)
         self._s.plut_go.connect(self._hide_plut_wait)
+        self._s.cod4r_wait.connect(self._show_cod4r_wait)
+        self._s.cod4r_go.connect(self._hide_cod4r_wait)
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
         self._s.manual_dl.connect(self._show_manual_dl_dialog)
@@ -472,6 +481,12 @@ class InstallScreen(QWidget):
         self.plut_warn.setVisible(False)
         self.plut_btn.setVisible(False)
 
+    def _show_cod4r_wait(self):
+        self.cod4r_btn.setVisible(True)
+
+    def _hide_cod4r_wait(self):
+        self.cod4r_btn.setVisible(False)
+
     def _append_log(self, text):
         self.log.appendPlainText(text)
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
@@ -482,8 +497,10 @@ class InstallScreen(QWidget):
         self.bar.setValue(0); self.log.clear()
         self.plut_btn.setVisible(False)
         self.plut_warn.setVisible(False)
+        self.cod4r_btn.setVisible(False)
         self._stop_pulse()
         self._plut_event.clear()
+        self._cod4r_event.clear()
         self._manual_dl_event.clear()
         self._manual_dl_ok = False
         # Route the continue button based on whether this was triggered
@@ -505,6 +522,9 @@ class InstallScreen(QWidget):
 
     def _confirm_plut(self):
         self._plut_event.set()
+
+    def _confirm_cod4r(self):
+        self._cod4r_event.set()
 
     def _show_manual_dl_dialog(self, url, dest_folder, filename, label):
         """
@@ -926,6 +946,13 @@ class InstallScreen(QWidget):
                     if c == "cod4r":
                         install_cod4r(game, self.steam_root, proton, compat, op_cod4,
                                       appid=gd["appid"], source="steam")
+                        self._s.log.emit(
+                            "Close the CoD4R launcher when the download is complete."
+                        )
+                        self._s.cod4r_wait.emit()
+                        self._cod4r_event.wait()
+                        self._cod4r_event.clear()
+                        self._s.cod4r_go.emit()
                     elif c == "cod4x":
                         install_cod4x(game, self.steam_root, proton, compat, op_cod4,
                                       appid=gd["appid"])
@@ -1150,6 +1177,7 @@ class OwnInstallScreen(QWidget):
         self.steam_selected  = []   # list of (key, gd, game), set by SetupScreen
         self.steam_root = ""
         self._plut_event = threading.Event()
+        self._cod4r_event = threading.Event()
         self._manual_dl_event = threading.Event()
         self._manual_dl_ok = False
         self._return_to_management = False
@@ -1201,6 +1229,12 @@ class OwnInstallScreen(QWidget):
         pw = QHBoxLayout(); pw.addStretch(); pw.addWidget(self.plut_btn); pw.addStretch()
         clay.addLayout(pw)
 
+        self.cod4r_btn = _btn("I've closed the CoD4R launcher  ✓", C_TREY, size=13, h=52)
+        self.cod4r_btn.setFixedWidth(460); self.cod4r_btn.setVisible(False)
+        self.cod4r_btn.clicked.connect(self._confirm_cod4r)
+        c4w = QHBoxLayout(); c4w.addStretch(); c4w.addWidget(self.cod4r_btn); c4w.addStretch()
+        clay.addLayout(c4w)
+
         self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
         self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
         self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
@@ -1214,6 +1248,8 @@ class OwnInstallScreen(QWidget):
         self._s.done.connect(self._on_done)
         self._s.plut_wait.connect(self._show_plut_wait)
         self._s.plut_go.connect(self._hide_plut_wait)
+        self._s.cod4r_wait.connect(self._show_cod4r_wait)
+        self._s.cod4r_go.connect(self._hide_cod4r_wait)
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
         self._s.manual_dl.connect(self._show_manual_dl_dialog)
@@ -1245,6 +1281,12 @@ class OwnInstallScreen(QWidget):
         self.plut_warn.setVisible(False)
         self.plut_btn.setVisible(False)
 
+    def _show_cod4r_wait(self):
+        self.cod4r_btn.setVisible(True)
+
+    def _hide_cod4r_wait(self):
+        self.cod4r_btn.setVisible(False)
+
     def _append_log(self, text):
         _log_to_file(text)
         self.log.appendPlainText(text)
@@ -1255,8 +1297,10 @@ class OwnInstallScreen(QWidget):
         self.bar.setValue(0); self.log.clear()
         self.plut_btn.setVisible(False)
         self.plut_warn.setVisible(False)
+        self.cod4r_btn.setVisible(False)
         self.cont_btn.setVisible(False)
         self._plut_event.clear()
+        self._cod4r_event.clear()
         self._manual_dl_event.clear()
         self._manual_dl_ok = False
         self._stop_pulse()
@@ -1285,6 +1329,9 @@ class OwnInstallScreen(QWidget):
 
     def _confirm_plut(self):
         self._plut_event.set()
+
+    def _confirm_cod4r(self):
+        self._cod4r_event.set()
 
     def _show_manual_dl_dialog(self, url, dest_folder, filename, label):
         """
@@ -1769,6 +1816,13 @@ class OwnInstallScreen(QWidget):
                     if c == "cod4r":
                         install_cod4r(game, self.steam_root, proton, compat, op_cod4,
                                       appid=cod4_appid, source=source)
+                        self._s.log.emit(
+                            "Close the CoD4R launcher when the download is complete."
+                        )
+                        self._s.cod4r_wait.emit()
+                        self._cod4r_event.wait()
+                        self._cod4r_event.clear()
+                        self._s.cod4r_go.emit()
                     elif c == "cod4x":
                         install_cod4x(game, self.steam_root, proton, compat, op_cod4,
                                       appid=cod4_appid)
