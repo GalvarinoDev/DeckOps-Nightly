@@ -106,7 +106,7 @@ def font(size=13, bold=False, weight=None, display=False):
 
 ALL_GAMES = [
     # ── Row 1: Infinity Ward (green) ─────────────────────────────────────
-    {"base":"Call of Duty 4: Modern Warfare","keys":["cod4mp","cod4sp"],"appid":7940,"dev":"iw","client":"cod4x + iw3sp",
+    {"base":"Call of Duty 4: Modern Warfare","keys":["cod4mp","cod4sp"],"appid":7940,"dev":"iw","client":"cod4r + iw3sp",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Modern Warfare 2","keys":["iw4mp","iw4sp"],"appid":10190,"dev":"iw","client":"iw4x",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
@@ -152,7 +152,7 @@ def _active_appid(gd):
     return gd.get("lcd_appid", gd["appid"])
 
 KEY_CLIENT = {
-    "cod4mp": "cod4x",
+    "cod4mp": "cod4r",
     "cod4sp": "iw3sp",
     "iw4mp":  "iw4x",
     "iw4sp":  "steam",
@@ -389,6 +389,36 @@ def _ask_t7x_install(parent, selected):
         QMessageBox.Yes,
     )
     return reply == QMessageBox.Yes
+
+def _ask_cod4_client(parent, selected) -> str:
+    """
+    Show a dialog recommending CoD4R over CoD4x for Call of Duty 4.
+    Returns "cod4r" (default) or "cod4x".
+    Only shows the dialog if cod4mp is in the selected games.
+    """
+    has_cod4mp = any(k == "cod4mp" for k, _, _ in selected)
+    if not has_cod4mp:
+        return "cod4r"
+
+    msg = QMessageBox(parent)
+    msg.setWindowTitle("Call of Duty 4 - Client Selection")
+    msg.setText(
+        "Which multiplayer client would you like to install?\n\n"
+        "CoD4R (Recommended)\n"
+        "Native controller support, server browser, QoL improvements, "
+        "and bot support. Built for handheld gaming.\n\n"
+        "CoD4x\n"
+        "Established community client. No native controller support -- "
+        "requires manual input configuration."
+    )
+    btn_cod4r = msg.addButton("CoD4R (Recommended)", QMessageBox.AcceptRole)
+    msg.addButton("CoD4x", QMessageBox.RejectRole)
+    msg.setDefaultButton(btn_cod4r)
+    msg.exec_()
+
+    if msg.clickedButton() == btn_cod4r:
+        return "cod4r"
+    return "cod4x"
 
 
 # ── Title block ───────────────────────────────────────────────────────────────

@@ -324,9 +324,9 @@ fi
 fi
 echo ""
 
-# ── (existing code continues below: info "Removing iw4x / cod4x client files...") ──
+# ── (existing code continues below: info "Removing iw4x / cod4x / cod4r client files...") ──
 
-info "Removing iw4x / cod4x client files..."
+info "Removing iw4x / cod4x / cod4r client files..."
 
 if [ -n "$STEAM_ROOT" ]; then
     mw2_dir=$(find_install_dir 10190) || true
@@ -344,6 +344,19 @@ if [ -n "$STEAM_ROOT" ]; then
         for f in "cod4x_021.dll" "cod4x_loader.exe" "cod4x.exe" "deckops_cod4x.json" "servercache.dat"; do
             [ -f "$cod4_dir/$f" ] && rm -f "$cod4_dir/$f" && success "Removed $f" || skip "$f not found"
         done
+        # CoD4R files
+        for f in "Cod4R-DedRun.exe" "miles32.dll" "deckops_cod4r.json" "pbgame.htm" "eula.txt"; do
+            [ -f "$cod4_dir/$f" ] && rm -f "$cod4_dir/$f" && success "Removed $f" || skip "$f not found"
+        done
+        for f in "jcod4r_00.iwd" "xcommon_glyphs.iwd" "xcommon_cod4qol.iwd" "xcommon_cod4r_weapons.iwd"; do
+            [ -f "$cod4_dir/main/$f" ] && rm -f "$cod4_dir/main/$f" && success "Removed main/$f" || skip "main/$f not found"
+        done
+        for f in "cod4r_patchv2.ff" "cod4r_controls.ff" "cod4r_ambfix.ff" "qol.ff"; do
+            [ -f "$cod4_dir/zone/english/$f" ] && rm -f "$cod4_dir/zone/english/$f" && success "Removed zone/english/$f" || skip "zone/english/$f not found"
+        done
+        for d in "userraw" "Mods/mp_bots"; do
+            [ -d "$cod4_dir/$d" ] && rm -rf "$cod4_dir/$d" && success "Removed $d/" || skip "$d/ not found"
+        done
     fi
 
     # Remove CoD4 user profile/config directory from the Wine prefix
@@ -353,6 +366,14 @@ if [ -n "$STEAM_ROOT" ]; then
         rm -rf "$COD4_APPDATA" && success "Removed CoD4 Wine prefix AppData" || warn "Failed to remove CoD4 Wine prefix AppData"
     else
         skip "CoD4 Wine prefix AppData not found"
+    fi
+
+    # Remove CoD4R launcher settings from Wine prefix
+    COD4R_APPDATA="$STEAM_ROOT/steamapps/compatdata/7940/pfx/drive_c/users/steamuser/AppData/Local/CoD4R"
+    if [ -d "$COD4R_APPDATA" ]; then
+        rm -rf "$COD4R_APPDATA" && success "Removed CoD4R Wine prefix AppData" || warn "Failed to remove CoD4R Wine prefix AppData"
+    else
+        skip "CoD4R Wine prefix AppData not found"
     fi
 
     # Remove CoD4x ProgramData staging area (setup.exe + GitHub fallback)
@@ -477,7 +498,7 @@ USERDATA_DIR = os.path.join(STEAM_DIR, "userdata")
 
 # Map exe filename (lowercase) to cleanup actions.
 # "files" are removed, "dirs" are removed recursively.
-# Must match what iw4x.py, cod4x.py, and iw3sp.py install.
+# Must match what iw4x.py, cod4x.py, cod4r.py, and iw3sp.py install.
 OWN_CLEANUP = {
     "iw4mp.exe": {
         "files": ["iw4x.dll", "iw4x.exe"],
@@ -490,8 +511,16 @@ OWN_CLEANUP = {
     },
     "iw3mp.exe": {
         "files": ["cod4x_021.dll", "cod4x_loader.exe", "cod4x.exe",
-                  "deckops_cod4x.json", "servercache.dat"],
-        "dirs":  [],
+                  "deckops_cod4x.json", "servercache.dat",
+                  "Cod4R-DedRun.exe", "miles32.dll", "deckops_cod4r.json",
+                  "pbgame.htm", "eula.txt"],
+        "dirs":  ["userraw", "Mods/mp_bots"],
+        "subdirs": {
+            "main": ["jcod4r_00.iwd", "xcommon_glyphs.iwd",
+                     "xcommon_cod4qol.iwd", "xcommon_cod4r_weapons.iwd"],
+            "zone/english": ["cod4r_patchv2.ff", "cod4r_controls.ff",
+                             "cod4r_ambfix.ff", "qol.ff"],
+        },
     },
     "iw3sp.exe": {
         "files": ["iw3sp_mod.exe", "iw3sp_mod.dll", "deckops_iw3sp.json"],
@@ -637,6 +666,17 @@ for uid in os.listdir(USERDATA_DIR):
                     print(f"    Removed {dname}/")
                 except Exception as ex:
                     print(f"    Failed to remove {dname}/: {ex}")
+
+        # Remove files in subdirectories (e.g. main/*.iwd, zone/english/*.ff)
+        for subdir, fnames in cleanup.get("subdirs", {}).items():
+            for fname in fnames:
+                fpath = os.path.join(install_dir, subdir, fname)
+                if os.path.exists(fpath):
+                    try:
+                        os.remove(fpath)
+                        print(f"    Removed {subdir}/{fname}")
+                    except Exception as ex:
+                        print(f"    Failed to remove {subdir}/{fname}: {ex}")
 
         # Also remove plutonium metadata if present
         plut_meta = os.path.join(install_dir, "deckops_plutonium.json")
@@ -1678,38 +1718,27 @@ if not shortcut_appids:
     print("  No shortcut appids to clean up.")
 
 # Add the DeckOps offline launcher shortcut appid. The launcher uses
-# launcher_offline.sh as its exe path, and its appid is calculated from
-# the quoted exe path + title. We check current, old exe, and old python paths.
+# DeckOps_Offline.exe as its exe path, and its appid is calculated from
+# the quoted exe path + title. We check both the current and old exe paths.
 _LAUNCHER_TITLE = "DeckOps: Plutonium Offline"
 _OLD_LAUNCHER_TITLE = "DeckOps: Plutonium Launcher"
-# Current: launcher_offline.sh wrapper
 _launcher_exe_new = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly",
-                                  "assets", "LAN", "launcher_offline.sh")
-# Old: Windows exe (prior to intent file bridge)
-_launcher_exe_win = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly",
                                   "assets", "LAN", "DeckOps_Offline.exe")
-# Oldest: python3-based launcher
 _launcher_exe_old = os.path.join(os.path.expanduser("~"), "DeckOps-Nightly",
                                   ".venv", "bin", "python3")
-# Stable branch paths
+# Also check stable branch paths
 _launcher_exe_new_stable = os.path.join(os.path.expanduser("~"), "DeckOps",
-                                         "assets", "LAN", "launcher_offline.sh")
-_launcher_exe_win_stable = os.path.join(os.path.expanduser("~"), "DeckOps",
                                          "assets", "LAN", "DeckOps_Offline.exe")
 _launcher_exe_old_stable = os.path.join(os.path.expanduser("~"), "DeckOps",
                                          ".venv", "bin", "python3")
 for _exe, _title in [
     (f'"{_launcher_exe_new}"', _LAUNCHER_TITLE),
-    (f'"{_launcher_exe_win}"', _LAUNCHER_TITLE),
     (f'"{_launcher_exe_old}"', _LAUNCHER_TITLE),
     (f'"{_launcher_exe_new}"', _OLD_LAUNCHER_TITLE),
-    (f'"{_launcher_exe_win}"', _OLD_LAUNCHER_TITLE),
     (f'"{_launcher_exe_old}"', _OLD_LAUNCHER_TITLE),
     (f'"{_launcher_exe_new_stable}"', _LAUNCHER_TITLE),
-    (f'"{_launcher_exe_win_stable}"', _LAUNCHER_TITLE),
     (f'"{_launcher_exe_old_stable}"', _LAUNCHER_TITLE),
     (f'"{_launcher_exe_new_stable}"', _OLD_LAUNCHER_TITLE),
-    (f'"{_launcher_exe_win_stable}"', _OLD_LAUNCHER_TITLE),
     (f'"{_launcher_exe_old_stable}"', _OLD_LAUNCHER_TITLE),
 ]:
     _appid = calc_shortcut_appid(_exe, _title)

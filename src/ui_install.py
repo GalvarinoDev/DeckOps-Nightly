@@ -23,7 +23,7 @@ from ui_constants import (
     font, _btn, _lbl, _title_block, _log_to_file, _Sigs,
     ALL_GAMES, KEY_CLIENT, KEY_EXES, KEY_MODE_LABEL,
     _active_keys, _active_client, _active_appid,
-    _ask_iw4x_dlc, _ask_t7x_install,
+    _ask_iw4x_dlc, _ask_t7x_install, _ask_cod4_client,
     go_to, get_screen,
 )
 
@@ -144,6 +144,7 @@ class WelcomeScreen(QWidget):
                             _own_tmp.append((_k, _gd, _g)); break
                 own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, _own_tmp)
                 own_screen.install_t7x_opt = _ask_t7x_install(self, _own_tmp)
+                own_screen.cod4_client = _ask_cod4_client(self, _own_tmp)
                 go_to(self.stack, "OwnInstallScreen")
                 return
             s = get_screen(self.stack, "SetupScreen")
@@ -336,6 +337,7 @@ class SetupScreen(QWidget):
                         if _k in _active_keys(_gd):
                             _own_tmp.append((_k, _gd, _g)); break
                 own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, _own_tmp)
+                own_screen.cod4_client = _ask_cod4_client(self, _own_tmp)
                 go_to(self.stack, "OwnInstallScreen")
                 return
             self.warning.setText("Select at least one game to continue.")
@@ -355,6 +357,7 @@ class SetupScreen(QWidget):
                         _own_tmp.append((_k, _gd, _g)); break
             own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, selected + _own_tmp)
             own_screen.install_t7x_opt = _ask_t7x_install(self, selected + _own_tmp)
+            own_screen.cod4_client = _ask_cod4_client(self, selected + _own_tmp)
             go_to(self.stack, "OwnInstallScreen")
             return
 
@@ -364,6 +367,7 @@ class SetupScreen(QWidget):
         s.steam_root = self.steam_root
         s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
         s.install_t7x_opt = _ask_t7x_install(self, selected)
+        s.cod4_client = _ask_cod4_client(self, selected)
         go_to(self.stack, "InstallScreen")
 
 # ── InstallScreen ─────────────────────────────────────────────────────────────
@@ -568,6 +572,7 @@ class InstallScreen(QWidget):
         from wrapper import get_proton_path, find_compatdata, kill_steam
         from plutonium_oled import launch_bootstrapper, is_plutonium_ready, install_plutonium
         from cod4x import install_cod4x
+        from cod4r import install_cod4r
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
         from t6sp_mod import install_t6sp_mod
@@ -577,10 +582,13 @@ class InstallScreen(QWidget):
 
         selected_keys   = [key for key, _, _ in self.selected]
         has_plut        = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
-        has_cod4        = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k in selected_keys)
+        has_cod4        = any(KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp") for k in selected_keys)
         has_iw4x        = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
         has_cleanops    = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
         has_t6sp_mod    = any(KEY_CLIENT.get(k) == "t6sp_mod" for k in selected_keys)
+
+        # Resolve CoD4 MP client choice from pre-install popup
+        _cod4_client = getattr(self, "cod4_client", "cod4r")
 
         # ── T7X opt-in: inject t7x into selected if user chose to install it ──
         has_t7x = getattr(self, "install_t7x_opt", False) and has_cleanops
@@ -900,9 +908,9 @@ class InstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-        # ── CoD4 (iw3sp + cod4x) — Steam closed ──────────────────────────────
+        # ── CoD4 (iw3sp + cod4r/cod4x) — Steam closed ────────────────────────
         if has_cod4:
-            cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4x", "iw3sp")]
+            cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp")]
             for key, gd, game in cod4_selected:
                 base_name = gd["base"]
                 self._s.progress.emit(75, f"Setting up {base_name}...")
@@ -912,7 +920,13 @@ class InstallScreen(QWidget):
                     compat = find_compatdata(self.steam_root, gd["appid"],
                                              game_install_dir=_install_dir)
                     c = KEY_CLIENT.get(key, gd["client"])
-                    if c == "cod4x":
+                    # Override cod4mp client with user's popup choice
+                    if key == "cod4mp":
+                        c = _cod4_client
+                    if c == "cod4r":
+                        install_cod4r(game, self.steam_root, proton, compat, op_cod4,
+                                      appid=gd["appid"], source="steam")
+                    elif c == "cod4x":
                         install_cod4x(game, self.steam_root, proton, compat, op_cod4,
                                       appid=gd["appid"])
                     elif c == "iw3sp":
@@ -1341,6 +1355,7 @@ class OwnInstallScreen(QWidget):
         from wrapper import get_proton_path, find_compatdata, kill_steam, set_compat_tool
         from shortcut import enrich_own_games, write_own_shortcuts
         from cod4x import install_cod4x
+        from cod4r import install_cod4r
         from iw4x import install_iw4x
         from iw3sp import install_iw3sp
         from t6sp_mod import install_t6sp_mod
@@ -1362,8 +1377,11 @@ class OwnInstallScreen(QWidget):
         selected_keys = [key for key, _, _ in self.selected]
         logged_bases  = set()
         has_plut      = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
-        has_cod4      = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k in selected_keys)
+        has_cod4      = any(KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp") for k in selected_keys)
         has_t6sp_mod  = any(KEY_CLIENT.get(k) == "t6sp_mod" for k in selected_keys)
+
+        # Resolve CoD4 MP client choice from pre-install popup
+        _cod4_client = getattr(self, "cod4_client", "cod4r")
 
         # ── GE-Proton download (Steam still running) ─────────────────────
         ge_version = None
@@ -1727,10 +1745,10 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-        # ── Install CoD4 (iw3sp + cod4x) ─────────────────────────────────
+        # ── Install CoD4 (iw3sp + cod4r/cod4x) ─────────────────────────────
         _log_to_file("[BREADCRUMB] starting cod4 install phase")
         if has_cod4:
-            cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4x", "iw3sp")]
+            cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp")]
             for key, gd, game in cod4_selected:
                 base_name = gd["base"]
                 self._s.progress.emit(63, f"Setting up {base_name}...")
@@ -1738,16 +1756,22 @@ class OwnInstallScreen(QWidget):
                 try:
                     source = "own" if key in self.own_selected else "steam"
                     c = KEY_CLIENT.get(key, gd["client"])
+                    # Override cod4mp client with user's popup choice
+                    if key == "cod4mp":
+                        c = _cod4_client
                     if source == "own":
                         compat = game.get("compatdata_path", "")
-                        cod4x_appid = game.get("shortcut_appid", 7940)
+                        cod4_appid = game.get("shortcut_appid", 7940)
                     else:
                         compat = find_compatdata(self.steam_root, gd["appid"],
                                                   game_install_dir=game.get("install_dir"))
-                        cod4x_appid = gd["appid"]
-                    if c == "cod4x":
+                        cod4_appid = gd["appid"]
+                    if c == "cod4r":
+                        install_cod4r(game, self.steam_root, proton, compat, op_cod4,
+                                      appid=cod4_appid, source=source)
+                    elif c == "cod4x":
                         install_cod4x(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=cod4x_appid)
+                                      appid=cod4_appid)
                     elif c == "iw3sp":
                         install_iw3sp(game, self.steam_root, proton, compat, op_cod4, source=source)
                     cfg.mark_game_setup(key, c, source=source)
@@ -1942,7 +1966,7 @@ class OwnInstallScreen(QWidget):
                 self._s.log.emit(f"  Steam shortcuts skipped: {ex}")
 
             # Set default launch option so Steam Deck skips the mode picker
-            has_cod4_steam = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp")
+            has_cod4_steam = any(KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp")
                                 for k, _, _ in self.steam_selected)
             has_waw_steam = any(k in ("t4sp", "t4mp")
                                for k, _, _ in self.steam_selected)

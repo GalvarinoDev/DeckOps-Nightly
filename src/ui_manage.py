@@ -333,7 +333,7 @@ class ManagementScreen(QWidget):
 
     def _configure(self, gd, installed_keys):
         """Show configure dialog with Mods, Update, and Reinstall options."""
-        _MOD_CLIENTS = ("cod4x", "iw4x", "plutonium", "alterware", "t7x")
+        _MOD_CLIENTS = ("cod4r", "cod4x", "iw4x", "plutonium", "alterware", "t7x")
         has_mods_support = any(KEY_CLIENT.get(k, "") in _MOD_CLIENTS for k in installed_keys)
         has_mod_client = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in installed_keys)
 
@@ -457,7 +457,7 @@ class ManagementScreen(QWidget):
         alterware_keys = []
         for k in installed_keys:
             c = KEY_CLIENT.get(k, "")
-            if c in ("cod4x", "iw4x"):
+            if c in ("cod4r", "cod4x", "iw4x"):
                 client = c
                 break
             elif c == "t7x":
@@ -474,7 +474,7 @@ class ManagementScreen(QWidget):
             self._status.setText("No mod support for this game.")
             return
 
-        if client in ("cod4x", "iw4x"):
+        if client in ("cod4r", "cod4x", "iw4x"):
             mod_key = installed_keys[0]
             game = self.installed.get(mod_key, {})
             install_dir = game.get("install_dir", "")
@@ -1580,13 +1580,14 @@ class UpdateScreen(QWidget):
         from wrapper import get_proton_path, find_compatdata, kill_steam
         from iw4x import install_iw4x
         from cod4x import install_cod4x
+        from cod4r import install_cod4r
         from iw3sp import install_iw3sp
         from t6sp_mod import install_t6sp_mod
         from cleanops import install_cleanops
         from t7x import install_t7x
         from plutonium_oled import install_plutonium
 
-        has_cod4  = any(KEY_CLIENT.get(k) in ("cod4x", "iw3sp") for k, _, _ in self.selected)
+        has_cod4  = any(KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp") for k, _, _ in self.selected)
         has_iw4x  = any(KEY_CLIENT.get(k) == "iw4x" for k, _, _ in self.selected)
         has_plut  = any(KEY_CLIENT.get(k) == "plutonium" for k, _, _ in self.selected)
         proton    = get_proton_path(self.steam_root)
@@ -1633,6 +1634,9 @@ class UpdateScreen(QWidget):
             # Determine source from setup_games config entry
             entry = setup_games.get(key, {})
             source = entry.get("source", "steam")
+            # Prefer the client from the original install if available
+            if key == "cod4mp" and entry.get("client"):
+                c = entry["client"]
 
             try:
                 from plutonium_oled import GAME_META as _PLUT_META
@@ -1657,7 +1661,10 @@ class UpdateScreen(QWidget):
                     steamapps = os.path.dirname(os.path.dirname(game["install_dir"]))
                     compat = os.path.join(steamapps, "compatdata", str(_appid))
 
-                if c == "cod4x":
+                if c == "cod4r":
+                    install_cod4r(game, self.steam_root, proton, compat, op,
+                                  appid=gd["appid"], source=source)
+                elif c == "cod4x":
                     install_cod4x(game, self.steam_root, proton, compat, op,
                                   appid=gd["appid"])
                 elif c == "iw3sp":

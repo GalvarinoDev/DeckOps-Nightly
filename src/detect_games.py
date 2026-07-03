@@ -157,7 +157,7 @@ GAMES = {
         "order": 1,
         "appid": "7940",
         "exe": "iw3mp.exe",
-        "protocol": "cod4x",
+        "protocol": "cod4r",
     },
     "cod4sp": {
         "name": "Call of Duty 4: Modern Warfare (2007) - Singleplayer",
