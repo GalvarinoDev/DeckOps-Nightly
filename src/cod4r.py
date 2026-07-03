@@ -55,7 +55,7 @@ _log = get_logger(__name__)
 # TODO: Replace with actual download URL once k/divity publishes a release.
 # This is a placeholder -- DeckOps will need to host or mirror the launcher
 # if there is no stable public download link.
-_LAUNCHER_URL = "https://archive.org/download/co-d-4-r-launcher/CoD4R-Launcher.exe"
+_LAUNCHER_URL = "https://archive.org/download/co-d-4-r-launcher_202607/CoD4R-Launcher.exe"
 
 # TODO: Archive.org fallback URL (set up once we have a primary URL)
 _ARCHIVE_FALLBACK_URL = None
