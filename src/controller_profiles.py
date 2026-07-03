@@ -649,7 +649,19 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
                 continue
 
             shortcut_appid   = shortcut_appids[key]
-            filenames        = _profile_filename(sdef["profile_type"], gyro_mode)
+
+            # CoD4R has native controller support -- use standard gamepad layout
+            _profile = sdef["profile_type"]
+            if key == "cod4mp":
+                try:
+                    import config as _cfg_ctrl
+                    _ctrl_entry = _cfg_ctrl.get_setup_games().get("cod4mp", {})
+                    if _ctrl_entry.get("client") == "cod4r":
+                        _profile = "standard"
+                except Exception:
+                    pass
+
+            filenames        = _profile_filename(_profile, gyro_mode)
             primary_filename = filenames[0] if filenames else None
             if not primary_filename:
                 continue
