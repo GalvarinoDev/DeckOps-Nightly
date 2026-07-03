@@ -163,8 +163,9 @@ def _build_wine_game_path(install_dir: str, source: str) -> str:
     """
     Build the Wine-style game path for settings.txt.
 
-    Steam installs use the S: drive (Proton maps steamapps/ to S:).
-    Own installs use the Z: drive (Wine maps / to Z:).
+    Both Steam and own installs use the Z: drive (Wine maps / to Z:).
+    The launcher's own auto-detect also uses the Z: path, so we match
+    that format for consistency.
 
     Parameters:
       install_dir -- Linux path to the game directory
@@ -173,24 +174,7 @@ def _build_wine_game_path(install_dir: str, source: str) -> str:
     Returns:
       Wine path string suitable for settings.txt
     """
-    if source == "steam":
-        # Proton creates S: -> <steam_root>/steamapps/
-        # The game is at <steam_root>/steamapps/common/<game>/
-        # So the Wine path is S:\common\<game folder name>
-        #
-        # Extract the path relative to steamapps/
-        # e.g. /home/deck/.local/share/Steam/steamapps/common/Call of Duty 4
-        #   -> common/Call of Duty 4
-        #   -> S:\common\Call of Duty 4
-        idx = install_dir.find("steamapps/")
-        if idx != -1:
-            rel = install_dir[idx + len("steamapps/"):]
-            return "S:" + rel.replace("/", "\\")
-        # Fallback to Z: if we can't find steamapps in the path
-        _log.warning("Could not find steamapps/ in install_dir, falling back to Z: path")
-        return _linux_to_wine_path(install_dir)
-    else:
-        return _linux_to_wine_path(install_dir)
+    return _linux_to_wine_path(install_dir)
 
 
 def _write_settings_txt(compatdata_path: str, install_dir: str,
