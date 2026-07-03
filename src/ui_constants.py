@@ -462,6 +462,8 @@ class _Sigs(QObject):
     done        = pyqtSignal(bool)
     plut_wait   = pyqtSignal()
     plut_go     = pyqtSignal()
+    cod4r_wait  = pyqtSignal()
+    cod4r_go    = pyqtSignal()
     pulse_start = pyqtSignal(str)
     pulse_stop  = pyqtSignal()
     # Manual download fallback: (url, dest_folder, filename, label)
