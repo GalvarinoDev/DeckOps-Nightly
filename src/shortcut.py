@@ -1481,7 +1481,15 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
 
             _download_artwork(grid_dir, shortcut_appid, shortcut_def, prog,
                               force=True, clean_stale=True)
-            _assign_controller_config(uid, shortcut_appid, shortcut_def, gyro_mode, prog)
+            # CoD4R has native controller support -- use standard gamepad layout
+            _ctrl_def = shortcut_def
+            if key == "cod4mp":
+                import config as _cfg_ctrl
+                _ctrl_entry = _cfg_ctrl.get_setup_games().get("cod4mp", {})
+                if _ctrl_entry.get("client") == "cod4r":
+                    _ctrl_def = dict(shortcut_def)
+                    _ctrl_def["template_type"] = "standard"
+            _assign_controller_config(uid, shortcut_appid, _ctrl_def, gyro_mode, prog)
         
         if new_entries:
             try:
@@ -1812,7 +1820,15 @@ def write_own_shortcuts(own_games: dict, selected_keys: list,
                               force=True, clean_stale=True)
 
             # Assign controller config
-            _assign_controller_config(uid, shortcut_appid, shortcut_def, gyro_mode, prog)
+            # CoD4R has native controller support -- use standard gamepad layout
+            _ctrl_def = shortcut_def
+            if key == "cod4mp":
+                import config as _cfg_ctrl
+                _ctrl_entry = _cfg_ctrl.get_setup_games().get("cod4mp", {})
+                if _ctrl_entry.get("client") == "cod4r":
+                    _ctrl_def = dict(shortcut_def)
+                    _ctrl_def["template_type"] = "standard"
+            _assign_controller_config(uid, shortcut_appid, _ctrl_def, gyro_mode, prog)
 
             # Set GE-Proton compat tool
             try:
@@ -1855,21 +1871,21 @@ def create_own_shortcuts(own_games: dict, selected_keys: list,
 
 
 # ── DeckOps Plutonium Offline Launcher shortcut ──────────────────────────────
-# The launcher uses a bash wrapper (launcher_offline.sh) as the non-Steam
-# shortcut entry point. The wrapper runs DeckOps_Offline.exe inside Proton
-# for the game selection UI, then reads an intent file and exec's the
-# game's LAN wrapper script (which invokes Proton with the correct
-# per-game prefix).
+# The launcher is a Windows exe (DeckOps_Offline.exe) built with PyInstaller
+# that runs inside GE-Proton as a non-Steam shortcut. It shows installed
+# Plutonium games and lets users pick a mode to launch. The bootstrapper
+# runs as a direct Windows-to-Windows subprocess inside the same Wine/Proton
+# session, so all games (including T4/T5) work in Game Mode.
 #
-# Both OLED and LCD Decks get this shortcut -- it's the unified Plutonium
+# Both OLED and LCD Decks get this shortcut — it's the unified Plutonium
 # offline entry point.
 
 LAUNCHER_TITLE = "DeckOps: Plutonium Offline"
 
-# Path to the wrapper script relative to the DeckOps install directory.
-# install.sh pulls the repo to ~/DeckOps[-Nightly], so the script lands at:
-#   ~/DeckOps[-Nightly]/assets/LAN/launcher_offline.sh
-_LAUNCHER_EXE_REL = os.path.join("assets", "LAN", "launcher_offline.sh")
+# Path to the Windows exe relative to the DeckOps install directory.
+# install.sh pulls the repo to ~/DeckOps[-Nightly], so the exe lands at:
+#   ~/DeckOps[-Nightly]/assets/LAN/DeckOps_Offline.exe
+_LAUNCHER_EXE_REL = os.path.join("assets", "LAN", "DeckOps_Offline.exe")
 
 # Custom DeckOps Plutonium launcher artwork. Hosted in the repo so updates
 # ship with the source. _download_artwork below always re-downloads on
@@ -1883,10 +1899,9 @@ LAUNCHER_ART = {
     "icon_ext": "png", "grid_ext": "png", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
 }
 
-# Old exe paths used by prior launcher versions. Needed so migration can
-# calculate old appids and strip stale artwork / compat tool entries.
+# Old exe path used by the python3-based launcher. Needed so migration can
+# calculate the old appid and strip stale artwork / compat tool entries.
 _OLD_LAUNCHER_EXE = VENV_PYTHON
-_OLD_LAUNCHER_EXE_WIN = os.path.join("assets", "LAN", "DeckOps_Offline.exe")
 
 
 def get_launcher_appid() -> int:
@@ -1925,10 +1940,10 @@ def _launcher_launch_opts(shortcut_appid: int) -> str:
     """
     Return launch options for the offline launcher shortcut.
 
-    The launcher is a native bash script -- no Proton env vars needed
-    here (the script handles Proton invocation internally).
+    Disables fsync and esync to prevent BO1/BO2 hangs on kernels
+    without NTSync (pre-6.14 / SteamOS < 3.7.20).
     """
-    return ""
+    return "PROTON_NO_FSYNC=1 PROTON_NO_ESYNC=1 %command%"
 
 
 def create_launcher_shortcut(on_progress=None):
@@ -1978,20 +1993,12 @@ def create_launcher_shortcut(on_progress=None):
         if _OLD_LAUNCHER_TITLE in existing_names:
             _stale_names.add(_OLD_LAUNCHER_TITLE)
 
-        # 2) Same name but old python3-based exe path -- different appid
+        # 2) Same name but old python3-based exe path — different appid
         #    because exe_path changed. Strip by name so the new entry
         #    (with the exe path) can be written fresh.
         _old_py_exe = f'"{_OLD_LAUNCHER_EXE}"'
         _old_py_appid = _calc_shortcut_appid(_old_py_exe, LAUNCHER_TITLE)
         if _old_py_appid != shortcut_appid and LAUNCHER_TITLE in existing_names:
-            _stale_names.add(LAUNCHER_TITLE)
-
-        # 3) Old Windows exe-based shortcut -- different appid because
-        #    exe path changed from .exe to .sh wrapper.
-        _old_win_exe = os.path.join(INSTALL_DIR, _OLD_LAUNCHER_EXE_WIN)
-        _old_win_exe_path = f'"{_old_win_exe}"'
-        _old_win_appid = _calc_shortcut_appid(_old_win_exe_path, LAUNCHER_TITLE)
-        if _old_win_appid != shortcut_appid and LAUNCHER_TITLE in existing_names:
             _stale_names.add(LAUNCHER_TITLE)
 
         if _stale_names:
@@ -2003,25 +2010,25 @@ def create_launcher_shortcut(on_progress=None):
                     prog(f"  Removed stale launcher shortcut: {_sn}")
             existing_names = [n for n in existing_names if n not in _stale_names]
 
-            # Clean up artwork and compat tool for old appids
-            for _old_appid in (_old_py_appid, _old_win_appid):
-                if _old_appid == shortcut_appid:
-                    continue
+            # Clean up artwork for the old python3-based appid
+            if _old_py_appid != shortcut_appid:
                 try:
                     import glob as _glob
-                    for _f in _glob.glob(os.path.join(grid_dir, f"{_old_appid}*")):
+                    for _f in _glob.glob(os.path.join(grid_dir, f"{_old_py_appid}*")):
                         try:
                             os.remove(_f)
                         except OSError:
                             _log.debug("file removal failed", exc_info=True)
-                    prog(f"  Cleaned old launcher artwork (appid {_old_appid})")
+                    prog(f"  Cleaned old launcher artwork (appid {_old_py_appid})")
                 except Exception:
                     _log.debug("file removal failed", exc_info=True)
-                try:
-                    _clear_compat_tool(str(_old_appid))
-                    prog(f"  Cleared old compat tool entry (appid {_old_appid})")
-                except Exception:
-                    _log.debug("operation failed", exc_info=True)
+
+            # Clear stale compat tool entry for old appid
+            try:
+                _clear_compat_tool(str(_old_py_appid))
+                prog(f"  Cleared old compat tool entry (appid {_old_py_appid})")
+            except Exception:
+                _log.debug("operation failed", exc_info=True)
 
         next_idx = _get_next_index(existing_raw)
 
@@ -2078,13 +2085,18 @@ def create_launcher_shortcut(on_progress=None):
                                   {"template_type": "standard"},
                                   _gyro, prog)
 
-        # The launcher is a native bash script -- no compat tool needed.
-        # Clear any stale compat tool entry from prior versions that used
-        # the Windows exe directly as the shortcut.
+        # Set GE-Proton as compat tool — the exe runs inside Proton.
         try:
-            _clear_compat_tool(str(shortcut_appid))
-        except Exception:
-            pass
+            import config as _cfg
+            from wrapper import set_compat_tool
+            ge_version = _cfg.get_ge_proton_version()
+            if ge_version:
+                set_compat_tool([str(shortcut_appid)], ge_version)
+                prog(f"    ✓ GE-Proton {ge_version} set for launcher")
+            else:
+                prog(f"    ⚠ No GE-Proton version found — compat tool not set")
+        except Exception as ex:
+            prog(f"    ⚠ Could not set GE-Proton: {ex}")
 
     prog(f"  Launcher shortcut appid: {shortcut_appid}")
 
@@ -2101,21 +2113,16 @@ def remove_launcher_shortcut(on_progress=None):
         if on_progress:
             on_progress(msg)
 
-    # Current wrapper-based appid
+    # Current exe-based appid
     launcher_exe = os.path.join(INSTALL_DIR, _LAUNCHER_EXE_REL)
     exe_path_new = f'"{launcher_exe}"'
     appid_new = _calc_shortcut_appid(exe_path_new, LAUNCHER_TITLE)
-
-    # Old Windows exe-based appid (before launcher_offline.sh wrapper)
-    _old_win_exe = os.path.join(INSTALL_DIR, _OLD_LAUNCHER_EXE_WIN)
-    exe_path_win = f'"{_old_win_exe}"'
-    appid_win = _calc_shortcut_appid(exe_path_win, LAUNCHER_TITLE)
 
     # Old python3-based appid
     exe_path_old = f'"{_OLD_LAUNCHER_EXE}"'
     appid_old = _calc_shortcut_appid(exe_path_old, LAUNCHER_TITLE)
 
-    appids_to_clean = {appid_new, appid_win, appid_old}
+    appids_to_clean = {appid_new, appid_old}
 
     uids = _find_all_steam_uids()
     if not uids:
