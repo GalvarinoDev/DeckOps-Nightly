@@ -855,7 +855,19 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
                 continue
 
             shortcut_appid   = shortcut_appids[key]
-            filenames        = _external_profile_filenames(controller_type, sdef["profile_type"], gyro_mode)
+
+            # CoD4R has native controller support -- use standard gamepad layout
+            _profile = sdef["profile_type"]
+            if key == "cod4mp":
+                try:
+                    import config as _cfg_ctrl
+                    _ctrl_entry = _cfg_ctrl.get_setup_games().get("cod4mp", {})
+                    if _ctrl_entry.get("client") == "cod4r":
+                        _profile = "standard"
+                except Exception:
+                    pass
+
+            filenames        = _external_profile_filenames(controller_type, _profile, gyro_mode)
             primary_filename = filenames[0] if filenames else None
             if not primary_filename:
                 continue
@@ -919,6 +931,17 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
 
                 steam_appid  = game.get("appid", "")
                 profile_type = APPID_PROFILE_MAP.get(steam_appid, "standard")
+
+                # CoD4R has native controller support -- use standard gamepad layout
+                if key == "cod4mp":
+                    try:
+                        _ctrl_entry = cfg.get_setup_games().get("cod4mp", {})
+                        if _ctrl_entry.get("client") == "cod4r":
+                            profile_type = "standard"
+                        elif _ctrl_entry.get("client") == "cod4x":
+                            profile_type = "other"
+                    except Exception:
+                        pass
                 filenames    = _external_profile_filenames(controller_type, profile_type, gyro_mode)
                 primary_filename = filenames[0] if filenames else None
                 if not primary_filename:
