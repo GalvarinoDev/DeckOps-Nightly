@@ -41,8 +41,8 @@ import re
 import json
 import shutil
 import subprocess
-import tempfile
 
+from identity import GITHUB_RAW
 from net import download as _download, DownloadError
 
 from log import get_logger
@@ -52,13 +52,8 @@ _log = get_logger(__name__)
 
 # -- constants ----------------------------------------------------------------
 
-# TODO: Replace with actual download URL once k/divity publishes a release.
-# This is a placeholder -- DeckOps will need to host or mirror the launcher
-# if there is no stable public download link.
-_LAUNCHER_URL = "https://archive.org/download/co-d-4-r-launcher_202607/CoD4R-Launcher.exe"
-
-# TODO: Archive.org fallback URL (set up once we have a primary URL)
-_ARCHIVE_FALLBACK_URL = None
+# CoD4R launcher hosted on the DeckOps repo.
+_LAUNCHER_URL = f"{GITHUB_RAW}/assets/CoD4R/CoD4R-Launcher.exe"
 
 METADATA_FILE = "deckops_cod4r.json"
 
@@ -363,45 +358,13 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
 
     # -- Step 2: Download CoD4R launcher -------------------------------------
     prog(10, "Downloading CoD4R launcher...")
-    launcher_dir = tempfile.mkdtemp(prefix="deckops_cod4r_")
-    launcher_exe = os.path.join(launcher_dir, "CoD4R-Launcher.exe")
-    try:
-        _download(
-            _LAUNCHER_URL, launcher_exe,
-            on_progress=lambda pct, lbl: prog(10 + int(pct * 0.20), lbl),
-            label="CoD4R launcher",
-            timeout=120,
-        )
-    except Exception as e:
-        log(f"  CoD4R launcher download failed: {e}")
-        if _ARCHIVE_FALLBACK_URL:
-            log("  Falling back to archive.org mirror...")
-            try:
-                _download(
-                    _ARCHIVE_FALLBACK_URL, launcher_exe,
-                    on_progress=lambda pct, lbl: prog(10 + int(pct * 0.20), lbl),
-                    label="CoD4R launcher (archive.org)",
-                    timeout=300,
-                )
-                log("  Archive.org fallback download complete")
-            except Exception as e2:
-                shutil.rmtree(launcher_dir, ignore_errors=True)
-                raise DownloadError(
-                    url=_ARCHIVE_FALLBACK_URL,
-                    dest=launcher_exe,
-                    label="CoD4R launcher",
-                    cause=RuntimeError(
-                        f"Primary: {e} -- Fallback (archive.org): {e2}"
-                    ),
-                )
-        else:
-            shutil.rmtree(launcher_dir, ignore_errors=True)
-            raise DownloadError(
-                url=_LAUNCHER_URL,
-                dest=launcher_exe,
-                label="CoD4R launcher",
-                cause=e,
-            )
+    launcher_exe = os.path.join(install_dir, "CoD4R-Launcher.exe")
+    _download(
+        _LAUNCHER_URL, launcher_exe,
+        on_progress=lambda pct, lbl: prog(10 + int(pct * 0.20), lbl),
+        label="CoD4R launcher",
+        timeout=120,
+    )
 
     # -- Step 3: Pre-write settings.txt --------------------------------------
     prog(35, "Writing launcher settings...")
@@ -427,10 +390,7 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
         proc.wait()
         log("  CoD4R launcher closed by user")
     except Exception as e:
-        shutil.rmtree(launcher_dir, ignore_errors=True)
         raise RuntimeError(f"CoD4R launcher failed: {e}")
-    finally:
-        shutil.rmtree(launcher_dir, ignore_errors=True)
 
     # -- Step 5: Write registry keys (post-launcher) -------------------------
     # The Proton run may have created a fresh user.reg, so write again.
