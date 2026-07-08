@@ -635,8 +635,14 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         #
         # /LOG tells Inno Setup to write a detailed log to the prefix's temp
         # directory. We collect it after the run for debugging.
+        # Use pinned GE-Proton for the installer to avoid regressions from
+        # newer GE-Proton releases.
         prog(55, "Running CoD4x installer...")
-        _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
+        _pinned = os.path.expanduser(
+            "~/.local/share/Steam/compatibilitytools.d/GE-Proton10-34/proton"
+        )
+        _install_proton = _pinned if os.path.exists(_pinned) else proton_path
+        _compat_install = steam_root or os.path.dirname(os.path.dirname(_install_proton))
 
         wine_install_dir = _linux_to_wine_path(install_dir)
         log(f"  Install dir (Wine): {wine_install_dir}")
@@ -648,7 +654,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         try:
             result = subprocess.run(
                 [
-                    proton_path, "run", setup_exe,
+                    _install_proton, "run", setup_exe,
                     "/VERYSILENT", "/SUPPRESSMSGBOXES",
                     f"/DIR={wine_install_dir}",
                     "/LOG",

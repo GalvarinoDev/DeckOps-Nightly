@@ -241,6 +241,14 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
 
     prog(15, "Launching Plutonium , please log in, then close the window when done.")
 
+    # Use pinned GE-Proton for the bootstrapper to avoid regressions from
+    # newer GE-Proton releases.  Fall back to the caller's proton_path if
+    # the pinned version isn't on disk.
+    _pinned = os.path.expanduser(
+        "~/.local/share/Steam/compatibilitytools.d/GE-Proton10-34/proton"
+    )
+    _install_proton = _pinned if os.path.exists(_pinned) else proton_path
+
     env = os.environ.copy()
     env["STEAM_COMPAT_DATA_PATH"]           = DEDICATED_PREFIX
     # STEAM_COMPAT_CLIENT_INSTALL_PATH should point to the Steam root,
@@ -249,11 +257,11 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
         env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = steam_root
     else:
         env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = os.path.dirname(
-            os.path.dirname(proton_path)
+            os.path.dirname(_install_proton)
         )
 
     proc = subprocess.Popen(
-        [proton_path, "run", bootstrapper],
+        [_install_proton, "run", bootstrapper],
         env=env,
         cwd=plut_dir,
     )
