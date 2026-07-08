@@ -234,6 +234,43 @@ def get_proton_path(steam_root):
     return os.path.join(common, proton_dirs[0], "proton")
 
 
+def get_default_proton_path(steam_root):
+    """
+    Find Steam's built-in (vanilla) Proton for running install-time
+    executables like the Plutonium bootstrapper, CoD4R launcher, and
+    CoD4x setup.exe.
+
+    These tools just download files and configure settings -- they don't
+    need GE-Proton's game-specific patches. Using vanilla Proton avoids
+    regressions from unstable GE-Proton releases (e.g. GE-Proton11-1).
+
+    Preference order:
+      1. Newest vanilla Proton in steam_root/steamapps/common/
+      2. GE-Proton (fallback if no vanilla Proton is installed)
+
+    The companion get_proton_path() still prefers GE-Proton and is used
+    for runtime wrapper scripts where game compatibility matters.
+    """
+    def _version_key(name):
+        parts = re.findall(r'\d+', name)
+        return tuple(int(p) for p in parts)
+
+    # Prefer vanilla Proton
+    common = os.path.join(steam_root, "steamapps", "common")
+    if os.path.exists(common):
+        proton_dirs = [
+            d for d in os.listdir(common)
+            if d.startswith("Proton") and
+            os.path.exists(os.path.join(common, d, "proton"))
+        ]
+        if proton_dirs:
+            proton_dirs.sort(key=_version_key, reverse=True)
+            return os.path.join(common, proton_dirs[0], "proton")
+
+    # Fallback to GE-Proton if no vanilla Proton exists
+    return get_proton_path(steam_root)
+
+
 def find_compatdata(steam_root, appid, game_install_dir=None):
     """
     Find the Wine prefix folder for a given Steam appid.
