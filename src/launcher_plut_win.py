@@ -8,16 +8,28 @@ the user pick a mode (MP, S/Z, ZM) to launch in offline LAN mode.
 Designed to run as a non-Steam shortcut with Proton in Game Mode.
 
 This is a Windows executable built with PyInstaller. It runs inside
-Proton via a wrapper shell script (launcher_offline.sh). Launching a
-game writes an intent file and exits; the wrapper script reads the
-intent and exec's the game's LAN wrapper script, which invokes Proton
-with the correct per-game prefix.
+GE-Proton as a non-Steam shortcut.
+
+Launch flow depends on deck model:
+  OLED / Other: the install flow populates this exe's own Proton prefix
+    with Plutonium bins, storage, config, and mods. Launching a game is a
+    direct Windows-to-Windows subprocess call to the bootstrapper, run from
+    inside this prefix (cd into the Plutonium dir). The game files stay in
+    their original install location and are passed as an argument.
+  LCD: this exe's prefix is not populated -- Plutonium lives in the Heroic
+    shared prefix. Launching writes an intent file and exits; the wrapper
+    script (launcher_offline.sh) reads it and exec's the game's -lan wrapper.
+
+Every launch attempt is logged to .lan_launch.log on the Linux filesystem.
 
 Flow:
-  1. Read DeckOps deckops.json (via Wine Z: drive) to find Plutonium games.
-  2. Show compact game rows with hero background art and mode buttons.
-  3. User taps a mode -- write intent file with lan_wrapper_path -- exit.
-  4. Wrapper script reads intent and exec's the LAN wrapper -- game starts.
+  1. Read deckops.json (via Wine Z: drive) for installed Plutonium games
+     and the deck model.
+  2. OLED: read game install paths from this prefix's config.json.
+     LCD: read each game's stored lan_wrapper_path.
+  3. Show compact game rows with hero background art and mode buttons.
+  4. User taps a mode -- OLED launches the bootstrapper directly; LCD
+     writes the intent file and lets the wrapper script take over.
 
 Gamepad input: Steam Deck Game Mode maps D-pad to arrow keys and A/B to
 Return/Escape. Qt sees these as keyPressEvents. evdev is not available
@@ -88,9 +100,62 @@ _LINUX_HOME = _detect_linux_home()
 _LINUX_PROJECT_ROOT = os.path.join(_LINUX_HOME, _INSTALL_DIR_NAME)
 _DECKOPS_JSON = os.path.join(_LINUX_PROJECT_ROOT, "deckops.json")
 
-# Intent file -- written by the exe when user picks a game, read by
-# launcher_offline.sh after the exe exits.
+# Intent file -- retained for backward compatibility with older
+# launcher_offline.sh wrappers. The current launch path no longer writes
+# it; games launch directly from this exe's own Proton prefix.
 _INTENT_FILE = os.path.join(_LINUX_PROJECT_ROOT, ".lan_intent.json")
+
+# Launch diagnostics log (Linux filesystem, via Z:). Written before and
+# after every launch attempt so a failed launch leaves evidence rather
+# than failing silently.
+_LAN_LOG = os.path.join(_LINUX_PROJECT_ROOT, ".lan_launch.log")
+
+# This exe runs inside its own Proton prefix (the offline launcher's
+# compatdata prefix). Inside Wine, LOCALAPPDATA resolves to that prefix's
+# AppData/Local, so Plutonium lives at LOCALAPPDATA\Plutonium. The install
+# flow copies bins, storage, config.json, and mods here for both deck
+# models, so the bootstrapper can run directly in-prefix.
+_PREFIX_PLUT_DIR = os.path.join(
+    os.environ.get("LOCALAPPDATA", ""), "Plutonium",
+)
+_PREFIX_BOOTSTRAPPER = os.path.join(
+    _PREFIX_PLUT_DIR, "bin", "plutonium-bootstrapper-win32.exe",
+)
+_PREFIX_CONFIG = os.path.join(_PREFIX_PLUT_DIR, "config.json")
+
+# Plutonium protocol key per DeckOps game key (bootstrapper argument).
+# iw5mp_ds (dedicated server appid) runs the same client as iw5mp.
+_PLUT_KEY_MAP = {
+    "iw5mp_ds": "iw5mp",
+}
+
+def _plut_key(game_key: str) -> str:
+    return _PLUT_KEY_MAP.get(game_key, game_key)
+
+
+# Maps a DeckOps game key prefix to the Plutonium config.json path key
+# that holds that game's install directory (as a Wine path).
+_CFG_PATH_KEYS = {
+    "t4":  "t4Path",
+    "t5":  "t5Path",
+    "t6":  "t6Path",
+    "iw5": "iw5Path",
+}
+
+def _cfg_key_for(game_key: str) -> str:
+    prefix = game_key[:3] if game_key.startswith("iw") else game_key[:2]
+    return _CFG_PATH_KEYS.get(prefix, "")
+
+
+def _lan_log(msg: str):
+    """Append a line to the launch diagnostics log. Never raises."""
+    try:
+        import datetime
+        stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(_LAN_LOG, "a") as f:
+            f.write(f"[{stamp}] {msg}\n")
+    except Exception:
+        pass
 
 # Assets
 FONTS_DIR  = os.path.join(_LINUX_PROJECT_ROOT, "assets", "fonts")
@@ -344,20 +409,56 @@ def _load_deckops_config() -> dict:
         return {}
 
 
+def _deck_model() -> str:
+    """Return the deck model from deckops.json ('oled', 'lcd', or 'other').
+
+    Defaults to 'oled' when unset. Only 'lcd' takes the legacy intent-file
+    launch path; every other value uses the direct in-prefix launch.
+    """
+    try:
+        return (_load_deckops_config().get("deck_model") or "oled").lower()
+    except Exception:
+        return "oled"
+
+
+def _load_prefix_plut_config() -> dict:
+    """Load config.json from this exe's own Proton prefix.
+
+    The install flow writes this file with every installed game's Wine
+    install path under t4Path / t5Path / t6Path / iw5Path. Used to resolve
+    each game's directory for the direct in-prefix launch.
+    """
+    if not os.path.exists(_PREFIX_CONFIG):
+        return {}
+    try:
+        with open(_PREFIX_CONFIG, "r") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
 # ── launch helper ────────────────────────────────────────────────────────
 
 _LAUNCH_FIRED = False
 
 
-def _launch_lan(lan_wrapper_path: str):
-    """Write a launch intent file and exit.
+def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
+    """Launch the Plutonium bootstrapper in LAN mode, directly in-prefix.
 
-    The wrapper shell script (launcher_offline.sh) reads the intent file
-    after this exe exits and exec's the LAN wrapper script, which invokes
-    Proton with the correct per-game prefix and bootstrapper.
+    This exe runs inside the offline launcher's own Proton prefix, which
+    the install flow populates with Plutonium bins, storage, config, and
+    mods. So launching is a direct Windows-to-Windows call: cd into the
+    prefix's Plutonium dir and run the bootstrapper with -lan.
 
-    This avoids launching the bootstrapper from inside the launcher's
-    Wine prefix, which causes DLL path and cwd issues.
+    The game files themselves stay in their original install location --
+    game_dir_wine points there. Only the Plutonium client runs from this
+    prefix.
+
+    cwd is set to the Plutonium dir because the bootstrapper resolves the
+    game executable relative to the working directory; a wrong cwd makes
+    it look for the game exe at the wrong path.
+
+    Every step is logged to _LAN_LOG so a failed launch leaves evidence.
     """
     global _LAUNCH_FIRED
     if _LAUNCH_FIRED:
@@ -366,14 +467,89 @@ def _launch_lan(lan_wrapper_path: str):
 
     _fadeout_audio()
 
+    plut_dir     = _PREFIX_PLUT_DIR
+    bootstrapper = _PREFIX_BOOTSTRAPPER
+    key          = _plut_key(game_key)
+    argv = [
+        bootstrapper, key, game_dir_wine,
+        "+name", player_name, "-lan",
+    ]
+
+    _lan_log("---- launch attempt ----")
+    _lan_log(f"game_key      = {game_key} (plut_key={key})")
+    _lan_log(f"plut_dir      = {plut_dir}")
+    _lan_log(f"bootstrapper  = {bootstrapper} "
+             f"(exists={os.path.exists(bootstrapper)})")
+    _lan_log(f"game_dir_wine = {game_dir_wine}")
+    _lan_log(f"player_name   = {player_name}")
+    _lan_log(f"argv          = {argv}")
+    _lan_log(f"cwd           = {plut_dir}")
+
+    try:
+        subprocess.Popen(argv, cwd=plut_dir)
+        _lan_log("Popen dispatched OK")
+    except Exception as ex:
+        import traceback
+        _lan_log(f"Popen FAILED: {ex}")
+        _lan_log(traceback.format_exc())
+
+    QTimer.singleShot(4000, lambda: QApplication.instance().quit())
+
+
+def _launch_lan_lcd(lan_wrapper_path: str):
+    """Legacy LCD launch path: write an intent file and exit.
+
+    LCD does not populate this exe's own prefix with Plutonium -- all
+    Plutonium files live in the Heroic shared prefix, reached through a
+    per-game -lan wrapper script. launcher_offline.sh reads the intent
+    file after this exe exits and exec's that wrapper. Unchanged from
+    prior behavior; kept intact so LCD is not affected by the OLED
+    direct-launch change.
+    """
+    global _LAUNCH_FIRED
+    if _LAUNCH_FIRED:
+        return
+    _LAUNCH_FIRED = True
+
+    _fadeout_audio()
+    _lan_log(f"LCD intent write: {lan_wrapper_path}")
+
     try:
         intent = {"lan_wrapper_path": lan_wrapper_path}
         with open(_INTENT_FILE, "w") as f:
             json.dump(intent, f)
-    except Exception:
-        pass
+    except Exception as ex:
+        _lan_log(f"LCD intent write FAILED: {ex}")
 
     QTimer.singleShot(500, lambda: QApplication.instance().quit())
+
+
+def _dispatch_launch(info: dict):
+    """Route a launch to the correct path based on deck model.
+
+    OLED / Other: direct in-prefix bootstrapper launch.
+    LCD:          legacy intent-file bridge (unchanged).
+
+    info is the per-game dict from _get_setup_plut_keys, carrying whatever
+    each path needs (game_key + game_dir for OLED, lan_wrapper_path for LCD).
+    """
+    model = _deck_model()
+    if model == "lcd":
+        lan_path = info.get("lan_wrapper_path", "")
+        if lan_path:
+            _launch_lan_lcd(lan_path)
+        else:
+            _lan_log("LCD launch skipped: no lan_wrapper_path")
+        return
+
+    game_key    = info.get("game_key", "")
+    game_dir    = info.get("game_dir", "")
+    player_name = info.get("player_name", "Player")
+    if game_key and game_dir:
+        _launch_lan(game_key, game_dir, player_name)
+    else:
+        _lan_log(f"OLED launch skipped: game_key={game_key!r} "
+                 f"game_dir={game_dir!r}")
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -384,28 +560,49 @@ def _hero_path(hero_file: str) -> str:
 
 def _get_setup_plut_keys() -> dict:
     """
-    Return Plutonium game keys that have been set up, with their
-    LAN wrapper script paths for offline launching.
+    Return Plutonium game keys that have been set up, with the data each
+    launch path needs.
 
-    Reads deckops.json for which games are installed and their
-    lan_wrapper_path values (written at install time by
-    plutonium_oled.py / plutonium_lcd.py).
+    OLED / Other: reads this exe's own prefix config.json for each game's
+    Wine install directory (game_dir), so the bootstrapper can launch
+    directly in-prefix. Returns game_key + game_dir + player_name.
 
-    Returns dict -- {game_key: {"lan_wrapper_path": str}}
+    LCD: reads deckops.json for each game's stored lan_wrapper_path, used
+    by the legacy intent-file bridge. Returns lan_wrapper_path.
+
+    Returns dict -- {game_key: {...}} where a game is included only if the
+    data its model's launch path needs is present.
     """
     try:
-        deckops = _load_deckops_config()
+        deckops     = _load_deckops_config()
         setup_games = deckops.get("setup_games", {})
+        player_name = deckops.get("player_name") or "Player"
+        model       = _deck_model()
 
         result = {}
+
+        if model == "lcd":
+            for k, v in setup_games.items():
+                if v.get("client") != "plutonium":
+                    continue
+                lan_path = v.get("lan_wrapper_path")
+                if lan_path and os.path.exists(lan_path):
+                    result[k] = {"lan_wrapper_path": lan_path}
+            return result
+
+        # OLED / Other: resolve game_dir from the launcher prefix config.
+        plut_cfg = _load_prefix_plut_config()
         for k, v in setup_games.items():
             if v.get("client") != "plutonium":
                 continue
-
-            lan_path = v.get("lan_wrapper_path")
-            if lan_path and os.path.exists(lan_path):
-                result[k] = {"lan_wrapper_path": lan_path}
-
+            cfg_key  = _cfg_key_for(k)
+            game_dir = plut_cfg.get(cfg_key, "") if cfg_key else ""
+            if game_dir:
+                result[k] = {
+                    "game_key":    k,
+                    "game_dir":    game_dir,
+                    "player_name": player_name,
+                }
         return result
     except Exception:
         return {}
@@ -473,18 +670,21 @@ class GameRow(QWidget):
         if self._has_modes:
             for key, label in self._available:
                 info = setup_info[key]
-                lan_path = info.get("lan_wrapper_path", "")
-                has_wrapper = bool(lan_path)
+                # A game is launchable if its info dict carries what its
+                # model's launch path needs. _get_setup_plut_keys only
+                # includes games that passed that check, so presence in
+                # setup_info is sufficient.
+                launchable = bool(info)
 
                 btn = QPushButton(label)
                 btn.setFont(_font(14, bold=True))
                 btn.setFixedSize(120, 52)
                 btn.setFocusPolicy(Qt.NoFocus)
 
-                if has_wrapper:
+                if launchable:
                     self._apply_btn_style(btn, focused=False)
                     btn.clicked.connect(
-                        lambda checked=False, w=lan_path: _launch_lan(w)
+                        lambda checked=False, i=info: _dispatch_launch(i)
                     )
                     self._mode_buttons.append((btn, key))
                 else:
@@ -493,7 +693,7 @@ class GameRow(QWidget):
                         f"border:none;border-radius:8px;}}"
                     )
                     btn.setEnabled(False)
-                    btn.setToolTip("LAN wrapper not found")
+                    btn.setToolTip("Not available")
 
                 lay.addWidget(btn, alignment=Qt.AlignVCenter)
         else:
