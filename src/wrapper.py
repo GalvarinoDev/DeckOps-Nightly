@@ -215,8 +215,9 @@ def get_proton_path(steam_root):
     if pinned:
         ge_search_dirs = [
             os.path.expanduser("~/.local/share/Steam/compatibilitytools.d"),
-            os.path.join(steam_root, "compatibilitytools.d"),
         ]
+        if steam_root:
+            ge_search_dirs.append(os.path.join(steam_root, "compatibilitytools.d"))
         for ge_dir in ge_search_dirs:
             candidate = os.path.join(ge_dir, pinned, "proton")
             if os.path.exists(candidate):
@@ -225,8 +226,9 @@ def get_proton_path(steam_root):
     # Pinned version not found — fall back to newest GE-Proton on disk
     ge_search_dirs = [
         os.path.expanduser("~/.local/share/Steam/compatibilitytools.d"),
-        os.path.join(steam_root, "compatibilitytools.d"),
     ]
+    if steam_root:
+        ge_search_dirs.append(os.path.join(steam_root, "compatibilitytools.d"))
     for ge_dir in ge_search_dirs:
         if not os.path.isdir(ge_dir):
             continue
@@ -240,6 +242,8 @@ def get_proton_path(steam_root):
             return os.path.join(ge_dir, ge_dirs[0], "proton")
 
     # Fall back to vanilla Proton
+    if not steam_root:
+        return None
     common = os.path.join(steam_root, "steamapps", "common")
     if not os.path.exists(common):
         return None
