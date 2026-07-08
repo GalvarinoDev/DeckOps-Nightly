@@ -241,12 +241,6 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
 
     prog(15, "Launching Plutonium , please log in, then close the window when done.")
 
-    # Use vanilla Proton for the bootstrapper -- it just downloads files
-    # and handles login, no game-specific patches needed.  This avoids
-    # regressions from unstable GE-Proton releases.
-    from wrapper import get_default_proton_path
-    _install_proton = get_default_proton_path(steam_root) if steam_root else proton_path
-
     env = os.environ.copy()
     env["STEAM_COMPAT_DATA_PATH"]           = DEDICATED_PREFIX
     # STEAM_COMPAT_CLIENT_INSTALL_PATH should point to the Steam root,
@@ -255,11 +249,11 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
         env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = steam_root
     else:
         env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = os.path.dirname(
-            os.path.dirname(_install_proton)
+            os.path.dirname(proton_path)
         )
 
     proc = subprocess.Popen(
-        [_install_proton, "run", bootstrapper],
+        [proton_path, "run", bootstrapper],
         env=env,
         cwd=plut_dir,
     )
