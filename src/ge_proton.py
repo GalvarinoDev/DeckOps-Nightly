@@ -1,7 +1,7 @@
 """
 ge_proton.py - DeckOps GE-Proton installer
 
-Downloads and installs the latest GE-Proton release from GitHub, then
+Downloads and installs a pinned GE-Proton release from GitHub, then
 writes the CompatToolMapping entry in Steam's config.vdf so each game
 uses it automatically.
 
@@ -29,7 +29,10 @@ from log import get_logger
 _log = get_logger(__name__)
 
 
-GITHUB_API   = "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest"
+# Pinned to GE-Proton10-34 — GE-Proton11-1 causes black screens and
+# launcher crashes during install.  Update this tag when a newer stable
+# release has been tested.
+GITHUB_API   = "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/tags/GE-Proton10-34"
 COMPAT_DIR   = os.path.expanduser("~/.local/share/Steam/compatibilitytools.d")
 
 # Steam appids that DeckOps manages — GE-Proton will be set for all of these
@@ -187,8 +190,8 @@ def _verify_checksum(tarball_path, checksum_url):
 
 def install_ge_proton(on_progress=None):
     """
-    Download and install the latest GE-Proton to compatibilitytools.d.
-    Returns the version string (e.g. 'GE-Proton10-28') so it can be
+    Download and install the pinned GE-Proton to compatibilitytools.d.
+    Returns the version string (e.g. 'GE-Proton10-34') so it can be
     passed to set_compat_tool().
 
     on_progress — optional callback(percent: int, msg: str)

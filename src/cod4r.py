@@ -358,8 +358,15 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
     # The launcher auto-detects that files need downloading and pulls them.
     # It stays open showing "You're up to date" when done -- the user closes
     # it manually, same as the Plutonium bootstrapper flow.
+    #
+    # Use pinned GE-Proton for the launcher to avoid regressions from
+    # newer GE-Proton releases (e.g. GE-Proton11-1 crashes the launcher).
     prog(40, "Running CoD4R launcher...")
-    _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
+    _pinned = os.path.expanduser(
+        "~/.local/share/Steam/compatibilitytools.d/GE-Proton10-34/proton"
+    )
+    _install_proton = _pinned if os.path.exists(_pinned) else proton_path
+    _compat_install = steam_root or os.path.dirname(os.path.dirname(_install_proton))
 
     env = os.environ.copy()
     env["STEAM_COMPAT_DATA_PATH"] = compatdata_path
@@ -367,7 +374,7 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
 
     try:
         proc = subprocess.Popen(
-            [proton_path, "run", launcher_exe],
+            [_install_proton, "run", launcher_exe],
             env=env,
             cwd=install_dir,
         )

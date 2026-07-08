@@ -189,9 +189,14 @@ def get_proton_path(steam_root):
     Find the best available Proton binary for running Windows executables.
 
     Preference order:
-      1. GE-Proton in ~/.local/share/Steam/compatibilitytools.d/
-      2. GE-Proton in steam_root/compatibilitytools.d/
-      3. Newest vanilla Proton in steam_root/steamapps/common/
+      1. Config-pinned GE-Proton version (from config.json ge_proton_version)
+      2. GE-Proton in ~/.local/share/Steam/compatibilitytools.d/
+      3. GE-Proton in steam_root/compatibilitytools.d/
+      4. Newest vanilla Proton in steam_root/steamapps/common/
+
+    The config pin ensures DeckOps uses the exact GE-Proton version it
+    installed, even if newer (potentially unstable) versions are present
+    on disk from ProtonUp-Qt or other tools.
 
     Uses numeric version sorting so GE-Proton9-28 > GE-Proton9-5,
     and Proton 10 > Proton 9.
@@ -200,7 +205,24 @@ def get_proton_path(steam_root):
         parts = re.findall(r'\d+', name)
         return tuple(int(p) for p in parts)
 
-    # Check GE-Proton in both possible locations
+    # Try config-pinned version first
+    try:
+        import config as _cfg
+        pinned = _cfg.get_ge_proton_version()
+    except Exception:
+        pinned = None
+
+    if pinned:
+        ge_search_dirs = [
+            os.path.expanduser("~/.local/share/Steam/compatibilitytools.d"),
+            os.path.join(steam_root, "compatibilitytools.d"),
+        ]
+        for ge_dir in ge_search_dirs:
+            candidate = os.path.join(ge_dir, pinned, "proton")
+            if os.path.exists(candidate):
+                return candidate
+
+    # Pinned version not found — fall back to newest GE-Proton on disk
     ge_search_dirs = [
         os.path.expanduser("~/.local/share/Steam/compatibilitytools.d"),
         os.path.join(steam_root, "compatibilitytools.d"),
