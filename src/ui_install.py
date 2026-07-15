@@ -846,29 +846,6 @@ class InstallScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"  Launcher shortcut failed: {ex}")
 
-            # Preheat the offline launcher prefix with GE-Proton's full
-            # dependency set (d3dx9, d3dcompiler, vcrun, xact, etc.).
-            # The launcher prefix is a non-Steam shortcut — Steam/Proton
-            # never initializes it automatically, so it misses the DLLs
-            # that per-game prefixes get on first launch.
-            try:
-                from shortcut import get_launcher_appid
-                from ge_proton import ensure_prefix_deps
-                launcher_appid = get_launcher_appid()
-                launcher_compat = os.path.join(
-                    os.path.expanduser("~/.local/share/Steam"),
-                    "steamapps", "compatdata", str(launcher_appid),
-                )
-                ensure_prefix_deps(
-                    ge_version, launcher_compat,
-                    on_progress=lambda msg: self._s.log.emit(msg),
-                    proton_path=proton,
-                    steam_root=self.steam_root,
-                )
-                self._s.log.emit("✓  Offline launcher prefix ready")
-            except Exception as ex:
-                self._s.log.emit(f"  Launcher prefix deps skipped: {ex}")
-
             # LCD: also prepare Heroic's shared prefix. Heroic initializes
             # it during Plutonium login, but may not include the full d3dx9
             # set needed for all games. ensure_prefix_deps only copies
@@ -1669,29 +1646,6 @@ class OwnInstallScreen(QWidget):
                 )
             except Exception as ex:
                 self._s.log.emit(f"  Launcher shortcut failed: {ex}")
-
-            # Preheat the offline launcher prefix with GE-Proton's full
-            # dependency set (d3dx9, d3dcompiler, vcrun, xact, etc.).
-            # The launcher prefix is a non-Steam shortcut — Steam/Proton
-            # never initializes it automatically, so it misses the DLLs
-            # that per-game prefixes get on first launch.
-            try:
-                from shortcut import get_launcher_appid
-                from ge_proton import ensure_prefix_deps
-                launcher_appid = get_launcher_appid()
-                launcher_compat = os.path.join(
-                    os.path.expanduser("~/.local/share/Steam"),
-                    "steamapps", "compatdata", str(launcher_appid),
-                )
-                ensure_prefix_deps(
-                    ge_version, launcher_compat,
-                    on_progress=lambda msg: self._s.log.emit(msg),
-                    proton_path=proton,
-                    steam_root=self.steam_root,
-                )
-                self._s.log.emit("✓  Offline launcher prefix ready")
-            except Exception as ex:
-                self._s.log.emit(f"  Launcher prefix deps skipped: {ex}")
 
             # LCD: also prepare Heroic's shared prefix. Heroic initializes
             # it during Plutonium login, but may not include the full d3dx9

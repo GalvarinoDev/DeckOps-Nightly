@@ -100,9 +100,9 @@ _LINUX_HOME = _detect_linux_home()
 _LINUX_PROJECT_ROOT = os.path.join(_LINUX_HOME, _INSTALL_DIR_NAME)
 _DECKOPS_JSON = os.path.join(_LINUX_PROJECT_ROOT, "deckops.json")
 
-# Intent file -- retained for backward compatibility with older
-# launcher_offline.sh wrappers. The current launch path no longer writes
-# it; games launch directly from this exe's own Proton prefix.
+# Intent file -- written by the exe when the user picks a game.
+# launcher_offline.sh reads this after the exe exits and exec's the
+# per-game LAN wrapper script. Used by all deck models.
 _INTENT_FILE = os.path.join(_LINUX_PROJECT_ROOT, ".lan_intent.json")
 
 # Launch diagnostics log (Linux filesystem, via Z:). Written before and
@@ -497,14 +497,16 @@ def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
 
 
 def _launch_lan_lcd(lan_wrapper_path: str):
-    """Legacy LCD launch path: write an intent file and exit.
+    """Write a launch intent file and exit.
 
-    LCD does not populate this exe's own prefix with Plutonium -- all
-    Plutonium files live in the Heroic shared prefix, reached through a
-    per-game -lan wrapper script. launcher_offline.sh reads the intent
-    file after this exe exits and exec's that wrapper. Unchanged from
-    prior behavior; kept intact so LCD is not affected by the OLED
-    direct-launch change.
+    launcher_offline.sh reads the intent after this exe exits and exec's
+    the per-game LAN wrapper script. The LAN wrapper runs the Plutonium
+    bootstrapper with -lan inside the game's own Proton prefix, so each
+    game gets a fully initialized Wine environment with the correct DLLs
+    and DXVK state.
+
+    Used by all deck models (OLED, LCD, Other). The function name retains
+    "lcd" for backward compatibility with any external callers.
     """
     global _LAUNCH_FIRED
     if _LAUNCH_FIRED:
@@ -512,44 +514,32 @@ def _launch_lan_lcd(lan_wrapper_path: str):
     _LAUNCH_FIRED = True
 
     _fadeout_audio()
-    _lan_log(f"LCD intent write: {lan_wrapper_path}")
+    _lan_log(f"Intent write: {lan_wrapper_path}")
 
     try:
         intent = {"lan_wrapper_path": lan_wrapper_path}
         with open(_INTENT_FILE, "w") as f:
             json.dump(intent, f)
     except Exception as ex:
-        _lan_log(f"LCD intent write FAILED: {ex}")
+        _lan_log(f"Intent write FAILED: {ex}")
 
     QTimer.singleShot(500, lambda: QApplication.instance().quit())
 
 
 def _dispatch_launch(info: dict):
-    """Route a launch to the correct path based on deck model.
+    """Write a launch intent and exit. launcher_offline.sh reads the
+    intent after this exe exits and exec's the per-game LAN wrapper
+    script, which launches the game in its own Proton prefix.
 
-    OLED / Other: direct in-prefix bootstrapper launch.
-    LCD:          legacy intent-file bridge (unchanged).
-
-    info is the per-game dict from _get_setup_plut_keys, carrying whatever
-    each path needs (game_key + game_dir for OLED, lan_wrapper_path for LCD).
+    This is the same flow for all deck models (OLED, LCD, Other).
+    The per-game LAN wrapper handles prefix selection, so the launcher
+    exe never needs to run game code inside its own Wine environment.
     """
-    model = _deck_model()
-    if model == "lcd":
-        lan_path = info.get("lan_wrapper_path", "")
-        if lan_path:
-            _launch_lan_lcd(lan_path)
-        else:
-            _lan_log("LCD launch skipped: no lan_wrapper_path")
-        return
-
-    game_key    = info.get("game_key", "")
-    game_dir    = info.get("game_dir", "")
-    player_name = info.get("player_name", "Player")
-    if game_key and game_dir:
-        _launch_lan(game_key, game_dir, player_name)
+    lan_path = info.get("lan_wrapper_path", "")
+    if lan_path:
+        _launch_lan_lcd(lan_path)
     else:
-        _lan_log(f"OLED launch skipped: game_key={game_key!r} "
-                 f"game_dir={game_dir!r}")
+        _lan_log(f"Launch skipped: no lan_wrapper_path in {info!r}")
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -563,46 +553,26 @@ def _get_setup_plut_keys() -> dict:
     Return Plutonium game keys that have been set up, with the data each
     launch path needs.
 
-    OLED / Other: reads this exe's own prefix config.json for each game's
-    Wine install directory (game_dir), so the bootstrapper can launch
-    directly in-prefix. Returns game_key + game_dir + player_name.
+    All models now use the intent-file bridge: the exe writes
+    .lan_intent.json with the lan_wrapper_path and exits.
+    launcher_offline.sh reads the intent and exec's the per-game LAN
+    wrapper script, which runs the bootstrapper in the correct per-game
+    Proton prefix.
 
-    LCD: reads deckops.json for each game's stored lan_wrapper_path, used
-    by the legacy intent-file bridge. Returns lan_wrapper_path.
-
-    Returns dict -- {game_key: {...}} where a game is included only if the
-    data its model's launch path needs is present.
+    Returns dict -- {game_key: {...}} where a game is included only if
+    it has a valid lan_wrapper_path on disk.
     """
     try:
         deckops     = _load_deckops_config()
         setup_games = deckops.get("setup_games", {})
-        player_name = deckops.get("player_name") or "Player"
-        model       = _deck_model()
 
         result = {}
-
-        if model == "lcd":
-            for k, v in setup_games.items():
-                if v.get("client") != "plutonium":
-                    continue
-                lan_path = v.get("lan_wrapper_path")
-                if lan_path and os.path.exists(lan_path):
-                    result[k] = {"lan_wrapper_path": lan_path}
-            return result
-
-        # OLED / Other: resolve game_dir from the launcher prefix config.
-        plut_cfg = _load_prefix_plut_config()
         for k, v in setup_games.items():
             if v.get("client") != "plutonium":
                 continue
-            cfg_key  = _cfg_key_for(k)
-            game_dir = plut_cfg.get(cfg_key, "") if cfg_key else ""
-            if game_dir:
-                result[k] = {
-                    "game_key":    k,
-                    "game_dir":    game_dir,
-                    "player_name": player_name,
-                }
+            lan_path = v.get("lan_wrapper_path")
+            if lan_path and os.path.exists(lan_path):
+                result[k] = {"lan_wrapper_path": lan_path}
         return result
     except Exception:
         return {}
