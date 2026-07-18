@@ -806,13 +806,39 @@ class InstallScreen(QWidget):
 
                 self._s.log.emit("✓  Plutonium ready.")
             else:
-                self._s.progress.emit(12, "Waiting for Plutonium...")
+                self._s.progress.emit(12, "Launching Plutonium to check for updates...")
                 self._s.log.emit(
-                    "Wait for Plutonium to finish updating, sign in, then close Plutonium."
+                    "Plutonium is launching now.\n"
+                    "  1. Wait for it to finish updating\n"
+                    "  2. Log in if prompted\n"
+                    "  3. Close the Plutonium window\n"
+                    "  4. Click the button below to continue"
                 )
+                try:
+                    if is_lcd:
+                        launch_bootstrapper_lcd(
+                            on_progress=lambda p, m: self._s.progress.emit(p, m)
+                        )
+                    else:
+                        launch_bootstrapper(
+                            proton,
+                            on_progress=lambda p, m: self._s.progress.emit(p, m),
+                            steam_root=self.steam_root,
+                        )
+                except Exception as ex:
+                    self._s.log.emit(f"  Plutonium update check skipped: {ex}")
+
+                if is_lcd:
+                    self._s.pulse_start.emit("Waiting for Plutonium update")
+
                 self._s.plut_wait.emit()
                 self._plut_event.wait()
                 self._s.plut_go.emit()
+
+                if is_lcd:
+                    self._s.pulse_stop.emit()
+
+                self._s.log.emit("✓  Plutonium ready.")
 
         # ── Kill Steam once — everything from here runs with Steam closed ─────
         _kill_steam_once()
@@ -1514,7 +1540,39 @@ class OwnInstallScreen(QWidget):
 
                 self._s.log.emit("✓  Plutonium ready.")
             else:
-                self._s.log.emit("✓  Plutonium already set up.")
+                self._s.progress.emit(10, "Launching Plutonium to check for updates...")
+                self._s.log.emit(
+                    "Plutonium is launching now.\n"
+                    "  1. Wait for it to finish updating\n"
+                    "  2. Log in if prompted\n"
+                    "  3. Close the Plutonium window\n"
+                    "  4. Click the button below to continue"
+                )
+                try:
+                    if is_lcd:
+                        launch_bootstrapper_lcd(
+                            on_progress=lambda p, m: self._s.progress.emit(p, m)
+                        )
+                    else:
+                        launch_bootstrapper(
+                            proton,
+                            on_progress=lambda p, m: self._s.progress.emit(p, m),
+                            steam_root=self.steam_root,
+                        )
+                except Exception as ex:
+                    self._s.log.emit(f"  Plutonium update check skipped: {ex}")
+
+                if is_lcd:
+                    self._s.pulse_start.emit("Waiting for Plutonium update")
+
+                self._s.plut_wait.emit()
+                self._plut_event.wait()
+                self._s.plut_go.emit()
+
+                if is_lcd:
+                    self._s.pulse_stop.emit()
+
+                self._s.log.emit("✓  Plutonium ready.")
 
         # ── Kill Steam ────────────────────────────────────────────────────
         self._s.progress.emit(18, "Closing Steam...")
