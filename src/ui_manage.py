@@ -1595,7 +1595,8 @@ class UpdateScreen(QWidget):
         from t6sp_mod import install_t6sp_mod
         from cleanops import install_cleanops
         from t7x import install_t7x
-        from plutonium_oled import install_plutonium
+        from plutonium_oled import install_plutonium, launch_bootstrapper, is_plutonium_ready
+        from net import DownloadError
 
         has_cod4  = any(KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp") for k, _, _ in self.selected)
         has_iw4x  = any(KEY_CLIENT.get(k) == "iw4x" for k, _, _ in self.selected)
@@ -1605,6 +1606,57 @@ class UpdateScreen(QWidget):
 
         # Read setup_games to determine source for each key
         setup_games = cfg.get_setup_games()
+
+        # ── Plutonium update: re-run bootstrapper ─────────────────────
+        if has_plut:
+            self._s.progress.emit(5, "Launching Plutonium to check for updates...")
+            self._s.log.emit(
+                "Plutonium is launching now.\n"
+                "  1. Wait for it to finish updating\n"
+                "  2. Log in if prompted\n"
+                "  3. Close the Plutonium window\n"
+                "  4. Click the button below to continue"
+            )
+            try:
+                launch_bootstrapper(
+                    proton,
+                    on_progress=lambda p, m: self._s.progress.emit(p, m),
+                    steam_root=self.steam_root,
+                )
+            except DownloadError as dl_ex:
+                self._s.log.emit(f"✗  {dl_ex.label} download failed: {dl_ex}")
+                self._s.progress.emit(100, "Update failed.")
+                self._s.done.emit(True)
+                return
+            except Exception as ex:
+                self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
+                self._s.progress.emit(100, "Update failed.")
+                self._s.done.emit(True)
+                return
+
+            self._s.plut_wait.emit()
+            self._steam_closed.wait()
+            self._steam_closed.clear()
+            self._s.plut_go.emit()
+
+            if not is_plutonium_ready():
+                self._s.log.emit(
+                    "✗  Plutonium does not appear to be fully set up.\n"
+                    "   Make sure you let it finish updating."
+                )
+                self._s.progress.emit(100, "Update incomplete.")
+                self._s.done.emit(True)
+                return
+
+            self._s.log.emit("✓  Plutonium updated.")
+
+            # Wipe shared Plutonium dir so it gets rebuilt with fresh binaries.
+            # Game prefixes symlink to this dir -- _ensure_shared_plutonium()
+            # inside install_plutonium() will repopulate it on the first key.
+            from plutonium_oled import SHARED_PLUT_DIR
+            if os.path.isdir(SHARED_PLUT_DIR):
+                shutil.rmtree(SHARED_PLUT_DIR, ignore_errors=True)
+                self._s.log.emit("  Cleared shared Plutonium cache for rebuild")
 
         if not has_plut:
             self._s.progress.emit(5, "Closing Steam...")
