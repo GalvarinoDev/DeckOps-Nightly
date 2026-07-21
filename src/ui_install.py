@@ -716,6 +716,64 @@ class InstallScreen(QWidget):
                 self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
             self._s.pulse_stop.emit()
 
+        # ── CoD4 (iw3sp + cod4r/cod4x) — Steam still running ───────────────────
+        # Runs before the Plutonium bootstrapper and before Steam is closed
+        # so the touchpad still works as a mouse for closing the CoD4R
+        # launcher window. None of the CoD4 installers touch Steam VDFs,
+        # so Steam running is safe here. Note: iw3sp renames iw3sp.exe in
+        # the Steam library while Steam is up; Steam only notices on
+        # launch or verify, so this is benign during install.
+        if has_cod4:
+            cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp")]
+            for key, gd, game in cod4_selected:
+                base_name = gd["base"]
+                self._s.progress.emit(10, f"Setting up {base_name}...")
+                def op_cod4(pct, msg): self._s.progress.emit(10 + int(pct / 100 * 2), msg)
+                try:
+                    _install_dir = game["install_dir"] if game else None
+                    compat = find_compatdata(self.steam_root, gd["appid"],
+                                             game_install_dir=_install_dir)
+                    c = KEY_CLIENT.get(key, gd["client"])
+                    # Override cod4mp client with user's popup choice
+                    if key == "cod4mp":
+                        c = _cod4_client
+                    if c == "cod4r":
+                        install_cod4r(game, self.steam_root, proton, compat, op_cod4,
+                                      appid=gd["appid"], source="steam")
+                        self._s.log.emit(
+                            "Close the CoD4R launcher when the download is complete."
+                        )
+                        self._s.cod4r_wait.emit()
+                        self._cod4r_event.wait()
+                        self._cod4r_event.clear()
+                        self._s.cod4r_go.emit()
+                    elif c == "cod4x":
+                        install_cod4x(game, self.steam_root, proton, compat, op_cod4,
+                                      appid=gd["appid"])
+                    elif c == "iw3sp":
+                        install_iw3sp(game, self.steam_root, proton, compat, op_cod4)
+                    cfg.mark_game_setup(key, c, source="steam")
+                    if base_name not in logged_bases:
+                        self._s.log.emit(f"✓  {base_name} done")
+                        logged_bases.add(base_name)
+                except DownloadError as dl_ex:
+                    self._s.log.emit(f"⚠  {dl_ex.label} download failed — manual download needed")
+                    self._manual_dl_event.clear()
+                    self._manual_dl_ok = False
+                    self._s.manual_dl.emit(
+                        dl_ex.url,
+                        os.path.dirname(dl_ex.dest),
+                        os.path.basename(dl_ex.dest),
+                        dl_ex.label,
+                    )
+                    self._manual_dl_event.wait()
+                    if not self._manual_dl_ok:
+                        self._s.log.emit(f"  ✗  {base_name} skipped by user.")
+                    else:
+                        self._s.log.emit(f"  ✓  {dl_ex.label} placed manually — re-run install to finish setup")
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
         # ── Plutonium bootstrapper (Steam still running) ──────────────────────
         if has_plut:
             is_lcd = cfg.is_lcd()
@@ -928,58 +986,6 @@ class InstallScreen(QWidget):
                     cfg.mark_game_setup(key, "iw4x", source="steam")
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── CoD4 (iw3sp + cod4r/cod4x) — Steam closed ────────────────────────
-        if has_cod4:
-            cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp")]
-            for key, gd, game in cod4_selected:
-                base_name = gd["base"]
-                self._s.progress.emit(75, f"Setting up {base_name}...")
-                def op_cod4(pct, msg): self._s.progress.emit(75 + int(pct / 100 * 10), msg)
-                try:
-                    _install_dir = game["install_dir"] if game else None
-                    compat = find_compatdata(self.steam_root, gd["appid"],
-                                             game_install_dir=_install_dir)
-                    c = KEY_CLIENT.get(key, gd["client"])
-                    # Override cod4mp client with user's popup choice
-                    if key == "cod4mp":
-                        c = _cod4_client
-                    if c == "cod4r":
-                        install_cod4r(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=gd["appid"], source="steam")
-                        self._s.log.emit(
-                            "Close the CoD4R launcher when the download is complete."
-                        )
-                        self._s.cod4r_wait.emit()
-                        self._cod4r_event.wait()
-                        self._cod4r_event.clear()
-                        self._s.cod4r_go.emit()
-                    elif c == "cod4x":
-                        install_cod4x(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=gd["appid"])
-                    elif c == "iw3sp":
-                        install_iw3sp(game, self.steam_root, proton, compat, op_cod4)
-                    cfg.mark_game_setup(key, c, source="steam")
-                    if base_name not in logged_bases:
-                        self._s.log.emit(f"✓  {base_name} done")
-                        logged_bases.add(base_name)
-                except DownloadError as dl_ex:
-                    self._s.log.emit(f"⚠  {dl_ex.label} download failed — manual download needed")
-                    self._manual_dl_event.clear()
-                    self._manual_dl_ok = False
-                    self._s.manual_dl.emit(
-                        dl_ex.url,
-                        os.path.dirname(dl_ex.dest),
-                        os.path.basename(dl_ex.dest),
-                        dl_ex.label,
-                    )
-                    self._manual_dl_event.wait()
-                    if not self._manual_dl_ok:
-                        self._s.log.emit(f"  ✗  {base_name} skipped by user.")
-                    else:
-                        self._s.log.emit(f"  ✓  {dl_ex.label} placed manually — re-run install to finish setup")
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
