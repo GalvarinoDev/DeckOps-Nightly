@@ -28,7 +28,7 @@ DEFAULTS = {
                                   # "1920x1200", "1920x1200_144hz", "1920x1080", "1280x720"
     "other_device_type": None,    # device type for controller profile selection:
                                   # "legion_go", "legion_go_2", "legion_go_s", "2btn", "generic", "steam_machine"
-    "gyro_mode":  None,          # "on" or "off"
+    "gyro_mode":  None,          # "on", "off", "hold", or "toggle"
     "play_mode":  None,          # "handheld" or "docked"
     "external_controller": None, # "playstation", "xbox", "steamcontroller", or "other" -- only used when play_mode is "docked"
     "docked_resolution": None,   # "1280x720", "1280x800", "1920x1080", "1920x1200", or "own" -- only used when play_mode is "docked"
@@ -237,12 +237,12 @@ def get_model_config_dir() -> str:
 
 
 def get_gyro_mode() -> str | None:
-    """Returns 'on', 'off', or None if not yet set."""
+    """Returns 'on', 'off', 'hold', or 'toggle', or None if not yet set."""
     return load().get("gyro_mode")
 
 
 def set_gyro_mode(mode: str):
-    """Save the user's gyro preference. mode should be 'on' or 'off'."""
+    """Save the user's gyro preference: 'on', 'off', 'hold', or 'toggle'."""
     config = load()
     config["gyro_mode"] = mode
     save(config)
@@ -451,6 +451,31 @@ def is_game_setup_for_source(game_key: str, source: str) -> bool:
 def get_setup_games() -> dict:
     """Returns the full setup_games dict."""
     return load().get("setup_games", {})
+
+
+def get_cod4mp_profile_type(default: str = "other") -> str:
+    """
+    Return the controller profile type for the CoD4 MP shortcut based on
+    the client the user selected during setup.
+
+    CoD4R has native controller support, so it uses the standard gamepad
+    layout. CoD4x has no native controller support and needs the KB+M
+    "other" layout driven by Steam Input.
+
+    Returns `default` if setup state is unavailable or the client is
+    unrecognized. Single source of truth for this policy; previously the
+    same check was copy-pasted at five call sites across
+    controller_profiles.py and shortcut.py.
+    """
+    try:
+        client = get_setup_games().get("cod4mp", {}).get("client")
+    except Exception:
+        return default
+    if client == "cod4r":
+        return "standard"
+    if client == "cod4x":
+        return "other"
+    return default
 
 
 def complete_first_run(steam_root: str):

@@ -404,7 +404,12 @@ def _find_all_steam_uids():
 
 
 def _get_deck_serial() -> str | None:
-    """Read the Steam Deck serial number from Steam's config.vdf."""
+    """Read the Steam Deck serial from config.vdf, or None.
+
+    Looks for "SteamDeckRegisteredSerialNumber", which is absent on at
+    least some Decks (verified missing on a stock OLED), so callers must
+    treat the serial configset write as best-effort, not required.
+    """
     if not os.path.exists(STEAM_CONFIG):
         return None
     try:
@@ -664,15 +669,25 @@ def _download_artwork(grid_dir: str, appid: int, shortcut_def: dict, prog,
 # ── Controller template assignment ────────────────────────────────────────────
 
 def _get_template_filename(template_type: str, gyro_mode: str) -> str:
-    """Return the controller template filename based on type and gyro mode.
+    """Return the primary controller template filename for a profile type
+    and gyro mode.
 
-    Suffix mapping must match controller_profiles._profile_filename:
-        "on" -> ads, "hold" -> hold, "toggle" -> toggle, anything else -> off
-    Previously hold/toggle collapsed to off here, so shortcuts created for
-    hold/toggle users got the wrong template until the later
-    assign_controller_profiles pass corrected the game shortcuts. The
-    launcher shortcut had no later pass, so it stayed wrong.
+    Delegates to controller_profiles._profile_filename so shortcut
+    creation and profile re-application always resolve the same file,
+    including device variants (Legion Go, Legion Go 2, 2btn, Steam
+    Machine triton) and all four gyro modes. The import is lazy to keep
+    this module importable standalone, mirroring controller_profiles'
+    own lazy imports of shortcut.py; there is no module-level cycle.
+
+    Falls back to the standard Neptune mapping if delegation fails.
     """
+    try:
+        from controller_profiles import _profile_filename
+        filenames = _profile_filename(template_type, gyro_mode)
+        if filenames:
+            return filenames[0]
+    except Exception:
+        _log.debug("profile filename delegation failed", exc_info=True)
     _SUFFIX_MAP = {"on": "ads", "hold": "hold", "toggle": "toggle"}
     suffix = _SUFFIX_MAP.get(gyro_mode, "off")
     if template_type == "other":
@@ -686,10 +701,13 @@ def _assign_controller_config(uid: str, appid: int, shortcut_def: dict,
     """
     Assign controller template for a non-Steam shortcut.
 
-    We write to both configset_controller_neptune.vdf and the Deck's
-    serial-specific configset. SteamOS in Game Mode reads from the serial
-    file, so without it the profile only works in Desktop Mode.
-    This mirrors what controller_profiles.py does for regular Steam games.
+    Writes configset_controller_neptune.vdf (verified on hardware as the
+    file Game Mode resolves templates from) and, best-effort, a
+    serial-specific configset. Note: the serial write usually skips in
+    practice because "SteamDeckRegisteredSerialNumber" is often absent
+    from config.vdf (see _get_deck_serial), and hardware testing shows
+    Game Mode works without it. Kept for now; removal is a candidate
+    cleanup. This mirrors controller_profiles.py for regular Steam games.
     """
     template_type = shortcut_def["template_type"]
     template_filename = _get_template_filename(template_type, gyro_mode)
@@ -714,7 +732,9 @@ def _assign_controller_config(uid: str, appid: int, shortcut_def: dict,
     configset_path = os.path.join(steam_cfg_root, "configset_controller_neptune.vdf")
     _patch_configset(configset_path, appid_str, template_filename)
     
-    # Patch configset_{serial}.vdf — SteamOS on Deck reads from this file
+    # Patch configset_{serial}.vdf, best-effort. Usually skipped: the
+    # serial key is often absent from config.vdf, and Game Mode has been
+    # verified to resolve templates from configset_controller_neptune.vdf.
     serial = _get_deck_serial()
     if serial:
         configset_serial = os.path.join(steam_cfg_root, f"configset_{serial}.vdf")
@@ -1494,10 +1514,9 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
             _ctrl_def = shortcut_def
             if key == "cod4mp":
                 import config as _cfg_ctrl
-                _ctrl_entry = _cfg_ctrl.get_setup_games().get("cod4mp", {})
-                if _ctrl_entry.get("client") == "cod4r":
-                    _ctrl_def = dict(shortcut_def)
-                    _ctrl_def["template_type"] = "standard"
+                _ctrl_def = dict(shortcut_def)
+                _ctrl_def["template_type"] = _cfg_ctrl.get_cod4mp_profile_type(
+                    shortcut_def["template_type"])
             _assign_controller_config(uid, shortcut_appid, _ctrl_def, gyro_mode, prog)
         
         if new_entries:
@@ -1833,10 +1852,9 @@ def write_own_shortcuts(own_games: dict, selected_keys: list,
             _ctrl_def = shortcut_def
             if key == "cod4mp":
                 import config as _cfg_ctrl
-                _ctrl_entry = _cfg_ctrl.get_setup_games().get("cod4mp", {})
-                if _ctrl_entry.get("client") == "cod4r":
-                    _ctrl_def = dict(shortcut_def)
-                    _ctrl_def["template_type"] = "standard"
+                _ctrl_def = dict(shortcut_def)
+                _ctrl_def["template_type"] = _cfg_ctrl.get_cod4mp_profile_type(
+                    shortcut_def["template_type"])
             _assign_controller_config(uid, shortcut_appid, _ctrl_def, gyro_mode, prog)
 
             # Set GE-Proton compat tool
