@@ -299,7 +299,12 @@ def _find_all_steam_uids() -> list[str]:
 
 
 def _get_deck_serial() -> str | None:
-    """Read the Steam Deck serial number from Steam's config.vdf."""
+    """Read the Steam Deck serial from config.vdf, or None.
+
+    Looks for "SteamDeckRegisteredSerialNumber", which is absent on at
+    least some Decks (verified missing on a stock OLED), so callers must
+    treat the serial configset write as best-effort, not required.
+    """
     if not os.path.exists(STEAM_CONFIG):
         return None
     try:
@@ -667,13 +672,8 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
             # CoD4R has native controller support -- use standard gamepad layout
             _profile = sdef["profile_type"]
             if key == "cod4mp":
-                try:
-                    import config as _cfg_ctrl
-                    _ctrl_entry = _cfg_ctrl.get_setup_games().get("cod4mp", {})
-                    if _ctrl_entry.get("client") == "cod4r":
-                        _profile = "standard"
-                except Exception:
-                    pass
+                import config as _cfg_ctrl
+                _profile = _cfg_ctrl.get_cod4mp_profile_type(_profile)
 
             filenames        = _profile_filename(_profile, gyro_mode)
             primary_filename = filenames[0] if filenames else None
@@ -917,13 +917,8 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
             # CoD4R has native controller support -- use standard gamepad layout
             _profile = sdef["profile_type"]
             if key == "cod4mp":
-                try:
-                    import config as _cfg_ctrl
-                    _ctrl_entry = _cfg_ctrl.get_setup_games().get("cod4mp", {})
-                    if _ctrl_entry.get("client") == "cod4r":
-                        _profile = "standard"
-                except Exception:
-                    pass
+                import config as _cfg_ctrl
+                _profile = _cfg_ctrl.get_cod4mp_profile_type(_profile)
 
             filenames        = _external_profile_filenames(controller_type, _profile, gyro_mode)
             primary_filename = filenames[0] if filenames else None
@@ -992,14 +987,7 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
 
                 # CoD4R has native controller support -- use standard gamepad layout
                 if key == "cod4mp":
-                    try:
-                        _ctrl_entry = cfg.get_setup_games().get("cod4mp", {})
-                        if _ctrl_entry.get("client") == "cod4r":
-                            profile_type = "standard"
-                        elif _ctrl_entry.get("client") == "cod4x":
-                            profile_type = "other"
-                    except Exception:
-                        pass
+                    profile_type = cfg.get_cod4mp_profile_type(profile_type)
                 filenames    = _external_profile_filenames(controller_type, profile_type, gyro_mode)
                 primary_filename = filenames[0] if filenames else None
                 if not primary_filename:
