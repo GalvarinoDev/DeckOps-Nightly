@@ -277,15 +277,21 @@ class ManagementScreen(QWidget):
     def _readd(self, gd):
         """Re-add the Plutonium offline launcher shortcut."""
         from shortcut import create_launcher_shortcut
+        from wrapper import kill_steam
         self._status.setText("Re-adding Plutonium offline launcher...")
 
         def _on_progress(msg):
             self._status.setText(msg)
 
         def _run():
+            # Steam must be closed first. Steam holds shortcuts.vdf and the
+            # controller configsets in memory and flushes them on exit, which
+            # clobbers any edits made while it is running. This was the cause
+            # of the launcher controller template intermittently reverting.
+            kill_steam(on_progress=_on_progress)
             create_launcher_shortcut(on_progress=_on_progress)
             QTimer.singleShot(0, lambda: self._status.setText(
-                "Plutonium offline launcher shortcut re-added."
+                "Plutonium offline launcher shortcut re-added. Safe to reopen Steam."
             ))
 
         threading.Thread(target=_run, daemon=True).start()

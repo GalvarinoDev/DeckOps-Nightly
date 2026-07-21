@@ -590,6 +590,20 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
     except Exception as ex:
         prog(f"  ⚠ Could not detect shortcut appids: {ex}")
 
+    # Pre-calculate the offline launcher shortcut appid, if the shortcut
+    # exists. The launcher is not in SHORTCUT_DEFS because its exe is a
+    # shell script under INSTALL_DIR, not a game exe in a Steam library.
+    # Read the appid from shortcuts.vdf rather than recalculating the CRC
+    # so it matches whatever Steam is actually using.
+    launcher_appid = None
+    try:
+        from shortcut import get_shortcut_appid, LAUNCHER_TITLE
+        _found = get_shortcut_appid(LAUNCHER_TITLE)
+        if _found is not None:
+            launcher_appid = str(_found)
+    except Exception as ex:
+        prog(f"  ⚠ Could not detect launcher shortcut appid: {ex}")
+
     # Resolve the primary controller type (neptune vs steamos_handheld)
     canonical_vdf, configset_filename = _primary_configset_name()
 
@@ -686,6 +700,38 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
                 _patch_configset(configset_serial, shortcut_appid, primary_filename)
 
             prog(f"  ✓ [shortcut {shortcut_appid}] → {primary_filename}")
+
+        # ── DeckOps offline launcher controller profile ───────────────────────
+        # The launcher shortcut gets its initial profile from shortcut.py's
+        # _assign_controller_config at creation time, but that write is lost
+        # if Steam was running (Steam flushes in-memory configset state on
+        # exit). Re-applying here means every install's final profile pass
+        # and the Settings "Re-apply Templates" button self-heal the
+        # launcher instead of skipping it.
+        if launcher_appid:
+            filenames        = _profile_filename("standard", gyro_mode)
+            primary_filename = filenames[0] if filenames else None
+            if primary_filename:
+                src_primary = os.path.join(ASSETS_DIR, primary_filename)
+                if os.path.exists(src_primary):
+                    dest_dir = os.path.join(config_root, launcher_appid)
+                    os.makedirs(dest_dir, exist_ok=True)
+                    for filename in filenames:
+                        src = os.path.join(ASSETS_DIR, filename)
+                        if os.path.exists(src):
+                            shutil.copy2(src, os.path.join(dest_dir, filename))
+
+                    cfg_dir_num = os.path.join(steam_cfg_root, launcher_appid)
+                    os.makedirs(cfg_dir_num, exist_ok=True)
+                    shutil.copy2(src_primary, os.path.join(cfg_dir_num, canonical_vdf))
+
+                    _patch_configset(configset_primary, launcher_appid, primary_filename)
+                    if configset_serial:
+                        _patch_configset(configset_serial, launcher_appid, primary_filename)
+
+                    prog(f"  ✓ [launcher {launcher_appid}] → {primary_filename}")
+                else:
+                    prog(f"  ⚠ Asset missing, launcher skipped: {primary_filename}")
 
     # ── "My Own" game controller profiles ────────────────────────────────────
     # For users who installed via CD/GOG/etc, DeckOps created the shortcuts
