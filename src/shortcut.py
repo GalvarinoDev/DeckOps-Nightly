@@ -664,8 +664,17 @@ def _download_artwork(grid_dir: str, appid: int, shortcut_def: dict, prog,
 # ── Controller template assignment ────────────────────────────────────────────
 
 def _get_template_filename(template_type: str, gyro_mode: str) -> str:
-    """Return the controller template filename based on type and gyro mode."""
-    suffix = "ads" if gyro_mode == "on" else "off"
+    """Return the controller template filename based on type and gyro mode.
+
+    Suffix mapping must match controller_profiles._profile_filename:
+        "on" -> ads, "hold" -> hold, "toggle" -> toggle, anything else -> off
+    Previously hold/toggle collapsed to off here, so shortcuts created for
+    hold/toggle users got the wrong template until the later
+    assign_controller_profiles pass corrected the game shortcuts. The
+    launcher shortcut had no later pass, so it stayed wrong.
+    """
+    _SUFFIX_MAP = {"on": "ads", "hold": "hold", "toggle": "toggle"}
+    suffix = _SUFFIX_MAP.get(gyro_mode, "off")
     if template_type == "other":
         return f"controller_neptune_deckops_other_{suffix}.vdf"
     else:
