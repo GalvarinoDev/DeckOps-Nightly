@@ -52,25 +52,32 @@ from log import get_logger
 
 _log = get_logger(__name__)
 
-
-def _record_configset_edit(configset_path: str, key: str, template_name: str):
-    """Record a configset VDF edit in the wrapper ledger."""
-    try:
-        from wrapper import _record_configset
-        filename = os.path.basename(configset_path)
-        _record_configset(filename, key, template_name)
-    except Exception:
-        _log.debug("configset ledger record failed", exc_info=True)
-
-
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 _HERE         = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT  = os.path.dirname(_HERE)
 ASSETS_DIR    = os.path.join(PROJECT_ROOT, "assets", "controllers")
 TEMPLATES_DIR = os.path.expanduser("~/.steam/steam/controller_base/templates")
-STEAM_DIR     = os.path.expanduser("~/.local/share/Steam")
-STEAM_CONFIG  = os.path.join(STEAM_DIR, "config", "config.vdf")
+from steam_common import (
+    STEAM_ROOT, STEAM_CONFIG, MIN_UID,
+    calc_shortcut_appid as _calc_appid_int,
+    find_all_steam_uids as _find_all_steam_uids,
+    get_deck_serial as _get_deck_serial,
+    patch_configset as _patch_configset,
+    record_configset_edit as _record_configset_edit,
+)
+
+STEAM_DIR = STEAM_ROOT  # alias kept for existing references in this module
+
+
+def _calc_shortcut_appid(exe_path: str, name: str) -> str:
+    """Str-returning wrapper over steam_common.calc_shortcut_appid.
+
+    This module uses appids as configset keys and path segments, so the
+    documented contract here is str. The CRC logic itself lives in
+    steam_common — do not reimplement it.
+    """
+    return str(_calc_appid_int(exe_path, name))
 
 TEMPLATES = [
     # ── Universal templates (always installed) ────────────────────────────
@@ -267,56 +274,9 @@ SHORTCUT_DEFS = {
     },
 }
 
-MIN_UID = 10000
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-def _calc_shortcut_appid(exe_path: str, name: str) -> str:
-    """
-    Calculate the Steam shortcut appid from exe path and name.
-    Must match shortcut.py _calc_shortcut_appid exactly.
-    """
-    key = (exe_path + name).encode("utf-8")
-    crc = binascii.crc32(key) & 0xFFFFFFFF
-    return str((crc | 0x80000000) & 0xFFFFFFFF)
-
-def _find_all_steam_uids() -> list[str]:
-    """Return all valid Steam user ID folders from userdata/."""
-    userdata = os.path.join(STEAM_DIR, "userdata")
-    if not os.path.isdir(userdata):
-        return []
-    seen, uids = set(), []
-    for entry in os.listdir(userdata):
-        if not entry.isdigit() or int(entry) < MIN_UID:
-            continue
-        real = os.path.realpath(os.path.join(userdata, entry))
-        if real in seen:
-            continue
-        seen.add(real)
-        uids.append(entry)
-    return uids
-
-
-def _get_deck_serial() -> str | None:
-    """Read the Steam Deck serial from config.vdf, or None.
-
-    Looks for "SteamDeckRegisteredSerialNumber", which is absent on at
-    least some Decks (verified missing on a stock OLED), so callers must
-    treat the serial configset write as best-effort, not required.
-    """
-    if not os.path.exists(STEAM_CONFIG):
-        return None
-    try:
-        with open(STEAM_CONFIG, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
-        match = re.search(r'"SteamDeckRegisteredSerialNumber"\s+"([^"]+)"', content)
-        if match:
-            return match.group(1)
-    except Exception:
-        _log.debug("serial number read failed", exc_info=True)
-    return None
-
 
 def _primary_configset_name() -> tuple[str, str]:
     """Return (canonical_vdf_basename, configset_filename) for the primary controller.
@@ -453,41 +413,6 @@ def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mo
         return [f"controller_triton_deckops{suffix}.vdf"]
 
     return []
-
-
-def _patch_configset(configset_path: str, key: str, template_name: str):
-    """
-    Patch a single key in a configset VDF to use our template.
-    If the key exists, replace its contents. If not, insert it.
-    """
-    entry = f'\t"{key}"\n\t{{\n\t\t"template"\t\t"{template_name}"\n\t}}\n'
-
-    if not os.path.exists(configset_path):
-        os.makedirs(os.path.dirname(configset_path), exist_ok=True)
-        with open(configset_path, "w", encoding="utf-8") as f:
-            f.write('"controller_config"\n{\n' + entry + '}')
-        _record_configset_edit(configset_path, key, template_name)
-        return
-
-    with open(configset_path, "r", encoding="utf-8", errors="replace") as f:
-        content = f.read()
-
-    # This regex works because configset entries are shallow (one level of braces).
-    # [^}}]* matches everything inside the block without crossing into nested blocks.
-    # Do NOT reuse this pattern for deeper VDF structures like config.vdf or
-    # localconfig.vdf where blocks nest multiple levels deep.
-    pattern = rf'\t"{re.escape(key)}"\n\t\{{[^}}]*\}}\n?'
-    if re.search(pattern, content, re.MULTILINE | re.DOTALL):
-        content = re.sub(pattern, entry, content, flags=re.MULTILINE | re.DOTALL)
-    else:
-        content = content.rstrip()
-        if content.endswith("}"):
-            content = content[:-1].rstrip() + "\n" + entry + "}\n"
-
-    with open(configset_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    _record_configset_edit(configset_path, key, template_name)
-
 
 # ── Public API ────────────────────────────────────────────────────────────────
 

@@ -33,16 +33,21 @@ _log = get_logger(__name__)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-STEAM_ROOT     = os.path.expanduser("~/.local/share/Steam")
-USERDATA_DIR   = os.path.join(STEAM_ROOT, "userdata")
+from steam_common import (
+    STEAM_ROOT, USERDATA_DIR, STEAM_CONFIG, MIN_UID,
+    calc_shortcut_appid as _calc_shortcut_appid,
+    find_all_steam_uids as _find_all_steam_uids,
+    get_deck_serial as _get_deck_serial,
+    patch_configset as _patch_configset,
+    record_configset_edit as _record_configset_edit,
+)
+
 COMPAT_ROOT    = os.path.join(STEAM_ROOT, "steamapps", "compatdata")
-STEAM_CONFIG   = os.path.join(STEAM_ROOT, "config", "config.vdf")
 
 _HERE          = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT   = os.path.dirname(_HERE)
 ASSETS_DIR     = os.path.join(PROJECT_ROOT, "assets", "controllers")
 
-MIN_UID = 10000
 
 _BROWSER_UA = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -387,54 +392,6 @@ STEAM_ARTWORK = {
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _find_all_steam_uids():
-    """Return all valid Steam user ID folders from userdata/."""
-    if not os.path.isdir(USERDATA_DIR):
-        return []
-    seen, uids = set(), []
-    for entry in os.listdir(USERDATA_DIR):
-        if not entry.isdigit() or int(entry) < MIN_UID:
-            continue
-        real = os.path.realpath(os.path.join(USERDATA_DIR, entry))
-        if real in seen:
-            continue
-        seen.add(real)
-        uids.append(entry)
-    return uids
-
-
-def _get_deck_serial() -> str | None:
-    """Read the Steam Deck serial from config.vdf, or None.
-
-    Looks for "SteamDeckRegisteredSerialNumber", which is absent on at
-    least some Decks (verified missing on a stock OLED), so callers must
-    treat the serial configset write as best-effort, not required.
-    """
-    if not os.path.exists(STEAM_CONFIG):
-        return None
-    try:
-        with open(STEAM_CONFIG, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
-        match = re.search(r'"SteamDeckRegisteredSerialNumber"\s+"([^"]+)"', content)
-        if match:
-            return match.group(1)
-    except Exception:
-        _log.debug("serial number read failed", exc_info=True)
-    return None
-
-
-def _calc_shortcut_appid(exe_path: str, name: str) -> int:
-    """
-    Calculate the Steam shortcut appid from exe path and name.
-    This must match Steam's internal algorithm exactly. If the CRC or
-    bitmask changes, shortcuts will not resolve and artwork/controller
-    configs will point to the wrong appid. Do not modify.
-    """
-    key = (exe_path + name).encode("utf-8")
-    crc = binascii.crc32(key) & 0xFFFFFFFF
-    return (crc | 0x80000000) & 0xFFFFFFFF
-
-
 def _to_signed32(n):
     """Convert unsigned int32 appid to signed int32 for vdf binary format."""
     return n if n <= 2147483647 else n - 2**32
@@ -741,48 +698,6 @@ def _assign_controller_config(uid: str, appid: int, shortcut_def: dict,
         _patch_configset(configset_serial, appid_str, template_filename)
     
     prog(f"    ✓ Controller: {template_filename}")
-
-
-def _record_configset_edit(configset_path: str, key: str, template_name: str):
-    """Record a configset VDF edit in the wrapper ledger."""
-    try:
-        from wrapper import _record_configset
-        filename = os.path.basename(configset_path)
-        _record_configset(filename, key, template_name)
-    except Exception:
-        _log.debug("configset ledger record failed", exc_info=True)
-
-
-def _patch_configset(configset_path: str, key: str, template_name: str):
-    """
-    Patch configset_controller_neptune.vdf to set our template as default.
-    Duplicated from controller_profiles.py because shortcut.py runs
-    standalone and should not import from the controller module.
-    """
-    entry = f'\t"{key}"\n\t{{\n\t\t"template"\t\t"{template_name}"\n\t}}\n'
-
-    if not os.path.exists(configset_path):
-        os.makedirs(os.path.dirname(configset_path), exist_ok=True)
-        with open(configset_path, "w", encoding="utf-8") as f:
-            f.write('"controller_config"\n{\n' + entry + '}\n')
-        _record_configset_edit(configset_path, key, template_name)
-        return
-
-    with open(configset_path, "r", encoding="utf-8", errors="replace") as f:
-        content = f.read()
-
-    pattern = rf'\t"{re.escape(key)}"\n\t\{{[^}}]*\}}\n?'
-    if re.search(pattern, content, re.MULTILINE | re.DOTALL):
-        content = re.sub(pattern, entry, content, flags=re.MULTILINE | re.DOTALL)
-    else:
-        content = content.rstrip()
-        if content.endswith("}"):
-            content = content[:-1].rstrip() + "\n" + entry + "}\n"
-
-    with open(configset_path, "w", encoding="utf-8") as f:
-        f.write(content)
-    _record_configset_edit(configset_path, key, template_name)
-
 
 def _clear_compat_tool(appid_str: str):
     """

@@ -1407,6 +1407,7 @@ echo ""
 info "Removing DeckOps non-Steam shortcuts from Steam library..."
 
 # Mirrors: shortcut.py SHORTCUTS and the binary VDF format from _make_shortcut_entry()
+# (appid CRC algorithm lives in steam_common.py calc_shortcut_appid)
 remove_steam_shortcuts() {
     python3 - << 'PYEOF'
 import os, struct
@@ -1594,7 +1595,7 @@ echo ""
 
 info "Removing non-Steam shortcut artwork from Steam grid..."
 
-# Mirrors: shortcut.py _download_artwork() and _calc_shortcut_appid()
+# Mirrors: shortcut.py _download_artwork() and steam_common.py calc_shortcut_appid()
 python3 - << 'PYEOF'
 import os, re, binascii, glob
 

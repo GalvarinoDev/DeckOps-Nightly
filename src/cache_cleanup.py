@@ -33,6 +33,7 @@ import shutil
 import sys
 
 from log import get_logger
+from steam_common import calc_shortcut_appid as _calc_shortcut_appid
 
 _log = get_logger(__name__)
 
@@ -85,12 +86,6 @@ def _heroic_app_name(game_key: str) -> str:
 
 # ── Shortcut appid calculation ───────────────────────────────────────────────
 # Must match shortcut._calc_shortcut_appid exactly.
-
-def _calc_shortcut_appid(exe_path: str, name: str) -> int:
-    key = (exe_path + name).encode("utf-8")
-    crc = binascii.crc32(key) & 0xFFFFFFFF
-    return (crc | 0x80000000) & 0xFFFFFFFF
-
 
 # ── Shader cache cleanup ────────────────────────────────────────────────────
 
