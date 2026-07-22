@@ -1456,6 +1456,156 @@ class OwnInstallScreen(QWidget):
 
         proton = get_proton_path(self.steam_root)
 
+        # ── T7X opt-in: inject t7x into selected if user chose it ─────
+        # Injection must happen early so t7x is included in prefix init,
+        # shortcuts, and selected_keys. Actual install runs later (after
+        # CleanOps) to match the original phase order.
+        has_cleanops = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
+        has_t7x = getattr(self, "install_t7x_opt", False) and has_cleanops
+        if has_t7x:
+            for k, gd, g in list(self.selected):
+                if k == "t7":
+                    t7x_tuple = ("t7x", gd, dict(g))
+                    self.selected.append(t7x_tuple)
+                    self.steam_selected.append(t7x_tuple)
+                    selected_keys.append("t7x")
+                    break
+
+        # ── Enrich own game dicts (shortcut_appid, compatdata_path) ───────
+        # enrich_own_games computes CRC-based appids, prefix paths, and
+        # resolved exe/launch options WITHOUT writing any VDF entries.
+        # Must run before ensure_all_prefix_deps. Actual shortcut writing
+        # is deferred to write_own_shortcuts() after all mod clients are
+        # installed so every target exe exists on disk.
+        self._s.progress.emit(8, "Computing own game shortcuts...")
+        self._s.log.emit("Enriching own game data...")
+        gyro_mode = cfg.get_gyro_mode() or "on"
+        own_games_dict = {k: g for k, g in self.own_selected.items()}
+        own_games_dict = enrich_own_games(
+            own_games=own_games_dict,
+            selected_keys=[k for k in self.own_selected],
+            on_progress=lambda msg: self._s.log.emit(msg),
+        )
+        _log_to_file("[BREADCRUMB] enrich_own_games returned")
+
+        # Update self.selected with enriched own game dicts (shortcut_appid etc)
+        self.selected = [
+            (k, gd, own_games_dict.get(k, g)) for k, gd, g in self.selected
+        ]
+        # Rebuild own_games with enriched dicts for compat tool mapping later.
+        # Only include own-selected keys - Steam games don't have shortcut_appid.
+        own_games = {k: g for k, gd, g in self.selected if g and k in self.own_selected}
+        _log_to_file("[BREADCRUMB] own_games rebuilt, starting prefix init")
+
+        # ── Create prefixes + install deps from GE-Proton default_pfx ─────
+        # Every selected game gets its prefix preloaded — no exceptions.
+        # Own games use their CRC-based prefix (set by create_own_shortcuts).
+        # Steam games use their Steam appid prefix.
+        # LCD Plutonium games still get a prefix for offline mode; HGL
+        # manages its own prefix separately for online mode.
+        # ensure_all_prefix_deps handles deduplication and skips prefixes
+        # that are already initialized, so passing everything in is safe.
+        self._s.progress.emit(9, "Creating Proton prefixes...")
+        self._s.log.emit("Creating Proton prefixes and installing dependencies...")
+        self._s.pulse_start.emit("Installing prefix dependencies")
+        from ge_proton import ensure_all_prefix_deps
+        from detect_games import GAMES as _GAMES_MAP
+        from wrapper import find_compatdata
+        dep_targets = []
+        for key, gd, game in self.selected:
+            if not game:
+                continue
+            if key in self.own_selected:
+                # Own games always use their CRC-based prefix
+                compat = game.get("compatdata_path", "")
+            else:
+                # Steam games use the per-key appid, not card-level gd["appid"].
+                # Card-level appid is wrong for keys like t6zm (212910 vs 202990).
+                appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
+                compat = find_compatdata(self.steam_root, appid,
+                                         game_install_dir=game.get("install_dir"))
+                if not compat and game.get("install_dir"):
+                    steamapps = os.path.dirname(os.path.dirname(game["install_dir"]))
+                    compat = os.path.join(steamapps, "compatdata", str(appid))
+            if compat:
+                dep_targets.append((key, compat))
+        if dep_targets:
+            _log_to_file(f"[BREADCRUMB] calling ensure_all_prefix_deps with {len(dep_targets)} targets: {[k for k,_ in dep_targets]}")
+            done = ensure_all_prefix_deps(
+                ge_version, dep_targets,
+                on_progress=lambda msg: self._s.log.emit(msg),
+                proton_path=proton,
+                steam_root=self.steam_root,
+            )
+            self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
+        self._s.pulse_stop.emit()
+        _log_to_file("[BREADCRUMB] prefix deps done")
+
+        # ── Install CoD4 (iw3sp + cod4r/cod4x) — Steam still running ─────
+        # Runs before the Plutonium bootstrapper and before Steam is closed
+        # so the touchpad still works as a mouse for closing the CoD4R
+        # launcher window. Requires enrichment + prefix deps, which now
+        # also run pre-kill: enrich_own_games is pure computation (no VDF
+        # writes) and ensure_all_prefix_deps runs pre-kill in the standard
+        # flow already. VDF writers (clean slate, compat tools) stay after
+        # the Steam kill.────────
+        _log_to_file("[BREADCRUMB] starting cod4 install phase")
+        if has_cod4:
+            cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp")]
+            for key, gd, game in cod4_selected:
+                base_name = gd["base"]
+                self._s.progress.emit(9, f"Setting up {base_name}...")
+                def op_cod4(pct, msg): self._s.progress.emit(9 + int(pct / 100 * 1), msg)
+                try:
+                    source = "own" if key in self.own_selected else "steam"
+                    c = KEY_CLIENT.get(key, gd["client"])
+                    # Override cod4mp client with user's popup choice
+                    if key == "cod4mp":
+                        c = _cod4_client
+                    if source == "own":
+                        compat = game.get("compatdata_path", "")
+                        cod4_appid = game.get("shortcut_appid", 7940)
+                    else:
+                        compat = find_compatdata(self.steam_root, gd["appid"],
+                                                  game_install_dir=game.get("install_dir"))
+                        cod4_appid = gd["appid"]
+                    if c == "cod4r":
+                        install_cod4r(game, self.steam_root, proton, compat, op_cod4,
+                                      appid=cod4_appid, source=source)
+                        self._s.log.emit(
+                            "Close the CoD4R launcher when the download is complete."
+                        )
+                        self._s.cod4r_wait.emit()
+                        self._cod4r_event.wait()
+                        self._cod4r_event.clear()
+                        self._s.cod4r_go.emit()
+                    elif c == "cod4x":
+                        install_cod4x(game, self.steam_root, proton, compat, op_cod4,
+                                      appid=cod4_appid)
+                    elif c == "iw3sp":
+                        install_iw3sp(game, self.steam_root, proton, compat, op_cod4, source=source)
+                    cfg.mark_game_setup(key, c, source=source)
+                    if base_name not in logged_bases:
+                        self._s.log.emit(f"✓  {base_name} done")
+                        logged_bases.add(base_name)
+                except DownloadError as dl_ex:
+                    self._s.log.emit(f"⚠  {dl_ex.label} download failed — manual download needed")
+                    self._manual_dl_event.clear()
+                    self._manual_dl_ok = False
+                    self._s.manual_dl.emit(
+                        dl_ex.url,
+                        os.path.dirname(dl_ex.dest),
+                        os.path.basename(dl_ex.dest),
+                        dl_ex.label,
+                    )
+                    self._manual_dl_event.wait()
+                    if not self._manual_dl_ok:
+                        self._s.log.emit(f"  ✗  {base_name} skipped by user.")
+                    else:
+                        self._s.log.emit(f"  ✓  {dl_ex.label} placed manually — re-run install to finish setup")
+                except Exception as ex:
+                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
         # ── Plutonium bootstrapper (Steam still running) ─────────────────
         # Downloads Plutonium and launches it so the user can log in. LCD
         # routes through HGL (shared default prefix); OLED uses the
@@ -1614,91 +1764,6 @@ class OwnInstallScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"  CompatToolMapping for Steam appids skipped: {ex}")
 
-        # ── T7X opt-in: inject t7x into selected if user chose it ─────
-        # Injection must happen early so t7x is included in prefix init,
-        # shortcuts, and selected_keys. Actual install runs later (after
-        # CleanOps) to match the original phase order.
-        has_cleanops = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
-        has_t7x = getattr(self, "install_t7x_opt", False) and has_cleanops
-        if has_t7x:
-            for k, gd, g in list(self.selected):
-                if k == "t7":
-                    t7x_tuple = ("t7x", gd, dict(g))
-                    self.selected.append(t7x_tuple)
-                    self.steam_selected.append(t7x_tuple)
-                    selected_keys.append("t7x")
-                    break
-
-        # ── Enrich own game dicts (shortcut_appid, compatdata_path) ───────
-        # enrich_own_games computes CRC-based appids, prefix paths, and
-        # resolved exe/launch options WITHOUT writing any VDF entries.
-        # Must run before ensure_all_prefix_deps. Actual shortcut writing
-        # is deferred to write_own_shortcuts() after all mod clients are
-        # installed so every target exe exists on disk.
-        self._s.progress.emit(20, "Computing own game shortcuts...")
-        self._s.log.emit("Enriching own game data...")
-        gyro_mode = cfg.get_gyro_mode() or "on"
-        own_games_dict = {k: g for k, g in self.own_selected.items()}
-        own_games_dict = enrich_own_games(
-            own_games=own_games_dict,
-            selected_keys=[k for k in self.own_selected],
-            on_progress=lambda msg: self._s.log.emit(msg),
-        )
-        _log_to_file("[BREADCRUMB] enrich_own_games returned")
-
-        # Update self.selected with enriched own game dicts (shortcut_appid etc)
-        self.selected = [
-            (k, gd, own_games_dict.get(k, g)) for k, gd, g in self.selected
-        ]
-        # Rebuild own_games with enriched dicts for compat tool mapping later.
-        # Only include own-selected keys - Steam games don't have shortcut_appid.
-        own_games = {k: g for k, gd, g in self.selected if g and k in self.own_selected}
-        _log_to_file("[BREADCRUMB] own_games rebuilt, starting prefix init")
-
-        # ── Create prefixes + install deps from GE-Proton default_pfx ─────
-        # Every selected game gets its prefix preloaded — no exceptions.
-        # Own games use their CRC-based prefix (set by create_own_shortcuts).
-        # Steam games use their Steam appid prefix.
-        # LCD Plutonium games still get a prefix for offline mode; HGL
-        # manages its own prefix separately for online mode.
-        # ensure_all_prefix_deps handles deduplication and skips prefixes
-        # that are already initialized, so passing everything in is safe.
-        self._s.progress.emit(30, "Creating Proton prefixes...")
-        self._s.log.emit("Creating Proton prefixes and installing dependencies...")
-        self._s.pulse_start.emit("Installing prefix dependencies")
-        from ge_proton import ensure_all_prefix_deps
-        from detect_games import GAMES as _GAMES_MAP
-        from wrapper import find_compatdata
-        dep_targets = []
-        for key, gd, game in self.selected:
-            if not game:
-                continue
-            if key in self.own_selected:
-                # Own games always use their CRC-based prefix
-                compat = game.get("compatdata_path", "")
-            else:
-                # Steam games use the per-key appid, not card-level gd["appid"].
-                # Card-level appid is wrong for keys like t6zm (212910 vs 202990).
-                appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
-                compat = find_compatdata(self.steam_root, appid,
-                                         game_install_dir=game.get("install_dir"))
-                if not compat and game.get("install_dir"):
-                    steamapps = os.path.dirname(os.path.dirname(game["install_dir"]))
-                    compat = os.path.join(steamapps, "compatdata", str(appid))
-            if compat:
-                dep_targets.append((key, compat))
-        if dep_targets:
-            _log_to_file(f"[BREADCRUMB] calling ensure_all_prefix_deps with {len(dep_targets)} targets: {[k for k,_ in dep_targets]}")
-            done = ensure_all_prefix_deps(
-                ge_version, dep_targets,
-                on_progress=lambda msg: self._s.log.emit(msg),
-                proton_path=proton,
-                steam_root=self.steam_root,
-            )
-            self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
-        self._s.pulse_stop.emit()
-        _log_to_file("[BREADCRUMB] prefix deps done")
-
         # ── Plutonium games ───────────────────────────────────────────────
         if has_plut:
             # Create the launcher shortcut FIRST so the appid/prefix exist
@@ -1807,64 +1872,6 @@ class OwnInstallScreen(QWidget):
                     cfg.mark_game_setup(key, "iw4x", source=source)
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── Install CoD4 (iw3sp + cod4r/cod4x) ─────────────────────────────
-        _log_to_file("[BREADCRUMB] starting cod4 install phase")
-        if has_cod4:
-            cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp")]
-            for key, gd, game in cod4_selected:
-                base_name = gd["base"]
-                self._s.progress.emit(63, f"Setting up {base_name}...")
-                def op_cod4(pct, msg): self._s.progress.emit(63 + int(pct / 100 * 7), msg)
-                try:
-                    source = "own" if key in self.own_selected else "steam"
-                    c = KEY_CLIENT.get(key, gd["client"])
-                    # Override cod4mp client with user's popup choice
-                    if key == "cod4mp":
-                        c = _cod4_client
-                    if source == "own":
-                        compat = game.get("compatdata_path", "")
-                        cod4_appid = game.get("shortcut_appid", 7940)
-                    else:
-                        compat = find_compatdata(self.steam_root, gd["appid"],
-                                                  game_install_dir=game.get("install_dir"))
-                        cod4_appid = gd["appid"]
-                    if c == "cod4r":
-                        install_cod4r(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=cod4_appid, source=source)
-                        self._s.log.emit(
-                            "Close the CoD4R launcher when the download is complete."
-                        )
-                        self._s.cod4r_wait.emit()
-                        self._cod4r_event.wait()
-                        self._cod4r_event.clear()
-                        self._s.cod4r_go.emit()
-                    elif c == "cod4x":
-                        install_cod4x(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=cod4_appid)
-                    elif c == "iw3sp":
-                        install_iw3sp(game, self.steam_root, proton, compat, op_cod4, source=source)
-                    cfg.mark_game_setup(key, c, source=source)
-                    if base_name not in logged_bases:
-                        self._s.log.emit(f"✓  {base_name} done")
-                        logged_bases.add(base_name)
-                except DownloadError as dl_ex:
-                    self._s.log.emit(f"⚠  {dl_ex.label} download failed — manual download needed")
-                    self._manual_dl_event.clear()
-                    self._manual_dl_ok = False
-                    self._s.manual_dl.emit(
-                        dl_ex.url,
-                        os.path.dirname(dl_ex.dest),
-                        os.path.basename(dl_ex.dest),
-                        dl_ex.label,
-                    )
-                    self._manual_dl_event.wait()
-                    if not self._manual_dl_ok:
-                        self._s.log.emit(f"  ✗  {base_name} skipped by user.")
-                    else:
-                        self._s.log.emit(f"  ✓  {dl_ex.label} placed manually — re-run install to finish setup")
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
