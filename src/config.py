@@ -265,7 +265,7 @@ def is_docked() -> bool:
 
 
 def get_external_controller() -> str | None:
-    """Returns 'playstation', 'xbox', 'other', or None if not yet set."""
+    """Returns 'playstation', 'xbox', 'steamcontroller', 'other', or None if not yet set."""
     return load().get("external_controller")
 
 
