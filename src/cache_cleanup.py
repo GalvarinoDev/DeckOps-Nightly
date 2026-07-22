@@ -135,6 +135,55 @@ def cleanup_shader_cache(game_key: str, source: str):
             _nuke_shader_cache_dir(str(shortcut_appid))
 
 
+# ── Steam shader pre-cache environment strip ────────────────────────────────
+# When Steam launches a Steam-owned game through cache_cleanup.py, it
+# injects its shader pre-caching environment (precompiled RADV pipeline
+# DBs, DXVK state cache path, Fossilize capture layer, AMDVLK pipeline
+# cache) keyed on the vanilla game's appid. Those vars leak through
+# flatpak run into Heroic's Proton runtime, so the game consumes
+# precompiled shaders built for the vanilla game on Steam's own
+# Proton/mesa versions. On LCD this causes transient artifacting
+# (small black/red/white squares) whenever Steam has downloaded
+# precompiled shaders for the appid. Stripping these vars makes the
+# game fall back to mesa's own cache inside the Heroic flatpak, which
+# is self-consistent with the runtime actually rendering the game.
+
+_STEAM_SHADER_ENV_VARS = (
+    "MESA_DISK_CACHE_READ_ONLY_FOZ_DBS",
+    "MESA_DISK_CACHE_SINGLE_FILE",
+    "MESA_SHADER_CACHE_DIR",
+    "MESA_SHADER_CACHE_MAX_SIZE",
+    "MESA_GLSL_CACHE_DIR",
+    "MESA_GLSL_CACHE_MAX_SIZE",
+    "DXVK_STATE_CACHE_PATH",
+    "ENABLE_VK_LAYER_VALVE_steam_fossilize_1",
+    "STEAM_FOSSILIZE_DUMP_PATH",
+    "STEAM_FOSSILIZE_DUMP_PATH_READ_ONLY",
+    "FOSSILIZE_APPLICATION_INFO_FILTER_PATH",
+    "AMD_VK_PIPELINE_CACHE_PATH",
+    "AMD_VK_PIPELINE_CACHE_FILENAME",
+    "AMD_VK_USE_PIPELINE_CACHE",
+    "__GL_SHADER_DISK_CACHE_APP_NAME",
+    "__GL_SHADER_DISK_CACHE_PATH",
+    "__GL_SHADER_DISK_CACHE_READ_ONLY_APP_NAME",
+    "__GL_SHADER_DISK_CACHE_SKIP_CLEANUP",
+)
+
+
+def _strip_steam_shader_env(env: dict) -> dict:
+    """
+    Remove Steam's shader pre-cache vars and disable the Fossilize
+    capture layer so the Heroic-run game uses only its own caches.
+    Harmless for own-game launches where the vars are absent.
+    """
+    for var in _STEAM_SHADER_ENV_VARS:
+        env.pop(var, None)
+    # Belt and suspenders: explicitly disable the Fossilize layer in
+    # case the layer manifest is discovered without the enable var.
+    env["DISABLE_VK_LAYER_VALVE_steam_fossilize_1"] = "1"
+    return env
+
+
 # ── Game launch ──────────────────────────────────────────────────────────────
 
 def launch_game(game_key: str, source: str):
@@ -163,7 +212,7 @@ def launch_game(game_key: str, source: str):
         heroic_url,
     ]
 
-    env = os.environ.copy()
+    env = _strip_steam_shader_env(os.environ.copy())
     if source == "steam":
         env["LD_PRELOAD"] = "/usr/lib/libcurl.so.4"
 
