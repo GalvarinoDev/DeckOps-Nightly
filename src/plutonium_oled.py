@@ -92,6 +92,18 @@ OLED_LAN_WRAPPER_NAMES = {
     "iw5mp_ds": "iw5plut_lan.sh",
 }
 
+# Seconds each LAN wrapper stays alive after the bootstrapper returns.
+# The bootstrapper exits as soon as it has spawned the game; if the
+# wrapper exits with it, launcher_offline.sh ends, Steam considers the
+# shortcut stopped, and session teardown races the still-initializing
+# game. T6 initializes far more slowly than the IW-engine games, so it
+# gets a much longer hold.
+_LAN_LINGER_S_DEFAULT = 8
+_LAN_LINGER_S = {
+    "t6mp": 30,
+    "t6zm": 30,
+}
+
 # Old shared filenames used before the unique-name fix. Used during
 # install to clean up stale wrappers from previous DeckOps versions.
 _OLD_OLED_LAN_WRAPPER_NAMES = {
@@ -738,13 +750,20 @@ def _write_oled_lan_wrapper(game: dict, game_key: str, steam_root: str,
                                   "plutonium-bootstrapper-win32.exe")
     game_dir_wine = "Z:" + install_dir.replace("/", "\\")
 
+    linger = _LAN_LINGER_S.get(game_key, _LAN_LINGER_S_DEFAULT)
     script = (
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
         f"cd \"{plut_dir}\"\n"
-        f"exec \"{proton_path}\" run \"{bootstrapper}\" "
+        # No exec: the shell must survive the bootstrapper returning so it
+        # can hold the session open below.
+        f"\"{proton_path}\" run \"{bootstrapper}\" "
         f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+        "# The bootstrapper exits as soon as it has spawned the game. Stay\n"
+        "# alive so the Steam shortcut session is not torn down while the\n"
+        "# game is still initializing (T6 loads much slower than IW games).\n"
+        f"sleep {linger}\n"
     )
 
     with open(wrapper_path, "wb") as f:
