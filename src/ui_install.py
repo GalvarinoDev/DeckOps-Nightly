@@ -1555,7 +1555,7 @@ class OwnInstallScreen(QWidget):
             for key, gd, game in cod4_selected:
                 base_name = gd["base"]
                 self._s.progress.emit(9, f"Setting up {base_name}...")
-                def op_cod4(pct, msg): self._s.progress.emit(9 + int(pct / 100 * 1), msg)
+                def op_cod4(pct, msg): self._s.progress.emit(9 + int(pct / 100 * 4), msg)
                 try:
                     source = "own" if key in self.own_selected else "steam"
                     c = KEY_CLIENT.get(key, gd["client"])
@@ -1625,7 +1625,7 @@ class OwnInstallScreen(QWidget):
 
             if not plut_ready:
                 if is_lcd:
-                    self._s.progress.emit(10, "Setting up Plutonium through HGL...")
+                    self._s.progress.emit(14, "Setting up Plutonium through HGL...")
                     self._s.log.emit(
                         "Setting up Plutonium through HGL...\n"
                         "  1. HGL will download and launch Plutonium (this may take a few minutes)\n"
@@ -1634,7 +1634,7 @@ class OwnInstallScreen(QWidget):
                         "  4. Click the button below to continue"
                     )
                 else:
-                    self._s.progress.emit(10, "Launching Plutonium — please log in...")
+                    self._s.progress.emit(14, "Launching Plutonium — please log in...")
                     self._s.log.emit(
                         "Plutonium is launching now.\n"
                         "  1. Wait for it to finish downloading\n"
@@ -1696,7 +1696,7 @@ class OwnInstallScreen(QWidget):
 
                 self._s.log.emit("✓  Plutonium ready.")
             else:
-                self._s.progress.emit(10, "Launching Plutonium to check for updates...")
+                self._s.progress.emit(14, "Launching Plutonium to check for updates...")
                 self._s.log.emit(
                     "Plutonium is launching now.\n"
                     "  1. Wait for it to finish updating\n"

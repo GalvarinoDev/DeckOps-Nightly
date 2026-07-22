@@ -64,10 +64,11 @@ _BROWSER_UA = {
 
 # ── GitHub API ────────────────────────────────────────────────────────────────
 
-def _get_latest_release():
+def _get_pinned_release():
     """
-    Query the GitHub API for the latest GE-Proton release.
-    Returns (version, tarball_url, checksum_url).
+    Query the GitHub API for the PINNED GE-Proton release (GITHUB_API
+    points at a specific tag, not /releases/latest — see the pin comment
+    at the top of this file). Returns (version, tarball_url, checksum_url).
     """
     req = urllib.request.Request(GITHUB_API, headers=_BROWSER_UA)
     with urllib.request.urlopen(req, timeout=15) as resp:
@@ -208,7 +209,7 @@ def install_ge_proton(on_progress=None):
     else:
         prog(0, "Checking latest GE-Proton release...")
 
-    version, tarball_url, checksum_url = _get_latest_release()
+    version, tarball_url, checksum_url = _get_pinned_release()
     prog(5, f"Latest: {version}")
 
     if local_version == version:
@@ -957,7 +958,7 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
 
 def setup_ge_proton(on_progress=None):
     """
-    Full setup: install latest GE-Proton and set it for all managed appids.
+    Full setup: install the pinned GE-Proton and set it for all managed appids.
     Call this from ui_qt.py early in the install flow.
 
     Returns the installed version string.

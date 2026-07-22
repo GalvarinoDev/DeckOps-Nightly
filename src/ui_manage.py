@@ -280,19 +280,24 @@ class ManagementScreen(QWidget):
         from wrapper import kill_steam
         self._status.setText("Re-adding Plutonium offline launcher...")
 
-        def _on_progress(msg):
-            self._status.setText(msg)
+        # Signals marshal UI updates onto the GUI thread; calling setText
+        # directly from the worker thread is unsafe in Qt. Same pattern as
+        # the other workers in this file.
+        s = _Sigs()
+        s.log.connect(self._status.setText)
 
         def _run():
             # Steam must be closed first. Steam holds shortcuts.vdf and the
             # controller configsets in memory and flushes them on exit, which
             # clobbers any edits made while it is running. This was the cause
             # of the launcher controller template intermittently reverting.
-            kill_steam(on_progress=_on_progress)
-            create_launcher_shortcut(on_progress=_on_progress)
-            QTimer.singleShot(0, lambda: self._status.setText(
-                "Plutonium offline launcher shortcut re-added. Safe to reopen Steam."
-            ))
+            try:
+                kill_steam(on_progress=s.log.emit)
+                create_launcher_shortcut(on_progress=s.log.emit)
+                s.log.emit("Plutonium offline launcher shortcut re-added. "
+                           "Safe to reopen Steam.")
+            except Exception as ex:
+                s.log.emit(f"✗  Re-add failed: {ex}")
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -1327,6 +1332,7 @@ class ConfigureScreen(QWidget):
 
             # Get changed files list
             changed_files = []
+            removed_files = []
             if local_sha != "0":
                 try:
                     creq = urllib.request.Request(
@@ -1335,7 +1341,18 @@ class ConfigureScreen(QWidget):
                     )
                     with urllib.request.urlopen(creq, timeout=15) as r2:
                         cdata = json.loads(r2.read())
-                    changed_files = [f["filename"] for f in cdata.get("files", [])]
+                    file_entries = cdata.get("files", [])
+                    # Removed files 404 on raw.githubusercontent, so exclude
+                    # them from download and delete locally at apply time.
+                    # Renamed files download under their new name; the old
+                    # name (previous_filename) is deleted like a removal.
+                    changed_files = [f["filename"] for f in file_entries
+                                     if f.get("status") != "removed"]
+                    removed_files = [f["filename"] for f in file_entries
+                                     if f.get("status") == "removed"]
+                    removed_files += [f["previous_filename"] for f in file_entries
+                                      if f.get("status") == "renamed"
+                                      and f.get("previous_filename")]
                 except Exception:
                     pass
 
@@ -1435,6 +1452,16 @@ class ConfigureScreen(QWidget):
                         target = os.path.join(install_dir, filepath)
                         os.makedirs(os.path.dirname(target), exist_ok=True)
                         shutil.copy2(staged, target)
+
+                # Delete local copies of files removed or renamed-away
+                # upstream, so stale modules can never shadow current ones
+                for filepath in removed_files:
+                    if is_protected(filepath):
+                        continue
+                    target = os.path.join(install_dir, filepath)
+                    if os.path.isfile(target):
+                        os.remove(target)
+                        _log.info("Removed stale file: %s", filepath)
 
             # Cleanup staging
             shutil.rmtree(update_dir, ignore_errors=True)

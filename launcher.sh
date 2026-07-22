@@ -82,6 +82,7 @@ check_for_updates() {
     mkdir -p "$UPDATE_DIR"
 
     local FAILED=0
+    local REMOVED_FILES=""
 
     if [ "$LOCAL_SHA" = "0" ] || [ -z "$CHANGED_FILES" ]; then
         # No compare available — download full repo zip
@@ -124,11 +125,24 @@ check_for_updates() {
             DEST_DIR="$UPDATE_DIR/$(dirname "$filepath")"
             mkdir -p "$DEST_DIR"
 
-            curl -sf --max-time 30 \
+            local HTTP_CODE
+            HTTP_CODE=$(curl -s --max-time 30 -w '%{http_code}' \
                 "$GITHUB_RAW/$filepath" \
-                -o "$UPDATE_DIR/$filepath"
+                -o "$UPDATE_DIR/$filepath")
 
-            if [ $? -ne 0 ]; then
+            if [ "$HTTP_CODE" = "404" ]; then
+                # File was deleted or renamed upstream. The compare API lists
+                # removed files (and old names of renamed files, via the
+                # previous_filename key which the filename grep also matches),
+                # and those 404 on raw.githubusercontent. Previously this
+                # aborted the whole update, permanently bricking incremental
+                # updates for any commit that deleted or renamed a file.
+                # Skip the download and delete the local copy at apply time.
+                rm -f "$UPDATE_DIR/$filepath"
+                REMOVED_FILES="${REMOVED_FILES}${filepath}
+"
+                continue
+            elif [ "$HTTP_CODE" != "200" ]; then
                 FAILED=1
                 break
             fi
@@ -181,6 +195,21 @@ check_for_updates() {
                 cp "$UPDATE_DIR/$filepath" "$INSTALL_DIR/$filepath"
             fi
         done < <(echo "$CHANGED_FILES")
+
+        # Delete local copies of files removed (or renamed away) upstream.
+        # Only paths that the compare API listed AND that 404 at HEAD reach
+        # this list; protected paths are never touched.
+        if [ -n "$REMOVED_FILES" ]; then
+            while IFS= read -r filepath; do
+                [ -z "$filepath" ] && continue
+                case "$filepath" in
+                    logs/*) continue ;;
+                    assets/music/background.mp3) continue ;;
+                    deckops.json) continue ;;
+                esac
+                rm -f "$INSTALL_DIR/$filepath"
+            done < <(echo "$REMOVED_FILES")
+        fi
     fi
 
     rm -rf "$UPDATE_DIR"
