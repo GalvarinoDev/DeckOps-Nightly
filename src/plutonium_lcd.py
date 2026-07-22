@@ -50,6 +50,7 @@ _log = get_logger(__name__)
 
 
 from shortcut import add_shortcut, remove_shortcut
+from steam_common import calc_shortcut_appid as _calc_shortcut_appid
 
 
 # ── Heroic Flatpak paths ────────────────────────────────────────────────────
@@ -337,14 +338,6 @@ def _heroic_app_name(game_key: str) -> str:
 SHADERCACHE_DIR = os.path.expanduser(
     "~/.local/share/Steam/steamapps/shadercache"
 )
-
-
-def _calc_shortcut_appid(exe_path: str, name: str) -> int:
-    """CRC-based shortcut appid. Must match shortcut._calc_shortcut_appid."""
-    key = (exe_path + name).encode("utf-8")
-    crc = binascii.crc32(key) & 0xFFFFFFFF
-    return (crc | 0x80000000) & 0xFFFFFFFF
-
 
 def _nuke_shader_cache(game_key: str, source: str, on_progress=None):
     """
