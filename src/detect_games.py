@@ -333,25 +333,33 @@ FOLDER_TO_KEYS = {
 # Keyword rules checked in order when exact match fails.
 # Each entry is (compiled_regex, keys_list).
 # Order matters - more specific rules go first (e.g. "black ops iii" before "black ops ii").
+#
+# Word boundaries use lookaround instead of \b so underscores are treated as
+# separators.  \b considers _ a word character, so "pluto_t4_full_game" would
+# never match \bt4\b.  The lookarounds below match at the start/end of any
+# alphanumeric token regardless of surrounding punctuation or underscores.
+_WB = r'(?<![a-zA-Z0-9])'   # word-boundary start (not preceded by alnum)
+_WE = r'(?![a-zA-Z0-9])'    # word-boundary end   (not followed by alnum)
+
 _KEYWORD_RULES = [
     # BO3 - check before BO2 and BO1 so "black ops iii/3" doesn't fall through
-    (re.compile(r'\b(black\s*ops\s*(iii|3)|bo3|t7)\b', re.IGNORECASE), ["t7", "t7x"]),
+    (re.compile(rf'{_WB}(black\s*ops\s*(iii|3)|bo3|t7){_WE}', re.IGNORECASE), ["t7", "t7x"]),
     # BO2 - check before BO1 so "black ops ii" doesn't fall through to BO1
-    (re.compile(r'\b(black\s*ops\s*(ii|2)|bo2|t6)\b', re.IGNORECASE), ["t6sp", "t6mp", "t6zm"]),
+    (re.compile(rf'{_WB}(black\s*ops\s*(ii|2)|bo2|t6){_WE}', re.IGNORECASE), ["t6sp", "t6mp", "t6zm"]),
     # BO1
-    (re.compile(r'\b(black\s*ops|bo1|t5)\b', re.IGNORECASE),          ["t5sp", "t5mp"]),
+    (re.compile(rf'{_WB}(black\s*ops|bo1|t5){_WE}', re.IGNORECASE),          ["t5sp", "t5mp"]),
     # AW - check before MW3/MW2 since "advanced warfare" is unambiguous
-    (re.compile(r'\b(advanced\s*warfare|aw|s1)\b', re.IGNORECASE),     ["s1sp", "s1mp"]),
+    (re.compile(rf'{_WB}(advanced\s*warfare|aw|s1){_WE}', re.IGNORECASE),     ["s1sp", "s1mp"]),
     # Ghosts
-    (re.compile(r'\b(ghosts|iw6)\b', re.IGNORECASE),                   ["iw6sp", "iw6mp"]),
+    (re.compile(rf'{_WB}(ghosts|iw6){_WE}', re.IGNORECASE),                   ["iw6sp", "iw6mp"]),
     # MW3 - check before MW2 so "modern warfare 3" doesn't fall through to MW2
-    (re.compile(r'\b(modern\s*warfare\s*(3|iii)|mw3|iw5)\b', re.IGNORECASE), ["iw5sp", "iw5mp"]),
+    (re.compile(rf'{_WB}(modern\s*warfare\s*(3|iii)|mw3|iw5){_WE}', re.IGNORECASE), ["iw5sp", "iw5mp"]),
     # MW2
-    (re.compile(r'\b(modern\s*warfare\s*(2|ii)|mw2|iw4)\b', re.IGNORECASE), ["iw4sp", "iw4mp"]),
+    (re.compile(rf'{_WB}(modern\s*warfare\s*(2|ii)|mw2|iw4){_WE}', re.IGNORECASE), ["iw4sp", "iw4mp"]),
     # CoD4 / MW1 - "modern warfare" alone (no number) maps to MW1/CoD4
-    (re.compile(r'\b(modern\s*warfare|duty\s*4|duty4|cod4|mw1|iw3)\b', re.IGNORECASE), ["cod4mp", "cod4sp"]),
+    (re.compile(rf'{_WB}(modern\s*warfare|duty\s*4|duty4|cod4|mw1|iw3){_WE}', re.IGNORECASE), ["cod4mp", "cod4sp"]),
     # WaW
-    (re.compile(r'\b(world\s*at\s*war|waw|t4)\b', re.IGNORECASE),     ["t4sp",  "t4mp"]),
+    (re.compile(rf'{_WB}(world\s*at\s*war|waw|t4){_WE}', re.IGNORECASE),     ["t4sp",  "t4mp"]),
 ]
 
 # Default scan locations -- case-sensitive on Linux.
