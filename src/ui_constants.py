@@ -361,34 +361,46 @@ def _ask_iw4x_dlc(parent, selected) -> bool:
     )
     return reply == QMessageBox.Yes
 
-def _ask_t7x_install(parent, selected):
+def _ask_bo3_client(parent, selected) -> str:
     """
-    Show a dialog asking whether to install T7X alongside CleanOps.
-    Returns True if the user wants T7X, False otherwise.
+    Show a dialog asking which BO3 client(s) to install.
+    Returns "cleanops", "t7x", or "both".
     Only shows the dialog if BO3 (t7/cleanops) is in the selected games.
     """
     has_bo3 = any(KEY_CLIENT.get(k) == "cleanops" for k, _, _ in selected)
     if not has_bo3:
-        return False
-    reply = QMessageBox.question(
-        parent,
-        "T7X - Additional BO3 Client",
-        "CleanOps is already included. It patches BO3 to protect against "
-        "exploits and adds dedicated servers alongside Activision's official servers.\n\n"
-        "T7X is an optional additional client with its own dedicated server list. "
-        "Using both is supported but not required.\n\n"
-        "If you install both, do the first launch in Desktop Mode:\n"
-        "  1. Launch Black Ops III first (CleanOps patches). If it doesn't "
-        "launch after patching, hit Stop in Steam and relaunch.\n"
-        "  2. Launch T7X. Once it loads, close it.\n"
-        "  3. After this, both work fine in Game Mode.\n\n"
-        "If you're unsure, just pick one and skip the other.\n\n"
-        "Download size: ~105 MB\n\n"
-        "Install T7X?",
-        QMessageBox.Yes | QMessageBox.No,
-        QMessageBox.Yes,
+        return "cleanops"
+
+    msg = QMessageBox(parent)
+    msg.setWindowTitle("Black Ops III - Client Selection")
+    msg.setText(
+        "Choose which BO3 client to install.\n\n"
+        "CleanOps\n"
+        "Patches BO3 to protect against exploits. Adds dedicated servers "
+        "alongside Activision's official servers. Recommended for official "
+        "Steam copies. You can skip this for non-Steam installs.\n\n"
+        "T7X\n"
+        "Separate client with its own dedicated server list. "
+        "Download size: ~105 MB.\n\n"
+        "Both\n"
+        "Installs CleanOps and T7X side by side. Do the first launch in "
+        "Desktop Mode:\n"
+        "  1. Launch Black Ops III first (CleanOps patches).\n"
+        "  2. Launch T7X after CleanOps is working.\n"
+        "  3. After this, both work fine in Game Mode."
     )
-    return reply == QMessageBox.Yes
+    btn_cleanops = msg.addButton("CleanOps", QMessageBox.AcceptRole)
+    btn_t7x      = msg.addButton("T7X", QMessageBox.AcceptRole)
+    btn_both     = msg.addButton("Both", QMessageBox.AcceptRole)
+    msg.setDefaultButton(btn_cleanops)
+    msg.exec_()
+
+    clicked = msg.clickedButton()
+    if clicked == btn_t7x:
+        return "t7x"
+    if clicked == btn_both:
+        return "both"
+    return "cleanops"
 
 def _ask_cod4_client(parent, selected) -> str:
     """
