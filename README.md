@@ -28,45 +28,45 @@
 | Advanced Warfare | SP/MP | [AlterWare](https://alterware.dev) | ✅ | ✅ | ✅ |
 | Black Ops III | SP/MP/ZM | [CleanOps](https://github.com/notnightwolf/cleanopsT7) + [T7x](https://alterware.dev) | ✅ | ✅ | ✅ |
 
-> All titles support controller and gyro via Steam Input. During setup you choose whether to enable gyro and which activation mode you want (ADS, Hold, or Toggle). Aim assist is unavailable for MW2 SP and MW3 SP. CoD4x is available as an alternative MW1 MP client during setup.
+> All titles support controller and gyro through Steam Input. During setup, you choose whether to turn on gyro and which activation mode you want (ADS, Hold, or Toggle). Aim assist is not available for MW2 SP and MW3 SP. CoD4x is available as an alternative MW1 MP client during setup.
 
 ---
 
 ## 🆕 What's New in Nightly
 
-- **LCD Online Play.** Plutonium online multiplayer now works on LCD Steam Decks. All seven Plutonium titles can connect to online servers from both LCD and OLED hardware. A [free Plutonium account](https://forum.plutonium.pw/register) is required. This is not ban evasion. DeckOps does not bypass or interfere with Plutonium's anti-cheat in any way, no fingerprinting is removed. We use the same methods they recommend the average Linux user to use during installation. This prevents it from triggering the false positive ban and you can enjoy Plutonium servers just like an OLED user would.
-- **Multi-Device Support.** Steam Machine, Legion Go/Go S/Go 2, ROG Ally/Ally X/Xbox Ally X, MSI Claw 8, and PCs. Bazzite and CachyOS supported.
-- **Controller Templates.** 44 templates across Steam Controller 2 (Triton), PS5/PS5 Edge, PS4, Xbox 360/One/Elite, and generic. Only your device's Neptune variant is installed on top of 28 universal templates.
+- **LCD Online Play.** Plutonium online multiplayer now works on LCD Steam Decks. All seven Plutonium titles can connect to online servers from both LCD and OLED hardware. A [free Plutonium account](https://forum.plutonium.pw/register) is required. This is not ban evasion. DeckOps does not bypass or interfere with Plutonium's anti-cheat system, and it does not remove any fingerprinting. DeckOps uses the same setup method that Plutonium recommends for the average Linux user. This method avoids the false positive ban, so LCD users can join Plutonium servers the same way OLED users do.
+- **Multi-Device Support.** Steam Machine, Legion Go/Go S/Go 2, ROG Ally/Ally X/Xbox Ally X, MSI Claw 8, and PCs. Bazzite and CachyOS are supported.
+- **Controller Templates.** 44 templates across Steam Controller 2 (Triton), PS5/PS5 Edge, PS4, Xbox 360/One/Elite, and generic. DeckOps installs only your device's Neptune variant on top of 28 universal templates.
 - **Hold and Toggle Gyro.** Steam Deck LCD/OLED get four gyro modes. Other devices get On or Off.
-- **Ghosts & Advanced Warfare.** Singleplayer and multiplayer via AlterWare (IW6-Mod and S1-Mod).
-- **Black Ops III.** CleanOps + optional T7x.
-- **Black Ops II Singleplayer.** Supported via [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) by Rattpak. DeckOps installs the mod client and deploys display settings automatically. Please be aware their mod is still in the Beta process, they've been gracious enough to let us use it despite it not being fully released on their github.
+- **Ghosts & Advanced Warfare.** Singleplayer and multiplayer through AlterWare (IW6-Mod and S1-Mod).
+- **Black Ops III.** CleanOps plus optional T7x.
+- **Black Ops II Singleplayer.** Supported through [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) by Rattpak. DeckOps installs the mod client and sets the display settings automatically. Note: the mod is still in beta. Rattpak has generously allowed DeckOps to use it ahead of its full release on GitHub.
 - **Non-Steam Game Support.** Place game files in `~/Games` and select **Steam & Non-Steam** during setup.
-- **Offline LAN Launcher.** Play Plutonium games offline with bots from Game Mode, no account required.
-- **CoD4R (Call of Duty 4: Revived).** New default MW1 multiplayer client by [k/divity](https://github.com/Divity) with native controller support, aim assist, server browser, QoL improvements, and bot support. CoD4R is a new project and its server list and playerbase are actively growing. CoD4x remains available as an alternative during setup. [Discord](https://discord.com/invite/uWAuFzru34)
-- **Player Name.** Set during setup, pre-filled from Steam. Used in CoD4x, IW4x, AlterWare, T7X, and Plutonium offline.
-- **Save Backup & Restore.** Save data backed up before uninstall, restorable after reinstall.
-- **No More Protontricks.** Dependencies copied from GE-Proton directly. Shared DLL directory with symlinks cuts prefix size from ~725MB to ~120MB.
+- **Offline LAN Launcher.** Play Plutonium games offline with bots from Game Mode. No account required.
+- **CoD4R (Call of Duty 4: Revived).** New default MW1 multiplayer client by [k/divity](https://github.com/Divity), with native controller support, aim assist, a server browser, quality-of-life improvements, and bot support. CoD4R is a new project, and its server list and player base are growing. CoD4x remains available as an alternative during setup. [Discord](https://discord.com/invite/uWAuFzru34)
+- **Player Name.** Set during setup and pre-filled from Steam. Used in CoD4x, IW4x, AlterWare, T7X, and Plutonium offline.
+- **Save Backup & Restore.** DeckOps backs up save data before uninstall and restores it after reinstall.
+- **No More Protontricks.** DeckOps copies dependencies directly from GE-Proton. A shared DLL directory with symlinks cuts prefix size from about 725MB to about 120MB.
 - **Menu Mods.** Custom DeckOps UI mods for BO2 MP, BO2 Zombies, and MW3 MP.
-- **UI Overhaul.** Setup flow rebuilt with dedicated modules. New flow: OS → Device → Gyro → Name → Source.
+- **UI Overhaul.** DeckOps rebuilt the setup flow with dedicated modules. New flow: OS → Device → Gyro → Name → Source.
 
 ---
 
 ## 🚧 WIP / Coming Soon
 
-- **Docked Mode / Decky Plugin.** Play on a TV or monitor with an external controller. Auto-switch display settings when you dock and undock. Feature-complete, pending docked hardware testing.
+- **Docked Mode / Decky Plugin.** Play on a TV or monitor with an external controller. Display settings switch automatically when you dock and undock. This feature is complete and awaits testing on docked hardware.
 - **InputPlumber dbus integration** to autodetect your device and controller settings.
-- **Add Games from My Games screen** without re-running the full setup wizard.
+- **Add Games from My Games screen** without running the full setup wizard again.
 
 ---
 
 ## ⚠️ Before You Install
 
-Install your games on Steam first, then install DeckOps. No need to launch any game beforehand. DeckOps creates Proton prefixes automatically for every game.
+Install your games on Steam first, then install DeckOps. You do not need to launch any game beforehand. DeckOps creates Proton prefixes automatically for every game.
 
-Plutonium online play requires a [free account](https://forum.plutonium.pw/register) and works on both LCD and OLED Steam Decks. LCD users who only want to play offline do not need a Plutonium account. DeckOps automatically launches all Plutonium games in offline LAN mode on LCD when no account is configured.
+Plutonium online play requires a [free account](https://forum.plutonium.pw/register) and works on both LCD and OLED Steam Decks. LCD users who only want offline play do not need a Plutonium account. When no account is configured, DeckOps automatically launches all Plutonium games in offline LAN mode on LCD.
 
-Make sure you have a stable internet connection before installing. If the install fails, don't re-run it repeatedly. Join the Discord for help instead.
+Make sure you have a stable internet connection before you install. If the install fails, do not re-run it many times. Join the Discord for help instead.
 
 ---
 
@@ -80,28 +80,28 @@ Make sure you have a stable internet connection before installing. If the instal
    - **First time:** DeckOps installs automatically and launches when finished
    - **Already installed:** A menu appears with options to Launch or Uninstall
 
-DeckOps checks for updates on every launch. Updates are incremental when possible, only downloading changed files. Your config (`deckops.json`), logs, and background music are never overwritten during updates.
+DeckOps checks for updates on every launch. Updates are incremental when possible and download only the changed files. Your config (`deckops.json`), logs, and background music are never overwritten during updates.
 
-> Your Steam games are never touched. Only files created by DeckOps are removed during uninstall. The uninstaller backs up your save data before removing anything.
+> DeckOps never touches your Steam games. Uninstall removes only the files DeckOps created. The uninstaller backs up your save data before it removes anything.
 
 ---
 
 ## ⚠️ After Installation
 
-**Click Continue when installation finishes, DeckOps will reopen Steam automatically.** First launches take longer while Proton sets things up.
+**Click Continue when installation finishes. DeckOps then reopens Steam automatically.** First launches take longer while Proton sets things up.
 
 If Steam asks about cloud saves, choose **Keep Local**. If asked about safe mode or hardware changes, choose **No**.
 
-- **MW1 and WaW** have separate DeckOps multiplayer shortcuts. Use the main entry for SP, the DeckOps shortcut for MP. MW1 SP: select the "Player" profile on first launch. MW1 MP (CoD4R): the CoD4R launcher runs during install to download mod files -- close it when the download is complete.
-- **MW2 MP (Non-Steam).** IW4x must be launched twice on first install. The first launch will fail, relaunch and it works.
-- **Black Ops III.** Do the first launch in Desktop Mode. Launch Black Ops III first (CleanOps patches). If it doesn't launch after patching, press Stop in Steam and relaunch. If you installed T7X, launch it after CleanOps is working. After this, both work fine in Game Mode.
-- **LCD Steam Deck.** Plutonium games may take a moment to launch (shader cache cleanup). Skip Vulkan shader compilation if prompted. Quit from the in-game menu for a faster exit.
+- **MW1 and WaW** have separate DeckOps multiplayer shortcuts. Use the main entry for SP and the DeckOps shortcut for MP. MW1 SP: select the "Player" profile on first launch. MW1 MP (CoD4R): the CoD4R launcher runs during install to download mod files. Close it when the download finishes.
+- **MW2 MP (Non-Steam).** Launch IW4x twice on first install. The first launch fails. Relaunch it and it works.
+- **Black Ops III.** Do the first launch in Desktop Mode. Launch Black Ops III first so CleanOps can patch it. If it does not launch after patching, press Stop in Steam and relaunch. If you installed T7X, launch it after CleanOps is working. After this, both work fine in Game Mode.
+- **LCD Steam Deck.** Plutonium games may take a moment to launch during shader cache cleanup. Skip Vulkan shader compilation if prompted. Quit from the in-game menu for a faster exit.
 
 ---
 
 ## 🎮 Gyro Controls
 
-DeckOps installs a controller profile for every game. Choose your gyro mode during setup or change it anytime in **Settings > Controller Profiles > Re-apply Templates**. R5 is push-to-talk in all modes.
+DeckOps installs a controller profile for every game. Choose your gyro mode during setup, or change it anytime in **Settings > Controller Profiles > Re-apply Templates**. R5 is push-to-talk in all modes.
 
 | Mode | How it works | Devices |
 |---|---|---|
@@ -110,7 +110,7 @@ DeckOps installs a controller profile for every game. Choose your gyro mode duri
 | **Toggle** | L5 press on / L5 press off | Steam Deck, Steam Machine |
 | **On / Off** | Simple toggle | Legion Go, ROG Ally, MSI Claw 8, PC |
 
-MW1 MP, MW2 SP, and MW3 SP handle gyro differently due to controller support added via Steam Input.
+MW1 MP, MW2 SP, and MW3 SP handle gyro differently because of controller support added through Steam Input.
 
 ---
 
@@ -124,7 +124,7 @@ The My Games screen shows every supported game as a card with header art and a c
 
 | Option | What it does |
 |---|---|
-| Background Music | Toggle on/off and adjust volume |
+| Background Music | Turn on/off and adjust volume |
 | Controller Profiles | Switch gyro mode (ADS, Hold, Toggle, Off) and re-apply controller templates to all games |
 | Player Name | Change your in-game name for CoD4R, CoD4x, IW4x, AlterWare (Ghosts, AW), T7X, and Plutonium offline LAN mode. Does not affect CleanOps. |
 | Shader Cache (LCD only) | Clear shader cache data for all set-up games |
@@ -141,7 +141,7 @@ https://discord.gg/bkSQeq5Azk
 
 ## Credits
 
-DeckOps is an installer. This project wouldn't exist without the years of foundational work from these teams. They truly deserve all the credit:
+DeckOps is an installer. This project would not exist without years of foundational work from these teams. They deserve full credit:
 
 **[CoD4R](https://github.com/Divity)** - Modern Warfare 1 Multiplayer client (Call of Duty 4: Revived) by [k/divity](https://github.com/Divity). Native controller support, aim assist, server browser, and bot support. A new project with a growing community. [Discord](https://discord.com/invite/uWAuFzru34) | 💰 [Ko-fi](https://ko-fi.com/divity)
 
