@@ -23,7 +23,7 @@ from ui_constants import (
     font, _btn, _lbl, _title_block, _log_to_file, _Sigs,
     ALL_GAMES, KEY_CLIENT, KEY_EXES, KEY_MODE_LABEL,
     _active_keys, _active_client, _active_appid,
-    _ask_iw4x_dlc, _ask_t7x_install, _ask_cod4_client,
+    _ask_iw4x_dlc, _ask_bo3_client, _ask_cod4_client,
     go_to, get_screen,
 )
 
@@ -143,7 +143,7 @@ class WelcomeScreen(QWidget):
                         if _k in _active_keys(_gd):
                             _own_tmp.append((_k, _gd, _g)); break
                 own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, _own_tmp)
-                own_screen.install_t7x_opt = _ask_t7x_install(self, _own_tmp)
+                own_screen.bo3_client = _ask_bo3_client(self, _own_tmp)
                 own_screen.cod4_client = _ask_cod4_client(self, _own_tmp)
                 go_to(self.stack, "OwnInstallScreen")
                 return
@@ -356,7 +356,7 @@ class SetupScreen(QWidget):
                     if _k in _active_keys(_gd):
                         _own_tmp.append((_k, _gd, _g)); break
             own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, selected + _own_tmp)
-            own_screen.install_t7x_opt = _ask_t7x_install(self, selected + _own_tmp)
+            own_screen.bo3_client = _ask_bo3_client(self, selected + _own_tmp)
             own_screen.cod4_client = _ask_cod4_client(self, selected + _own_tmp)
             go_to(self.stack, "OwnInstallScreen")
             return
@@ -366,7 +366,7 @@ class SetupScreen(QWidget):
         s.selected   = selected
         s.steam_root = self.steam_root
         s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
-        s.install_t7x_opt = _ask_t7x_install(self, selected)
+        s.bo3_client = _ask_bo3_client(self, selected)
         s.cod4_client = _ask_cod4_client(self, selected)
         go_to(self.stack, "InstallScreen")
 
@@ -379,7 +379,7 @@ class InstallScreen(QWidget):
         self._manual_dl_event = threading.Event()
         self._manual_dl_ok = False
         self._return_to_management = False
-        self.install_t7x_opt = False
+        self.bo3_client = "cleanops"
 
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
@@ -604,14 +604,16 @@ class InstallScreen(QWidget):
         has_plut        = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
         has_cod4        = any(KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp") for k in selected_keys)
         has_iw4x        = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
-        has_cleanops    = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
         has_t6sp_mod    = any(KEY_CLIENT.get(k) == "t6sp_mod" for k in selected_keys)
 
         # Resolve CoD4 MP client choice from pre-install popup
         _cod4_client = getattr(self, "cod4_client", "cod4r")
 
-        # ── T7X opt-in: inject t7x into selected if user chose to install it ──
-        has_t7x = getattr(self, "install_t7x_opt", False) and has_cleanops
+        # ── BO3 client selection: cleanops, t7x, or both ─────────────────
+        _bo3_choice = getattr(self, "bo3_client", "cleanops")
+        _has_bo3 = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
+        has_cleanops = _has_bo3 and _bo3_choice in ("cleanops", "both")
+        has_t7x      = _has_bo3 and _bo3_choice in ("t7x", "both")
         if has_t7x:
             # Find the t7 (CleanOps) entry and clone it for t7x
             for k, gd, g in self.selected:
@@ -1190,7 +1192,7 @@ class OwnInstallScreen(QWidget):
         self._manual_dl_event = threading.Event()
         self._manual_dl_ok = False
         self._return_to_management = False
-        self.install_t7x_opt = False
+        self.bo3_client = "cleanops"
 
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
@@ -1456,12 +1458,14 @@ class OwnInstallScreen(QWidget):
 
         proton = get_proton_path(self.steam_root)
 
-        # ── T7X opt-in: inject t7x into selected if user chose it ─────
+        # ── BO3 client selection: cleanops, t7x, or both ─────────────────
         # Injection must happen early so t7x is included in prefix init,
         # shortcuts, and selected_keys. Actual install runs later (after
         # CleanOps) to match the original phase order.
-        has_cleanops = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
-        has_t7x = getattr(self, "install_t7x_opt", False) and has_cleanops
+        _bo3_choice = getattr(self, "bo3_client", "cleanops")
+        _has_bo3 = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
+        has_cleanops = _has_bo3 and _bo3_choice in ("cleanops", "both")
+        has_t7x      = _has_bo3 and _bo3_choice in ("t7x", "both")
         if has_t7x:
             for k, gd, g in list(self.selected):
                 if k == "t7":
