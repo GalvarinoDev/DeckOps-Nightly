@@ -141,7 +141,7 @@ def run():
     _load_font()
     app.setStyleSheet(_app_style())
     win = DeckOpsWindow()
-    win.show()
+    win.showMaximized()
     sys.exit(app.exec_())
 
 if __name__ == "__main__":

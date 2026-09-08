@@ -376,6 +376,8 @@ class InstallScreen(QWidget):
         super().__init__(); self.stack=stack; self.selected=[]; self.steam_root=""; self.screen_name = "InstallScreen"
         self._plut_event = threading.Event()
         self._cod4r_event = threading.Event()
+        self._iw5_dg_event = threading.Event()
+        self._iw5_method = ""  # "qr" or "manual", set by chooser
         self._manual_dl_event = threading.Event()
         self._manual_dl_ok = False
         self._return_to_management = False
@@ -404,6 +406,29 @@ class InstallScreen(QWidget):
         bw = QHBoxLayout(); bw.setContentsMargins(60,0,60,0); bw.addWidget(self.bar)
         clay.addLayout(bw)
         self.stat = _lbl("", 13, C_IW); clay.addWidget(self.stat)
+        self.iw5_qr_box = QWidget()
+        self.iw5_qr_box.setVisible(False)
+        qb = QVBoxLayout(self.iw5_qr_box)
+        qb.setContentsMargins(0, 0, 0, 0)
+        qb.setSpacing(4)
+        self.iw5_qr_lbl = QLabel("")
+        self.iw5_qr_lbl.setStyleSheet(
+            "font-family: monospace; font-size: 8px; line-height: 8px;"
+            "color: #000; background: #FFF; padding: 8px;"
+            f"border: 2px solid {C_DIM}; border-radius: 8px;"
+        )
+        self.iw5_qr_lbl.setAlignment(Qt.AlignCenter)
+        qr_row = QHBoxLayout()
+        qr_row.addStretch(); qr_row.addWidget(self.iw5_qr_lbl); qr_row.addStretch()
+        qb.addLayout(qr_row)
+        self.iw5_qr_info = _lbl(
+            "Open the Steam app on your phone, tap the shield icon (Steam Guard),\n"
+            "then tap \"Approve a sign-in\". Point your camera at the QR code above.",
+            11, "#AAA", align=Qt.AlignCenter,
+        )
+        qb.addWidget(self.iw5_qr_info)
+        clay.addWidget(self.iw5_qr_box)
+
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setFont(font(11))
@@ -435,11 +460,18 @@ class InstallScreen(QWidget):
         c4w = QHBoxLayout(); c4w.addStretch(); c4w.addWidget(self.cod4r_btn); c4w.addStretch()
         clay.addLayout(c4w)
 
+        self.iw5_dg_btn = _btn("Download complete, continue  ✓", C_IW, size=13, h=52)
+        self.iw5_dg_btn.setFixedWidth(460); self.iw5_dg_btn.setVisible(False)
+        self.iw5_dg_btn.clicked.connect(self._confirm_iw5_dg)
+        dw = QHBoxLayout(); dw.addStretch(); dw.addWidget(self.iw5_dg_btn); dw.addStretch()
+        clay.addLayout(dw)
+
         self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
         self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
         self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
         cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont_btn); cw.addStretch()
         clay.addLayout(cw)
+        clay.addStretch()
         lay.addWidget(content, stretch=1)
 
         self._s = _Sigs()
@@ -450,6 +482,11 @@ class InstallScreen(QWidget):
         self._s.plut_go.connect(self._hide_plut_wait)
         self._s.cod4r_wait.connect(self._show_cod4r_wait)
         self._s.cod4r_go.connect(self._hide_cod4r_wait)
+        self._s.iw5_dg_wait.connect(self._show_iw5_dg_wait)
+        self._s.iw5_dg_go.connect(self._hide_iw5_dg_wait)
+        self._s.iw5_qr_show.connect(self._show_iw5_qr)
+        self._s.iw5_qr_hide.connect(self._hide_iw5_qr)
+        self._s.iw5_dg_choose.connect(self._ask_iw5_dg_method)
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
         self._s.manual_dl.connect(self._show_manual_dl_dialog)
@@ -487,6 +524,57 @@ class InstallScreen(QWidget):
     def _hide_cod4r_wait(self):
         self.cod4r_btn.setVisible(False)
 
+    def _show_iw5_dg_wait(self, cmd, step_label):
+        from iw5_downgrade import copy_to_clipboard
+        copy_to_clipboard(cmd)
+        self.iw5_dg_btn.setText(f"{step_label} complete, continue  \u2713")
+        self.iw5_dg_btn.setVisible(True)
+
+    def _hide_iw5_dg_wait(self):
+        self.iw5_dg_btn.setVisible(False)
+
+    def _confirm_iw5_dg(self):
+        self._iw5_dg_event.set()
+
+    def _show_iw5_qr(self, qr_text):
+        from iw5_downgrade import qr_text_to_pixmap
+        pm = qr_text_to_pixmap(qr_text, scale=8)
+        if pm:
+            pm = pm.scaled(350, 350, Qt.KeepAspectRatio, Qt.FastTransformation)
+            self.iw5_qr_lbl.setPixmap(pm)
+            self.iw5_qr_lbl.setFixedSize(pm.size())
+        else:
+            self.iw5_qr_lbl.setText(qr_text)
+        self.iw5_qr_box.setVisible(True)
+        self.log.setMaximumHeight(0)
+
+    def _hide_iw5_qr(self):
+        self.iw5_qr_box.setVisible(False)
+        self.log.setMaximumHeight(16777215)
+
+    def _ask_iw5_dg_method(self):
+        """Show chooser: QR Code Scan vs Steam Console (manual)."""
+        msg = QMessageBox(self)
+        msg.setWindowTitle("MW3 Downgrade")
+        msg.setText(
+            "MW3 needs to be downgraded from 64-bit to 32-bit for Plutonium.\n\n"
+            "This requires at least 15 GB of free disk space to download the\n"
+            "old depot files and patch your game.\n\n"
+            "How would you like to authenticate the download?"
+        )
+        qr_btn = msg.addButton("QR Code Scan (recommended)", QMessageBox.AcceptRole)
+        manual_btn = msg.addButton("Steam Console (manual)", QMessageBox.AcceptRole)
+        msg.addButton("Cancel", QMessageBox.RejectRole)
+        msg.exec_()
+        clicked = msg.clickedButton()
+        if clicked == qr_btn:
+            self._iw5_method = "qr"
+        elif clicked == manual_btn:
+            self._iw5_method = "manual"
+        else:
+            self._iw5_method = ""
+        self._iw5_dg_event.set()
+
     def _append_log(self, text):
         self.log.appendPlainText(text)
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
@@ -498,9 +586,13 @@ class InstallScreen(QWidget):
         self.plut_btn.setVisible(False)
         self.plut_warn.setVisible(False)
         self.cod4r_btn.setVisible(False)
+        self.iw5_dg_btn.setVisible(False)
+        self.iw5_qr_box.setVisible(False)
         self._stop_pulse()
         self._plut_event.clear()
         self._cod4r_event.clear()
+        self._iw5_dg_event.clear()
+        self._iw5_method = ""
         self._manual_dl_event.clear()
         self._manual_dl_ok = False
         # Route the continue button based on whether this was triggered
@@ -775,6 +867,141 @@ class InstallScreen(QWidget):
                         self._s.log.emit(f"  ✓  {dl_ex.label} placed manually — re-run install to finish setup")
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # ── IW5 64-bit downgrade (Steam still running) ───────────────────────
+        # Activision pushed a 64-bit update for MW3 that breaks Plutonium.
+        # If the user has iw5mp or iw5mp_ds selected from Steam and the
+        # install is 64-bit, walk them through either QR-based or manual
+        # Steam console depot download, then merge the 32-bit files.
+        _iw5_steam_keys = [
+            (k, gd, g) for k, gd, g in self.selected
+            if k in ("iw5mp", "iw5mp_ds") and g.get("install_dir")
+        ]
+        if _iw5_steam_keys:
+            from iw5_downgrade import (
+                is_iw5_downgrade_needed, has_enough_space,
+                open_steam_console, find_depot_staging, merge_iw5_depots,
+                ensure_depotdownloader, run_depot_download_qr,
+                cleanup_depotdownloader,
+                IW5_DEPOT_CMDS, IW5_DEPOTS,
+                REQUIRED_FREE_SPACE_GB, DEPOTDOWNLOADER_DIR,
+            )
+            _iw5_dir = _iw5_steam_keys[0][2]["install_dir"]
+            if is_iw5_downgrade_needed(_iw5_dir):
+                if not has_enough_space(_iw5_dir):
+                    self._s.log.emit(
+                        f"✗  MW3 downgrade requires at least "
+                        f"{REQUIRED_FREE_SPACE_GB} GB of free space."
+                    )
+                else:
+                    # Ask user which method they prefer
+                    self._iw5_dg_event.clear()
+                    self._iw5_method = ""
+                    self._s.iw5_dg_choose.emit()
+                    self._iw5_dg_event.wait()
+
+                    if self._iw5_method == "qr":
+                        # ── QR Code path ─────────────────────────────
+                        self._s.log.emit(
+                            "MW3 64-bit detected. Downloading 32-bit files via QR login.\n"
+                            "  Scan the QR code with your Steam mobile app.\n"
+                            "  The code will refresh if it expires.\n"
+                            "  Your login credentials will be deleted after the download."
+                        )
+                        self._s.progress.emit(11, "Setting up DepotDownloader...")
+                        try:
+                            ensure_depotdownloader(
+                                on_progress=lambda m: self._s.log.emit(f"  {m}"))
+
+                            staging = os.path.join(
+                                os.path.dirname(_iw5_dir),
+                                ".deckops_iw5_staging",
+                            )
+                            captured_user = None
+                            for i, depot in enumerate(IW5_DEPOTS):
+                                self._s.progress.emit(
+                                    11, f"Downloading depot {i+1} of {len(IW5_DEPOTS)}...")
+                                result = run_depot_download_qr(
+                                    staging_dir=staging,
+                                    depot_info=depot,
+                                    on_qr=lambda qr: self._s.iw5_qr_show.emit(qr),
+                                    on_auth_success=lambda u: self._s.iw5_qr_hide.emit(),
+                                    on_progress=lambda m: self._s.progress.emit(11, m),
+                                    on_log=lambda m: self._s.log.emit(f"  {m}"),
+                                    username=captured_user,
+                                )
+                                if result is None:
+                                    self._s.log.emit("✗  Depot download failed.")
+                                    break
+                                captured_user = result
+
+                            self._s.iw5_qr_hide.emit()
+
+                            if captured_user:
+                                self._s.progress.emit(12, "Merging 32-bit MW3 files...")
+                                self._s.pulse_start.emit("Merging 32-bit MW3 files")
+                                try:
+                                    merge_iw5_depots(
+                                        staging, _iw5_dir,
+                                        on_progress=lambda m: self._s.log.emit(f"  {m}"),
+                                    )
+                                    self._s.log.emit("✓  MW3 downgraded to 32-bit")
+                                finally:
+                                    self._s.pulse_stop.emit()
+
+                            # Clean up DepotDownloader tool + credentials
+                            self._s.log.emit(
+                                "  Removing DepotDownloader and any saved credentials...")
+                            cleanup_depotdownloader()
+                            self._s.log.emit("  ✓  Login credentials removed.")
+
+                        except Exception as ex:
+                            self._s.log.emit(f"✗  QR downgrade failed: {ex}")
+                            cleanup_depotdownloader()
+
+                    elif self._iw5_method == "manual":
+                        # ── Steam Console path ──────────────────────
+                        self._s.log.emit(
+                            "MW3 64-bit detected. Plutonium requires the 32-bit version.\n"
+                            "  DeckOps will open the Steam console. Paste each command\n"
+                            "  when prompted and wait for \"Depot download complete\"\n"
+                            "  before clicking continue."
+                        )
+                        self._s.progress.emit(11, "MW3 downgrade required...")
+                        open_steam_console()
+
+                        for i, cmd in enumerate(IW5_DEPOT_CMDS, 1):
+                            step = f"Depot {i} of {len(IW5_DEPOT_CMDS)}"
+                            self._s.log.emit(
+                                f"\n  Step {i}: Paste this into the Steam console:\n"
+                                f"  {cmd}\n"
+                                f"  (copied to clipboard)"
+                            )
+                            self._iw5_dg_event.clear()
+                            self._s.iw5_dg_wait.emit(cmd, step)
+                            self._iw5_dg_event.wait()
+                            self._s.iw5_dg_go.emit()
+
+                        self._s.progress.emit(12, "Merging 32-bit MW3 files...")
+                        staging = find_depot_staging(self.steam_root)
+                        if staging:
+                            self._s.pulse_start.emit("Merging 32-bit MW3 files")
+                            try:
+                                merge_iw5_depots(
+                                    staging, _iw5_dir,
+                                    on_progress=lambda m: self._s.log.emit(f"  {m}"),
+                                )
+                                self._s.log.emit("✓  MW3 downgraded to 32-bit")
+                            except Exception as ex:
+                                self._s.log.emit(
+                                    f"✗  MW3 downgrade merge failed: {ex}")
+                            finally:
+                                self._s.pulse_stop.emit()
+                        else:
+                            self._s.log.emit(
+                                "✗  Could not find depot staging directory.\n"
+                                "  The depot download may not have completed."
+                            )
 
         # ── Plutonium bootstrapper (Steam still running) ──────────────────────
         if has_plut:
@@ -1189,6 +1416,8 @@ class OwnInstallScreen(QWidget):
         self.steam_root = ""
         self._plut_event = threading.Event()
         self._cod4r_event = threading.Event()
+        self._iw5_dg_event = threading.Event()
+        self._iw5_method = ""
         self._manual_dl_event = threading.Event()
         self._manual_dl_ok = False
         self._return_to_management = False
@@ -1217,6 +1446,29 @@ class OwnInstallScreen(QWidget):
         bw = QHBoxLayout(); bw.setContentsMargins(60,0,60,0); bw.addWidget(self.bar)
         clay.addLayout(bw)
         self.stat = _lbl("", 13, C_IW); clay.addWidget(self.stat)
+        self.iw5_qr_box = QWidget()
+        self.iw5_qr_box.setVisible(False)
+        qb = QVBoxLayout(self.iw5_qr_box)
+        qb.setContentsMargins(0, 0, 0, 0)
+        qb.setSpacing(4)
+        self.iw5_qr_lbl = QLabel("")
+        self.iw5_qr_lbl.setStyleSheet(
+            "font-family: monospace; font-size: 8px; line-height: 8px;"
+            "color: #000; background: #FFF; padding: 8px;"
+            f"border: 2px solid {C_DIM}; border-radius: 8px;"
+        )
+        self.iw5_qr_lbl.setAlignment(Qt.AlignCenter)
+        qr_row = QHBoxLayout()
+        qr_row.addStretch(); qr_row.addWidget(self.iw5_qr_lbl); qr_row.addStretch()
+        qb.addLayout(qr_row)
+        self.iw5_qr_info = _lbl(
+            "Open the Steam app on your phone, tap the shield icon (Steam Guard),\n"
+            "then tap \"Approve a sign-in\". Point your camera at the QR code above.",
+            11, "#AAA", align=Qt.AlignCenter,
+        )
+        qb.addWidget(self.iw5_qr_info)
+        clay.addWidget(self.iw5_qr_box)
+
         self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setFont(font(11))
         self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
         clay.addWidget(self.log, stretch=1)
@@ -1246,11 +1498,18 @@ class OwnInstallScreen(QWidget):
         c4w = QHBoxLayout(); c4w.addStretch(); c4w.addWidget(self.cod4r_btn); c4w.addStretch()
         clay.addLayout(c4w)
 
+        self.iw5_dg_btn = _btn("Download complete, continue  ✓", C_IW, size=13, h=52)
+        self.iw5_dg_btn.setFixedWidth(460); self.iw5_dg_btn.setVisible(False)
+        self.iw5_dg_btn.clicked.connect(self._confirm_iw5_dg)
+        dw = QHBoxLayout(); dw.addStretch(); dw.addWidget(self.iw5_dg_btn); dw.addStretch()
+        clay.addLayout(dw)
+
         self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
         self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
         self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
         cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont_btn); cw.addStretch()
         clay.addLayout(cw)
+        clay.addStretch()
         lay.addWidget(content, stretch=1)
 
         self._s = _Sigs()
@@ -1261,6 +1520,11 @@ class OwnInstallScreen(QWidget):
         self._s.plut_go.connect(self._hide_plut_wait)
         self._s.cod4r_wait.connect(self._show_cod4r_wait)
         self._s.cod4r_go.connect(self._hide_cod4r_wait)
+        self._s.iw5_dg_wait.connect(self._show_iw5_dg_wait)
+        self._s.iw5_dg_go.connect(self._hide_iw5_dg_wait)
+        self._s.iw5_qr_show.connect(self._show_iw5_qr)
+        self._s.iw5_qr_hide.connect(self._hide_iw5_qr)
+        self._s.iw5_dg_choose.connect(self._ask_iw5_dg_method)
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
         self._s.manual_dl.connect(self._show_manual_dl_dialog)
@@ -1298,6 +1562,57 @@ class OwnInstallScreen(QWidget):
     def _hide_cod4r_wait(self):
         self.cod4r_btn.setVisible(False)
 
+    def _show_iw5_dg_wait(self, cmd, step_label):
+        from iw5_downgrade import copy_to_clipboard
+        copy_to_clipboard(cmd)
+        self.iw5_dg_btn.setText(f"{step_label} complete, continue  \u2713")
+        self.iw5_dg_btn.setVisible(True)
+
+    def _hide_iw5_dg_wait(self):
+        self.iw5_dg_btn.setVisible(False)
+
+    def _confirm_iw5_dg(self):
+        self._iw5_dg_event.set()
+
+    def _show_iw5_qr(self, qr_text):
+        from iw5_downgrade import qr_text_to_pixmap
+        pm = qr_text_to_pixmap(qr_text, scale=8)
+        if pm:
+            pm = pm.scaled(350, 350, Qt.KeepAspectRatio, Qt.FastTransformation)
+            self.iw5_qr_lbl.setPixmap(pm)
+            self.iw5_qr_lbl.setFixedSize(pm.size())
+        else:
+            self.iw5_qr_lbl.setText(qr_text)
+        self.iw5_qr_box.setVisible(True)
+        self.log.setMaximumHeight(0)
+
+    def _hide_iw5_qr(self):
+        self.iw5_qr_box.setVisible(False)
+        self.log.setMaximumHeight(16777215)
+
+    def _ask_iw5_dg_method(self):
+        """Show chooser: QR Code Scan vs Steam Console (manual)."""
+        msg = QMessageBox(self)
+        msg.setWindowTitle("MW3 Downgrade")
+        msg.setText(
+            "MW3 needs to be downgraded from 64-bit to 32-bit for Plutonium.\n\n"
+            "This requires at least 15 GB of free disk space to download the\n"
+            "old depot files and patch your game.\n\n"
+            "How would you like to authenticate the download?"
+        )
+        qr_btn = msg.addButton("QR Code Scan (recommended)", QMessageBox.AcceptRole)
+        manual_btn = msg.addButton("Steam Console (manual)", QMessageBox.AcceptRole)
+        msg.addButton("Cancel", QMessageBox.RejectRole)
+        msg.exec_()
+        clicked = msg.clickedButton()
+        if clicked == qr_btn:
+            self._iw5_method = "qr"
+        elif clicked == manual_btn:
+            self._iw5_method = "manual"
+        else:
+            self._iw5_method = ""
+        self._iw5_dg_event.set()
+
     def _append_log(self, text):
         _log_to_file(text)
         self.log.appendPlainText(text)
@@ -1309,9 +1624,13 @@ class OwnInstallScreen(QWidget):
         self.plut_btn.setVisible(False)
         self.plut_warn.setVisible(False)
         self.cod4r_btn.setVisible(False)
+        self.iw5_dg_btn.setVisible(False)
+        self.iw5_qr_box.setVisible(False)
         self.cont_btn.setVisible(False)
         self._plut_event.clear()
         self._cod4r_event.clear()
+        self._iw5_dg_event.clear()
+        self._iw5_method = ""
         self._manual_dl_event.clear()
         self._manual_dl_ok = False
         self._stop_pulse()
@@ -1609,6 +1928,137 @@ class OwnInstallScreen(QWidget):
                         self._s.log.emit(f"  ✓  {dl_ex.label} placed manually — re-run install to finish setup")
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # ── IW5 64-bit downgrade (Steam still running) ───────────────────
+        # Only for Steam-sourced IW5 installs — own-source installs are
+        # unaffected since users provide their own game files.
+        _iw5_steam_keys = [
+            (k, gd, g) for k, gd, g in self.selected
+            if k in ("iw5mp", "iw5mp_ds")
+            and k not in self.own_selected
+            and g.get("install_dir")
+        ]
+        if _iw5_steam_keys:
+            from iw5_downgrade import (
+                is_iw5_downgrade_needed, has_enough_space,
+                open_steam_console, find_depot_staging, merge_iw5_depots,
+                ensure_depotdownloader, run_depot_download_qr,
+                cleanup_depotdownloader,
+                IW5_DEPOT_CMDS, IW5_DEPOTS,
+                REQUIRED_FREE_SPACE_GB, DEPOTDOWNLOADER_DIR,
+            )
+            _iw5_dir = _iw5_steam_keys[0][2]["install_dir"]
+            if is_iw5_downgrade_needed(_iw5_dir):
+                if not has_enough_space(_iw5_dir):
+                    self._s.log.emit(
+                        f"✗  MW3 downgrade requires at least "
+                        f"{REQUIRED_FREE_SPACE_GB} GB of free space."
+                    )
+                else:
+                    self._iw5_dg_event.clear()
+                    self._iw5_method = ""
+                    self._s.iw5_dg_choose.emit()
+                    self._iw5_dg_event.wait()
+
+                    if self._iw5_method == "qr":
+                        self._s.log.emit(
+                            "MW3 64-bit detected. Downloading 32-bit files via QR login.\n"
+                            "  Scan the QR code with your Steam mobile app.\n"
+                            "  The code will refresh if it expires.\n"
+                            "  Your login credentials will be deleted after the download."
+                        )
+                        self._s.progress.emit(11, "Setting up DepotDownloader...")
+                        try:
+                            ensure_depotdownloader(
+                                on_progress=lambda m: self._s.log.emit(f"  {m}"))
+
+                            staging = os.path.join(
+                                os.path.dirname(_iw5_dir),
+                                ".deckops_iw5_staging",
+                            )
+                            captured_user = None
+                            for i, depot in enumerate(IW5_DEPOTS):
+                                self._s.progress.emit(
+                                    11, f"Downloading depot {i+1} of {len(IW5_DEPOTS)}...")
+                                result = run_depot_download_qr(
+                                    staging_dir=staging,
+                                    depot_info=depot,
+                                    on_qr=lambda qr: self._s.iw5_qr_show.emit(qr),
+                                    on_auth_success=lambda u: self._s.iw5_qr_hide.emit(),
+                                    on_progress=lambda m: self._s.progress.emit(11, m),
+                                    on_log=lambda m: self._s.log.emit(f"  {m}"),
+                                    username=captured_user,
+                                )
+                                if result is None:
+                                    self._s.log.emit("✗  Depot download failed.")
+                                    break
+                                captured_user = result
+
+                            self._s.iw5_qr_hide.emit()
+
+                            if captured_user:
+                                self._s.progress.emit(12, "Merging 32-bit MW3 files...")
+                                self._s.pulse_start.emit("Merging 32-bit MW3 files")
+                                try:
+                                    merge_iw5_depots(
+                                        staging, _iw5_dir,
+                                        on_progress=lambda m: self._s.log.emit(f"  {m}"),
+                                    )
+                                    self._s.log.emit("✓  MW3 downgraded to 32-bit")
+                                finally:
+                                    self._s.pulse_stop.emit()
+
+                            self._s.log.emit(
+                                "  Removing DepotDownloader and any saved credentials...")
+                            cleanup_depotdownloader()
+                            self._s.log.emit("  ✓  Login credentials removed.")
+
+                        except Exception as ex:
+                            self._s.log.emit(f"✗  QR downgrade failed: {ex}")
+                            cleanup_depotdownloader()
+
+                    elif self._iw5_method == "manual":
+                        self._s.log.emit(
+                            "MW3 64-bit detected. Plutonium requires the 32-bit version.\n"
+                            "  DeckOps will open the Steam console. Paste each command\n"
+                            "  when prompted and wait for \"Depot download complete\"\n"
+                            "  before clicking continue."
+                        )
+                        self._s.progress.emit(11, "MW3 downgrade required...")
+                        open_steam_console()
+
+                        for i, cmd in enumerate(IW5_DEPOT_CMDS, 1):
+                            step = f"Depot {i} of {len(IW5_DEPOT_CMDS)}"
+                            self._s.log.emit(
+                                f"\n  Step {i}: Paste this into the Steam console:\n"
+                                f"  {cmd}\n"
+                                f"  (copied to clipboard)"
+                            )
+                            self._iw5_dg_event.clear()
+                            self._s.iw5_dg_wait.emit(cmd, step)
+                            self._iw5_dg_event.wait()
+                            self._s.iw5_dg_go.emit()
+
+                        self._s.progress.emit(12, "Merging 32-bit MW3 files...")
+                        staging = find_depot_staging(self.steam_root)
+                        if staging:
+                            self._s.pulse_start.emit("Merging 32-bit MW3 files")
+                            try:
+                                merge_iw5_depots(
+                                    staging, _iw5_dir,
+                                    on_progress=lambda m: self._s.log.emit(f"  {m}"),
+                                )
+                                self._s.log.emit("✓  MW3 downgraded to 32-bit")
+                            except Exception as ex:
+                                self._s.log.emit(
+                                    f"✗  MW3 downgrade merge failed: {ex}")
+                            finally:
+                                self._s.pulse_stop.emit()
+                        else:
+                            self._s.log.emit(
+                                "✗  Could not find depot staging directory.\n"
+                                "  The depot download may not have completed."
+                            )
 
         # ── Plutonium bootstrapper (Steam still running) ─────────────────
         # Downloads Plutonium and launches it so the user can log in. LCD
