@@ -348,6 +348,20 @@ class ManagementScreen(QWidget):
         has_mods_support = any(KEY_CLIENT.get(k, "") in _MOD_CLIENTS for k in installed_keys)
         has_mod_client = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in installed_keys)
 
+        # IW5 downgrade option: shown for any Steam-sourced iw5mp/iw5mp_ds
+        # install.  Whether the downgrade is actually needed is checked on
+        # click, so users see the option even after a successful downgrade
+        # (in case Steam re-updates the game to 64-bit later).
+        has_iw5_dg = False
+        _iw5_keys = [k for k in installed_keys if k in ("iw5mp", "iw5mp_ds")]
+        if _iw5_keys:
+            setup_games = cfg.get_setup_games()
+            for k in _iw5_keys:
+                entry = setup_games.get(k, {})
+                if entry.get("source", "steam") == "steam":
+                    has_iw5_dg = True
+                    break
+
         msg = QMessageBox(self)
         msg.setWindowTitle(gd["base"])
         msg.setText("What would you like to do?")
@@ -358,6 +372,9 @@ class ManagementScreen(QWidget):
         upd_btn = None
         if has_mod_client:
             upd_btn = msg.addButton("Update", QMessageBox.AcceptRole)
+        dg_btn = None
+        if has_iw5_dg:
+            dg_btn = msg.addButton("Downgrade MW3", QMessageBox.AcceptRole)
         rei_btn = msg.addButton("Reinstall", QMessageBox.AcceptRole)
         msg.addButton("Cancel", QMessageBox.RejectRole)
         msg.exec_()
@@ -367,6 +384,8 @@ class ManagementScreen(QWidget):
             self._mods(gd, installed_keys)
         elif clicked == upd_btn:
             self._update(gd, installed_keys)
+        elif clicked == dg_btn:
+            self._iw5_downgrade(gd, installed_keys)
         elif clicked == rei_btn:
             self._reinstall(gd)
 
@@ -390,6 +409,41 @@ class ManagementScreen(QWidget):
         cfg.unmark_game_setup(keys)
         self._status.setText(f"Cleared setup state for {gd['base']}. Running clean install...")
         # Route through the same path as "Set Up"
+        self._setup(gd)
+
+    def _iw5_downgrade(self, gd, installed_keys):
+        """Downgrade MW3 from 64-bit to 32-bit and trigger Plutonium reinstall.
+
+        Checks whether the downgrade is actually needed first; if the
+        install is already 32-bit, informs the user and does nothing.
+        Otherwise unmarks iw5mp/iw5mp_ds setup state so the install flow
+        re-runs the depot downgrade gate and the Plutonium wrapper on
+        top of the freshly downgraded game data.
+        """
+        iw5_keys = [k for k in installed_keys if k in ("iw5mp", "iw5mp_ds")]
+        if not iw5_keys:
+            return
+
+        from iw5_downgrade import is_iw5_downgrade_needed
+        idir = ""
+        for k in iw5_keys:
+            game = self.installed.get(k, {})
+            if game.get("install_dir"):
+                idir = game["install_dir"]
+                break
+
+        if idir and not is_iw5_downgrade_needed(idir):
+            QMessageBox.information(
+                self, gd["base"],
+                "MW3 is already 32-bit, no downgrade is needed.\n"
+                "Plutonium should work with the current install.",
+            )
+            return
+
+        cfg.unmark_game_setup(iw5_keys)
+        self._status.setText(
+            "MW3 downgrade selected. Running depot download and Plutonium reinstall..."
+        )
         self._setup(gd)
 
     def _mods(self, gd, installed_keys):

@@ -480,6 +480,12 @@ class _Sigs(QObject):
     pulse_stop  = pyqtSignal()
     # Manual download fallback: (url, dest_folder, filename, label)
     manual_dl   = pyqtSignal(str, str, str, str)
+    # IW5 (MW3) 32-bit depot downgrade
+    iw5_dg_wait   = pyqtSignal(str, str)   # manual gate: (command, step_label)
+    iw5_dg_go     = pyqtSignal()           # manual gate: dismiss
+    iw5_qr_show   = pyqtSignal(str)        # QR path: display/refresh QR text
+    iw5_qr_hide   = pyqtSignal()           # QR path: dismiss QR display
+    iw5_dg_choose = pyqtSignal()           # show method chooser dialog
 
 
 # ── App stylesheet ────────────────────────────────────────────────────────────
