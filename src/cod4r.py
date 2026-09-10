@@ -20,7 +20,7 @@ patched DLLs and fastfiles are loaded automatically by the engine.
 
 Install flow:
   1. Write registry keys so Steam skips first-launch installers
-  2. Download Cod4R-Setup.exe
+  2. Download CoD4R-Launcher.exe
   3. Pre-write settings.txt so the launcher knows the game directory
   4. Run the launcher through Proton (auto-downloads files, user closes when done)
   5. Write registry keys again (safety net after Proton run)
@@ -42,6 +42,7 @@ import json
 import shutil
 import subprocess
 
+from identity import GITHUB_RAW
 from net import download as _download, DownloadError
 
 from log import get_logger
@@ -51,8 +52,8 @@ _log = get_logger(__name__)
 
 # -- constants ----------------------------------------------------------------
 
-# CoD4R launcher hosted on k/divity's GitHub.
-_LAUNCHER_URL = "https://github.com/Divity/IW3x-Offline_installer/releases/download/0.1/Cod4R-Setup.exe"
+# CoD4R launcher hosted on the DeckOps repo.
+_LAUNCHER_URL = f"{GITHUB_RAW}/assets/CoD4R/CoD4R-Launcher.exe"
 
 METADATA_FILE = "deckops_cod4r.json"
 
@@ -341,7 +342,7 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
 
     # -- Step 2: Download CoD4R launcher -------------------------------------
     prog(10, "Downloading CoD4R launcher...")
-    launcher_exe = os.path.join(install_dir, "Cod4R-Setup.exe")
+    launcher_exe = os.path.join(install_dir, "CoD4R-Launcher.exe")
     _download(
         _LAUNCHER_URL, launcher_exe,
         on_progress=lambda pct, lbl: prog(10 + int(pct * 0.20), lbl),
