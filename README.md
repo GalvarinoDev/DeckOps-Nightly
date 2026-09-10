@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Bringing the Golden Age of Call of Duty to your Steam Deck, Steam Box, and Linux handhelds, no tinkering required.™
+  Bringing the Golden Age of Call of Duty to your Steam Deck, Steam Box, and other Linux handhelds, no tinkering required.™
 </p>
 
 ---
