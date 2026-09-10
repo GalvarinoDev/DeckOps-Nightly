@@ -848,12 +848,13 @@ class InstallScreen(QWidget):
                     if key == "cod4mp":
                         c = _cod4_client
                     if c == "cod4r":
-                        install_cod4r(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=gd["appid"], source="steam")
                         self._s.log.emit(
-                            "Close the CoD4R launcher when the download is complete."
+                            "The CoD4R launcher will open. Wait for it to finish downloading "
+                            "and updating, then close it."
                         )
                         self._s.cod4r_wait.emit()
+                        install_cod4r(game, self.steam_root, proton, compat, op_cod4,
+                                      appid=gd["appid"], source="steam")
                         self._cod4r_event.wait()
                         self._cod4r_event.clear()
                         self._s.cod4r_go.emit()
@@ -1925,12 +1926,13 @@ class OwnInstallScreen(QWidget):
                                                   game_install_dir=game.get("install_dir"))
                         cod4_appid = gd["appid"]
                     if c == "cod4r":
-                        install_cod4r(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=cod4_appid, source=source)
                         self._s.log.emit(
-                            "Close the CoD4R launcher when the download is complete."
+                            "The CoD4R launcher will open. Wait for it to finish downloading "
+                            "and updating, then close it."
                         )
                         self._s.cod4r_wait.emit()
+                        install_cod4r(game, self.steam_root, proton, compat, op_cod4,
+                                      appid=cod4_appid, source=source)
                         self._cod4r_event.wait()
                         self._cod4r_event.clear()
                         self._s.cod4r_go.emit()
