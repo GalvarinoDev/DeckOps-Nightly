@@ -1659,34 +1659,89 @@ class UpdateScreen(QWidget):
         from t6sp_mod import install_t6sp_mod
         from cleanops import install_cleanops
         from t7x import install_t7x
-        from plutonium_oled import install_plutonium, launch_bootstrapper, is_plutonium_ready
         from net import DownloadError
+
+        is_lcd = cfg.is_lcd()
+
+        if is_lcd:
+            from plutonium_lcd import (install_plutonium_lcd,
+                                       launch_bootstrapper_lcd,
+                                       is_plutonium_ready_lcd)
+        else:
+            from plutonium_oled import (install_plutonium,
+                                        launch_bootstrapper,
+                                        is_plutonium_ready)
 
         has_cod4  = any(KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp") for k, _, _ in self.selected)
         has_iw4x  = any(KEY_CLIENT.get(k) == "iw4x" for k, _, _ in self.selected)
         has_plut  = any(KEY_CLIENT.get(k) == "plutonium" for k, _, _ in self.selected)
         proton    = get_proton_path(self.steam_root)
-        total     = len(self.selected)
+
+        # Auto-expand: if any Plutonium key is selected, pull in all other
+        # installed Plutonium games so the shared cache rebuild covers every
+        # prefix (OLED) or every sideload entry (LCD).
+        if has_plut:
+            _PLUT_KEYS = {"t4sp","t4mp","t5sp","t5mp","t6mp","t6zm","iw5mp","iw5mp_ds"}
+            already = {k for k, _, _ in self.selected}
+            # Re-detect installed games to find siblings
+            _all_installed = find_installed_games(parse_library_folders(self.steam_root))
+            if cfg.get_game_source() == "own":
+                from detect_games import find_own_installed
+                for k, v in find_own_installed().items():
+                    if k not in _all_installed:
+                        _all_installed[k] = v
+            # Find the right gd entry for each sibling key
+            _gd_by_key = {}
+            for gd_entry in ALL_GAMES:
+                for k in _active_keys(gd_entry):
+                    _gd_by_key[k] = gd_entry
+            extras = []
+            for pk in _PLUT_KEYS - already:
+                if pk in _all_installed and cfg.is_game_setup(pk):
+                    gd_entry = _gd_by_key.get(pk)
+                    if gd_entry:
+                        extras.append((pk, gd_entry, _all_installed[pk]))
+            if extras:
+                names = ", ".join(e[2].get("name", e[0]) for e in extras)
+                self._s.log.emit(f"Also updating {len(extras)} sibling Plutonium game(s): {names}")
+                self.selected.extend(extras)
+
+        total = len(self.selected)
 
         # Read setup_games to determine source for each key
         setup_games = cfg.get_setup_games()
 
         # ── Plutonium update: re-run bootstrapper ─────────────────────
         if has_plut:
-            self._s.progress.emit(5, "Launching Plutonium to check for updates...")
-            self._s.log.emit(
-                "Plutonium is launching now.\n"
-                "  1. Wait for it to finish updating\n"
-                "  2. Log in if prompted\n"
-                "  3. Close the Plutonium window\n"
-                "  4. Click the button below to continue"
-            )
-            try:
-                launch_bootstrapper(
-                    proton,
-                    on_progress=lambda p, m: self._s.progress.emit(p, m),
-                    steam_root=self.steam_root,
+            if is_lcd:
+                self._s.progress.emit(5, "Setting up Plutonium through HGL...")
+                self._s.log.emit(
+                    "Setting up Plutonium through HGL...\n"
+                    "  1. HGL will download and launch Plutonium (this may take a few minutes)\n"
+                    "  2. Log in if prompted\n"
+                    "  3. Close the Plutonium window\n"
+                    "  4. Click the button below to continue"
                 )
+            else:
+                self._s.progress.emit(5, "Launching Plutonium to check for updates...")
+                self._s.log.emit(
+                    "Plutonium is launching now.\n"
+                    "  1. Wait for it to finish updating\n"
+                    "  2. Log in if prompted\n"
+                    "  3. Close the Plutonium window\n"
+                    "  4. Click the button below to continue"
+                )
+            try:
+                if is_lcd:
+                    launch_bootstrapper_lcd(
+                        on_progress=lambda p, m: self._s.progress.emit(p, m),
+                    )
+                else:
+                    launch_bootstrapper(
+                        proton,
+                        on_progress=lambda p, m: self._s.progress.emit(p, m),
+                        steam_root=self.steam_root,
+                    )
             except DownloadError as dl_ex:
                 self._s.log.emit(f"✗  {dl_ex.label} download failed: {dl_ex}")
                 self._s.progress.emit(100, "Update failed.")
@@ -1703,7 +1758,8 @@ class UpdateScreen(QWidget):
             self._steam_closed.clear()
             self._s.plut_go.emit()
 
-            if not is_plutonium_ready():
+            _ready = is_plutonium_ready_lcd() if is_lcd else is_plutonium_ready()
+            if not _ready:
                 self._s.log.emit(
                     "✗  Plutonium does not appear to be fully set up.\n"
                     "   Make sure you let it finish updating."
@@ -1714,13 +1770,16 @@ class UpdateScreen(QWidget):
 
             self._s.log.emit("✓  Plutonium updated.")
 
-            # Wipe shared Plutonium dir so it gets rebuilt with fresh binaries.
-            # Game prefixes symlink to this dir -- _ensure_shared_plutonium()
-            # inside install_plutonium() will repopulate it on the first key.
-            from plutonium_oled import SHARED_PLUT_DIR
-            if os.path.isdir(SHARED_PLUT_DIR):
-                shutil.rmtree(SHARED_PLUT_DIR, ignore_errors=True)
-                self._s.log.emit("  Cleared shared Plutonium cache for rebuild")
+            # OLED: wipe shared Plutonium dir so it gets rebuilt with fresh
+            # binaries. Game prefixes symlink to this dir --
+            # _ensure_shared_plutonium() inside install_plutonium() will
+            # repopulate it on the first key.
+            # LCD: not needed — Plutonium files live inside the Heroic prefix.
+            if not is_lcd:
+                from plutonium_oled import SHARED_PLUT_DIR
+                if os.path.isdir(SHARED_PLUT_DIR):
+                    shutil.rmtree(SHARED_PLUT_DIR, ignore_errors=True)
+                    self._s.log.emit("  Cleared shared Plutonium cache for rebuild")
 
         if not has_plut:
             self._s.progress.emit(5, "Closing Steam...")
@@ -1807,10 +1866,19 @@ class UpdateScreen(QWidget):
                     install_iw4x(game, self.steam_root, proton, compat, op,
                                  source=source, install_dlc=False)
                 elif c == "plutonium":
-                    install_plutonium(game, key, self.steam_root, proton, compat,
-                                     on_progress=op,
-                                     installed_games=installed_for_plut,
-                                     source=source)
+                    if is_lcd:
+                        install_plutonium_lcd(game, key,
+                                             installed_games=installed_for_plut,
+                                             on_progress=op,
+                                             steam_root=self.steam_root,
+                                             proton_path=proton,
+                                             compatdata_path=compat,
+                                             source=source)
+                    else:
+                        install_plutonium(game, key, self.steam_root, proton, compat,
+                                         on_progress=op,
+                                         installed_games=installed_for_plut,
+                                         source=source)
                 elif c == "cleanops":
                     install_cleanops(game, self.steam_root, proton, compat, op,
                                     source=source)
