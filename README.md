@@ -36,7 +36,7 @@ Supports Steam Deck (LCD and OLED), Steam Machine, Legion Go / Go S / Go 2, ROG 
 
 1. Install your games on Steam first. You do not need to launch them.
 2. Have a stable internet connection ready.
-3. Plutonium online play requires a [free account](https://forum.plutonium.pw/register). LCD users who only want offline play do not need one.
+3. Plutonium online play requires a [free account](https://forum.plutonium.pw/register).
 
 ---
 
@@ -52,6 +52,14 @@ Put your game folders in one of these locations before you start:
 DeckOps scans these folders automatically. If your games are in a different location, use the **Choose Folder** button during setup to add it.
 
 Each game must be in its own folder (for example, `~/Games/Call of Duty 4/`). The folder name must contain the game title or its short name (such as "BO2", "BO1", "MW2", or "CoD4"). DeckOps uses the folder name to identify which game is inside.
+
+---
+
+## LCD Steam Deck and Plutonium
+
+Plutonium online multiplayer works on LCD Steam Decks. All seven Plutonium titles can connect to online servers from both LCD and OLED hardware. A [free Plutonium account](https://forum.plutonium.pw/register) is required.
+
+This is not ban evasion. DeckOps does not bypass or interfere with Plutonium's anti-cheat system and does not remove any fingerprinting. DeckOps uses the same setup method that Plutonium recommends for Linux users. This method avoids the false-positive ban, so LCD users can join Plutonium servers the same way OLED users do.
 
 ---
 
