@@ -652,8 +652,12 @@ class SetupFlowScreen(QWidget):
             # PC: go to resolution, then controller
             self._res_title_lbl.setText("What resolution is your display?")
             self._show("_resolution_section")
+        elif source == "steam":
+            # Recommended/Steam on handheld: default to handheld, skip question
+            cfg.set_play_mode("handheld")
+            self._finish()
         else:
-            # SteamOS/CachyOS handheld: play mode
+            # Own-files on handheld: ask play mode (user may dock)
             self._show("_play_section")
 
     def _needs_primary_controller(self):
