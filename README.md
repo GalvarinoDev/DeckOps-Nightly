@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  Bringing the Golden Age of Call of Duty to your Steam Deck, Steam Box, and other Linux handhelds, no tinkering required.™
+  Bringing the Golden Age of Call of Duty to your Steam Deck and Linux handheld, no tinkering required.™️
 </p>
 
 ---
@@ -24,7 +24,7 @@
 | Black Ops | SP/ZM/MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
 | Modern Warfare 3 | MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
 | Black Ops II | SP/ZM/MP | [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) + [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
-| Black Ops III | SP/MP/ZM | [CleanOps](https://github.com/notnightwolf/cleanopsT7) + [T7x](https://github.com/alterware) | ✅ | ✅ | ✅ |
+| Black Ops III | SP/MP/ZM | [CleanOps](https://github.com/notnightwolf/cleanopsT7) | ✅ | ✅ | ✅ |
 
 > All titles support controller and gyro through Steam Input. During setup, you choose whether to turn on gyro and which activation mode you want (ADS, Hold, or Toggle). Aim assist is not available for MW2 SP and MW3 SP. CoD4x is available as an alternative MW1 MP client during setup.
 
@@ -36,13 +36,13 @@
 - **Multi-Device Support.** Steam Machine, Legion Go/Go S/Go 2, ROG Ally/Ally X/Xbox Ally X, MSI Claw 8, and PCs. Bazzite and CachyOS are supported.
 - **Controller Templates.** 44 templates across Steam Controller 2 (Triton), PS5/PS5 Edge, PS4, Xbox 360/One/Elite, and generic. DeckOps installs only your device's Neptune variant on top of 28 universal templates.
 - **Hold and Toggle Gyro.** Steam Deck LCD/OLED get four gyro modes. Other devices get On or Off.
-- **Black Ops III.** CleanOps plus optional T7x.
+- **Black Ops III.** Supported through CleanOps.
 - **Black Ops II Singleplayer.** Supported through [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) by Rattpak. DeckOps installs the mod client and sets the display settings automatically. Note: the mod is still in beta. Rattpak has generously allowed DeckOps to use it ahead of its full release on GitHub.
 - **MW3 Downgrade.** A Steam update to MW3 breaks Plutonium. DeckOps detects the broken install and downgrades it during setup. You can also start a downgrade from My Games. Two methods: scan a QR code with the Steam mobile app (recommended), or paste commands into the Steam console.
 - **Non-Steam Game Support.** Place game files in `~/Games` and select **Steam & Non-Steam** during setup.
 - **Offline LAN Launcher.** Play Plutonium games offline with bots from Game Mode. No account required.
 - **CoD4R (Call of Duty 4: Revived).** New default MW1 multiplayer client by [k/divity](https://github.com/Divity), with native controller support, aim assist, a server browser, quality-of-life improvements, and bot support. CoD4R is a new project, and its server list and player base are growing. CoD4x remains available as an alternative during setup. [Discord](https://discord.com/invite/uWAuFzru34)
-- **Player Name.** Set during setup and pre-filled from Steam. Used in CoD4x, IW4x, T7X, and Plutonium offline.
+- **Player Name.** Set during setup and pre-filled from Steam. Used in CoD4x, IW4x, and Plutonium offline.
 - **Save Backup & Restore.** DeckOps backs up save data before uninstall and restores it after reinstall.
 - **No More Protontricks.** DeckOps copies dependencies directly from GE-Proton. A shared DLL directory with symlinks cuts prefix size from about 725MB to about 120MB.
 - **Menu Mods.** Custom DeckOps UI mods for BO2 MP, BO2 Zombies, and MW3 MP.
@@ -124,7 +124,7 @@ The My Games screen shows every supported game as a card with header art and a c
 |---|---|
 | Background Music | Turn on/off and adjust volume |
 | Controller Profiles | Switch gyro mode (ADS, Hold, Toggle, Off) and re-apply controller templates to all games |
-| Player Name | Change your in-game name for CoD4R, CoD4x, IW4x, T7X, and Plutonium offline LAN mode. Does not affect CleanOps. |
+| Player Name | Change your in-game name for CoD4R, CoD4x, IW4x, and Plutonium offline LAN mode. Does not affect CleanOps. |
 | Shader Cache (LCD only) | Clear shader cache data for all set-up games |
 | Check for Updates | Check for and apply DeckOps updates |
 | Full Uninstall | Remove everything DeckOps installed (backs up save data first) |
@@ -149,7 +149,7 @@ DeckOps is an installer. This project would not exist without years of foundatio
 
 **[iw4x](https://iw4x.io)** - Modern Warfare 2 Multiplayer client. [GitHub](https://github.com/iw4x)
 
-**[AlterWare](https://github.com/alterware)** - Black Ops III T7x client. Ghosts (IW6-Mod) and Advanced Warfare (S1-Mod) support was discontinued by the developer in September 2026.
+**[AlterWare](https://github.com/alterware)** - Ghosts (IW6-Mod), Advanced Warfare (S1-Mod), and Black Ops III (T7x) clients. All three were discontinued by the developer in September 2026.
 
 **[CleanOps](https://github.com/notnightwolf/cleanopsT7)** - Black Ops III mod by [notnightwolf](https://github.com/notnightwolf).
 

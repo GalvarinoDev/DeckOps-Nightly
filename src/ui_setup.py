@@ -257,7 +257,7 @@ class SetupFlowScreen(QWidget):
         nl.addSpacing(4)
         nl.addWidget(_lbl(
             "This is your in-game name for most mod clients: CoD4x, IW4x, "
-            "AlterWare (Ghosts, AW), T7X, and Plutonium (LCD offline mode). "
+            "and Plutonium (LCD offline mode). "
             "Your Steam display name is filled in by default. Change it to whatever you want.",
             13, C_DIM, align=Qt.AlignLeft))
         nl.addSpacing(12)
