@@ -239,7 +239,9 @@ EXTERNAL_CONFIGSET_NAMES = {
         "configset_controller_generic.vdf",
     ],
     "steamcontroller": [
-        "configset_controller_triton.vdf",
+        # SC2 (Triton) uses Neptune templates — Valve has not shipped
+        # Triton-specific default templates as of Sep 2026.
+        "configset_controller_neptune.vdf",
     ],
 }
 
@@ -400,7 +402,8 @@ def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mo
         return ["controller_generic_deckops.vdf"]
 
     elif controller_type == "steamcontroller":
-        # Triton has gyro and its own hold/toggle VDFs (like Neptune)
+        # SC2 (Triton) uses Neptune templates — Valve has not shipped
+        # Triton-specific default templates as of Sep 2026.
         if gyro_mode == "hold":
             suffix = "_other_hold" if profile_type == "other" else "_hold"
         elif gyro_mode == "toggle":
@@ -410,7 +413,7 @@ def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mo
         else:
             # "on" → ads variant
             suffix = "_other_ads" if profile_type == "other" else "_ads"
-        return [f"controller_triton_deckops{suffix}.vdf"]
+        return [f"controller_neptune_deckops{suffix}.vdf"]
 
     return []
 
