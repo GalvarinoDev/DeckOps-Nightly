@@ -55,11 +55,11 @@ Each game must be in its own folder (for example, `~/Games/Call of Duty 4/`). Th
 
 ---
 
-## LCD Steam Deck and Plutonium
+## Plutonium
 
-Plutonium online multiplayer works on LCD Steam Decks. All seven Plutonium titles can connect to online servers from both LCD and OLED hardware. A [free Plutonium account](https://forum.plutonium.pw/register) is required.
+All seven Plutonium titles can connect to online servers from both LCD and OLED hardware (not just OLED). A [free Plutonium account](https://forum.plutonium.pw/register) is required.
 
-This is not ban evasion. DeckOps does not bypass or interfere with Plutonium's anti-cheat system and does not remove any fingerprinting. DeckOps uses the same setup method that Plutonium recommends for Linux users. This method avoids the false-positive ban, so LCD users can join Plutonium servers the same way OLED users do.
+This is not ban evasion for the LCD Deck. DeckOps does not bypass or interfere with Plutonium's anti-cheat system and does not remove any fingerprinting. DeckOps uses the same setup method that Plutonium recommends for Linux users. This method avoids the false-positive ban, so LCD users can join Plutonium servers the same way OLED users do.
 
 ---
 
