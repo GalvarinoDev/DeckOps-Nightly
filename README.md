@@ -40,6 +40,21 @@ Supports Steam Deck (LCD and OLED), Steam Machine, Legion Go / Go S / Go 2, ROG 
 
 ---
 
+## Non-Steam Games
+
+DeckOps can also set up games that you own outside of Steam (CD, GOG, or other sources). During setup, select **"I have my own games"** to use this flow.
+
+Put your game folders in one of these locations before you start:
+
+- `~/Games` (or `~/games`) on the internal drive
+- `Games` (or `games`) on the SD card
+
+DeckOps scans these folders automatically. If your games are in a different location, use the **Choose Folder** button during setup to add it.
+
+Each game must be in its own folder (for example, `~/Games/Call of Duty 4/`). The folder name must contain the game title or its short name (such as "BO2", "BO1", "MW2", or "CoD4"). DeckOps uses the folder name to identify which game is inside.
+
+---
+
 ## Installation
 
 1. Press the Steam button → **Power** → **Switch to Desktop**.
