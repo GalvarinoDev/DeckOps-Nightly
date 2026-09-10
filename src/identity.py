@@ -57,8 +57,8 @@ VENV_PYTHON = os.path.join(INSTALL_DIR, ".venv", "bin", "python3")
 
 APP_TITLE = "DeckOps Nightly" if BRANCH == "nightly" else "DeckOps"
 
-# Set to None for stable — the UI badge is omitted entirely
-BUILD_BADGE = "NIGHTLY BUILD" if BRANCH == "nightly" else None
+# Both branches show a badge so the user can tell at a glance
+BUILD_BADGE = "NIGHTLY BUILD" if BRANCH == "nightly" else "STABLE BUILD"
 
 BUILD_HASH_FALLBACK = "nightly" if BRANCH == "nightly" else "stable"
 

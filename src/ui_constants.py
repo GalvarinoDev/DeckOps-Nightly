@@ -14,7 +14,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QObject
 from PyQt5.QtGui import QFont, QFontDatabase
 
 import config as cfg
-from identity import BUILD_BADGE
+from identity import BUILD_BADGE, BRANCH
 from log import get_logger
 
 _log = get_logger(__name__)
@@ -55,6 +55,10 @@ C_DIM      = "#888899"
 C_DARK_BTN = "#33333F"
 C_RED_BTN  = "#7A1515"
 C_BLUE_BTN = "#1A5FAA"
+
+# Branch accent — green for stable, orange for nightly
+C_ACCENT    = C_IW if BRANCH == "stable" else C_TREY
+C_ACCENT_BG = "#0A2A08" if BRANCH == "stable" else "#2A1A08"
 
 
 # ── Fonts ─────────────────────────────────────────────────────────────────────
@@ -450,26 +454,25 @@ def _title_block(lay, main_size=56):
     sub = QLabel()
     sub.setTextFormat(Qt.RichText)
     sub.setAlignment(Qt.AlignCenter)
-    sub.setStyleSheet(f"color:{C_TREY}; background:transparent;")
+    sub.setStyleSheet(f"color:{C_ACCENT}; background:transparent;")
     sub.setText(
-        f'<span style="font-family:\'{_FONT_FAMILY_DISP}\'; font-size:28pt; color:{C_TREY};">'
+        f'<span style="font-family:\'{_FONT_FAMILY_DISP}\'; font-size:28pt; color:{C_ACCENT};">'
         f'COMBAT'
         f'<span style="font-size:16pt;">on</span>'
         f'DECK'
         f'</span>'
     )
     lay.addWidget(sub)
-    # Build badge — only shown for Nightly builds (None for Stable)
-    if BUILD_BADGE:
-        badge = QLabel(BUILD_BADGE)
-        badge.setFont(font(10, bold=True))
-        badge.setAlignment(Qt.AlignCenter)
-        badge.setStyleSheet(
-            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
-            "border-radius:4px;padding:2px 10px;"
-        )
-        bw = QHBoxLayout(); bw.addStretch(); bw.addWidget(badge); bw.addStretch()
-        lay.addLayout(bw)
+    # Build badge — always shown (orange for nightly, green for stable)
+    badge = QLabel(BUILD_BADGE)
+    badge.setFont(font(10, bold=True))
+    badge.setAlignment(Qt.AlignCenter)
+    badge.setStyleSheet(
+        f"color:{C_ACCENT};background:{C_ACCENT_BG};border:1px solid {C_ACCENT};"
+        "border-radius:4px;padding:2px 10px;"
+    )
+    bw = QHBoxLayout(); bw.addStretch(); bw.addWidget(badge); bw.addStretch()
+    lay.addLayout(bw)
 
 
 # ── Shared signals ────────────────────────────────────────────────────────────
@@ -505,7 +508,7 @@ QScrollBar:vertical {{ background:#1E1E28; width:8px; border-radius:4px; }}
 QScrollBar::handle:vertical {{ background:#44445A; border-radius:4px; min-height:30px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height:0; }}
 QProgressBar {{ background:#252535; border-radius:7px; border:none; }}
-QProgressBar::chunk {{ background:{C_TREY}; border-radius:7px; }}
+QProgressBar::chunk {{ background:{C_ACCENT}; border-radius:7px; }}
 QCheckBox::indicator {{ width:22px; height:22px; border:2px solid #555568; border-radius:4px; background:#252535; }}
 QCheckBox::indicator:checked {{ background:{C_IW}; border-color:{C_IW}; }}
 """
