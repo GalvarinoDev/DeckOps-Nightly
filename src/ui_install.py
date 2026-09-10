@@ -454,19 +454,6 @@ class InstallScreen(QWidget):
         pw = QHBoxLayout(); pw.addStretch(); pw.addWidget(self.plut_btn); pw.addStretch()
         clay.addLayout(pw)
 
-
-        self.cod4r_info = _lbl(
-            "The CoD4R launcher is downloading and updating.\n"
-            "Wait for it to finish, then close the launcher\n"
-            "and press the button below.",
-            12, C_IW, align=Qt.AlignCenter,
-        )
-        self.cod4r_info.setStyleSheet(
-            f"color:{C_IW};background:#0A1A2A;border:1px solid {C_IW};"
-            "border-radius:8px;padding:10px 16px;"
-        )
-        self.cod4r_info.setVisible(False)
-        clay.addWidget(self.cod4r_info)
         self.cod4r_btn = _btn("I've closed the CoD4R launcher  ✓", C_TREY, size=13, h=52)
         self.cod4r_btn.setFixedWidth(460); self.cod4r_btn.setVisible(False)
         self.cod4r_btn.clicked.connect(self._confirm_cod4r)
@@ -532,11 +519,9 @@ class InstallScreen(QWidget):
         self.plut_btn.setVisible(False)
 
     def _show_cod4r_wait(self):
-        self.cod4r_info.setVisible(True)
         self.cod4r_btn.setVisible(True)
 
     def _hide_cod4r_wait(self):
-        self.cod4r_info.setVisible(False)
         self.cod4r_btn.setVisible(False)
 
     def _show_iw5_dg_wait(self, cmd, step_label):
@@ -601,7 +586,6 @@ class InstallScreen(QWidget):
         self.plut_btn.setVisible(False)
         self.plut_warn.setVisible(False)
         self.cod4r_btn.setVisible(False)
-        self.cod4r_info.setVisible(False)
         self.iw5_dg_btn.setVisible(False)
         self.iw5_qr_box.setVisible(False)
         self._stop_pulse()
@@ -848,9 +832,12 @@ class InstallScreen(QWidget):
                     if key == "cod4mp":
                         c = _cod4_client
                     if c == "cod4r":
+                        self._s.progress.emit(12, "Installing CoD4R — close the launcher when done...")
                         self._s.log.emit(
-                            "The CoD4R launcher will open. Wait for it to finish downloading "
-                            "and updating, then close it."
+                            "CoD4R is downloading and installing now.\n"
+                            "  1. Wait for the CoD4R launcher to finish downloading and updating\n"
+                            "  2. Close the launcher when it is done\n"
+                            "  3. Click the button below to continue"
                         )
                         self._s.cod4r_wait.emit()
                         install_cod4r(game, self.steam_root, proton, compat, op_cod4,
@@ -1509,19 +1496,6 @@ class OwnInstallScreen(QWidget):
         pw = QHBoxLayout(); pw.addStretch(); pw.addWidget(self.plut_btn); pw.addStretch()
         clay.addLayout(pw)
 
-
-        self.cod4r_info = _lbl(
-            "The CoD4R launcher is downloading and updating.\n"
-            "Wait for it to finish, then close the launcher\n"
-            "and press the button below.",
-            12, C_IW, align=Qt.AlignCenter,
-        )
-        self.cod4r_info.setStyleSheet(
-            f"color:{C_IW};background:#0A1A2A;border:1px solid {C_IW};"
-            "border-radius:8px;padding:10px 16px;"
-        )
-        self.cod4r_info.setVisible(False)
-        clay.addWidget(self.cod4r_info)
         self.cod4r_btn = _btn("I've closed the CoD4R launcher  ✓", C_TREY, size=13, h=52)
         self.cod4r_btn.setFixedWidth(460); self.cod4r_btn.setVisible(False)
         self.cod4r_btn.clicked.connect(self._confirm_cod4r)
@@ -1587,11 +1561,9 @@ class OwnInstallScreen(QWidget):
         self.plut_btn.setVisible(False)
 
     def _show_cod4r_wait(self):
-        self.cod4r_info.setVisible(True)
         self.cod4r_btn.setVisible(True)
 
     def _hide_cod4r_wait(self):
-        self.cod4r_info.setVisible(False)
         self.cod4r_btn.setVisible(False)
 
     def _show_iw5_dg_wait(self, cmd, step_label):
@@ -1656,7 +1628,6 @@ class OwnInstallScreen(QWidget):
         self.plut_btn.setVisible(False)
         self.plut_warn.setVisible(False)
         self.cod4r_btn.setVisible(False)
-        self.cod4r_info.setVisible(False)
         self.iw5_dg_btn.setVisible(False)
         self.iw5_qr_box.setVisible(False)
         self.cont_btn.setVisible(False)
@@ -1926,9 +1897,12 @@ class OwnInstallScreen(QWidget):
                                                   game_install_dir=game.get("install_dir"))
                         cod4_appid = gd["appid"]
                     if c == "cod4r":
+                        self._s.progress.emit(12, "Installing CoD4R — close the launcher when done...")
                         self._s.log.emit(
-                            "The CoD4R launcher will open. Wait for it to finish downloading "
-                            "and updating, then close it."
+                            "CoD4R is downloading and installing now.\n"
+                            "  1. Wait for the CoD4R launcher to finish downloading and updating\n"
+                            "  2. Close the launcher when it is done\n"
+                            "  3. Click the button below to continue"
                         )
                         self._s.cod4r_wait.emit()
                         install_cod4r(game, self.steam_root, proton, compat, op_cod4,
