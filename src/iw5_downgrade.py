@@ -261,6 +261,14 @@ _USERNAME_RE = re.compile(
 # Block characters used in the QR code output
 _QR_CHARS = frozenset("█▀▄▐▌░▒▓ ")
 
+# Keywords that indicate a real DD error, not a QR timeout
+_DD_ERROR_KEYWORDS = (
+    "401", "access denied", "aborting",
+    "result: 0", "no manifest request code",
+    "unable to download", "not completely downloaded",
+    "not available", "could not get depot key",
+)
+
 
 def _is_qr_line(line: str) -> bool:
     """Check if a line is part of a QR code (mostly block characters)."""
@@ -406,6 +414,7 @@ def run_depot_download_qr(
 
         captured_username = None
         auth_succeeded = False
+        error_lines = []
 
         try:
             proc = subprocess.Popen(
@@ -460,8 +469,11 @@ def run_depot_download_qr(
                 elif "%" in line and ("download" in line.lower() or
                                       "/" in line):
                     on_progress(line.strip())
-                elif line.strip():
-                    on_log(line)
+                else:
+                    stripped = line.strip()
+                    if stripped and not _is_qr_line(line):
+                        error_lines.append(stripped)
+                        on_log(line)
 
             proc.wait()
 
@@ -469,12 +481,34 @@ def run_depot_download_qr(
                 on_log(f"Depot {depot_info['depot']} download complete.")
                 return captured_username or username
 
-            # If using remembered credentials and it failed, don't retry
+            # Remembered credentials failed — surface output, don't retry
             if username:
                 on_log(f"DepotDownloader exited with code {proc.returncode}")
+                for el in error_lines[-10:]:
+                    on_log(f"  {el}")
                 return None
 
-            # QR auth timed out — retry with a fresh QR code
+            # Check for real errors vs QR timeout. If auth succeeded
+            # but download still failed, or DD reported access/license
+            # errors, don't retry — the problem isn't authentication.
+            real_error = any(
+                any(kw in el.lower() for kw in _DD_ERROR_KEYWORDS)
+                for el in error_lines
+            )
+
+            if real_error or (auth_succeeded and proc.returncode != 0):
+                on_log(f"DepotDownloader failed (exit code {proc.returncode}).")
+                for el in error_lines[-10:]:
+                    on_log(f"  {el}")
+                if auth_succeeded:
+                    on_log(
+                        "Authentication succeeded but the download was "
+                        "denied. Your Steam account may not own MW3 "
+                        "Multiplayer (42690) or Dedicated Server (42750)."
+                    )
+                return None
+
+            # Genuine QR timeout — retry with a fresh code
             if max_retries > 0 and attempt >= max_retries:
                 on_log("Max QR login retries reached.")
                 return None
@@ -485,6 +519,37 @@ def run_depot_download_qr(
             on_log(f"DepotDownloader error: {ex}")
             _log.exception("DepotDownloader failed")
             return None
+
+
+# ── DepotDownloader artifact helpers ──────────────────────────────────────────
+
+def _is_dd_artifact(rel_path: str) -> bool:
+    """True if rel_path is a DepotDownloader artifact, not a game file."""
+    parts = rel_path.replace("\\", "/").split("/")
+    if parts[0] == ".DepotDownloader":
+        return True
+    if rel_path.endswith(".manifest"):
+        return True
+    return False
+
+
+def _cleanup_dd_artifacts(install_dir: str):
+    """Remove DepotDownloader artifacts from the game directory."""
+    dd_dir = os.path.join(install_dir, ".DepotDownloader")
+    if os.path.isdir(dd_dir):
+        try:
+            shutil.rmtree(dd_dir, ignore_errors=True)
+            _log.info("Removed .DepotDownloader from game dir")
+        except Exception:
+            pass
+
+    try:
+        for fname in os.listdir(install_dir):
+            if fname.endswith(".manifest"):
+                os.remove(os.path.join(install_dir, fname))
+                _log.info("Removed DD manifest: %s", fname)
+    except Exception:
+        pass
 
 
 # ── Merge ─────────────────────────────────────────────────────────────────────
@@ -543,6 +608,9 @@ def merge_iw5_depots(staging_dir: str, install_dir: str,
         _merge_tree(staging_dir, install_dir, prog)
         prog("Merge complete.")
 
+    # Remove DD artifacts (.DepotDownloader/, .manifest) from game dir
+    _cleanup_dd_artifacts(install_dir)
+
     # Cleanup staging leftovers (empty dirs after moves)
     prog("Cleaning up depot staging files...")
     try:
@@ -550,6 +618,17 @@ def merge_iw5_depots(staging_dir: str, install_dir: str,
         prog("Staging files removed.")
     except Exception as ex:
         prog(f"Could not remove staging dir: {ex}")
+
+    # Post-merge verification
+    if is_iw5_64bit(install_dir):
+        prog(
+            "WARNING: MW3 still appears to be 64-bit after merge. "
+            "The marker file (main/iw_00.iwd) size has not changed. "
+            "Try verifying MW3 files in Steam, then run DeckOps again."
+        )
+        return False
+
+    return True
 
 
 def _merge_tree(src: str, dst: str, prog):
@@ -561,14 +640,14 @@ def _merge_tree(src: str, dst: str, prog):
     instant rename on the same filesystem, copy+delete across devices.
     Reports progress every 25 files.
     """
-    # Collect all relative file paths first
+    # Collect all relative file paths, skip DD artifacts
     rel_files = []
     for dirpath, dirnames, filenames in os.walk(src):
         rel = os.path.relpath(dirpath, src)
         for fname in filenames:
-            rel_files.append(
-                fname if rel == "." else os.path.join(rel, fname)
-            )
+            rf = fname if rel == "." else os.path.join(rel, fname)
+            if not _is_dd_artifact(rf):
+                rel_files.append(rf)
 
     total = len(rel_files)
     if total == 0:
