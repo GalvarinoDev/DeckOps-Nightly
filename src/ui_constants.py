@@ -125,7 +125,7 @@ ALL_GAMES = [
     {"base":"Call of Duty: Black Ops II","keys":["t6mp","t6sp","t6zm"],"appid":202990,"dev":"trey","client":"plutonium + t6sp-mod",
      "lcd_keys":["t6mp","t6sp","t6zm"],"lcd_client":"plutonium + t6sp-mod","lcd_appid":202970,
      "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Black Ops III","keys":["t7"],"appid":311210,"dev":"trey","client":"cleanops + t7x",
+    {"base":"Call of Duty: Black Ops III","keys":["t7"],"appid":311210,"dev":"trey","client":"cleanops",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     # ── DISABLED 2026-09: AlterWare Ghosts/AW broken, dev discontinuing Dec 2026 ──
     # {"base":"Call of Duty: Ghosts","keys":["iw6mp","iw6sp"],"appid":209160,"dev":"iw","client":"alterware",
@@ -168,7 +168,7 @@ KEY_CLIENT = {
     "t6mp":   "plutonium",
     "t6sp":   "t6sp_mod",
     "t7":     "cleanops",
-    "t7x":    "t7x",
+    # "t7x":    "t7x",  # DISABLED 2026-09: AlterWare discontinuing Dec 2026
     "iw6mp": "alterware",
     "iw6sp": "alterware",
     "s1mp":  "alterware",
@@ -183,7 +183,7 @@ KEY_EXES = {
     "t5sp":"BlackOps.exe","t5mp":"BlackOpsMP.exe",
     "t6zm":"t6zm.exe","t6mp":"t6mp.exe","t6sp":"t6sp.exe",
     "t7":"BlackOps3.exe",
-    "t7x":"t7x.exe",
+    # "t7x":"t7x.exe",  # DISABLED 2026-09: AlterWare discontinuing Dec 2026
     "iw6mp":"iw6mp64_ship.exe","iw6sp":"iw6sp64_ship.exe",
     "s1mp":"s1_mp64_ship.exe","s1sp":"s1_sp64_ship.exe",
 }
@@ -364,44 +364,49 @@ def _ask_iw4x_dlc(parent, selected) -> bool:
 
 def _ask_bo3_client(parent, selected) -> str:
     """
-    Show a dialog asking which BO3 client(s) to install.
-    Returns "cleanops", "t7x", or "both".
-    Only shows the dialog if BO3 (t7/cleanops) is in the selected games.
+    Return the BO3 client to install.
+
+    T7X was disabled in September 2026 (AlterWare discontinuing Dec 2026).
+    The original three-way dialog (CleanOps / T7X / Both) is preserved
+    below in comments for easy re-enable.  For now, always return
+    "cleanops" so the install flow skips T7X without any UI prompt.
     """
-    has_bo3 = any(KEY_CLIENT.get(k) == "cleanops" for k, _, _ in selected)
-    if not has_bo3:
-        return "cleanops"
-
-    msg = QMessageBox(parent)
-    msg.setWindowTitle("Black Ops III - Client Selection")
-    msg.setText(
-        "Choose which BO3 client to install.\n\n"
-        "CleanOps\n"
-        "Patches BO3 to protect against exploits. Adds dedicated servers "
-        "alongside Activision's official servers. Recommended for official "
-        "Steam copies. You can skip this for non-Steam installs.\n\n"
-        "T7X\n"
-        "Separate client with its own dedicated server list. "
-        "Download size: ~105 MB.\n\n"
-        "Both\n"
-        "Installs CleanOps and T7X side by side. Do the first launch in "
-        "Desktop Mode:\n"
-        "  1. Launch Black Ops III first (CleanOps patches).\n"
-        "  2. Launch T7X after CleanOps is working.\n"
-        "  3. After this, both work fine in Game Mode."
-    )
-    btn_cleanops = msg.addButton("CleanOps", QMessageBox.AcceptRole)
-    btn_t7x      = msg.addButton("T7X", QMessageBox.AcceptRole)
-    btn_both     = msg.addButton("Both", QMessageBox.AcceptRole)
-    msg.setDefaultButton(btn_cleanops)
-    msg.exec_()
-
-    clicked = msg.clickedButton()
-    if clicked == btn_t7x:
-        return "t7x"
-    if clicked == btn_both:
-        return "both"
     return "cleanops"
+    # ── DISABLED 2026-09: AlterWare discontinuing Dec 2026 ──────────────
+    # has_bo3 = any(KEY_CLIENT.get(k) == "cleanops" for k, _, _ in selected)
+    # if not has_bo3:
+    #     return "cleanops"
+    #
+    # msg = QMessageBox(parent)
+    # msg.setWindowTitle("Black Ops III - Client Selection")
+    # msg.setText(
+    #     "Choose which BO3 client to install.\n\n"
+    #     "CleanOps\n"
+    #     "Patches BO3 to protect against exploits. Adds dedicated servers "
+    #     "alongside Activision's official servers. Recommended for official "
+    #     "Steam copies. You can skip this for non-Steam installs.\n\n"
+    #     "T7X\n"
+    #     "Separate client with its own dedicated server list. "
+    #     "Download size: ~105 MB.\n\n"
+    #     "Both\n"
+    #     "Installs CleanOps and T7X side by side. Do the first launch in "
+    #     "Desktop Mode:\n"
+    #     "  1. Launch Black Ops III first (CleanOps patches).\n"
+    #     "  2. Launch T7X after CleanOps is working.\n"
+    #     "  3. After this, both work fine in Game Mode."
+    # )
+    # btn_cleanops = msg.addButton("CleanOps", QMessageBox.AcceptRole)
+    # btn_t7x      = msg.addButton("T7X", QMessageBox.AcceptRole)
+    # btn_both     = msg.addButton("Both", QMessageBox.AcceptRole)
+    # msg.setDefaultButton(btn_cleanops)
+    # msg.exec_()
+    #
+    # clicked = msg.clickedButton()
+    # if clicked == btn_t7x:
+    #     return "t7x"
+    # if clicked == btn_both:
+    #     return "both"
+    # return "cleanops"
 
 def _ask_cod4_client(parent, selected) -> str:
     """
