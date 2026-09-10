@@ -60,7 +60,7 @@ Click Continue when installation finishes. DeckOps reopens Steam automatically. 
 
 If Steam asks about cloud saves, choose **Keep Local**. If asked about safe mode or hardware changes, choose **No**.
 
-- **MW1.** Use the main entry for SP and the DeckOps shortcut for MP. Select the "Player" profile on first SP launch. The MW1 MP launcher runs during install to download mod files. Close it when the download finishes.
+- **MW1.** Use the main entry for SP and the DeckOps shortcut for MP. Select the "Player" profile on first SP launch. During install, DeckOps opens the CoD4R launcher. Wait for it to finish downloading and updating. Close the launcher when it is done, then press Continue in DeckOps.
 - **MW1 MP (Non-Steam).** Launch MW1 MP twice on first install. The first launch fails. Relaunch and it works.
 - **MW2 MP.** The first install takes a while if IW4x detects a downgrade is needed.
 - **LCD Steam Deck.** Plutonium games may take a moment to launch during shader cache cleanup. Skip Vulkan shader compilation if prompted. Quit from the in-game menu for a faster exit.
