@@ -52,8 +52,6 @@ Supports Steam Deck (LCD and OLED), Steam Machine, Legion Go / Go S / Go 2, ROG 
 
 DeckOps checks for updates on every launch. Updates download only the changed files. Your config, logs, and music are never overwritten.
 
-> DeckOps never touches your Steam games. Uninstall removes only the files DeckOps created and backs up your save data first.
-
 ---
 
 ## After Installation
