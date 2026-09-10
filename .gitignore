@@ -6,3 +6,5 @@ logs/
 assets/music/background.mp3
 *.egg-info/
 .update/
+decky/
+DeckOps.zip

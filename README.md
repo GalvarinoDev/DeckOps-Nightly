@@ -52,7 +52,6 @@
 
 ## 🚧 WIP / Coming Soon
 
-- **Docked Mode / Decky Plugin.** Play on a TV or monitor with an external controller. Display settings switch automatically when you dock and undock. This feature is complete and awaits testing on docked hardware.
 - **InputPlumber dbus integration** to autodetect your device and controller settings.
 - **Add Games from My Games screen** without running the full setup wizard again.
 
