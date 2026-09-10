@@ -89,34 +89,35 @@ GAMES = {
         "exe": "BlackOps3.exe",
         "protocol": "t7x",
     },
-    "iw6mp": {
-        "name": "Call of Duty: Ghosts - Multiplayer",
-        "order": 8,
-        "appid": "209170",
-        "exe": "iw6mp64_ship.exe",
-        "protocol": "alterware",
-    },
-    "iw6sp": {
-        "name": "Call of Duty: Ghosts - Singleplayer",
-        "order": 8,
-        "appid": "209160",
-        "exe": "iw6sp64_ship.exe",
-        "protocol": "alterware",
-    },
-    "s1mp": {
-        "name": "Call of Duty: Advanced Warfare - Multiplayer",
-        "order": 9,
-        "appid": "209660",
-        "exe": "s1_mp64_ship.exe",
-        "protocol": "alterware",
-    },
-    "s1sp": {
-        "name": "Call of Duty: Advanced Warfare - Singleplayer",
-        "order": 9,
-        "appid": "209650",
-        "exe": "s1_sp64_ship.exe",
-        "protocol": "alterware",
-    },
+    # ── DISABLED 2026-09: AlterWare Ghosts/AW broken, dev discontinuing Dec 2026 ──
+    # "iw6mp": {
+    #     "name": "Call of Duty: Ghosts - Multiplayer",
+    #     "order": 8,
+    #     "appid": "209170",
+    #     "exe": "iw6mp64_ship.exe",
+    #     "protocol": "alterware",
+    # },
+    # "iw6sp": {
+    #     "name": "Call of Duty: Ghosts - Singleplayer",
+    #     "order": 8,
+    #     "appid": "209160",
+    #     "exe": "iw6sp64_ship.exe",
+    #     "protocol": "alterware",
+    # },
+    # "s1mp": {
+    #     "name": "Call of Duty: Advanced Warfare - Multiplayer",
+    #     "order": 9,
+    #     "appid": "209660",
+    #     "exe": "s1_mp64_ship.exe",
+    #     "protocol": "alterware",
+    # },
+    # "s1sp": {
+    #     "name": "Call of Duty: Advanced Warfare - Singleplayer",
+    #     "order": 9,
+    #     "appid": "209650",
+    #     "exe": "s1_sp64_ship.exe",
+    #     "protocol": "alterware",
+    # },
     "iw5mp": {
         "name": "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
         "order": 5,
@@ -326,8 +327,9 @@ FOLDER_TO_KEYS = {
     "call of duty black ops":           ["t5sp",   "t5mp"],
     "call of duty black ops ii":        ["t6sp",   "t6mp",  "t6zm"],
     "call of duty black ops iii":       ["t7", "t7x"],
-    "call of duty ghosts":              ["iw6sp",  "iw6mp"],
-    "call of duty advanced warfare":    ["s1sp",   "s1mp"],
+    # ── DISABLED 2026-09: AlterWare Ghosts/AW broken, dev discontinuing Dec 2026 ──
+    # "call of duty ghosts":              ["iw6sp",  "iw6mp"],
+    # "call of duty advanced warfare":    ["s1sp",   "s1mp"],
 }
 
 # Keyword rules checked in order when exact match fails.
@@ -348,10 +350,11 @@ _KEYWORD_RULES = [
     (re.compile(rf'{_WB}(black\s*ops\s*(ii|2)|bo2|t6){_WE}', re.IGNORECASE), ["t6sp", "t6mp", "t6zm"]),
     # BO1
     (re.compile(rf'{_WB}(black\s*ops|bo1|t5){_WE}', re.IGNORECASE),          ["t5sp", "t5mp"]),
-    # AW - check before MW3/MW2 since "advanced warfare" is unambiguous
-    (re.compile(rf'{_WB}(advanced\s*warfare|aw|s1){_WE}', re.IGNORECASE),     ["s1sp", "s1mp"]),
-    # Ghosts
-    (re.compile(rf'{_WB}(ghosts|iw6){_WE}', re.IGNORECASE),                   ["iw6sp", "iw6mp"]),
+    # ── DISABLED 2026-09: AlterWare Ghosts/AW broken, dev discontinuing Dec 2026 ──
+    # # AW - check before MW3/MW2 since "advanced warfare" is unambiguous
+    # (re.compile(rf'{_WB}(advanced\s*warfare|aw|s1){_WE}', re.IGNORECASE),     ["s1sp", "s1mp"]),
+    # # Ghosts
+    # (re.compile(rf'{_WB}(ghosts|iw6){_WE}', re.IGNORECASE),                   ["iw6sp", "iw6mp"]),
     # MW3 - check before MW2 so "modern warfare 3" doesn't fall through to MW2
     (re.compile(rf'{_WB}(modern\s*warfare\s*(3|iii)|mw3|iw5){_WE}', re.IGNORECASE), ["iw5sp", "iw5mp"]),
     # MW2
@@ -417,8 +420,9 @@ KEY_TO_SENTINEL = {
     "t6sp":   "bo2",  "t6mp":   "bo2",  "t6zm": "bo2",
     "t7":     "bo3",
     "t7x":    "bo3",
-    "iw6sp":  "ghosts", "iw6mp": "ghosts",
-    "s1sp":   "aw",     "s1mp":  "aw",
+    # ── DISABLED 2026-09: AlterWare Ghosts/AW broken, dev discontinuing Dec 2026 ──
+    # "iw6sp":  "ghosts", "iw6mp": "ghosts",
+    # "s1sp":   "aw",     "s1mp":  "aw",
 }
 
 
