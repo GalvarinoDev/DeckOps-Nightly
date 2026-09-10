@@ -752,24 +752,6 @@ class SetupCompleteScreen(QWidget):
         sl.addWidget(self._lcd_hdr)
         sl.addWidget(self._lcd_body)
 
-        # ── Decky Loader (docked users only) ──────────────────────────────────
-        self._decky_div  = _hdiv()
-        self._decky_hdr  = _lbl("🖥  Docked Display Switching", 12, C_IW, bold=True, align=Qt.AlignLeft)
-        self._decky_body = _lbl(
-            "The DeckOps Decky plugin auto-switches display settings when "
-            "you connect or disconnect a monitor. Decky Loader is required.",
-            11, C_DIM, align=Qt.AlignLeft)
-        self._decky_btn  = _btn("Get Decky Loader  →  decky.xyz", C_BLUE_BTN, size=12, h=40)
-        self._decky_btn.setFixedWidth(320)
-        self._decky_btn.clicked.connect(lambda: _detached_open(
-            ["xdg-open", "https://decky.xyz/"]
-        ))
-        dbw = QHBoxLayout(); dbw.addWidget(self._decky_btn); dbw.addStretch()
-        sl.addWidget(self._decky_div)
-        sl.addWidget(self._decky_hdr)
-        sl.addWidget(self._decky_body)
-        sl.addLayout(dbw)
-
         # ── Restore player saves (visible only when backups exist) ────────────
         self._restore_div = _hdiv()
         self._restore_hdr = _lbl("💾  Restore Player Saves", 12, C_IW, bold=True, align=Qt.AlignLeft)
@@ -816,11 +798,6 @@ class SetupCompleteScreen(QWidget):
 
     def showEvent(self, e):
         super().showEvent(e)
-        is_docked = cfg.is_docked()
-        self._decky_div.setVisible(is_docked)
-        self._decky_hdr.setVisible(is_docked)
-        self._decky_body.setVisible(is_docked)
-        self._decky_btn.setVisible(is_docked)
         is_lcd = cfg.is_lcd()
         self._lcd_div.setVisible(is_lcd)
         self._lcd_hdr.setVisible(is_lcd)

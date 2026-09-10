@@ -450,9 +450,7 @@ class SetupFlowScreen(QWidget):
         pl.addSpacing(4)
         pl.addWidget(_lbl(
             "Handheld Only:  you play exclusively on the device screen.\n"
-            "Also Docked:  you also connect to a TV or monitor with an external controller.\n"
-            "Choosing Docked will install the DeckOps Decky plugin. "
-            "Decky Loader is required, you can install it after setup from decky.xyz.",
+            "Also Docked:  you also connect to a TV or monitor with an external controller.",
             13, C_DIM, align=Qt.AlignLeft))
         pl.addSpacing(12)
         prow = QHBoxLayout(); prow.setSpacing(20)
@@ -465,49 +463,7 @@ class SetupFlowScreen(QWidget):
         pl.addSpacing(40)
         main_lay.addWidget(self._play_section)
 
-        # ── 10. Decky install section (docked only) ───────────────────────
-        self._decky_section = QWidget(); self._decky_section.setVisible(False)
-        dl = QVBoxLayout(self._decky_section)
-        dl.setContentsMargins(80, 60, 80, 60); dl.setSpacing(16)
-        self._back_decky_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_decky_btn.setFixedWidth(80)
-        self._back_decky_btn.clicked.connect(self._back_to_play_from_decky)
-        brow_dk = QHBoxLayout(); brow_dk.addWidget(self._back_decky_btn); brow_dk.addStretch()
-        dl.addLayout(brow_dk)
-        dl.addSpacing(40)
-        _title_block(dl)
-        dl.addStretch()
-        self._decky_status_lbl = _lbl("Installing DeckOps Decky plugin...", 15, "#CCC")
-        dl.addWidget(self._decky_status_lbl)
-        dl.addSpacing(4)
-        self._decky_log = QPlainTextEdit()
-        self._decky_log.setReadOnly(True)
-        self._decky_log.setFont(font(11))
-        self._decky_log.setStyleSheet(
-            "QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
-        self._decky_log.setFixedHeight(180)
-        dl.addWidget(self._decky_log)
-
-        self._decky_cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
-        self._decky_cont_btn.setFixedWidth(320); self._decky_cont_btn.setVisible(False)
-        self._decky_cont_btn.clicked.connect(self._decky_continue)
-        dcw = QHBoxLayout(); dcw.addStretch(); dcw.addWidget(self._decky_cont_btn); dcw.addStretch()
-        dl.addLayout(dcw)
-
-        self._decky_retry_btn = _btn("Retry", C_TREY, size=13, h=52)
-        self._decky_retry_btn.setFixedWidth(320); self._decky_retry_btn.setVisible(False)
-        self._decky_retry_btn.clicked.connect(self._start_decky_install)
-        drw = QHBoxLayout(); drw.addStretch(); drw.addWidget(self._decky_retry_btn); drw.addStretch()
-        dl.addLayout(drw)
-
-        dl.addSpacing(40)
-        main_lay.addWidget(self._decky_section)
-
-        self._decky_sigs = _Sigs()
-        self._decky_sigs.log.connect(self._decky_append_log)
-        self._decky_sigs.done.connect(self._decky_on_done)
-
-        # ── 11. Docked external controller section ────────────────────────
+        # ── 10. Docked external controller section ─────────────────────────
         # Only shown for docked users on SteamOS/CachyOS who haven't already
         # picked a controller (Bazzite/PC users already picked in step 7).
         self._docked_controller_section = QWidget()
@@ -733,64 +689,10 @@ class SetupFlowScreen(QWidget):
     def _pick_play_mode(self, mode):
         cfg.set_play_mode(mode)
         if mode == "docked":
-            self._show("_decky_section")
-            self._decky_log.clear()
-            self._decky_cont_btn.setVisible(False)
-            self._decky_retry_btn.setVisible(False)
-            self._decky_status_lbl.setText("Installing DeckOps Decky plugin...")
-            self._back_decky_btn.setEnabled(False)
-            self._start_decky_install()
+            self._res_title_lbl.setText("What resolution is your external display?")
+            self._show("_resolution_section")
         else:
             self._finish()
-
-    # ── Decky install ─────────────────────────────────────────────────────
-
-    def _back_to_play_from_decky(self):
-        self._show("_play_section")
-
-    def _decky_append_log(self, text):
-        self._decky_log.appendPlainText(text)
-        self._decky_log.verticalScrollBar().setValue(
-            self._decky_log.verticalScrollBar().maximum())
-
-    def _decky_on_done(self, ok):
-        self._back_decky_btn.setEnabled(True)
-        if ok:
-            self._decky_status_lbl.setText("✓  Decky plugin installed.")
-            self._decky_cont_btn.setVisible(True)
-        else:
-            self._decky_status_lbl.setText("✗  Install failed. Check your connection and retry.")
-            self._decky_retry_btn.setVisible(True)
-
-    def _decky_continue(self):
-        # Docked: need resolution
-        self._res_title_lbl.setText("What resolution is your external display?")
-        self._show("_resolution_section")
-
-    def _start_decky_install(self):
-        self._decky_cont_btn.setVisible(False)
-        self._decky_retry_btn.setVisible(False)
-        self._back_decky_btn.setEnabled(False)
-        self._decky_status_lbl.setText("Installing DeckOps Decky plugin...")
-        s = self._decky_sigs
-
-        def _run():
-            import urllib.request
-            ZIP_URL  = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}/raw/main/DeckOps.zip"
-            dl_dir   = os.path.expanduser("~/Downloads")
-            zip_path = os.path.join(dl_dir, "DeckOps.zip")
-            try:
-                os.makedirs(dl_dir, exist_ok=True)
-                s.log.emit("→  Downloading DeckOps.zip...")
-                urllib.request.urlretrieve(ZIP_URL, zip_path)
-                s.log.emit(f"   ✓  Saved to {zip_path}")
-                s.log.emit("   Install via Decky → Install from zip.")
-                s.done.emit(True)
-            except Exception as ex:
-                s.log.emit(f"✗  {ex}")
-                s.done.emit(False)
-
-        threading.Thread(target=_run, daemon=True).start()
 
     # ── Resolution ────────────────────────────────────────────────────────
 
@@ -804,8 +706,8 @@ class SetupFlowScreen(QWidget):
             # PC: back to controller
             self._show("_primary_controller_section")
         else:
-            # Docked: back to decky/play
-            self._show("_decky_section")
+            # Docked: back to play mode
+            self._show("_play_section")
 
     def _pick_resolution(self, resolution):
         if self._is_steam_machine:
