@@ -2,14 +2,17 @@
 cleanops.py - DeckOps installer for the CleanOps mod (Black Ops III)
 
 CleanOps is a lightweight DLL mod that improves performance and fixes
-various issues. Single d3d11.dll drop, no exe replacement.
+various issues. Drops d3d11.dll and replaces BlackOps3.exe with a
+known-good pre-update build (Steam pushed a breaking update).
 
 For Steam games:
   - Drops d3d11.dll into the install directory
+  - Replaces BlackOps3.exe with pre-update version
   - Sets launch options: WINEDLLOVERRIDES="d3d11=n,b" %command%
 
 For own games:
   - Drops d3d11.dll into the install directory
+  - Replaces BlackOps3.exe with pre-update version
   - Launch options are handled by the non-Steam shortcut instead
 
 Progress is reported via a callback:
@@ -30,6 +33,8 @@ _log = get_logger(__name__)
 
 DLL_URL       = "https://raw.githubusercontent.com/notnightwolf/cleanopsT7/main/d3d11.dll"
 DLL_NAME      = "d3d11.dll"
+BO3_EXE_URL   = "https://downloads.bo3reforged.com/latest/BlackOps3.exe"
+BO3_EXE       = "BlackOps3.exe"
 METADATA_FILE = "deckops_cleanops.json"
 LAUNCH_OPTS   = 'WINEDLLOVERRIDES="d3d11=n,b" %command%'
 APPID         = "311210"
@@ -76,13 +81,24 @@ def install_cleanops(game: dict, steam_root: str,
     _download(
         DLL_URL,
         dll_dest,
-        lambda p, m: prog(5 + int(p * 0.60), m),
+        lambda p, m: prog(5 + int(p * 0.30), m),
         "Downloading CleanOps d3d11.dll...",
     )
 
+    # Download pre-update BlackOps3.exe to avoid broken Steam update
+    exe_dest = os.path.join(install_dir, BO3_EXE)
+    prog(40, "Downloading compatible BlackOps3.exe...")
+    _download(
+        BO3_EXE_URL,
+        exe_dest,
+        lambda p, m: prog(40 + int(p * 0.30), m),
+        "Downloading compatible BlackOps3.exe...",
+    )
+    _log.info("Replaced BlackOps3.exe with pre-update version (Steam update breaks CleanOps)")
+
     # Set launch options for Steam copies
     if source != "own":
-        prog(70, "Setting launch options...")
+        prog(75, "Setting launch options...")
         try:
             from wrapper import set_launch_options
             set_launch_options(steam_root, APPID, LAUNCH_OPTS)
