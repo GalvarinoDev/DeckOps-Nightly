@@ -736,6 +736,9 @@ class InstallScreen(QWidget):
                 try:
                     set_compat_tool(MANAGED_APPIDS, ge_version)
                     self._s.log.emit(f"✓  GE-Proton {ge_version} set for all games")
+                    # BO3 needs Proton Experimental — GE-Proton causes launch failures
+                    set_compat_tool(["311210"], "proton_experimental")
+                    self._s.log.emit("✓  Proton Experimental set for BO3")
                     cfg.set_ge_proton_version(ge_version)
                     _compat_applied = True
                 except Exception as ex:
@@ -2223,6 +2226,9 @@ class OwnInstallScreen(QWidget):
             try:
                 set_compat_tool(MANAGED_APPIDS, ge_version)
                 self._s.log.emit(f"✓  {ge_version} set for Steam game appids")
+                # BO3 needs Proton Experimental — GE-Proton causes launch failures
+                set_compat_tool(["311210"], "proton_experimental")
+                self._s.log.emit("✓  Proton Experimental set for BO3")
             except Exception as ex:
                 self._s.log.emit(f"  CompatToolMapping for Steam appids skipped: {ex}")
 

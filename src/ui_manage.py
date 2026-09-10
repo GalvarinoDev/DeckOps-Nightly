@@ -226,6 +226,25 @@ class ManagementScreen(QWidget):
         self._grid.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
         scroll.setWidget(inner); lay.addWidget(scroll, stretch=1)
 
+        # ── Update buttons ────────────────────────────────────────────────
+        btn_row = QHBoxLayout(); btn_row.setContentsMargins(16,8,16,0); btn_row.setSpacing(12)
+        btn_row.addStretch()
+        self._deckops_update_btn = _btn("Update DeckOps", C_BLUE_BTN, size=11, h=40)
+        self._deckops_update_btn.setFixedWidth(180)
+        self._deckops_update_btn.clicked.connect(self._check_deckops_update)
+        btn_row.addWidget(self._deckops_update_btn)
+        self._game_update_btn = _btn("Update Games", C_BLUE_BTN, size=11, h=40)
+        self._game_update_btn.setFixedWidth(180)
+        self._game_update_btn.clicked.connect(self._update_all_games)
+        btn_row.addWidget(self._game_update_btn)
+        btn_row.addStretch()
+        lay.addLayout(btn_row)
+
+        self._deckops_update_status = _lbl("", 10, C_DIM, wrap=False)
+        self._deckops_update_status.setAlignment(Qt.AlignCenter)
+        self._deckops_update_status.setContentsMargins(16,0,16,4)
+        lay.addWidget(self._deckops_update_status)
+
         self._status = _lbl("", 12, C_DIM)
         self._status.setContentsMargins(16,4,16,4)
         lay.addWidget(self._status)
@@ -273,6 +292,128 @@ class ManagementScreen(QWidget):
         if remainder:
             for col in range(remainder, CARD_COLS):
                 self._grid.addWidget(QWidget(), total // CARD_COLS, col)
+
+    # ── Update DeckOps (from ManagementScreen) ──────────────────────────────
+    _GITHUB_USER = GITHUB_USER
+    _GITHUB_REPO = GITHUB_REPO
+
+    def _check_deckops_update(self):
+        self._deckops_update_btn.setEnabled(False)
+        self._deckops_update_status.setText("Checking...")
+        self._deckops_update_status.setStyleSheet(f"color:{C_DIM};")
+        self._du_sig = _Sigs()
+        self._du_sig.log.connect(self._on_deckops_update_signal)
+        threading.Thread(target=self._deckops_update_worker, daemon=True).start()
+
+    def _deckops_update_worker(self):
+        try:
+            version_file = os.path.join(PROJECT_ROOT, "VERSION")
+            local_sha = "0"
+            if os.path.isfile(version_file):
+                with open(version_file) as f:
+                    local_sha = f.read().strip() or "0"
+
+            req = urllib.request.Request(
+                f"https://api.github.com/repos/{self._GITHUB_USER}/{self._GITHUB_REPO}/commits/main",
+                headers={"User-Agent": "DeckOps"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                data = json.loads(r.read())
+            remote_sha = data.get("sha", "")
+
+            if not remote_sha:
+                self._du_sig.log.emit("FAIL|Could not reach GitHub.")
+                return
+
+            if local_sha == remote_sha:
+                self._du_sig.log.emit("OK|You're up to date!")
+                return
+
+            file_count = "unknown"
+            if local_sha != "0":
+                try:
+                    creq = urllib.request.Request(
+                        f"https://api.github.com/repos/{self._GITHUB_USER}/{self._GITHUB_REPO}/compare/{local_sha}...{remote_sha}",
+                        headers={"User-Agent": "DeckOps"},
+                    )
+                    with urllib.request.urlopen(creq, timeout=15) as r2:
+                        cdata = json.loads(r2.read())
+                    files = cdata.get("files", [])
+                    file_count = str(len(files))
+                except Exception:
+                    pass
+
+            self._du_sig.log.emit(f"UPDATE|Update available — {file_count} file(s) changed.")
+
+        except Exception as ex:
+            _log.warning("Update check failed: %s", ex)
+            self._du_sig.log.emit("FAIL|Update check failed.")
+
+    def _on_deckops_update_signal(self, msg):
+        kind, text = msg.split("|", 1)
+        self._deckops_update_btn.setEnabled(True)
+        self._deckops_update_status.setText(text)
+        if kind == "UPDATE":
+            self._deckops_update_status.setStyleSheet(f"color:{C_IW};")
+            self._deckops_update_btn.setText("Update && Restart")
+            try:
+                self._deckops_update_btn.clicked.disconnect()
+            except TypeError:
+                pass
+            self._deckops_update_btn.clicked.connect(self._apply_deckops_update)
+        else:
+            self._deckops_update_status.setStyleSheet(f"color:{C_DIM};")
+
+    def _apply_deckops_update(self):
+        # Route to ConfigureScreen's apply logic
+        s = get_screen(self.stack, "ConfigureScreen")
+        s._apply_update()
+
+    # ── Update all games (batch) ──────────────────────────────────────────
+    def _update_all_games(self):
+        root = find_steam_root()
+        all_installed = find_installed_games(parse_library_folders(root))
+        if cfg.get_game_source() == "own":
+            from detect_games import find_own_installed
+            for k, v in find_own_installed().items():
+                if k not in all_installed:
+                    all_installed[k] = v
+
+        # Build selected list: all set-up games with a mod client
+        _gd_by_key = {}
+        for gd_entry in ALL_GAMES:
+            for k in _active_keys(gd_entry):
+                _gd_by_key[k] = gd_entry
+
+        selected = []
+        for key, game in all_installed.items():
+            c = KEY_CLIENT.get(key, "")
+            if c in ("steam", "", None):
+                continue
+            if not cfg.is_game_setup(key):
+                continue
+            gd_entry = _gd_by_key.get(key)
+            if gd_entry:
+                selected.append((key, gd_entry, game))
+
+        if not selected:
+            self._status.setText("No installed mod-client games to update.")
+            return
+
+        names = ", ".join(s[1]["base"] for s in selected)
+        reply = QMessageBox.question(
+            self, "Update All Games",
+            f"This will update {len(selected)} game(s):\n\n{names}\n\nContinue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        us = get_screen(self.stack, "UpdateScreen")
+        us.selected = selected
+        us.steam_root = root
+        go_to(self.stack, "UpdateScreen")
 
     def _readd(self, gd):
         """Re-add the Plutonium offline launcher shortcut."""
