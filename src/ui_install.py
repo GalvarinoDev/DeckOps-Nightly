@@ -568,7 +568,7 @@ class InstallScreen(QWidget):
         qr_btn = msg.addButton("QR Code Scan (recommended)", QMessageBox.AcceptRole)
         manual_btn = msg.addButton("Steam Console (manual)", QMessageBox.AcceptRole)
         ds_btn = msg.addButton(
-            "Add MW3 Dedicated Server to Library (Steam)", QMessageBox.ActionRole)
+            "Add MW3 DS to Steam", QMessageBox.ActionRole)
         msg.addButton("Cancel", QMessageBox.RejectRole)
         msg.exec_()
         clicked = msg.clickedButton()
@@ -1627,7 +1627,7 @@ class OwnInstallScreen(QWidget):
         qr_btn = msg.addButton("QR Code Scan (recommended)", QMessageBox.AcceptRole)
         manual_btn = msg.addButton("Steam Console (manual)", QMessageBox.AcceptRole)
         ds_btn = msg.addButton(
-            "Add MW3 Dedicated Server to Library (Steam)", QMessageBox.ActionRole)
+            "Add MW3 DS to Steam", QMessageBox.ActionRole)
         msg.addButton("Cancel", QMessageBox.RejectRole)
         msg.exec_()
         clicked = msg.clickedButton()
