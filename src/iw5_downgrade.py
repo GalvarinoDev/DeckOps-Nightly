@@ -155,6 +155,29 @@ def open_steam_console():
         _log.warning("Failed to open Steam console: %s", ex)
 
 
+def open_steam_install(appid: int):
+    """
+    Fire-and-forget: ask Steam to install/acquire a free appid.
+
+    Used for MW3 Dedicated Server (42750), which is free and shares
+    depot files with MW3. Offered as a recovery option when the
+    QR/manual downgrade keeps failing, since re-acquiring/updating DS
+    through Steam can resolve depot access issues.
+    """
+    try:
+        subprocess.Popen(
+            ["steam", f"steam://install/{appid}"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        _log.info("Requested Steam install for appid %s", appid)
+    except FileNotFoundError:
+        _log.warning("steam command not found")
+    except Exception as ex:
+        _log.warning("Failed to request Steam install for appid %s: %s",
+                     appid, ex)
+
+
 def copy_to_clipboard(text: str):
     """Copy text to the system clipboard (Wayland then X11 fallback)."""
     for cmd in (["wl-copy"], ["xclip", "-selection", "clipboard"]):
