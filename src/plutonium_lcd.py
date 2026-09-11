@@ -435,14 +435,14 @@ def install_heroic(on_progress=None) -> bool:
             on_progress(msg)
 
     if is_heroic_installed():
-        prog("Heroic Games Launcher already installed.")
+        prog("HGL already installed.")
         return True
 
     # Ensure Flathub remote is configured before attempting install.
     # Handles missing/broken remotes from OS updates or non-SteamOS distros.
     _ensure_flathub_remote(on_progress=on_progress)
 
-    prog("Installing Heroic Games Launcher from Flathub...")
+    prog("Installing HGL from Flathub...")
     try:
         result = subprocess.run(
             [
@@ -453,17 +453,17 @@ def install_heroic(on_progress=None) -> bool:
             timeout=300,
         )
         if result.returncode == 0:
-            prog("Heroic Games Launcher installed.")
+            prog("HGL installed.")
             return True
         else:
             stderr = result.stderr.decode(errors="replace")
-            prog(f"Heroic install failed: {stderr[:200]}")
+            prog(f"HGL install failed: {stderr[:200]}")
             return False
     except FileNotFoundError:
-        prog("Flatpak not found - cannot install Heroic.")
+        prog("Flatpak not found - cannot install HGL.")
         return False
     except subprocess.TimeoutExpired:
-        prog("Heroic install timed out.")
+        prog("HGL install timed out.")
         return False
 
 
@@ -491,7 +491,7 @@ def _grant_heroic_filesystem_access(paths: list, on_progress=None):
                 timeout=10,
             )
         except (FileNotFoundError, subprocess.TimeoutExpired):
-            prog(f"  Warning: could not grant Heroic access to {path}")
+            prog(f"  Warning: could not grant HGL access to {path}")
 
     # Always grant access to the DeckOps data dir and Steam compatibilitytools
     _always_grant = [
@@ -586,10 +586,10 @@ def _add_heroic_sideload_entry(game_key: str, executable: str,
     )
     if idx is not None:
         library["games"][idx] = entry
-        prog(f"  Updated Heroic entry for {game_def['title']}")
+        prog(f"  Updated HGL entry for {game_def['title']}")
     else:
         library["games"].append(entry)
-        prog(f"  Added Heroic entry for {game_def['title']}")
+        prog(f"  Added HGL entry for {game_def['title']}")
 
     _write_heroic_library(library)
 
@@ -608,9 +608,9 @@ def _remove_heroic_sideload_entry(game_key: str, on_progress=None):
 
     if len(library["games"]) < before:
         _write_heroic_library(library)
-        prog(f"  Removed Heroic entry for {game_key}")
+        prog(f"  Removed HGL entry for {game_key}")
     else:
-        prog(f"  No Heroic entry found for {game_key}")
+        prog(f"  No HGL entry found for {game_key}")
 
 
 # ── Heroic per-game config ──────────────────────────────────────────────────
@@ -687,7 +687,7 @@ def _write_heroic_game_config(game_key: str, ge_proton_version: str,
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
 
-    prog(f"  Heroic game config written for {game_key}")
+    prog(f"  HGL game config written for {game_key}")
 
 
 def _remove_heroic_game_config(game_key: str, on_progress=None):
@@ -700,7 +700,7 @@ def _remove_heroic_game_config(game_key: str, on_progress=None):
     config_path = os.path.join(HEROIC_GAMES_CONFIG_DIR, f"{app_name}.json")
     if os.path.exists(config_path):
         os.remove(config_path)
-        prog(f"  Removed Heroic game config for {game_key}")
+        prog(f"  Removed HGL game config for {game_key}")
 
     # Shape A: the shared default Wine prefix is never removed on single-game
     # uninstall because other Plutonium games may still need it. Full wipe
@@ -855,7 +855,7 @@ def _ensure_shared_plutonium_lcd(src_plut_dir: str, on_progress=None) -> bool:
         prog("  Shared Plutonium dirs verified")
         return True
 
-    prog("  Setting up shared Plutonium directories from Heroic prefix...")
+    prog("  Setting up shared Plutonium directories from HGL prefix...")
     start = time.time()
 
     try:
@@ -1241,7 +1241,7 @@ def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
             on_progress(msg)
 
     if game_key not in HEROIC_PLUT_GAMES:
-        prog(f"Unknown game key for Heroic: {game_key}")
+        prog(f"Unknown game key for HGL: {game_key}")
         return
 
     install_dir = game.get("install_dir", "")
@@ -1253,7 +1253,7 @@ def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
     launcher_exe = os.path.join(shared_plut_dir, "bin",
                                 "plutonium-launcher-win32.exe")
 
-    prog(f"Setting up Heroic for {game_def['title']}...")
+    prog(f"Setting up HGL for {game_def['title']}...")
 
     # 1. Grant Heroic filesystem access to this game's directory
     _grant_heroic_filesystem_access([install_dir], on_progress=on_progress)
@@ -1270,7 +1270,7 @@ def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
     _create_heroic_steam_shortcut(game_key, on_progress=on_progress,
                                    source=source)
 
-    prog(f"Heroic setup complete for {game_def['title']}")
+    prog(f"HGL setup complete for {game_def['title']}")
 
 
 def _set_heroic_minimize_on_launch(on_progress=None):
@@ -1292,18 +1292,18 @@ def _set_heroic_minimize_on_launch(on_progress=None):
     )
 
     if not os.path.exists(config_path):
-        prog("  Heroic config.json not present yet; skipping minimize setting")
+        prog("  HGL config.json not present yet; skipping minimize setting")
         return
 
     try:
         with open(config_path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (json.JSONDecodeError, OSError) as ex:
-        prog(f"  Could not read Heroic config.json: {ex}")
+        prog(f"  Could not read HGL config.json: {ex}")
         return
 
     if not isinstance(data, dict):
-        prog("  Heroic config.json has unexpected shape; skipping")
+        prog("  HGL config.json has unexpected shape; skipping")
         return
 
     default_settings = data.get("defaultSettings")
@@ -1312,7 +1312,7 @@ def _set_heroic_minimize_on_launch(on_progress=None):
         data["defaultSettings"] = default_settings
 
     if default_settings.get("minimizeOnLaunch") is True:
-        prog("  Heroic minimizeOnLaunch already true")
+        prog("  HGL minimizeOnLaunch already true")
         return
 
     default_settings["minimizeOnLaunch"] = True
@@ -1320,9 +1320,9 @@ def _set_heroic_minimize_on_launch(on_progress=None):
     try:
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
-        prog("  Heroic minimizeOnLaunch set to true")
+        prog("  HGL minimizeOnLaunch set to true")
     except OSError as ex:
-        prog(f"  Could not write Heroic config.json: {ex}")
+        prog(f"  Could not write HGL config.json: {ex}")
 
 
 def launch_bootstrapper_lcd(on_progress=None):
@@ -1351,14 +1351,14 @@ def launch_bootstrapper_lcd(on_progress=None):
             on_progress(pct, msg)
 
     # 1. Heroic available
-    prog(5, "Ensuring Heroic Games Launcher is installed...")
+    prog(5, "Ensuring HGL is installed...")
     if not install_heroic(on_progress=lambda m: prog(5, m)):
-        raise RuntimeError("Heroic Games Launcher could not be installed.")
+        raise RuntimeError("HGL could not be installed.")
 
     # 2. Filesystem access. ~/Games is normally already granted by Heroic
     #    itself on first launch, but override is idempotent so a repeat call
     #    is cheap insurance.
-    prog(10, "Granting Heroic filesystem access...")
+    prog(10, "Granting HGL filesystem access...")
     _grant_heroic_filesystem_access(
         [HEROIC_GAMES_DIR, DECKOPS_PLUT_DIR],
         on_progress=lambda m: prog(10, m),
@@ -1600,7 +1600,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
     #     launcher. t4mp is excluded (shares appid with t4sp) and gets
     #     a non-Steam shortcut in shortcut.py instead.
     if source == "steam" and steam_root:
-        prog(80, "Setting Heroic launch options...")
+        prog(80, "Setting HGL launch options...")
         _set_heroic_steam_launch_options(
             game_key, steam_root,
             on_progress=lambda m: prog(82, m),
@@ -1680,7 +1680,7 @@ def _set_heroic_steam_launch_options(game_key: str, steam_root: str,
     try:
         from wrapper import set_launch_options, clear_compat_tool
         set_launch_options(steam_root, appid, launch_opts)
-        prog(f"  Heroic launch options set for appid {appid}")
+        prog(f"  HGL launch options set for appid {appid}")
         # Steam wraps any launch with a CompatToolMapping entry inside Steam
         # Linux Runtime (sniper). From inside that container the host's
         # flatpak binary is invisible, so the flatpak invocation in the
@@ -1695,7 +1695,7 @@ def _set_heroic_steam_launch_options(game_key: str, steam_root: str,
         except Exception as ex:
             prog(f"  Could not clear compat tool for appid {appid}: {ex}")
     except Exception as ex:
-        prog(f"  Could not set Heroic launch options for appid {appid}: {ex}")
+        prog(f"  Could not set HGL launch options for appid {appid}: {ex}")
 
 
 def _create_heroic_steam_shortcut(game_key: str, on_progress=None,
@@ -1805,7 +1805,7 @@ def cleanup_heroic_game(game_key: str, on_progress=None):
         if on_progress:
             on_progress(msg)
 
-    prog(f"Cleaning up Heroic entry for {game_key}...")
+    prog(f"Cleaning up HGL entry for {game_key}...")
 
     _remove_heroic_sideload_entry(game_key, on_progress=on_progress)
     _remove_heroic_game_config(game_key, on_progress=on_progress)
@@ -1831,7 +1831,7 @@ def cleanup_all_heroic(on_progress=None):
         if on_progress:
             on_progress(msg)
 
-    prog("Cleaning up all DeckOps Heroic entries...")
+    prog("Cleaning up all DeckOps HGL entries...")
 
     # Per-game sideload entries + GamesConfig JSONs
     for game_key in HEROIC_PLUT_GAMES:
@@ -1862,7 +1862,7 @@ def cleanup_all_heroic(on_progress=None):
     shared_plut = get_shared_plut_dir()
     if os.path.isdir(shared_plut):
         shutil.rmtree(shared_plut)
-        prog("  Removed Plutonium install from shared Heroic prefix")
+        prog("  Removed Plutonium install from shared HGL prefix")
 
     # Per-game launcher wrapper scripts dir
     if os.path.isdir(LCD_WRAPPER_DIR):
@@ -1874,6 +1874,6 @@ def cleanup_all_heroic(on_progress=None):
     # still exists so stale state doesn't confuse future installs.
     if os.path.isdir(HEROIC_PREFIX_BASE):
         shutil.rmtree(HEROIC_PREFIX_BASE)
-        prog("  Removed legacy DeckOps Heroic prefix directory")
+        prog("  Removed legacy DeckOps HGL prefix directory")
 
-    prog("Heroic cleanup complete.")
+    prog("HGL cleanup complete.")

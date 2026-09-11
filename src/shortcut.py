@@ -1411,7 +1411,7 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                 import config as cfg
                 if key == "t4mp" and cfg.is_lcd():
                     _clear_compat_tool(str(shortcut_appid))
-                    prog(f"    ✓ Cleared compat tool (LCD Heroic shortcut)")
+                    prog(f"    ✓ Cleared compat tool (LCD HGL shortcut)")
                 else:
                     from wrapper import set_compat_tool
                     ge_version = cfg.get_ge_proton_version()
