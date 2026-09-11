@@ -548,7 +548,7 @@
 	"group"
 	{
 		"id"		"11"
-		"mode"		"single_button"
+		"mode"		"absolute_mouse"
 		"name"		""
 		"description"		"PS5 DualSense Edge controller layout"
 		"inputs"
@@ -557,11 +557,15 @@
 			{
 				"activators"
 				{
+					"Soft_Press"
+					{
+						"bindings"
+						{
+							"binding"		"mouse_button LEFT, , "
+						}
+					}
 				}
-			}
-			"touch"
-			{
-				"activators"
+				"disabled_activators"
 				{
 				}
 			}
