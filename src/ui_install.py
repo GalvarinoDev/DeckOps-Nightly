@@ -553,17 +553,22 @@ class InstallScreen(QWidget):
         self.log.setMaximumHeight(16777215)
 
     def _ask_iw5_dg_method(self):
-        """Show chooser: QR Code Scan vs Steam Console (manual)."""
+        """Show chooser: QR Code Scan vs Steam Console (manual) vs Add DS."""
         msg = QMessageBox(self)
         msg.setWindowTitle("MW3 Downgrade")
         msg.setText(
             "MW3 needs to be downgraded from 64-bit to 32-bit for Plutonium.\n\n"
             "This requires at least 15 GB of free disk space to download the\n"
             "old depot files and patch your game.\n\n"
+            "If the download or patch keeps failing, adding the free MW3\n"
+            "Dedicated Server can help, since it shares depot files with MW3.\n"
+            "Let it fully download in Steam, then try QR or Manual again.\n\n"
             "How would you like to authenticate the download?"
         )
         qr_btn = msg.addButton("QR Code Scan (recommended)", QMessageBox.AcceptRole)
         manual_btn = msg.addButton("Steam Console (manual)", QMessageBox.AcceptRole)
+        ds_btn = msg.addButton(
+            "Add MW3 Dedicated Server to Library (Steam)", QMessageBox.ActionRole)
         msg.addButton("Cancel", QMessageBox.RejectRole)
         msg.exec_()
         clicked = msg.clickedButton()
@@ -571,6 +576,15 @@ class InstallScreen(QWidget):
             self._iw5_method = "qr"
         elif clicked == manual_btn:
             self._iw5_method = "manual"
+        elif clicked == ds_btn:
+            from iw5_downgrade import open_steam_install
+            open_steam_install(42750)
+            self._append_log(
+                "  Requested MW3 Dedicated Server install via Steam.\n"
+                "  Let it finish downloading, then choose QR or Manual."
+            )
+            self._ask_iw5_dg_method()
+            return
         else:
             self._iw5_method = ""
         self._iw5_dg_event.set()
@@ -1598,17 +1612,22 @@ class OwnInstallScreen(QWidget):
         self.log.setMaximumHeight(16777215)
 
     def _ask_iw5_dg_method(self):
-        """Show chooser: QR Code Scan vs Steam Console (manual)."""
+        """Show chooser: QR Code Scan vs Steam Console (manual) vs Add DS."""
         msg = QMessageBox(self)
         msg.setWindowTitle("MW3 Downgrade")
         msg.setText(
             "MW3 needs to be downgraded from 64-bit to 32-bit for Plutonium.\n\n"
             "This requires at least 15 GB of free disk space to download the\n"
             "old depot files and patch your game.\n\n"
+            "If the download or patch keeps failing, adding the free MW3\n"
+            "Dedicated Server can help, since it shares depot files with MW3.\n"
+            "Let it fully download in Steam, then try QR or Manual again.\n\n"
             "How would you like to authenticate the download?"
         )
         qr_btn = msg.addButton("QR Code Scan (recommended)", QMessageBox.AcceptRole)
         manual_btn = msg.addButton("Steam Console (manual)", QMessageBox.AcceptRole)
+        ds_btn = msg.addButton(
+            "Add MW3 Dedicated Server to Library (Steam)", QMessageBox.ActionRole)
         msg.addButton("Cancel", QMessageBox.RejectRole)
         msg.exec_()
         clicked = msg.clickedButton()
@@ -1616,6 +1635,15 @@ class OwnInstallScreen(QWidget):
             self._iw5_method = "qr"
         elif clicked == manual_btn:
             self._iw5_method = "manual"
+        elif clicked == ds_btn:
+            from iw5_downgrade import open_steam_install
+            open_steam_install(42750)
+            self._append_log(
+                "  Requested MW3 Dedicated Server install via Steam.\n"
+                "  Let it finish downloading, then choose QR or Manual."
+            )
+            self._ask_iw5_dg_method()
+            return
         else:
             self._iw5_method = ""
         self._iw5_dg_event.set()
