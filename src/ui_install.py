@@ -1181,9 +1181,9 @@ class InstallScreen(QWidget):
                             proton_path=proton,
                             steam_root=self.steam_root,
                         )
-                        self._s.log.emit("✓  Heroic shared prefix ready")
+                        self._s.log.emit("✓  HGL shared prefix ready")
                 except Exception as ex:
-                    self._s.log.emit(f"  Heroic prefix deps skipped: {ex}")
+                    self._s.log.emit(f"  HGL prefix deps skipped: {ex}")
 
             plut_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "plutonium"]
             total_plut = len(plut_selected)
@@ -2259,9 +2259,9 @@ class OwnInstallScreen(QWidget):
                             proton_path=proton,
                             steam_root=self.steam_root,
                         )
-                        self._s.log.emit("✓  Heroic shared prefix ready")
+                        self._s.log.emit("✓  HGL shared prefix ready")
                 except Exception as ex:
-                    self._s.log.emit(f"  Heroic prefix deps skipped: {ex}")
+                    self._s.log.emit(f"  HGL prefix deps skipped: {ex}")
 
             # Per-game Plutonium install: copy Plutonium into each prefix,
             # write config.json with game paths. Own games skip the wrapper

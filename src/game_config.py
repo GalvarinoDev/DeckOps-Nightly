@@ -582,10 +582,10 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
                         )
                         shutil.copy2(src, heroic_dest)
                         _replace_player_name(heroic_dest, player_name)
-                        prog(f"  + {key}: also mirrored to Heroic prefix "
+                        prog(f"  + {key}: also mirrored to HGL prefix "
                              f"-> {heroic_dest_dir}")
                     except Exception as ex:
-                        prog(f"  ! {key}: Heroic mirror failed "
+                        prog(f"  ! {key}: HGL mirror failed "
                              f"({os.path.basename(src)}): {ex}")
 
             # ── Offline launcher prefix mirror (OLED / Other only) ────────
@@ -741,7 +741,7 @@ def rename_player(player_name, steam_root, installed_games=None,
                     if os.path.exists(heroic_dest):
                         _replace_player_name(heroic_dest, player_name)
                         updated += 1
-                        prog(f"  + {key}: renamed in Heroic mirror")
+                        prog(f"  + {key}: renamed in HGL mirror")
 
             # Launcher prefix mirror
             if fixed_dest:
