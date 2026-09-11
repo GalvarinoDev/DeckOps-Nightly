@@ -36,30 +36,7 @@ Supports Steam Deck (LCD and OLED), Steam Machine, Legion Go / Go S / Go 2, ROG 
 
 1. Install your games on Steam first. You do not need to launch them.
 2. Have a stable internet connection ready.
-3. Plutonium online play requires a [free account](https://forum.plutonium.pw/register).
-
----
-
-## Non-Steam Games
-
-DeckOps can also set up games that you own outside of Steam (CD, GOG, or other sources). During setup, select **"I have my own games"** to use this flow.
-
-Put your game folders in one of these locations before you start:
-
-- `~/Games` (or `~/games`) on the internal drive
-- `Games` (or `games`) on the SD card
-
-DeckOps scans these folders automatically. If your games are in a different location, use the **Choose Folder** button during setup to add it.
-
-Each game must be in its own folder (for example, `~/Games/Call of Duty 4/`). The folder name must contain the game title or its short name (such as "BO2", "BO1", "MW2", or "CoD4"). DeckOps uses the folder name to identify which game is inside.
-
----
-
-## Plutonium
-
-All seven Plutonium titles can connect to online servers from both LCD and OLED hardware (not just OLED). A [free Plutonium account](https://forum.plutonium.pw/register) is required.
-
-This is not ban evasion for the LCD Deck. DeckOps does not bypass or interfere with Plutonium's anti-cheat system and does not remove any fingerprinting. DeckOps uses the same setup method that Plutonium recommends for Linux users. This method avoids the false-positive ban, so LCD users can join Plutonium servers the same way OLED users do.
+3. Plutonium online play requires a [free account](https://forum.plutonium.pw/register). LCD users who only want offline play do not need one.
 
 ---
 
@@ -86,6 +63,7 @@ If Steam asks about cloud saves, choose **Keep Local**. If asked about safe mode
 - **MW1.** Use the main entry for SP and the DeckOps shortcut for MP. Select the "Player" profile on first SP launch. During install, DeckOps opens the CoD4R launcher. Wait for it to finish downloading and updating. Close the launcher when it is done, then press Continue in DeckOps.
 - **MW1 MP (Non-Steam).** Launch MW1 MP twice on first install. The first launch fails. Relaunch and it works.
 - **MW2 MP.** The first install takes a while if IW4x detects a downgrade is needed.
+- **MW3 MP.** If the downgrader fails with a depot access error, add the free MW3 Dedicated Server tool to your Steam account. Paste `steam://install/42750` in a browser or Steam's URL bar, then run the downgrader again.
 - **LCD Steam Deck.** Plutonium games may take a moment to launch during shader cache cleanup. Skip Vulkan shader compilation if prompted. Quit from the in-game menu for a faster exit.
 
 ---
