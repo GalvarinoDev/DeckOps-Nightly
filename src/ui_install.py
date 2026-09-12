@@ -19,7 +19,7 @@ import config as cfg
 from net import DownloadError
 
 from ui_constants import (
-    C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN,
+    C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN, C_BLUE_BTN,
     font, _btn, _lbl, _title_block, _log_to_file, _Sigs,
     ALL_GAMES, KEY_CLIENT, KEY_EXES, KEY_MODE_LABEL,
     _active_keys, _active_client, _active_appid,
