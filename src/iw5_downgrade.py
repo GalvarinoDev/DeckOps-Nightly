@@ -38,6 +38,50 @@ IW5_DEPOTS = (
 
 IW5_DEPOT_IDS = (42682, 42683)
 
+# DLC depots. Each collection is a separate paid Steam product under
+# app 42690 (MP). DepotDownloader only succeeds if the account owns
+# the DLC. Detection uses one .ff marker file per collection in
+# zone/dlc/; missing or wrong-size triggers a download.
+# Depot/manifest IDs from Josu-A's Alterware/Plutonium depot reference:
+#   https://gist.github.com/Josu-A/b3698ee46b66225401a5583044f5789a
+IW5_DLC = {
+    "1": {
+        "name": "Collection 1",
+        "app": 42690, "depot": 42695,
+        "manifest": "9005316271397236436",
+        "marker": os.path.join("zone", "dlc", "mp_overwatch.ff"),
+        "marker_size": 77324309,
+    },
+    "2": {
+        "name": "Collection 2",
+        "app": 42690, "depot": 42696,
+        "manifest": "2478272765185873756",
+        "marker": os.path.join("zone", "dlc", "mp_cement.ff"),
+        "marker_size": 94543893,
+    },
+    "3": {
+        "name": "Collection 3 (Chaos Pack)",
+        "app": 42690, "depot": 42697,
+        "manifest": "5810618727794750362",
+        "marker": os.path.join("zone", "dlc", "mp_crosswalk_ss.ff"),
+        "marker_size": 74227733,
+    },
+    "4": {
+        "name": "Collection 4 (Final Assault)",
+        "app": 42690, "depot": 42698,
+        "manifest": "5997898371746217629",
+        "marker": os.path.join("zone", "dlc", "mp_shipbreaker.ff"),
+        "marker_size": 80756757,
+    },
+}
+
+IW5_DLC_DEPOT_CMDS = (
+    "download_depot 42690 42695 9005316271397236436",
+    "download_depot 42690 42696 2478272765185873756",
+    "download_depot 42690 42697 5810618727794750362",
+    "download_depot 42690 42698 5997898371746217629",
+)
+
 DEPOTDOWNLOADER_DIR = os.path.expanduser(
     "~/.local/share/deckops/depotdownloader"
 )
@@ -96,6 +140,31 @@ def is_iw5_downgrade_needed(install_dir: str) -> bool:
     Plutonium, based on the size of main/iw_00.iwd.
     """
     return is_iw5_64bit(install_dir)
+
+
+def detect_dlc_status(install_dir: str) -> dict:
+    """
+    Check each DLC collection's marker file in the install directory.
+    Returns a dict keyed by collection number ("1".."4") with values:
+      "ok"      - marker present and correct size
+      "missing" - marker file does not exist
+      "wrong"   - marker exists but size doesn't match
+    """
+    status = {}
+    for key, dlc in IW5_DLC.items():
+        marker_path = os.path.join(install_dir, dlc["marker"])
+        if not os.path.isfile(marker_path):
+            status[key] = "missing"
+        else:
+            try:
+                actual = os.path.getsize(marker_path)
+                if actual == dlc["marker_size"]:
+                    status[key] = "ok"
+                else:
+                    status[key] = "wrong"
+            except OSError:
+                status[key] = "missing"
+    return status
 
 
 # ── Disk space ────────────────────────────────────────────────────────────────
@@ -417,7 +486,7 @@ def run_depot_download_qr(
 
         cmd = [
             DEPOTDOWNLOADER_BIN,
-            "-app", str(IW5_APP_ID),
+            "-app", str(depot_info.get("app", IW5_APP_ID)),
             "-depot", str(depot_info["depot"]),
             "-manifest", depot_info["manifest"],
             "-dir", staging_dir,
