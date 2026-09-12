@@ -323,11 +323,19 @@ class SetupScreen(QWidget):
 
     def _add_mw3_free_row(self, gd, checks_w):
         row = QHBoxLayout(); row.setSpacing(12); row.setContentsMargins(8, 8, 8, 8)
-        btn = _btn("Get Free", C_IW, size=9, h=30); btn.setFixedWidth(checks_w)
+        btn = _btn("Get Free", C_BLUE_BTN, size=9, h=30); btn.setFixedWidth(checks_w)
         btn.clicked.connect(self._add_mw3_ds)
         row.addWidget(btn)
         name_lbl = _lbl(gd["base"], 14, "#555566", align=Qt.AlignLeft, wrap=False)
         row.addWidget(name_lbl, stretch=1)
+        color = C_IW if gd["dev"] == "iw" else C_TREY
+        badge = QPushButton(_active_client(gd).upper())
+        badge.setFont(font(10, True)); badge.setFixedSize(160, 30); badge.setEnabled(False)
+        badge.setStyleSheet(
+            f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:6px;}}"
+            f"QPushButton:disabled{{background:{color};color:#FFF;}}"
+        )
+        row.addWidget(badge)
         cw = QWidget(); cw.setLayout(row)
         self._ll.insertWidget(self._ll.count() - 1, cw)
 
