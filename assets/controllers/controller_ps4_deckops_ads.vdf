@@ -227,10 +227,6 @@
 				}
 			}
 		}
-		"settings"
-		{
-			"deadzone_inner_radius"		"7199"
-		}
 	}
 	"group"
 	{
@@ -240,6 +236,26 @@
 		"description"		""
 		"inputs"
 		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"xinput_button TRIGGER_LEFT, Aim Down Sight, , "
+						}
+						"settings"
+						{
+							"haptic_intensity"		"2"
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
 		}
 		"settings"
 		{
@@ -254,10 +270,60 @@
 		"description"		""
 		"inputs"
 		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"xinput_button TRIGGER_RIGHT, Fire Weapon, , "
+						}
+						"settings"
+						{
+							"haptic_intensity"		"2"
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
 		}
 		"settings"
 		{
 			"output_trigger"		"2"
+		}
+	}
+	"group"
+	{
+		"id"		"6"
+		"mode"		"joystick_move"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"xinput_button JOYSTICK_RIGHT, Melee, , "
+						}
+						"settings"
+						{
+							"haptic_intensity"		"2"
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
 		}
 	}
 	"group"
@@ -383,6 +449,118 @@
 	}
 	"group"
 	{
+		"id"		"10"
+		"mode"		"single_button"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"mouse_button LEFT, , "
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+	}
+	"group"
+	{
+		"id"		"11"
+		"mode"		"single_button"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"xinput_button SELECT, , "
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+	}
+	"group"
+	{
+		"id"		"14"
+		"mode"		"absolute_mouse"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"mouse_button LEFT, , "
+						}
+						"settings"
+						{
+							"haptic_intensity"		"1"
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+	}
+	"group"
+	{
+		"id"		"17"
+		"mode"		"mouse_region"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"key_press Z, Push to Talk, , "
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+		"settings"
+		{
+			"output_joystick"		"3"
+		}
+	}
+	"group"
+	{
 		"id"		"7"
 		"mode"		"switches"
 		"name"		""
@@ -457,59 +635,7 @@
 	}
 	"group"
 	{
-		"id"		"10"
-		"mode"		"absolute_mouse"
-		"name"		""
-		"description"		""
-		"inputs"
-		{
-			"click"
-			{
-				"activators"
-				{
-					"Soft_Press"
-					{
-						"bindings"
-						{
-							"binding"		"mouse_button LEFT, , "
-						}
-					}
-				}
-				"disabled_activators"
-				{
-				}
-			}
-		}
-	}
-	"group"
-	{
-		"id"		"11"
-		"mode"		"absolute_mouse"
-		"name"		""
-		"description"		""
-		"inputs"
-		{
-			"click"
-			{
-				"activators"
-				{
-					"Soft_Press"
-					{
-						"bindings"
-						{
-							"binding"		"mouse_button LEFT, , "
-						}
-					}
-				}
-				"disabled_activators"
-				{
-				}
-			}
-		}
-	}
-	"group"
-	{
-		"id"		"12"
+		"id"		"16"
 		"mode"		"gyro_to_joystick"
 		"name"		""
 		"description"		""
@@ -533,15 +659,18 @@
 			"7"		"switch active"
 			"0"		"button_diamond active"
 			"1"		"left_trackpad inactive"
-			"11"		"left_trackpad active"
+			"11"		"left_trackpad inactive"
+			"17"		"left_trackpad active"
 			"2"		"right_trackpad inactive"
-			"10"		"right_trackpad active"
+			"6"		"right_trackpad inactive"
+			"10"		"right_trackpad inactive"
+			"14"		"right_trackpad active"
 			"3"		"joystick active"
 			"4"		"left_trigger active"
 			"5"		"right_trigger active"
 			"8"		"right_joystick active"
 			"9"		"dpad active"
-			"12"		"gyro active"
+			"16"		"gyro active"
 		}
 	}
 	"settings"
