@@ -42,7 +42,7 @@ _log = get_logger(__name__)
 # ── ManagementCard ────────────────────────────────────────────────────────────
 class ManagementCard(QFrame):
     def __init__(self, gd, installed, on_setup, on_configure,
-                 on_readd=None, parent=None):
+                 on_readd=None, on_add_ds=None, parent=None):
         super().__init__(parent)
         color = C_IW if gd["dev"] == "iw" else C_TREY
         self._color  = color
@@ -128,6 +128,14 @@ class ManagementCard(QFrame):
                 f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
             )
             bb.addStretch(); bb.addWidget(cfg_btn); bb.addStretch()
+        elif "iw5mp_ds" in keys and on_add_ds:
+            ds_btn = _btn("Setup Free Game", C_IW, size=9, h=26)
+            ds_btn.clicked.connect(lambda: on_add_ds(gd))
+            ds_btn.setStyleSheet(
+                f"QPushButton{{background:{C_IW};color:#FFF;border:none;"
+                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
+            )
+            bb.addStretch(); bb.addWidget(ds_btn); bb.addStretch()
         else:
             setup_btn = _btn("Set Up", C_DARK_BTN, size=9, h=26)
             setup_btn.setEnabled(False)
@@ -280,6 +288,7 @@ class ManagementScreen(QWidget):
                 on_setup     = self._setup,
                 on_configure = self._configure,
                 on_readd     = self._readd,
+                on_add_ds    = self._add_mw3_ds,
             )
             self._grid.addWidget(card, row, col)
 
@@ -478,6 +487,24 @@ class ManagementScreen(QWidget):
             s._return_to_management = True
             s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
             go_to(self.stack, "InstallScreen")
+
+    def _add_mw3_ds(self, gd):
+        """Request Steam install the free MW3 Dedicated Server (42750).
+
+        Used when MW3 isn't installed at all. Once the user installs it
+        via Steam and returns to DeckOps, showEvent rescans and the card
+        picks up the normal Set Up flow.
+        """
+        from iw5_downgrade import open_steam_install
+        open_steam_install(42750)
+        QMessageBox.information(
+            self, gd["base"],
+            "DeckOps is adding the free MW3 Dedicated Server tools to "
+            "your Steam account.\n\n"
+            "Please let it finish installing in Steam. Once it's done, "
+            "close DeckOps and reopen it, then click Set Up on the "
+            "MW3 card."
+        )
 
     def _configure(self, gd, installed_keys):
         """Show configure dialog with Mods, Update, and Reinstall options."""
