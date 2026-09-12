@@ -323,14 +323,11 @@ class SetupScreen(QWidget):
 
     def _add_mw3_free_row(self, gd, checks_w):
         row = QHBoxLayout(); row.setSpacing(12); row.setContentsMargins(8, 8, 8, 8)
-        spacer = QWidget(); spacer.setFixedWidth(checks_w)
-        spacer.setStyleSheet("background: transparent;")
-        row.addWidget(spacer)
-        name_lbl = _lbl(gd["base"], 14, "#555566", align=Qt.AlignLeft, wrap=False)
-        row.addWidget(name_lbl, stretch=1)
-        btn = _btn("Get MW3 MP Free", C_IW, size=10, h=30); btn.setFixedWidth(160)
+        btn = _btn("Get Free", C_IW, size=9, h=30); btn.setFixedWidth(checks_w)
         btn.clicked.connect(self._add_mw3_ds)
         row.addWidget(btn)
+        name_lbl = _lbl(gd["base"], 14, "#555566", align=Qt.AlignLeft, wrap=False)
+        row.addWidget(name_lbl, stretch=1)
         cw = QWidget(); cw.setLayout(row)
         self._ll.insertWidget(self._ll.count() - 1, cw)
 
