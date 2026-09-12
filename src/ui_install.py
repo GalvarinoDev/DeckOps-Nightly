@@ -233,7 +233,12 @@ class SetupScreen(QWidget):
             if "iw5mp" in ik and "iw5mp_ds" in ik:
                 ik = [k for k in ik if k != "iw5mp_ds"]
                 keys = [k for k in keys if k != "iw5mp_ds"]
-            if not ik: continue
+            if not ik:
+                # MW3 not installed at all: show a "get it free" row
+                _iw5_keys = {"iw5mp", "iw5mp_ds"}
+                if _iw5_keys.intersection(keys) and not _iw5_keys.intersection(self.steam_installed):
+                    self._add_mw3_free_row(gd, CHECKS_W)
+                continue
 
             color  = C_IW if gd["dev"] == "iw" else C_TREY
             client = _active_client(gd)
@@ -315,6 +320,30 @@ class SetupScreen(QWidget):
             cw = QWidget()
             cw.setLayout(row)
             self._ll.insertWidget(self._ll.count() - 1, cw)
+
+    def _add_mw3_free_row(self, gd, checks_w):
+        row = QHBoxLayout(); row.setSpacing(12); row.setContentsMargins(8, 8, 8, 8)
+        spacer = QWidget(); spacer.setFixedWidth(checks_w)
+        spacer.setStyleSheet("background: transparent;")
+        row.addWidget(spacer)
+        name_lbl = _lbl(gd["base"], 14, "#555566", align=Qt.AlignLeft, wrap=False)
+        row.addWidget(name_lbl, stretch=1)
+        btn = _btn("Get MW3 MP Free", C_IW, size=10, h=30); btn.setFixedWidth(160)
+        btn.clicked.connect(self._add_mw3_ds)
+        row.addWidget(btn)
+        cw = QWidget(); cw.setLayout(row)
+        self._ll.insertWidget(self._ll.count() - 1, cw)
+
+    def _add_mw3_ds(self):
+        from iw5_downgrade import open_steam_install
+        open_steam_install(42750)
+        QMessageBox.information(
+            self, "MW3 Multiplayer",
+            "DeckOps is adding the free MW3 Dedicated Server to your "
+            "Steam account. This includes the full multiplayer files.\n\n"
+            "Let Steam finish the download, then close and reopen "
+            "DeckOps. MW3 will appear as a detected game."
+        )
 
     def _go_install(self):
         selected = []
