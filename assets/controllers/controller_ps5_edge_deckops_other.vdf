@@ -9,7 +9,7 @@
 		"id"		"0"
 		"mode"		"four_buttons"
 		"name"		""
-		"description"		"PS5 DualSense Edge KB+M layout"
+		"description"		""
 		"inputs"
 		{
 			"button_a"
@@ -130,7 +130,7 @@
 		"id"		"1"
 		"mode"		"dpad"
 		"name"		""
-		"description"		"PS5 DualSense Edge KB+M layout"
+		"description"		""
 		"inputs"
 		{
 			"dpad_north"
@@ -220,7 +220,7 @@
 		"id"		"2"
 		"mode"		"joystick_mouse"
 		"name"		""
-		"description"		"PS5 DualSense Edge KB+M layout"
+		"description"		""
 		"inputs"
 		{
 			"click"
@@ -256,7 +256,7 @@
 		"id"		"3"
 		"mode"		"dpad"
 		"name"		""
-		"description"		"PS5 DualSense Edge KB+M layout"
+		"description"		""
 		"inputs"
 		{
 			"dpad_north"
@@ -375,7 +375,7 @@
 		"id"		"4"
 		"mode"		"trigger"
 		"name"		""
-		"description"		"PS5 DualSense Edge KB+M layout"
+		"description"		""
 		"inputs"
 		{
 			"edge"
@@ -405,7 +405,7 @@
 		"id"		"5"
 		"mode"		"trigger"
 		"name"		""
-		"description"		"PS5 DualSense Edge KB+M layout"
+		"description"		""
 		"inputs"
 		{
 			"edge"
@@ -437,10 +437,40 @@
 	}
 	"group"
 	{
+		"id"		"6"
+		"mode"		"joystick_move"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"key_press E, Melee, , "
+						}
+						"settings"
+						{
+							"haptic_intensity"		"1"
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+	}
+	"group"
+	{
 		"id"		"8"
 		"mode"		"joystick_move"
 		"name"		""
-		"description"		"PS5 DualSense Edge KB+M layout"
+		"description"		""
 		"inputs"
 		{
 			"click"
@@ -466,7 +496,7 @@
 		"id"		"9"
 		"mode"		"dpad"
 		"name"		""
-		"description"		"PS5 DualSense Edge KB+M layout"
+		"description"		""
 		"inputs"
 		{
 			"dpad_north"
@@ -542,10 +572,122 @@
 	}
 	"group"
 	{
+		"id"		"10"
+		"mode"		"single_button"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"mouse_button LEFT, , "
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+	}
+	"group"
+	{
+		"id"		"11"
+		"mode"		"single_button"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"xinput_button SELECT, , "
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+	}
+	"group"
+	{
+		"id"		"14"
+		"mode"		"absolute_mouse"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"mouse_button LEFT, , "
+						}
+						"settings"
+						{
+							"haptic_intensity"		"1"
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+	}
+	"group"
+	{
+		"id"		"17"
+		"mode"		"mouse_region"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"key_press Z, Push to Talk, , "
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+		"settings"
+		{
+			"output_joystick"		"3"
+		}
+	}
+	"group"
+	{
 		"id"		"7"
 		"mode"		"switches"
 		"name"		""
-		"description"		"PS5 DualSense Edge KB+M layout"
+		"description"		""
 		"inputs"
 		{
 			"button_escape"
@@ -690,58 +832,6 @@
 			}
 		}
 	}
-	"group"
-	{
-		"id"		"10"
-		"mode"		"absolute_mouse"
-		"name"		""
-		"description"		"PS5 DualSense Edge KB+M layout"
-		"inputs"
-		{
-			"click"
-			{
-				"activators"
-				{
-					"Soft_Press"
-					{
-						"bindings"
-						{
-							"binding"		"mouse_button LEFT, , "
-						}
-					}
-				}
-				"disabled_activators"
-				{
-				}
-			}
-		}
-	}
-	"group"
-	{
-		"id"		"11"
-		"mode"		"absolute_mouse"
-		"name"		""
-		"description"		"PS5 DualSense Edge KB+M layout"
-		"inputs"
-		{
-			"click"
-			{
-				"activators"
-				{
-					"Soft_Press"
-					{
-						"bindings"
-						{
-							"binding"		"mouse_button LEFT, , "
-						}
-					}
-				}
-				"disabled_activators"
-				{
-				}
-			}
-		}
-	}
 	"preset"
 	{
 		"id"		"0"
@@ -751,9 +841,12 @@
 			"7"		"switch active"
 			"0"		"button_diamond active"
 			"1"		"left_trackpad inactive"
-			"11"		"left_trackpad active"
+			"11"		"left_trackpad inactive"
+			"17"		"left_trackpad active"
 			"2"		"right_trackpad inactive"
-			"10"		"right_trackpad active"
+			"6"		"right_trackpad inactive"
+			"10"		"right_trackpad inactive"
+			"14"		"right_trackpad active"
 			"3"		"joystick active"
 			"4"		"left_trigger active"
 			"5"		"right_trigger active"
