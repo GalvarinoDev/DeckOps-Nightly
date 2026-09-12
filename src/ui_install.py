@@ -903,12 +903,22 @@ class InstallScreen(QWidget):
                 is_iw5_downgrade_needed, has_enough_space,
                 open_steam_console, find_depot_staging, merge_iw5_depots,
                 ensure_depotdownloader, run_depot_download_qr,
-                cleanup_depotdownloader,
-                IW5_DEPOT_CMDS, IW5_DEPOTS,
+                cleanup_depotdownloader, detect_dlc_status,
+                IW5_DEPOT_CMDS, IW5_DEPOTS, IW5_DLC, IW5_DLC_DEPOT_CMDS,
                 REQUIRED_FREE_SPACE_GB, DEPOTDOWNLOADER_DIR,
             )
             _iw5_dir = _iw5_steam_keys[0][2]["install_dir"]
-            if is_iw5_downgrade_needed(_iw5_dir):
+            _needs_base = is_iw5_downgrade_needed(_iw5_dir)
+            _dlc_status = detect_dlc_status(_iw5_dir)
+            _dlc_needed = sorted(k for k, v in _dlc_status.items() if v != "ok")
+
+            if _dlc_needed:
+                _dlc_names = ", ".join(IW5_DLC[k]["name"] for k in _dlc_needed)
+                self._s.log.emit(f"  MW3 DLC check: missing or incorrect: {_dlc_names}")
+            else:
+                self._s.log.emit("  MW3 DLC check: all collections present.")
+
+            if _needs_base or _dlc_needed:
                 if not has_enough_space(_iw5_dir):
                     self._s.log.emit(
                         f"✗  MW3 downgrade requires at least "
@@ -921,10 +931,27 @@ class InstallScreen(QWidget):
                     self._s.iw5_dg_choose.emit()
                     self._iw5_dg_event.wait()
 
+                    # Build combined depot lists
+                    _qr_depots = list(IW5_DEPOTS) if _needs_base else []
+                    _manual_cmds = list(IW5_DEPOT_CMDS) if _needs_base else []
+                    for dk in _dlc_needed:
+                        dlc = IW5_DLC[dk]
+                        _qr_depots.append({"depot": dlc["depot"], "manifest": dlc["manifest"], "app": dlc["app"]})
+                    for dk in _dlc_needed:
+                        idx = int(dk) - 1
+                        _manual_cmds.append(IW5_DLC_DEPOT_CMDS[idx])
+
+                    _what = []
+                    if _needs_base:
+                        _what.append("32-bit base game")
+                    if _dlc_needed:
+                        _what.append(f"DLC ({', '.join(IW5_DLC[k]['name'] for k in _dlc_needed)})")
+                    _what_str = " + ".join(_what)
+
                     if self._iw5_method == "qr":
                         # ── QR Code path ─────────────────────────────
                         self._s.log.emit(
-                            "MW3 64-bit detected. Downloading 32-bit files via QR login.\n"
+                            f"Downloading MW3 files: {_what_str}.\n"
                             "  Scan the QR code with your Steam mobile app.\n"
                             "  The code will refresh if it expires.\n"
                             "  Your login credentials will be deleted after the download."
@@ -939,9 +966,9 @@ class InstallScreen(QWidget):
                                 ".deckops_iw5_staging",
                             )
                             captured_user = None
-                            for i, depot in enumerate(IW5_DEPOTS):
+                            for i, depot in enumerate(_qr_depots):
                                 self._s.progress.emit(
-                                    11, f"Downloading depot {i+1} of {len(IW5_DEPOTS)}...")
+                                    11, f"Downloading depot {i+1} of {len(_qr_depots)}...")
                                 result = run_depot_download_qr(
                                     staging_dir=staging,
                                     depot_info=depot,
@@ -952,21 +979,24 @@ class InstallScreen(QWidget):
                                     username=captured_user,
                                 )
                                 if result is None:
-                                    self._s.log.emit("✗  Depot download failed.")
+                                    self._s.log.emit(f"✗  Depot {depot['depot']} download failed.")
                                     break
                                 captured_user = result
 
                             self._s.iw5_qr_hide.emit()
 
                             if captured_user:
-                                self._s.progress.emit(12, "Merging 32-bit MW3 files...")
-                                self._s.pulse_start.emit("Merging 32-bit MW3 files")
+                                self._s.progress.emit(12, "Merging MW3 files...")
+                                self._s.pulse_start.emit("Merging MW3 files")
                                 try:
                                     merge_iw5_depots(
                                         staging, _iw5_dir,
                                         on_progress=lambda m: self._s.log.emit(f"  {m}"),
                                     )
-                                    self._s.log.emit("✓  MW3 downgraded to 32-bit")
+                                    if _needs_base:
+                                        self._s.log.emit("✓  MW3 downgraded to 32-bit")
+                                    if _dlc_needed:
+                                        self._s.log.emit(f"✓  MW3 DLC installed: {', '.join(IW5_DLC[k]['name'] for k in _dlc_needed)}")
                                 finally:
                                     self._s.pulse_stop.emit()
 
@@ -983,16 +1013,16 @@ class InstallScreen(QWidget):
                     elif self._iw5_method == "manual":
                         # ── Steam Console path ──────────────────────
                         self._s.log.emit(
-                            "MW3 64-bit detected. Plutonium requires the 32-bit version.\n"
+                            f"Downloading MW3 files: {_what_str}.\n"
                             "  DeckOps will open the Steam console. Paste each command\n"
                             "  when prompted and wait for \"Depot download complete\"\n"
                             "  before clicking continue."
                         )
-                        self._s.progress.emit(11, "MW3 downgrade required...")
+                        self._s.progress.emit(11, "MW3 depot download...")
                         open_steam_console()
 
-                        for i, cmd in enumerate(IW5_DEPOT_CMDS, 1):
-                            step = f"Depot {i} of {len(IW5_DEPOT_CMDS)}"
+                        for i, cmd in enumerate(_manual_cmds, 1):
+                            step = f"Depot {i} of {len(_manual_cmds)}"
                             self._s.log.emit(
                                 f"\n  Step {i}: Paste this into the Steam console:\n"
                                 f"  {cmd}\n"
@@ -1003,19 +1033,22 @@ class InstallScreen(QWidget):
                             self._iw5_dg_event.wait()
                             self._s.iw5_dg_go.emit()
 
-                        self._s.progress.emit(12, "Merging 32-bit MW3 files...")
+                        self._s.progress.emit(12, "Merging MW3 files...")
                         staging = find_depot_staging(self.steam_root)
                         if staging:
-                            self._s.pulse_start.emit("Merging 32-bit MW3 files")
+                            self._s.pulse_start.emit("Merging MW3 files")
                             try:
                                 merge_iw5_depots(
                                     staging, _iw5_dir,
                                     on_progress=lambda m: self._s.log.emit(f"  {m}"),
                                 )
-                                self._s.log.emit("✓  MW3 downgraded to 32-bit")
+                                if _needs_base:
+                                    self._s.log.emit("✓  MW3 downgraded to 32-bit")
+                                if _dlc_needed:
+                                    self._s.log.emit(f"✓  MW3 DLC installed: {', '.join(IW5_DLC[k]['name'] for k in _dlc_needed)}")
                             except Exception as ex:
                                 self._s.log.emit(
-                                    f"✗  MW3 downgrade merge failed: {ex}")
+                                    f"✗  MW3 merge failed: {ex}")
                             finally:
                                 self._s.pulse_stop.emit()
                         else:
@@ -1982,12 +2015,22 @@ class OwnInstallScreen(QWidget):
                 is_iw5_downgrade_needed, has_enough_space,
                 open_steam_console, find_depot_staging, merge_iw5_depots,
                 ensure_depotdownloader, run_depot_download_qr,
-                cleanup_depotdownloader,
-                IW5_DEPOT_CMDS, IW5_DEPOTS,
+                cleanup_depotdownloader, detect_dlc_status,
+                IW5_DEPOT_CMDS, IW5_DEPOTS, IW5_DLC, IW5_DLC_DEPOT_CMDS,
                 REQUIRED_FREE_SPACE_GB, DEPOTDOWNLOADER_DIR,
             )
             _iw5_dir = _iw5_steam_keys[0][2]["install_dir"]
-            if is_iw5_downgrade_needed(_iw5_dir):
+            _needs_base = is_iw5_downgrade_needed(_iw5_dir)
+            _dlc_status = detect_dlc_status(_iw5_dir)
+            _dlc_needed = sorted(k for k, v in _dlc_status.items() if v != "ok")
+
+            if _dlc_needed:
+                _dlc_names = ", ".join(IW5_DLC[k]["name"] for k in _dlc_needed)
+                self._s.log.emit(f"  MW3 DLC check: missing or incorrect: {_dlc_names}")
+            else:
+                self._s.log.emit("  MW3 DLC check: all collections present.")
+
+            if _needs_base or _dlc_needed:
                 if not has_enough_space(_iw5_dir):
                     self._s.log.emit(
                         f"✗  MW3 downgrade requires at least "
@@ -1999,9 +2042,26 @@ class OwnInstallScreen(QWidget):
                     self._s.iw5_dg_choose.emit()
                     self._iw5_dg_event.wait()
 
+                    # Build combined depot lists
+                    _qr_depots = list(IW5_DEPOTS) if _needs_base else []
+                    _manual_cmds = list(IW5_DEPOT_CMDS) if _needs_base else []
+                    for dk in _dlc_needed:
+                        dlc = IW5_DLC[dk]
+                        _qr_depots.append({"depot": dlc["depot"], "manifest": dlc["manifest"], "app": dlc["app"]})
+                    for dk in _dlc_needed:
+                        idx = int(dk) - 1
+                        _manual_cmds.append(IW5_DLC_DEPOT_CMDS[idx])
+
+                    _what = []
+                    if _needs_base:
+                        _what.append("32-bit base game")
+                    if _dlc_needed:
+                        _what.append(f"DLC ({', '.join(IW5_DLC[k]['name'] for k in _dlc_needed)})")
+                    _what_str = " + ".join(_what)
+
                     if self._iw5_method == "qr":
                         self._s.log.emit(
-                            "MW3 64-bit detected. Downloading 32-bit files via QR login.\n"
+                            f"Downloading MW3 files: {_what_str}.\n"
                             "  Scan the QR code with your Steam mobile app.\n"
                             "  The code will refresh if it expires.\n"
                             "  Your login credentials will be deleted after the download."
@@ -2016,9 +2076,9 @@ class OwnInstallScreen(QWidget):
                                 ".deckops_iw5_staging",
                             )
                             captured_user = None
-                            for i, depot in enumerate(IW5_DEPOTS):
+                            for i, depot in enumerate(_qr_depots):
                                 self._s.progress.emit(
-                                    11, f"Downloading depot {i+1} of {len(IW5_DEPOTS)}...")
+                                    11, f"Downloading depot {i+1} of {len(_qr_depots)}...")
                                 result = run_depot_download_qr(
                                     staging_dir=staging,
                                     depot_info=depot,
@@ -2029,21 +2089,24 @@ class OwnInstallScreen(QWidget):
                                     username=captured_user,
                                 )
                                 if result is None:
-                                    self._s.log.emit("✗  Depot download failed.")
+                                    self._s.log.emit(f"✗  Depot {depot['depot']} download failed.")
                                     break
                                 captured_user = result
 
                             self._s.iw5_qr_hide.emit()
 
                             if captured_user:
-                                self._s.progress.emit(12, "Merging 32-bit MW3 files...")
-                                self._s.pulse_start.emit("Merging 32-bit MW3 files")
+                                self._s.progress.emit(12, "Merging MW3 files...")
+                                self._s.pulse_start.emit("Merging MW3 files")
                                 try:
                                     merge_iw5_depots(
                                         staging, _iw5_dir,
                                         on_progress=lambda m: self._s.log.emit(f"  {m}"),
                                     )
-                                    self._s.log.emit("✓  MW3 downgraded to 32-bit")
+                                    if _needs_base:
+                                        self._s.log.emit("✓  MW3 downgraded to 32-bit")
+                                    if _dlc_needed:
+                                        self._s.log.emit(f"✓  MW3 DLC installed: {', '.join(IW5_DLC[k]['name'] for k in _dlc_needed)}")
                                 finally:
                                     self._s.pulse_stop.emit()
 
@@ -2058,16 +2121,16 @@ class OwnInstallScreen(QWidget):
 
                     elif self._iw5_method == "manual":
                         self._s.log.emit(
-                            "MW3 64-bit detected. Plutonium requires the 32-bit version.\n"
+                            f"Downloading MW3 files: {_what_str}.\n"
                             "  DeckOps will open the Steam console. Paste each command\n"
                             "  when prompted and wait for \"Depot download complete\"\n"
                             "  before clicking continue."
                         )
-                        self._s.progress.emit(11, "MW3 downgrade required...")
+                        self._s.progress.emit(11, "MW3 depot download...")
                         open_steam_console()
 
-                        for i, cmd in enumerate(IW5_DEPOT_CMDS, 1):
-                            step = f"Depot {i} of {len(IW5_DEPOT_CMDS)}"
+                        for i, cmd in enumerate(_manual_cmds, 1):
+                            step = f"Depot {i} of {len(_manual_cmds)}"
                             self._s.log.emit(
                                 f"\n  Step {i}: Paste this into the Steam console:\n"
                                 f"  {cmd}\n"
@@ -2078,19 +2141,22 @@ class OwnInstallScreen(QWidget):
                             self._iw5_dg_event.wait()
                             self._s.iw5_dg_go.emit()
 
-                        self._s.progress.emit(12, "Merging 32-bit MW3 files...")
+                        self._s.progress.emit(12, "Merging MW3 files...")
                         staging = find_depot_staging(self.steam_root)
                         if staging:
-                            self._s.pulse_start.emit("Merging 32-bit MW3 files")
+                            self._s.pulse_start.emit("Merging MW3 files")
                             try:
                                 merge_iw5_depots(
                                     staging, _iw5_dir,
                                     on_progress=lambda m: self._s.log.emit(f"  {m}"),
                                 )
-                                self._s.log.emit("✓  MW3 downgraded to 32-bit")
+                                if _needs_base:
+                                    self._s.log.emit("✓  MW3 downgraded to 32-bit")
+                                if _dlc_needed:
+                                    self._s.log.emit(f"✓  MW3 DLC installed: {', '.join(IW5_DLC[k]['name'] for k in _dlc_needed)}")
                             except Exception as ex:
                                 self._s.log.emit(
-                                    f"✗  MW3 downgrade merge failed: {ex}")
+                                    f"✗  MW3 merge failed: {ex}")
                             finally:
                                 self._s.pulse_stop.emit()
                         else:
