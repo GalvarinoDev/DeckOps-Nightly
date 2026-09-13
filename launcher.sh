@@ -252,7 +252,7 @@ case "$choice" in
         VENV_PYTHON="$INSTALL_DIR/.venv/bin/python3"
         ENTRY_POINT="$INSTALL_DIR/src/main.py"
         if [ -f "$VENV_PYTHON" ] && [ -f "$ENTRY_POINT" ]; then
-            nohup "$VENV_PYTHON" "$ENTRY_POINT" > /dev/null 2>&1 &
+            setsid nohup "$VENV_PYTHON" "$ENTRY_POINT" > /dev/null 2>&1 &
             disown
             exit 0
         else
