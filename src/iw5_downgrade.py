@@ -210,41 +210,22 @@ def find_depot_staging(steam_root: str) -> str | None:
 # ── Steam console helpers (manual path) ──────────────────────────────────────
 
 def open_steam_console():
-    """Fire-and-forget: open the Steam client console tab."""
-    try:
-        subprocess.Popen(
-            ["steam", "steam://open/console"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        _log.info("Opened Steam console")
-    except FileNotFoundError:
-        _log.warning("steam command not found")
-    except Exception as ex:
-        _log.warning("Failed to open Steam console: %s", ex)
+    """Fire-and-forget: open the Steam client console tab (detached)."""
+    from wrapper import launch_steam
+    launch_steam("steam://open/console")
 
 
 def open_steam_install(appid: int):
     """
-    Fire-and-forget: ask Steam to install/acquire a free appid.
+    Fire-and-forget: ask Steam to install/acquire a free appid (detached).
 
     Used for MW3 Dedicated Server (42750), which is free and shares
     depot files with MW3. Offered as a recovery option when the
     QR/manual downgrade keeps failing, since re-acquiring/updating DS
     through Steam can resolve depot access issues.
     """
-    try:
-        subprocess.Popen(
-            ["steam", f"steam://install/{appid}"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        _log.info("Requested Steam install for appid %s", appid)
-    except FileNotFoundError:
-        _log.warning("steam command not found")
-    except Exception as ex:
-        _log.warning("Failed to request Steam install for appid %s: %s",
-                     appid, ex)
+    from wrapper import launch_steam
+    launch_steam(f"steam://install/{appid}")
 
 
 def copy_to_clipboard(text: str):

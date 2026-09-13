@@ -581,6 +581,35 @@ def kill_steam(on_progress=None):
     )
 
 
+def launch_steam(uri=None):
+    """
+    Open a steam:// URI (or just Steam itself) fully detached from DeckOps.
+
+    Uses xdg-open for URI dispatch and gtk-launch as a fallback for plain
+    launch.  start_new_session=True ensures the Steam process is not a
+    child of DeckOps, so it survives if DeckOps exits.
+
+    uri — a steam:// protocol URI, e.g. "steam://open/console".
+          If None, just opens Steam via its .desktop file.
+    """
+    try:
+        if uri:
+            cmd = ["xdg-open", uri]
+        else:
+            cmd = ["gtk-launch", "steam.desktop"]
+        subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        _log.info("Launched Steam%s (detached)", f" with {uri}" if uri else "")
+    except FileNotFoundError:
+        _log.warning("Could not find %s", cmd[0])
+    except Exception as ex:
+        _log.warning("Failed to launch Steam: %s", ex)
+
+
 def set_steam_input_enabled(steam_root, appids=None):
     """
     Enable Steam Input for the given appids by setting
