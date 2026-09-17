@@ -15,6 +15,7 @@ The config file tracks:
 import os
 import json
 import re
+import tempfile
 import threading
 from datetime import datetime
 
@@ -99,10 +100,17 @@ def save(config: dict):
     global _cache, _cache_mtime
 
     with _lock:
-        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-        with open(CONFIG_PATH, "w") as f:
-            json.dump(config, f, indent=2)
-        # Invalidate cache so the next load() picks up the fresh write
+        config_dir = os.path.dirname(CONFIG_PATH)
+        os.makedirs(config_dir, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(dir=config_dir, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(config, f, indent=2)
+            os.replace(tmp_path, CONFIG_PATH)
+        except BaseException:
+            try: os.unlink(tmp_path)
+            except OSError: pass
+            raise
         _cache = None
         _cache_mtime = 0.0
 
