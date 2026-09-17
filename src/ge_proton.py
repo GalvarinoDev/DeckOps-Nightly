@@ -193,31 +193,26 @@ def install_ge_proton(on_progress=None):
         if on_progress:
             on_progress(pct, msg)
 
-    # Check if a local GE-Proton install already exists before hitting GitHub.
-    # This handles both previous DeckOps installs and external tools like ProtonUp-Qt.
     local_version = _get_local_version()
-    if local_version:
-        prog(5, f"Found local GE-Proton: {local_version}. Checking for updates...")
-    else:
-        prog(0, "Checking latest GE-Proton release...")
+    prog(0, "Checking for GE-Proton updates...")
 
     version, tarball_url, checksum_url = _get_latest_release()
-    prog(5, f"Latest: {version}")
 
     if local_version == version:
-        prog(100, f"GE-Proton {version} already installed — skipping download.")
+        prog(100, f"GE-Proton {version} is up to date.")
         return version
 
     if _is_installed(version):
-        prog(100, f"GE-Proton {version} already installed.")
+        prog(100, f"GE-Proton {version} is up to date.")
         return version
 
+    prog(5, f"New version available: {version}")
     os.makedirs(COMPAT_DIR, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="deckops_ge_") as tmp:
         tarball_path = os.path.join(tmp, f"{version}.tar.gz")
 
-        prog(10, f"Downloading GE-Proton {version}...")
+        prog(10, f"Downloading {version}...")
         _download(tarball_url, tarball_path, on_progress=on_progress)
 
         if checksum_url:
