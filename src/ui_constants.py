@@ -532,6 +532,9 @@ class _Sigs(QObject):
     iw5_qr_show   = pyqtSignal(str)        # QR path: display/refresh QR text
     iw5_qr_hide   = pyqtSignal()           # QR path: dismiss QR display
     iw5_dg_choose = pyqtSignal()           # show method chooser dialog
+    # Zombies Declassified opt-in prompt
+    zd_ask        = pyqtSignal()           # show install/skip buttons
+    zd_go         = pyqtSignal()           # dismiss buttons
 
 
 # ── App stylesheet ────────────────────────────────────────────────────────────
