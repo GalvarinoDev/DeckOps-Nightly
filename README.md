@@ -122,6 +122,8 @@ DeckOps is an installer. This project would not exist without years of foundatio
 
 **[Plutonium](https://plutonium.pw)** - MW3, WaW, BO1, and BO2 client. 💰 [Donate](https://forum.plutonium.pw/donate)
 
+**[Zombies Declassified](https://github.com/Logo-2K/zombies-declassified)** - DLC5 map pack for BO2 Zombies (10 classic maps) by [Logo2K](https://github.com/Logo-2K). Files packaged and hosted by **[Littlegods](https://github.com/andr3xcl/littlegods-dlc-installer)**.
+
 Official Test Team: LeFinnaBust & Special Agent Dale Cooper
 
 ---
