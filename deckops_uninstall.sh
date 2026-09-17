@@ -337,9 +337,12 @@ if [ -n "$STEAM_ROOT" ]; then
         # Ask before removing DLC (~3 GB of free maps)
         _remove_mw2_dlc=false
         if [ -d "$mw2_dir/iw4x" ] && ls "$mw2_dir/iw4x/"*.iwd >/dev/null 2>&1; then
-            echo ""
-            read -rp "  Remove free MW2 DLC maps (~3 GB)? [y/N] " _dlc_ans
-            [[ "$_dlc_ans" =~ ^[Yy] ]] && _remove_mw2_dlc=true
+            zenity --question \
+                --title="$APP_TITLE Uninstaller" \
+                --text="Remove free MW2 DLC maps (~3 GB)?\n\nThese can be re-downloaded if you reinstall later." \
+                --ok-label="Remove" \
+                --cancel-label="Keep" 2>/dev/null
+            [ $? -eq 0 ] && _remove_mw2_dlc=true
         fi
         if $_remove_mw2_dlc; then
             for d in "iw4x" "iw4x-updoot"; do
