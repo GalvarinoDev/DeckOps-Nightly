@@ -1947,7 +1947,8 @@ class UpdateScreen(QWidget):
         go_to(self.stack, "ManagementScreen")
 
     def _run(self):
-        from wrapper import get_proton_path, find_compatdata, kill_steam
+        from wrapper import get_proton_path, find_compatdata, kill_steam, set_compat_tool
+        from ge_proton import install_ge_proton, MANAGED_APPIDS
         from iw4x import install_iw4x
         from cod4x import install_cod4x
         from cod4r import install_cod4r
@@ -2076,6 +2077,18 @@ class UpdateScreen(QWidget):
                     shutil.rmtree(SHARED_PLUT_DIR, ignore_errors=True)
                     self._s.log.emit("  Cleared shared Plutonium cache for rebuild")
 
+        # ── GE-Proton download (Steam may still be running) ─────────
+        ge_version = None
+        try:
+            self._s.log.emit("Checking GE-Proton...")
+            ge_version = install_ge_proton(
+                on_progress=lambda pct, msg: self._s.progress.emit(2 + int(pct * 0.03), msg)
+            )
+            cfg.set_ge_proton_version(ge_version)
+            self._s.log.emit(f"✓  {ge_version} ready")
+        except Exception as ex:
+            self._s.log.emit(f"  GE-Proton update skipped: {ex}")
+
         if not has_plut:
             self._s.progress.emit(5, "Closing Steam...")
             self._s.log.emit("Closing Steam...")
@@ -2091,7 +2104,6 @@ class UpdateScreen(QWidget):
         # DeckOps versions) interfering with the update.
         try:
             from wrapper import clear_launch_options, clear_compat_tool
-            from ge_proton import MANAGED_APPIDS
             for appid in MANAGED_APPIDS:
                 clear_launch_options(self.steam_root, appid)
             clear_compat_tool(MANAGED_APPIDS)
@@ -2193,6 +2205,21 @@ class UpdateScreen(QWidget):
                                     lan_wrapper_path=entry.get("lan_wrapper_path"))
             except Exception as ex:
                 self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # ── Re-apply GE-Proton compat + Steam Input ──────────────────
+        if ge_version:
+            try:
+                set_compat_tool(MANAGED_APPIDS, ge_version)
+                self._s.log.emit(f"✓  {ge_version} set for Steam game appids")
+            except Exception as ex:
+                self._s.log.emit(f"  CompatToolMapping skipped: {ex}")
+
+        try:
+            from wrapper import set_steam_input_enabled
+            set_steam_input_enabled(self.steam_root)
+            self._s.log.emit("✓  Steam Input enabled for all games")
+        except Exception as ex:
+            self._s.log.emit(f"  Steam Input setup skipped: {ex}")
 
         # Auto-update Zombies Declassified if installed and T6ZM was updated
         if cfg.is_zd_installed() and any(k == "t6zm" for k, _, _ in self.selected):
