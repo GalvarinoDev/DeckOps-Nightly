@@ -11,7 +11,7 @@ import os, subprocess, sys, shutil, stat, threading, json, urllib.request, urlli
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
     QLabel, QPushButton, QCheckBox, QProgressBar, QPlainTextEdit,
-    QFrame, QSizePolicy, QMessageBox, QLineEdit, QSlider,
+    QFrame, QSizePolicy, QMessageBox, QLineEdit, QSlider, QDialog,
 )
 from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt5.QtGui import QPixmap
@@ -121,7 +121,7 @@ class ManagementCard(QFrame):
             )
             bb.addStretch(); bb.addWidget(setup_btn); bb.addStretch()
         elif is_setup:
-            cfg_btn = _btn("Configure", C_DARK_BTN, size=9, h=26)
+            cfg_btn = _btn("Options", C_DARK_BTN, size=11, h=30)
             cfg_btn.clicked.connect(lambda: on_configure(gd, ik))
             cfg_btn.setStyleSheet(
                 f"QPushButton{{background:rgba(51,51,63,200);color:#CCC;border:none;"
@@ -1260,6 +1260,10 @@ class ConfigureScreen(QWidget):
         log_btn.setFixedWidth(120)
         log_btn.clicked.connect(lambda: _copy_log_to_clipboard(self.status))
         udr.addWidget(log_btn)
+        view_log_btn = _btn("View Log", C_DARK_BTN, size=12, h=40)
+        view_log_btn.setFixedWidth(120)
+        view_log_btn.clicked.connect(self._view_log)
+        udr.addWidget(view_log_btn)
         uninstall_btn = _btn("Full Uninstall", C_RED_BTN, size=12, h=40)
         reset_cfg_btn = _btn("Reset DeckOps Config", C_RED_BTN, size=12, h=40)
         uninstall_btn.clicked.connect(self._confirm_uninstall)
@@ -1470,6 +1474,35 @@ class ConfigureScreen(QWidget):
             except Exception as ex:
                 s.log.emit(f"✗  Failed: {ex}")
         threading.Thread(target=_run, daemon=True).start()
+
+    def _view_log(self):
+        from ui_constants import LOG_PATH
+        lines = []
+        try:
+            with open(LOG_PATH, "r", errors="replace") as f:
+                lines = f.readlines()
+        except FileNotFoundError:
+            pass
+        tail = "".join(lines[-500:]) if lines else "(No log file found)"
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Install Log")
+        dlg.resize(700, 480)
+        vl = QVBoxLayout(dlg); vl.setContentsMargins(12,12,12,12); vl.setSpacing(8)
+        txt = QPlainTextEdit(); txt.setReadOnly(True); txt.setFont(font(10))
+        txt.setStyleSheet("QPlainTextEdit{color:#AAB;background:#1A1A24;border:1px solid #333;border-radius:4px;padding:6px;}")
+        txt.setPlainText(tail)
+        vl.addWidget(txt, stretch=1)
+        br = QHBoxLayout()
+        copy_btn = _btn("Copy to Clipboard", C_DARK_BTN, size=11, h=36)
+        copy_btn.clicked.connect(lambda: (
+            QApplication.clipboard().setText(tail),
+            self.status.setText("Log copied to clipboard."),
+        ))
+        br.addStretch(); br.addWidget(copy_btn); br.addStretch()
+        vl.addLayout(br)
+        txt.verticalScrollBar().setValue(txt.verticalScrollBar().maximum())
+        dlg.exec_()
 
     def _open_url(self, url):
         _detached_open(["xdg-open", url])

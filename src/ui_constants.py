@@ -515,6 +515,8 @@ class _Sigs(QObject):
     cod4r_go    = pyqtSignal()
     pulse_start = pyqtSignal(str)
     pulse_stop  = pyqtSignal()
+    # Download retry dialog: (label, error_msg)
+    retry_dl    = pyqtSignal(str, str)
     # Manual download fallback: (url, dest_folder, filename, label)
     manual_dl   = pyqtSignal(str, str, str, str)
     # IW5 (MW3) 32-bit depot downgrade
