@@ -5,8 +5,8 @@ Slim shell: BootstrapScreen, DeckOpsWindow, and run().
 All screen classes are imported from split modules:
     ui_constants  — shared constants, helpers, navigation
     ui_setup      — first-run setup flow (OS → Device → Gyro → ...)
-    ui_install    — install pipeline (Welcome, Setup, Install, OwnInstall, OwnScan)
-    ui_manage     — post-install (Management, Configure, ControllerInfo, Update)
+    ui_install    — install pipeline (Welcome, Setup, Install, OwnScan)
+    ui_manage     — post-install (Management, Configure, SetupComplete, Update)
 """
 
 import sys, os, threading
