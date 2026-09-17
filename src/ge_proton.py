@@ -25,6 +25,7 @@ import tempfile
 import urllib.request
 
 from log import get_logger
+from net import BROWSER_UA as _BROWSER_UA
 
 _log = get_logger(__name__)
 
@@ -55,11 +56,6 @@ MANAGED_APPIDS = [
     "209650",  # AW SP
     "209660",  # AW MP
 ]
-
-_BROWSER_UA = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-}
 
 
 # ── GitHub API ────────────────────────────────────────────────────────────────

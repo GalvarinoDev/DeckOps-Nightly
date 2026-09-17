@@ -27,6 +27,7 @@ import urllib.request
 
 from identity import INSTALL_DIR, VENV_PYTHON, asset_url
 from log import get_logger
+from net import BROWSER_UA as _BROWSER_UA
 
 _log = get_logger(__name__)
 
@@ -49,12 +50,6 @@ PROJECT_ROOT   = os.path.dirname(_HERE)
 ASSETS_DIR     = os.path.join(PROJECT_ROOT, "assets", "controllers")
 
 
-_BROWSER_UA = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-}
 
 
 # ── Shortcut definitions ──────────────────────────────────────────────────────

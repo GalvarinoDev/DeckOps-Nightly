@@ -30,7 +30,7 @@ import subprocess
 import urllib.request
 
 from log import get_logger
-from net import DownloadError
+from net import BROWSER_UA, DownloadError
 
 _log = get_logger(__name__)
 
@@ -217,15 +217,11 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
     bootstrapper = os.path.join(plut_dir, "plutonium.exe")
 
     prog(5, "Downloading Plutonium bootstrapper...")
-    _headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-    }
     import time
     _primary_failed = False
     for attempt in range(3):
         try:
-            req = urllib.request.Request(PLUT_BOOTSTRAPPER_URL, headers=_headers)
+            req = urllib.request.Request(PLUT_BOOTSTRAPPER_URL, headers=BROWSER_UA)
             with urllib.request.urlopen(req, timeout=60) as r, open(bootstrapper, "wb") as f:
                 f.write(r.read())
             break
@@ -239,7 +235,7 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
     if _primary_failed:
         prog(5, "Falling back to archive.org mirror...")
         try:
-            req = urllib.request.Request(_PLUT_ARCHIVE_FALLBACK_URL, headers=_headers)
+            req = urllib.request.Request(_PLUT_ARCHIVE_FALLBACK_URL, headers=BROWSER_UA)
             with urllib.request.urlopen(req, timeout=60) as r, open(bootstrapper, "wb") as f:
                 f.write(r.read())
             _log.info("Plutonium bootstrapper downloaded from archive.org fallback")

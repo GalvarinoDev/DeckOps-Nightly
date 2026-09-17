@@ -15,6 +15,8 @@ will be played automatically. Users can drop any MP3 file there themselves.
 import os
 import urllib.request
 
+from net import BROWSER_UA
+
 # ── paths ─────────────────────────────────────────────────────────────────────
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -74,14 +76,10 @@ def _download(url: str, dest: str, label: str, on_progress) -> bool:
         on_progress(f"  checkmark  {label} (cached)")
         return True
     on_progress(f"  down  {label}...")
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "*/*",
-    }
     import time
     for attempt in range(3):
         try:
-            req = urllib.request.Request(url, headers=headers)
+            req = urllib.request.Request(url, headers=BROWSER_UA)
             with urllib.request.urlopen(req, timeout=30) as r:
                 with open(dest, "wb") as f:
                     f.write(r.read())
