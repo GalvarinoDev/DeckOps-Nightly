@@ -598,7 +598,7 @@ class _BaseInstallScreen(QWidget):
         qr_btn = msg.addButton("QR Code Scan (recommended)", QMessageBox.AcceptRole)
         manual_btn = msg.addButton("Steam Console (manual)", QMessageBox.AcceptRole)
         ds_btn = msg.addButton(
-            "Add MW3 DS to Steam", QMessageBox.ActionRole)
+            "Add MW3 DS to Steam", QMessageBox.AcceptRole)
         msg.addButton("Cancel", QMessageBox.RejectRole)
         msg.exec_()
         clicked = msg.clickedButton()
@@ -963,15 +963,20 @@ class _BaseInstallScreen(QWidget):
                 REQUIRED_FREE_SPACE_GB, DEPOTDOWNLOADER_DIR,
             )
             _iw5_dir = _iw5_steam_keys[0][2]["install_dir"]
+            _is_ds = _iw5_steam_keys[0][0] == "iw5mp_ds"
             _needs_base = is_iw5_downgrade_needed(_iw5_dir)
             _dlc_status = detect_dlc_status(_iw5_dir)
-            _dlc_needed = sorted(k for k, v in _dlc_status.items() if v != "ok")
+            # Only flag DLC that IS installed but wrong-size (64-bit).
+            # "missing" means the user doesn't own it -- don't download.
+            _dlc_needed = sorted(k for k, v in _dlc_status.items() if v == "wrong")
 
             if _dlc_needed:
                 _dlc_names = ", ".join(IW5_DLC[k]["name"] for k in _dlc_needed)
-                self._s.log.emit(f"  MW3 DLC check: missing or incorrect: {_dlc_names}")
+                self._s.log.emit(f"  MW3 DLC needs 32-bit update: {_dlc_names}")
             else:
-                self._s.log.emit("  MW3 DLC check: all collections present.")
+                _dlc_ok = [k for k, v in _dlc_status.items() if v == "ok"]
+                if _dlc_ok:
+                    self._s.log.emit("  MW3 DLC: all installed collections are 32-bit.")
 
             if _needs_base or _dlc_needed:
                 if not has_enough_space(_iw5_dir):
@@ -985,8 +990,17 @@ class _BaseInstallScreen(QWidget):
                     self._s.iw5_dg_choose.emit()
                     self._iw5_dg_event.wait()
 
-                    _qr_depots = list(IW5_DEPOTS) if _needs_base else []
-                    _manual_cmds = list(IW5_DEPOT_CMDS) if _needs_base else []
+                    if _needs_base:
+                        if _is_ds:
+                            # DS only needs MP depot (42683), skip SP depot (42682)
+                            _qr_depots = [d for d in IW5_DEPOTS if d["depot"] != 42682]
+                            _manual_cmds = [c for c in IW5_DEPOT_CMDS if " 42682 " not in c]
+                        else:
+                            _qr_depots = list(IW5_DEPOTS)
+                            _manual_cmds = list(IW5_DEPOT_CMDS)
+                    else:
+                        _qr_depots = []
+                        _manual_cmds = []
                     for dk in _dlc_needed:
                         dlc = IW5_DLC[dk]
                         _qr_depots.append({"depot": dlc["depot"], "manifest": dlc["manifest"], "app": dlc["app"]})
@@ -1106,6 +1120,8 @@ class _BaseInstallScreen(QWidget):
                                 "✗  Could not find depot staging directory.\n"
                                 "  The depot download may not have completed."
                             )
+            else:
+                self._s.log.emit("  MW3 is already 32-bit, downgrade skipped.")
 
         # --- Plutonium bootstrapper (Steam still running)
         # Downloads Plutonium and launches it so the user can log in. LCD
