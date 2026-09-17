@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
     QLabel, QPushButton, QCheckBox, QProgressBar, QPlainTextEdit,
     QFrame, QSizePolicy, QMessageBox, QLineEdit, QSlider,
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QGraphicsOpacityEffect
 
@@ -510,6 +510,17 @@ class ManagementScreen(QWidget):
                     has_iw5_dg = True
                     break
 
+        # Zombies Declassified: available when t6zm is installed via Plutonium
+        # and user has all BO2 Zombies DLC
+        has_zd = False
+        if ("t6zm" in installed_keys
+                and KEY_CLIENT.get("t6zm") == "plutonium"
+                and cfg.is_game_setup("t6zm")):
+            _bo2 = self.installed.get("t6zm", {}).get("install_dir", "")
+            if _bo2:
+                from zombies_declassified import has_bo2_zm_dlc
+                has_zd = has_bo2_zm_dlc(_bo2)
+
         msg = QMessageBox(self)
         msg.setWindowTitle(gd["base"])
         msg.setText("What would you like to do?")
@@ -517,6 +528,9 @@ class ManagementScreen(QWidget):
         mods_btn = None
         if has_mods_support:
             mods_btn = msg.addButton("Mods", QMessageBox.AcceptRole)
+        zd_btn = None
+        if has_zd:
+            zd_btn = msg.addButton("Zombies Declassified", QMessageBox.AcceptRole)
         upd_btn = None
         if has_mod_client:
             upd_btn = msg.addButton("Update", QMessageBox.AcceptRole)
@@ -530,6 +544,8 @@ class ManagementScreen(QWidget):
         clicked = msg.clickedButton()
         if clicked == mods_btn:
             self._mods(gd, installed_keys)
+        elif clicked == zd_btn:
+            self._zombies_declassified(gd, installed_keys)
         elif clicked == upd_btn:
             self._update(gd, installed_keys)
         elif clicked == dg_btn:
@@ -550,6 +566,123 @@ class ManagementScreen(QWidget):
         s.selected   = selected
         s.steam_root = root
         go_to(self.stack, "UpdateScreen")
+
+    def _zombies_declassified(self, gd, installed_keys):
+        """Install, update, or uninstall Zombies Declassified DLC5 for BO2 ZM."""
+
+        # Resolve Plutonium storage/t6 path
+        plut_storage_t6 = None
+        if cfg.is_lcd():
+            from plutonium_lcd import get_shared_plut_dir
+            plut_dir = get_shared_plut_dir()
+            if plut_dir:
+                plut_storage_t6 = os.path.join(plut_dir, "storage", "t6")
+        else:
+            game = self.installed.get("t6zm", {})
+            install_dir = game.get("install_dir", "")
+            if install_dir:
+                meta_path = os.path.join(install_dir, "deckops_plutonium.json")
+                if os.path.exists(meta_path):
+                    try:
+                        with open(meta_path) as f:
+                            meta = json.load(f)
+                        pd = meta.get("plut_dir", "")
+                        if pd:
+                            plut_storage_t6 = os.path.join(pd, "storage", "t6")
+                    except Exception:
+                        pass
+            if not plut_storage_t6:
+                from plutonium_oled import get_dedicated_plut_dir
+                plut_storage_t6 = os.path.join(get_dedicated_plut_dir(), "storage", "t6")
+
+        if not plut_storage_t6 or not os.path.isdir(plut_storage_t6):
+            self._status.setText("Could not find Plutonium storage/t6 directory.")
+            return
+
+        from zombies_declassified import is_zd_installed as _zd_present
+
+        is_installed = _zd_present(plut_storage_t6)
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Zombies Declassified")
+        if is_installed:
+            info = cfg.get_zd_info()
+            tag = info.get("release_tag", "unknown")
+            msg.setText(f"Zombies Declassified {tag} is installed.\nWhat would you like to do?")
+            upd_btn = msg.addButton("Check for Updates", QMessageBox.AcceptRole)
+            rm_btn  = msg.addButton("Uninstall", QMessageBox.DestructiveRole)
+        else:
+            msg.setText(
+                "Zombies Declassified adds 10 classic Zombies maps to BO2.\n"
+                "Download size: ~9 GB\n\n"
+                "Install now?"
+            )
+            upd_btn = msg.addButton("Install", QMessageBox.AcceptRole)
+            rm_btn  = None
+        msg.addButton("Cancel", QMessageBox.RejectRole)
+        msg.exec_()
+
+        clicked = msg.clickedButton()
+        if clicked == upd_btn:
+            action = "update" if is_installed else "install"
+        elif clicked == rm_btn:
+            action = "uninstall"
+        else:
+            return
+
+        # Run on background thread with a simple progress dialog
+        from PyQt5.QtWidgets import QProgressDialog
+        pd = QProgressDialog("Starting...", None, 0, 100, self)
+        pd.setWindowTitle("Zombies Declassified")
+        pd.setMinimumDuration(0); pd.setAutoClose(False); pd.setAutoReset(False)
+        pd.setCancelButton(None); pd.show()
+
+        _st6 = plut_storage_t6
+
+        class _ZDSigs(QObject):
+            progress = pyqtSignal(int, str)
+            done     = pyqtSignal(str)
+        sigs = _ZDSigs()
+        sigs.progress.connect(lambda p, m: (pd.setValue(p), pd.setLabelText(m)))
+
+        def _on_done(result_msg):
+            pd.setValue(100); pd.setLabelText(result_msg)
+            pd.setCancelButtonText("OK")
+            pd.canceled.connect(pd.close)
+            if action == "install":
+                from zombies_declassified import get_zd_info as _get_info
+                info = _get_info(_st6)
+                if info.get("manifest_hash"):
+                    cfg.mark_zd_installed(info["manifest_hash"])
+            elif action == "uninstall":
+                cfg.unmark_zd_installed()
+        sigs.done.connect(_on_done)
+
+        def _worker():
+            try:
+                from zombies_declassified import install_zd, update_zd, uninstall_zd
+                if action == "install":
+                    errors = install_zd(_st6, lambda p, m: sigs.progress.emit(p, m))
+                    if errors:
+                        sigs.done.emit(f"Installed with {len(errors)} error(s). Check log.")
+                    else:
+                        sigs.done.emit("Zombies Declassified installed!")
+                elif action == "update":
+                    updated = update_zd(_st6, lambda p, m: sigs.progress.emit(p, m))
+                    if updated:
+                        from zombies_declassified import get_zd_info as _get_info
+                        info = _get_info(_st6)
+                        if info.get("manifest_hash"):
+                            cfg.mark_zd_installed(info["manifest_hash"])
+                        sigs.done.emit("Updated!")
+                    else:
+                        sigs.done.emit("Already up to date.")
+                elif action == "uninstall":
+                    uninstall_zd(_st6, lambda p, m: sigs.progress.emit(p, m))
+                    sigs.done.emit("Zombies Declassified removed.")
+            except Exception as ex:
+                sigs.done.emit(f"Error: {ex}")
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _reinstall(self, gd):
         """Unmark game keys as set up, then route through the install flow."""
@@ -2053,6 +2186,36 @@ class UpdateScreen(QWidget):
                                     lan_wrapper_path=entry.get("lan_wrapper_path"))
             except Exception as ex:
                 self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # Auto-update Zombies Declassified if installed and T6ZM was updated
+        if cfg.is_zd_installed() and any(k == "t6zm" for k, _, _ in self.selected):
+            try:
+                self._s.log.emit("Checking Zombies Declassified for updates...")
+
+                _zd_storage = None
+                if cfg.is_lcd():
+                    from plutonium_lcd import get_shared_plut_dir as _gsp
+                    _pd = _gsp()
+                    if _pd:
+                        _zd_storage = os.path.join(_pd, "storage", "t6")
+                else:
+                    from plutonium_oled import get_dedicated_plut_dir as _gdp
+                    _zd_storage = os.path.join(_gdp(), "storage", "t6")
+
+                if _zd_storage:
+                    from zombies_declassified import update_zd
+                    updated = update_zd(_zd_storage,
+                                        lambda p, m: self._s.log.emit(f"  ZD: {m}"))
+                    if updated:
+                        from zombies_declassified import get_zd_info as _zdi
+                        info = _zdi(_zd_storage)
+                        if info.get("manifest_hash"):
+                            cfg.mark_zd_installed(info["manifest_hash"])
+                        self._s.log.emit("✓  Zombies Declassified updated")
+                    else:
+                        self._s.log.emit("✓  Zombies Declassified is up to date")
+            except Exception as ex:
+                self._s.log.emit(f"⚠  Zombies Declassified update skipped: {ex}")
 
         self._s.progress.emit(100, "All done!")
         self._s.done.emit(True)

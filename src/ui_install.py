@@ -413,6 +413,8 @@ class _BaseInstallScreen(QWidget):
         self._iw5_method = ""
         self._manual_dl_event = threading.Event()
         self._manual_dl_ok = False
+        self._zd_event = threading.Event()
+        self._zd_accept = False
         self._return_to_management = False
         self.bo3_client = "cleanops"
 
@@ -503,6 +505,26 @@ class _BaseInstallScreen(QWidget):
         dw = QHBoxLayout(); dw.addStretch(); dw.addWidget(self.iw5_dg_btn); dw.addStretch()
         clay.addLayout(dw)
 
+        self.zd_info = _lbl(
+            "Zombies Declassified adds 10 classic Zombies maps to BO2 via Plutonium.\n"
+            "This is an optional download (~9 GB). You can install it later from Manage.",
+            12, "#CCC", align=Qt.AlignCenter,
+        )
+        self.zd_info.setStyleSheet(
+            f"color:#CCC;background:#1A1A2A;border:1px solid {C_DIM};"
+            "border-radius:8px;padding:10px 16px;"
+        )
+        self.zd_info.setVisible(False)
+        clay.addWidget(self.zd_info)
+        self.zd_yes = _btn("Install Zombies Declassified (~9 GB)", C_IW, size=13, h=52)
+        self.zd_yes.setFixedWidth(460); self.zd_yes.setVisible(False)
+        self.zd_yes.clicked.connect(lambda: self._confirm_zd(True))
+        self.zd_skip = _btn("Skip", C_DARK_BTN, size=13, h=42)
+        self.zd_skip.setFixedWidth(200); self.zd_skip.setVisible(False)
+        self.zd_skip.clicked.connect(lambda: self._confirm_zd(False))
+        zw = QHBoxLayout(); zw.addStretch(); zw.addWidget(self.zd_yes); zw.addSpacing(12); zw.addWidget(self.zd_skip); zw.addStretch()
+        clay.addLayout(zw)
+
         self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
         self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
         self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
@@ -527,6 +549,8 @@ class _BaseInstallScreen(QWidget):
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
         self._s.manual_dl.connect(self._show_manual_dl_dialog)
+        self._s.zd_ask.connect(self._show_zd_ask)
+        self._s.zd_go.connect(self._hide_zd_ask)
 
         self._pulse_timer = QTimer()
         self._pulse_timer.timeout.connect(self._do_pulse)
@@ -572,6 +596,20 @@ class _BaseInstallScreen(QWidget):
 
     def _confirm_iw5_dg(self):
         self._iw5_dg_event.set()
+
+    def _show_zd_ask(self):
+        self.zd_info.setVisible(True)
+        self.zd_yes.setVisible(True)
+        self.zd_skip.setVisible(True)
+
+    def _hide_zd_ask(self):
+        self.zd_info.setVisible(False)
+        self.zd_yes.setVisible(False)
+        self.zd_skip.setVisible(False)
+
+    def _confirm_zd(self, accepted):
+        self._zd_accept = accepted
+        self._zd_event.set()
 
     def _show_iw5_qr(self, qr_text):
         from iw5_downgrade import qr_text_to_pixmap
@@ -1457,6 +1495,73 @@ class _BaseInstallScreen(QWidget):
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+
+        # --- Zombies Declassified (optional DLC5 for BO2 Zombies via Plutonium)
+        if has_plut and "t6zm" in selected_keys:
+            try:
+                # Check BO2 Zombies DLC prerequisite
+                _bo2_dir = None
+                for _k, _gd, _g in self.selected:
+                    if _k == "t6zm" and _g:
+                        _bo2_dir = _g.get("install_dir", "")
+                        break
+
+                from zombies_declassified import has_bo2_zm_dlc
+                if not _bo2_dir or not has_bo2_zm_dlc(_bo2_dir):
+                    self._s.log.emit("Zombies Declassified skipped (requires all BO2 Zombies DLC)")
+                else:
+                    # Resolve Plutonium storage/t6 path
+                    _zd_storage = None
+                    if cfg.is_lcd():
+                        from plutonium_lcd import get_shared_plut_dir as _gsp
+                        _pd = _gsp()
+                        if _pd:
+                            _zd_storage = os.path.join(_pd, "storage", "t6")
+                    else:
+                        _zd_game = {k: g for k, gd, g in self.selected}.get("t6zm")
+                        if _zd_game:
+                            _zm_dir = _zd_game.get("install_dir", "")
+                            _zm_meta = os.path.join(_zm_dir, "deckops_plutonium.json") if _zm_dir else ""
+                            if _zm_meta and os.path.exists(_zm_meta):
+                                import json as _jn
+                                with open(_zm_meta) as _f:
+                                    _pd = _jn.load(_f).get("plut_dir", "")
+                                if _pd:
+                                    _zd_storage = os.path.join(_pd, "storage", "t6")
+                        if not _zd_storage:
+                            from plutonium_oled import get_dedicated_plut_dir as _gdp
+                            _zd_storage = os.path.join(_gdp(), "storage", "t6")
+
+                    if _zd_storage and os.path.isdir(_zd_storage):
+                        # Ask user before downloading ~9 GB
+                        self._s.progress.emit(76, "Zombies Declassified available")
+                        self._s.log.emit("Zombies Declassified (DLC5) is available for BO2 Zombies.")
+                        self._zd_event.clear()
+                        self._zd_accept = False
+                        self._s.zd_ask.emit()
+                        self._zd_event.wait()
+                        self._s.zd_go.emit()
+
+                        if self._zd_accept:
+                            self._s.progress.emit(76, "Installing Zombies Declassified...")
+                            self._s.log.emit("Installing Zombies Declassified (DLC5 map pack)...")
+                            from zombies_declassified import install_zd
+                            def op_zd(pct, msg): self._s.progress.emit(76 + int(pct / 100 * 2), msg)
+                            errors = install_zd(_zd_storage, op_zd)
+                            from zombies_declassified import get_zd_info as _zd_info
+                            info = _zd_info(_zd_storage)
+                            if info.get("manifest_hash"):
+                                cfg.mark_zd_installed(info["manifest_hash"])
+                            if errors:
+                                self._s.log.emit(f"⚠  Zombies Declassified installed with {len(errors)} error(s)")
+                            else:
+                                self._s.log.emit("✓  Zombies Declassified installed")
+                        else:
+                            self._s.log.emit("Zombies Declassified skipped (can install later from Manage)")
+                    else:
+                        self._s.log.emit("⚠  Zombies Declassified skipped (paths not resolved)")
+            except Exception as ex:
+                self._s.log.emit(f"⚠  Zombies Declassified skipped: {ex}")
 
         # --- Mark vanilla games
         for key, gd, game in self.selected:

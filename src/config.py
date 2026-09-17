@@ -42,6 +42,7 @@ DEFAULTS = {
     "music_enabled": True,       # background music on/off
     "music_volume":  0.4,        # 0.0 to 1.0
     "player_name": None,         # in-game player name for configs and LCD Plutonium
+    "zd_installed": None,        # Zombies Declassified: { "manifest_hash": ..., "installed_at": ... } or None
 }
 
 
@@ -484,6 +485,30 @@ def get_cod4mp_profile_type(default: str = "other") -> str:
     if client == "cod4x":
         return "other"
     return default
+
+
+def mark_zd_installed(manifest_hash: str = ""):
+    """Record that Zombies Declassified has been installed."""
+    config = load()
+    config["zd_installed"] = {
+        "manifest_hash": manifest_hash,
+        "installed_at": datetime.now().isoformat(),
+    }
+    save(config)
+
+
+def is_zd_installed() -> bool:
+    return load().get("zd_installed") is not None
+
+
+def get_zd_info() -> dict:
+    return load().get("zd_installed") or {}
+
+
+def unmark_zd_installed():
+    config = load()
+    config["zd_installed"] = None
+    save(config)
 
 
 def complete_first_run(steam_root: str):
