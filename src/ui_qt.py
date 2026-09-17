@@ -26,7 +26,7 @@ from ui_constants import (
 )
 
 from ui_setup import SetupFlowScreen
-from ui_install import WelcomeScreen, SetupScreen, InstallScreen, OwnInstallScreen, OwnScanScreen
+from ui_install import WelcomeScreen, SetupScreen, InstallScreen, OwnScanScreen
 from ui_manage import ManagementScreen, ConfigureScreen, SetupCompleteScreen, UpdateScreen
 
 
@@ -96,7 +96,6 @@ class DeckOpsWindow(QMainWindow):
             WelcomeScreen,
             SetupScreen,
             InstallScreen,
-            OwnInstallScreen,
             OwnScanScreen,
             ManagementScreen,
             ConfigureScreen,

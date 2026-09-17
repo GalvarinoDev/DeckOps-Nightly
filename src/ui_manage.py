@@ -17,7 +17,7 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QGraphicsOpacityEffect
 
-from detect_games import find_steam_root, parse_library_folders, find_installed_games
+from detect_games import find_steam_root, parse_library_folders, find_installed_games, find_all_games
 import config as cfg
 
 from ui_constants import (
@@ -259,17 +259,11 @@ class ManagementScreen(QWidget):
 
     def showEvent(self, e):
         super().showEvent(e)
-        root = find_steam_root()
-        merged = find_installed_games(parse_library_folders(root))
-        # Merge own games so cards show regardless of install source
         if cfg.get_game_source() == "own":
-            from detect_games import find_own_installed
-            own = find_own_installed()
-            # Own games take priority only for keys not already in Steam
-            for k, v in own.items():
-                if k not in merged:
-                    merged[k] = v
-        self.installed = merged
+            self.installed = find_all_games()
+        else:
+            root = find_steam_root()
+            self.installed = find_installed_games(parse_library_folders(root))
         self._rebuild()
 
     def _rebuild(self):
@@ -376,13 +370,11 @@ class ManagementScreen(QWidget):
 
     # ── Update all games (batch) ──────────────────────────────────────────
     def _update_all_games(self):
-        root = find_steam_root()
-        all_installed = find_installed_games(parse_library_folders(root))
         if cfg.get_game_source() == "own":
-            from detect_games import find_own_installed
-            for k, v in find_own_installed().items():
-                if k not in all_installed:
-                    all_installed[k] = v
+            all_installed = find_all_games()
+        else:
+            root = find_steam_root()
+            all_installed = find_installed_games(parse_library_folders(root))
 
         # Build selected list: all set-up games with a mod client
         _gd_by_key = {}
@@ -462,8 +454,8 @@ class ManagementScreen(QWidget):
         # Build selected tuples for the install screen
         selected = [(k, gd, self.installed[k]) for k in present_keys]
 
+        s = get_screen(self.stack, "InstallScreen")
         if source == "own":
-            # Determine which are own vs Steam
             own_selected = {}
             steam_selected = []
             for k, g_gd, game in selected:
@@ -471,22 +463,14 @@ class ManagementScreen(QWidget):
                     own_selected[k] = game
                 else:
                     steam_selected.append((k, g_gd, game))
-
-            s = get_screen(self.stack, "OwnInstallScreen")
             s.own_selected = own_selected
             s.steam_selected = steam_selected
-            s.steam_root = root
-            s._return_to_management = True
-            s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
-            go_to(self.stack, "OwnInstallScreen")
         else:
-            # Standard Steam flow
-            s = get_screen(self.stack, "InstallScreen")
             s.selected = selected
-            s.steam_root = root
-            s._return_to_management = True
-            s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
-            go_to(self.stack, "InstallScreen")
+        s.steam_root = root
+        s._return_to_management = True
+        s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
+        go_to(self.stack, "InstallScreen")
 
     def _add_mw3_ds(self, gd):
         """Request Steam install the free MW3 Dedicated Server (42750).
@@ -1848,12 +1832,11 @@ class UpdateScreen(QWidget):
             _PLUT_KEYS = {"t4sp","t4mp","t5sp","t5mp","t6mp","t6zm","iw5mp","iw5mp_ds"}
             already = {k for k, _, _ in self.selected}
             # Re-detect installed games to find siblings
-            _all_installed = find_installed_games(parse_library_folders(self.steam_root))
             if cfg.get_game_source() == "own":
-                from detect_games import find_own_installed
-                for k, v in find_own_installed().items():
-                    if k not in _all_installed:
-                        _all_installed[k] = v
+                _all_installed = find_all_games(self.steam_root)
+            else:
+                _all_installed = find_installed_games(
+                    parse_library_folders(self.steam_root))
             # Find the right gd entry for each sibling key
             _gd_by_key = {}
             for gd_entry in ALL_GAMES:
@@ -1955,7 +1938,7 @@ class UpdateScreen(QWidget):
                 self._s.log.emit(f"  Could not close Steam: {ex}")
 
         # ── Clean slate: clear launch options and compat tools ─────────
-        # Same clean-slate approach as InstallScreen / OwnInstallScreen.
+        # Same clean-slate approach as InstallScreen.
         # Prevents stale entries from previous installs (LCD→OLED, older
         # DeckOps versions) interfering with the update.
         try:

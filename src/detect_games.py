@@ -655,6 +655,25 @@ def find_own_installed(extra_paths=None, on_progress=None):
     return found
 
 
+def find_all_games(steam_root=None):
+    """Detect all installed games from both Steam and non-Steam sources.
+
+    Steam games take priority when a key exists in both.
+    Each entry is tagged with source="steam" or source="own".
+    """
+    if steam_root is None:
+        steam_root = find_steam_root()
+    libs = parse_library_folders(steam_root)
+    steam = find_installed_games(libs, steam_root)
+    own = find_own_installed()
+    merged = {}
+    for k, v in own.items():
+        merged[k] = v
+    for k, v in steam.items():
+        merged[k] = {**v, "source": "steam"}
+    return merged
+
+
 if __name__ == "__main__":
     steam_root = find_steam_root()
     if not steam_root:

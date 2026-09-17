@@ -1,7 +1,7 @@
 """
 ui_install.py — Install pipeline screens for DeckOps
 
-Screens: WelcomeScreen, SetupScreen, InstallScreen, OwnInstallScreen, OwnScanScreen
+Screens: WelcomeScreen, SetupScreen, InstallScreen, OwnScanScreen
 Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
 """
 
@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer
 
-from detect_games import find_steam_root, parse_library_folders, find_installed_games
+from detect_games import find_steam_root, parse_library_folders, find_installed_games, find_all_games
 import config as cfg
 from net import DownloadError
 
@@ -72,17 +72,16 @@ class WelcomeScreen(QWidget):
     def _scan_games(self):
         self.status.setText("Scanning for games..."); self.bar.setValue(70)
         source = cfg.get_game_source() or "steam"
-        libs = parse_library_folders(self.steam_root)
-        steam_found = find_installed_games(libs)
-        self.steam_installed = steam_found
         if source == "own" and not self._steam_only:
-            from detect_games import find_own_installed
-            own_found = find_own_installed()
-            self.own_installed = own_found
-            self.installed = {**own_found, **steam_found}
+            merged = find_all_games(self.steam_root)
+            self.steam_installed = {k: v for k, v in merged.items() if v.get("source") != "own"}
+            self.own_installed = {k: v for k, v in merged.items() if v.get("source") == "own"}
+            self.installed = merged
         else:
+            libs = parse_library_folders(self.steam_root)
+            self.steam_installed = find_installed_games(libs)
             self.own_installed = {}
-            self.installed = steam_found
+            self.installed = self.steam_installed
         if cfg.is_lcd():
             lcd_allowed = set()
             for g in ALL_GAMES:
@@ -96,9 +95,9 @@ class WelcomeScreen(QWidget):
         self.bar.setValue(100)
         if not self.installed:
             # Advanced flow with own games already parked: no Steam games is OK,
-            # skip straight to SetupScreen which will route to OwnInstallScreen.
+            # skip straight to SetupScreen which will route to InstallScreen.
             if self._steam_only and cfg.get_game_source() == "own":
-                own_screen = get_screen(self.stack, "OwnInstallScreen")
+                own_screen = get_screen(self.stack, "InstallScreen")
                 if own_screen.own_selected:
                     self.status.setText("No Steam games found — continuing with your non-Steam games.")
                     self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
@@ -129,11 +128,10 @@ class WelcomeScreen(QWidget):
     def _go_next(self):
         if cfg.is_first_run():
             # Advanced flow with no Steam games: skip the blank SetupScreen
-            # and route straight to OwnInstallScreen (mirrors SetupScreen._go_install
-            # zero-selection logic).
+            # and route straight to InstallScreen.
             if self._steam_only and cfg.get_game_source() == "own" \
                     and not self.steam_installed:
-                own_screen = get_screen(self.stack, "OwnInstallScreen")
+                own_screen = get_screen(self.stack, "InstallScreen")
                 own_screen.steam_selected = []
                 own_screen.steam_root = self.steam_root
                 _own_sel = own_screen.own_selected or {}
@@ -145,7 +143,7 @@ class WelcomeScreen(QWidget):
                 own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, _own_tmp)
                 own_screen.bo3_client = _ask_bo3_client(self, _own_tmp)
                 own_screen.cod4_client = _ask_cod4_client(self, _own_tmp)
-                go_to(self.stack, "OwnInstallScreen")
+                go_to(self.stack, "InstallScreen")
                 return
             s = get_screen(self.stack, "SetupScreen")
             s.steam_installed = self.steam_installed
@@ -161,8 +159,8 @@ class WelcomeScreen(QWidget):
 class SetupScreen(QWidget):
     """
     Steam game selection. Shows detected Steam games with checkboxes.
-    In the advanced flow, routes to OwnInstallScreen instead of InstallScreen
-    so both Steam and own games are handled in one pass.
+    In the advanced flow, sets steam_selected on InstallScreen so both
+    Steam and own games are handled in one pass.
     """
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.screen_name = "SetupScreen"
@@ -357,45 +355,43 @@ class SetupScreen(QWidget):
             if key not in self.steam_installed: continue
             selected.append((key, gd, self.steam_installed[key]))
         if not selected:
-            # Advanced flow: own games are already queued on OwnInstallScreen,
+            # Advanced flow: own games are already queued on InstallScreen,
             # so zero Steam games is valid. Route straight through.
             if cfg.get_game_source() == "own":
-                own_screen = get_screen(self.stack, "OwnInstallScreen")
-                own_screen.steam_selected = []
-                own_screen.steam_root = self.steam_root
-                # Build a temporary list to check for iw4x in own games
-                _own_sel = own_screen.own_selected or {}
+                s = get_screen(self.stack, "InstallScreen")
+                s.steam_selected = []
+                s.steam_root = self.steam_root
+                _own_sel = s.own_selected or {}
                 _own_tmp = []
                 for _k, _g in _own_sel.items():
                     for _gd in ALL_GAMES:
                         if _k in _active_keys(_gd):
                             _own_tmp.append((_k, _gd, _g)); break
-                own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, _own_tmp)
-                own_screen.cod4_client = _ask_cod4_client(self, _own_tmp)
-                go_to(self.stack, "OwnInstallScreen")
+                s.install_iw4x_dlc = _ask_iw4x_dlc(self, _own_tmp)
+                s.cod4_client = _ask_cod4_client(self, _own_tmp)
+                go_to(self.stack, "InstallScreen")
                 return
             self.warning.setText("Select at least one game to continue.")
             self.warning.setVisible(True); return
 
-        # Advanced flow -- OwnInstallScreen handles both Steam + own games
+        # Advanced flow: InstallScreen handles both Steam + own games
         if cfg.get_game_source() == "own":
-            own_screen = get_screen(self.stack, "OwnInstallScreen")
-            own_screen.steam_selected = selected
-            own_screen.steam_root = self.steam_root
-            # Merge steam + own selections for DLC prompt check
-            _own_sel = own_screen.own_selected or {}
+            s = get_screen(self.stack, "InstallScreen")
+            s.steam_selected = selected
+            s.steam_root = self.steam_root
+            _own_sel = s.own_selected or {}
             _own_tmp = []
             for _k, _g in _own_sel.items():
                 for _gd in ALL_GAMES:
                     if _k in _active_keys(_gd):
                         _own_tmp.append((_k, _gd, _g)); break
-            own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, selected + _own_tmp)
-            own_screen.bo3_client = _ask_bo3_client(self, selected + _own_tmp)
-            own_screen.cod4_client = _ask_cod4_client(self, selected + _own_tmp)
-            go_to(self.stack, "OwnInstallScreen")
+            s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected + _own_tmp)
+            s.bo3_client = _ask_bo3_client(self, selected + _own_tmp)
+            s.cod4_client = _ask_cod4_client(self, selected + _own_tmp)
+            go_to(self.stack, "InstallScreen")
             return
 
-        # Standard flow -- InstallScreen handles Steam games only
+        # Standard flow: Steam games only
         s = get_screen(self.stack, "InstallScreen")
         s.selected   = selected
         s.steam_root = self.steam_root
@@ -404,1103 +400,12 @@ class SetupScreen(QWidget):
         s.cod4_client = _ask_cod4_client(self, selected)
         go_to(self.stack, "InstallScreen")
 
-# ── InstallScreen ─────────────────────────────────────────────────────────────
-class InstallScreen(QWidget):
-    def __init__(self, stack):
-        super().__init__(); self.stack=stack; self.selected=[]; self.steam_root=""; self.screen_name = "InstallScreen"
-        self._plut_event = threading.Event()
-        self._cod4r_event = threading.Event()
-        self._iw5_dg_event = threading.Event()
-        self._iw5_method = ""  # "qr" or "manual", set by chooser
-        self._manual_dl_event = threading.Event()
-        self._manual_dl_ok = False
-        self._return_to_management = False
-        self.bo3_client = "cleanops"
-
-        lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
-
-        hdr = QWidget(); hdr.setFixedHeight(60)
-        hdr.setStyleSheet(f"background:{C_CARD};")
-        hl = QHBoxLayout(hdr); hl.setContentsMargins(20,0,20,0)
-        _ht = QLabel("DECKOPS"); _ht.setFont(font(22, display=True))
-        _ht.setStyleSheet("color:#FFF;background:transparent;"); hl.addWidget(_ht)
-        _nb = QLabel("NIGHTLY"); _nb.setFont(font(9, bold=True))
-        _nb.setStyleSheet(
-            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
-            "border-radius:4px;padding:1px 6px;"
-        )
-        hl.addWidget(_nb); hl.addStretch()
-        lay.addWidget(hdr)
-
-        content = QWidget()
-        clay = QVBoxLayout(content); clay.setContentsMargins(80,20,80,60); clay.setSpacing(20)
-        self.cur = _lbl("Preparing...", 16, "#CCC"); clay.addWidget(self.cur)
-        self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(22)
-        bw = QHBoxLayout(); bw.setContentsMargins(60,0,60,0); bw.addWidget(self.bar)
-        clay.addLayout(bw)
-        self.stat = _lbl("", 13, C_IW); clay.addWidget(self.stat)
-        self.iw5_qr_box = QWidget()
-        self.iw5_qr_box.setVisible(False)
-        qb = QVBoxLayout(self.iw5_qr_box)
-        qb.setContentsMargins(0, 0, 0, 0)
-        qb.setSpacing(4)
-        self.iw5_qr_lbl = QLabel("")
-        self.iw5_qr_lbl.setStyleSheet(
-            "font-family: monospace; font-size: 8px; line-height: 8px;"
-            "color: #000; background: #FFF; padding: 8px;"
-            f"border: 2px solid {C_DIM}; border-radius: 8px;"
-        )
-        self.iw5_qr_lbl.setAlignment(Qt.AlignCenter)
-        qr_row = QHBoxLayout()
-        qr_row.addStretch(); qr_row.addWidget(self.iw5_qr_lbl); qr_row.addStretch()
-        qb.addLayout(qr_row)
-        self.iw5_qr_info = _lbl(
-            "Open the Steam app on your phone, tap the shield icon (Steam Guard),\n"
-            "then tap \"Approve a sign-in\". Point your camera at the QR code above.",
-            11, "#AAA", align=Qt.AlignCenter,
-        )
-        qb.addWidget(self.iw5_qr_info)
-        clay.addWidget(self.iw5_qr_box)
-
-        self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setFont(font(11))
-        self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
-        clay.addWidget(self.log, stretch=1)
-
-        self.plut_warn = _lbl(
-            "⚠  LCD: Plutonium takes time to download and launch.\n"
-            "     Please be patient — do NOT click the button below until\n"
-            "     Plutonium has fully loaded, you have logged in, and closed the window.",
-            12, C_TREY, align=Qt.AlignCenter,
-        )
-        self.plut_warn.setStyleSheet(
-            f"color:{C_TREY};background:#2A1A08;border:1px solid {C_TREY};"
-            "border-radius:8px;padding:10px 16px;"
-        )
-        self.plut_warn.setVisible(False)
-        clay.addWidget(self.plut_warn)
-
-        self.plut_btn = _btn("I've closed Plutonium  ✓", C_TREY, size=13, h=52)
-        self.plut_btn.setFixedWidth(460); self.plut_btn.setVisible(False)
-        self.plut_btn.clicked.connect(self._confirm_plut)
-        pw = QHBoxLayout(); pw.addStretch(); pw.addWidget(self.plut_btn); pw.addStretch()
-        clay.addLayout(pw)
-
-        self.cod4r_btn = _btn("I've closed the CoD4R launcher  ✓", C_TREY, size=13, h=52)
-        self.cod4r_btn.setFixedWidth(460); self.cod4r_btn.setVisible(False)
-        self.cod4r_btn.clicked.connect(self._confirm_cod4r)
-        c4w = QHBoxLayout(); c4w.addStretch(); c4w.addWidget(self.cod4r_btn); c4w.addStretch()
-        clay.addLayout(c4w)
-
-        self.iw5_dg_btn = _btn("Download complete, continue  ✓", C_IW, size=13, h=52)
-        self.iw5_dg_btn.setFixedWidth(460); self.iw5_dg_btn.setVisible(False)
-        self.iw5_dg_btn.clicked.connect(self._confirm_iw5_dg)
-        dw = QHBoxLayout(); dw.addStretch(); dw.addWidget(self.iw5_dg_btn); dw.addStretch()
-        clay.addLayout(dw)
-
-        self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
-        self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
-        self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
-        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont_btn); cw.addStretch()
-        clay.addLayout(cw)
-        clay.addStretch()
-        lay.addWidget(content, stretch=1)
-
-        self._s = _Sigs()
-        self._s.progress.connect(lambda p,m: (self.bar.setValue(p), self.cur.setText(m)))
-        self._s.log.connect(self._append_log)
-        self._s.done.connect(self._on_done)
-        self._s.plut_wait.connect(self._show_plut_wait)
-        self._s.plut_go.connect(self._hide_plut_wait)
-        self._s.cod4r_wait.connect(self._show_cod4r_wait)
-        self._s.cod4r_go.connect(self._hide_cod4r_wait)
-        self._s.iw5_dg_wait.connect(self._show_iw5_dg_wait)
-        self._s.iw5_dg_go.connect(self._hide_iw5_dg_wait)
-        self._s.iw5_qr_show.connect(self._show_iw5_qr)
-        self._s.iw5_qr_hide.connect(self._hide_iw5_qr)
-        self._s.iw5_dg_choose.connect(self._ask_iw5_dg_method)
-        self._s.pulse_start.connect(self._start_pulse)
-        self._s.pulse_stop.connect(self._stop_pulse)
-        self._s.manual_dl.connect(self._show_manual_dl_dialog)
-
-        self._pulse_timer = QTimer()
-        self._pulse_timer.timeout.connect(self._do_pulse)
-        self._pulse_msg   = ""
-        self._pulse_count = 0
-
-    def _start_pulse(self, base_msg):
-        self._pulse_msg   = base_msg
-        self._pulse_count = 0
-        self._pulse_timer.start(500)
-
-    def _do_pulse(self):
-        dots = "." * (self._pulse_count % 4)
-        self.cur.setText(f"{self._pulse_msg}{dots}")
-        self._pulse_count += 1
-
-    def _stop_pulse(self):
-        self._pulse_timer.stop()
-
-    def _show_plut_wait(self):
-        is_lcd = cfg.is_lcd()
-        self.plut_warn.setVisible(is_lcd)
-        self.plut_btn.setVisible(True)
-
-    def _hide_plut_wait(self):
-        self.plut_warn.setVisible(False)
-        self.plut_btn.setVisible(False)
-
-    def _show_cod4r_wait(self):
-        self.cod4r_btn.setVisible(True)
-
-    def _hide_cod4r_wait(self):
-        self.cod4r_btn.setVisible(False)
-
-    def _show_iw5_dg_wait(self, cmd, step_label):
-        from iw5_downgrade import copy_to_clipboard
-        copy_to_clipboard(cmd)
-        self.iw5_dg_btn.setText(f"{step_label} complete, continue  \u2713")
-        self.iw5_dg_btn.setVisible(True)
-
-    def _hide_iw5_dg_wait(self):
-        self.iw5_dg_btn.setVisible(False)
-
-    def _confirm_iw5_dg(self):
-        self._iw5_dg_event.set()
-
-    def _show_iw5_qr(self, qr_text):
-        from iw5_downgrade import qr_text_to_pixmap
-        pm = qr_text_to_pixmap(qr_text, scale=8)
-        if pm:
-            pm = pm.scaled(350, 350, Qt.KeepAspectRatio, Qt.FastTransformation)
-            self.iw5_qr_lbl.setPixmap(pm)
-            self.iw5_qr_lbl.setFixedSize(pm.size())
-        else:
-            self.iw5_qr_lbl.setText(qr_text)
-        self.iw5_qr_box.setVisible(True)
-        self.log.setMaximumHeight(0)
-
-    def _hide_iw5_qr(self):
-        self.iw5_qr_box.setVisible(False)
-        self.log.setMaximumHeight(16777215)
-
-    def _ask_iw5_dg_method(self):
-        """Show chooser: QR Code Scan vs Steam Console (manual) vs Add DS."""
-        msg = QMessageBox(self)
-        msg.setWindowTitle("MW3 Downgrade")
-        msg.setText(
-            "MW3 needs to be downgraded from 64-bit to 32-bit for Plutonium.\n\n"
-            "This requires at least 15 GB of free disk space to download the\n"
-            "old depot files and patch your game.\n\n"
-            "If the download or patch keeps failing, adding the free MW3\n"
-            "Dedicated Server can help, since it shares depot files with MW3.\n"
-            "Let it fully download in Steam, then try QR or Manual again.\n\n"
-            "How would you like to authenticate the download?"
-        )
-        qr_btn = msg.addButton("QR Code Scan (recommended)", QMessageBox.AcceptRole)
-        manual_btn = msg.addButton("Steam Console (manual)", QMessageBox.AcceptRole)
-        ds_btn = msg.addButton(
-            "Add MW3 DS to Steam", QMessageBox.ActionRole)
-        msg.addButton("Cancel", QMessageBox.RejectRole)
-        msg.exec_()
-        clicked = msg.clickedButton()
-        if clicked == qr_btn:
-            self._iw5_method = "qr"
-        elif clicked == manual_btn:
-            self._iw5_method = "manual"
-        elif clicked == ds_btn:
-            from iw5_downgrade import open_steam_install
-            open_steam_install(42750)
-            self._append_log(
-                "  Requested MW3 Dedicated Server install via Steam.\n"
-                "  Let it finish downloading, then choose QR or Manual."
-            )
-            self._ask_iw5_dg_method()
-            return
-        else:
-            self._iw5_method = ""
-        self._iw5_dg_event.set()
-
-    def _append_log(self, text):
-        self.log.appendPlainText(text)
-        self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
-        _log_to_file(text)
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self.bar.setValue(0); self.log.clear()
-        self.plut_btn.setVisible(False)
-        self.plut_warn.setVisible(False)
-        self.cod4r_btn.setVisible(False)
-        self.iw5_dg_btn.setVisible(False)
-        self.iw5_qr_box.setVisible(False)
-        self._stop_pulse()
-        self._plut_event.clear()
-        self._cod4r_event.clear()
-        self._iw5_dg_event.clear()
-        self._iw5_method = ""
-        self._manual_dl_event.clear()
-        self._manual_dl_ok = False
-        # Route the continue button based on whether this was triggered
-        # from ManagementScreen (return to My Games) or the first-run
-        # wizard (go to SetupCompleteScreen).
-        try:
-            self.cont_btn.clicked.disconnect()
-        except Exception:
-            pass
-        if self._return_to_management:
-            self.cont_btn.setText("Back to My Games  >>")
-            self.cont_btn.clicked.connect(self._go_management)
-            self._return_to_management = False
-        else:
-            self.cont_btn.setText("Continue  >>")
-            self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
-        _log_to_file("── Install started ──")
-        QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
-
-    def _confirm_plut(self):
-        self._plut_event.set()
-
-    def _confirm_cod4r(self):
-        self._cod4r_event.set()
-
-    def _show_manual_dl_dialog(self, url, dest_folder, filename, label):
-        """
-        Show a dialog telling the user to manually download a file.
-        Runs on the main thread (called via signal from worker).
-        """
-        os.makedirs(dest_folder, exist_ok=True)
-        dest_path = os.path.join(dest_folder, filename)
-
-        msg = QMessageBox(self)
-        msg.setWindowTitle(f"{label} — Download Failed")
-        msg.setTextFormat(Qt.RichText)
-        msg.setText(
-            f"<b>{label}</b> could not be downloaded automatically.<br><br>"
-            f'Download it manually here:<br>'
-            f'<a href="{url}">{url}</a><br><br>'
-            f'Then place <b>{filename}</b> in:<br>'
-            f'<code>{dest_folder}</code><br><br>'
-            f'Click <b>Open Folder</b> to open the destination, then '
-            f'<b>I\'ve Placed It</b> when the file is in place.'
-        )
-        open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
-        done_btn = msg.addButton("I've Placed It", QMessageBox.AcceptRole)
-        skip_btn = msg.addButton("Skip", QMessageBox.RejectRole)
-
-        # Keep dialog open until user clicks Done or Skip
-        while True:
-            msg.exec_()
-            clicked = msg.clickedButton()
-            if clicked == open_btn:
-                subprocess.Popen(["xdg-open", dest_folder])
-                # Re-show the dialog
-                continue
-            elif clicked == done_btn:
-                if os.path.exists(dest_path) and os.path.getsize(dest_path) > 0:
-                    self._manual_dl_ok = True
-                    self._manual_dl_event.set()
-                    return
-                # File not there yet — tell user and loop
-                QMessageBox.warning(
-                    self, "File Not Found",
-                    f"{filename} was not found in:\n{dest_folder}\n\n"
-                    "Make sure the file is downloaded and placed in the correct folder.",
-                )
-                continue
-            else:
-                # Skip
-                self._manual_dl_ok = False
-                self._manual_dl_event.set()
-                return
-
-    def _on_done(self, _):
-        self._stop_pulse()
-        self.cur.setText("Installation complete!")
-        self.cont_btn.setVisible(True)
-
-    def _go_management(self):
-        # Restart Steam so shortcuts and compat tool changes take effect.
-        os.system("gtk-launch steam.desktop &")
-        root = find_steam_root()
-        get_screen(self.stack, "ManagementScreen").set_installed(find_installed_games(parse_library_folders(root)))
-        go_to(self.stack, "ManagementScreen")
-
-    def _run(self):
-        from wrapper import get_proton_path, find_compatdata, kill_steam
-        from plutonium_oled import launch_bootstrapper, is_plutonium_ready, install_plutonium
-        from cod4x import install_cod4x
-        from cod4r import install_cod4r
-        from iw4x import install_iw4x
-        from iw3sp import install_iw3sp
-        from t6sp_mod import install_t6sp_mod
-        from cleanops import install_cleanops
-        from t7x import install_t7x
-        from ge_proton import install_ge_proton, set_compat_tool, MANAGED_APPIDS
-
-        selected_keys   = [key for key, _, _ in self.selected]
-        has_plut        = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
-        has_cod4        = any(KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp") for k in selected_keys)
-        has_iw4x        = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
-        has_t6sp_mod    = any(KEY_CLIENT.get(k) == "t6sp_mod" for k in selected_keys)
-
-        # Resolve CoD4 MP client choice from pre-install popup
-        _cod4_client = getattr(self, "cod4_client", "cod4r")
-
-        # ── BO3 client selection: cleanops, t7x, or both ─────────────────
-        _bo3_choice = getattr(self, "bo3_client", "cleanops")
-        _has_bo3 = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
-        has_cleanops = _has_bo3 and _bo3_choice in ("cleanops", "both")
-        has_t7x      = _has_bo3 and _bo3_choice in ("t7x", "both")
-        if has_t7x:
-            # Find the t7 (CleanOps) entry and clone it for t7x
-            for k, gd, g in self.selected:
-                if k == "t7":
-                    self.selected.append(("t7x", gd, dict(g)))
-                    selected_keys.append("t7x")
-                    break
-        logged_bases    = set()
-        ge_version      = None
-        _compat_applied = False
-        _steam_killed   = False
-
-        def _kill_steam_once():
-            nonlocal _steam_killed
-            if not _steam_killed:
-                self._s.progress.emit(28, "Closing Steam...")
-                self._s.log.emit("Closing Steam...")
-                try:
-                    kill_steam(on_progress=lambda msg: self._s.log.emit(f"  {msg}"))
-                    self._s.log.emit("  ✓ Steam closed.")
-                except Exception as ex:
-                    self._s.log.emit(f"  Could not close Steam: {ex}")
-                _steam_killed = True
-
-        def _apply_compat():
-            nonlocal _compat_applied
-            if ge_version and not _compat_applied:
-                try:
-                    set_compat_tool(MANAGED_APPIDS, ge_version)
-                    self._s.log.emit(f"✓  GE-Proton {ge_version} set for all games")
-                    # BO3 needs Proton Experimental — GE-Proton causes launch failures
-                    set_compat_tool(["311210"], "proton_experimental")
-                    self._s.log.emit("✓  Proton Experimental set for BO3")
-                    cfg.set_ge_proton_version(ge_version)
-                    _compat_applied = True
-                except Exception as ex:
-                    self._s.log.emit(f"  CompatToolMapping skipped: {ex}")
-        _launch_defaults_set = False
-        def _set_launch_defaults():
-            nonlocal _launch_defaults_set
-            if _launch_defaults_set:
-                return
-            defaults = {}
-            if has_cod4:
-                defaults["7940"] = ("7a722f97", "1")   # CoD4 → Singleplayer
-            if any(k in ("t4sp", "t4mp") for k in selected_keys):
-                defaults["10090"] = ("9aa5e05f", "0") # WaW → Campaign
-            if not defaults:
-                return
-            try:
-                from wrapper import set_default_launch_option
-                set_default_launch_option(self.steam_root, defaults)
-                self._s.log.emit("✓  Default launch options set (SP mode)")
-                _launch_defaults_set = True
-            except Exception as ex:
-                self._s.log.emit(f"  Launch options skipped: {ex}")
-
-        # ── GE-Proton download + extract (Steam still running) ────────────────
-        try:
-            self._s.pulse_start.emit("Installing GE-Proton")
-            self._s.log.emit("Installing GE-Proton...")
-            ge_version = install_ge_proton(
-                on_progress=lambda pct, msg: self._s.progress.emit(2 + int(pct * 0.08), msg)
-            )
-            self._s.pulse_stop.emit()
-            self._s.log.emit(f"✓  {ge_version} downloaded")
-        except Exception as ex:
-            self._s.pulse_stop.emit()
-            self._s.log.emit(f"  GE-Proton setup skipped: {ex}")
-
-        # ── Copy deps from GE-Proton default_pfx into all game prefixes ──────
-        # Every selected game gets its prefix preloaded — no exceptions.
-        # ensure_all_prefix_deps handles deduplication and skips prefixes
-        # that are already initialized.
-        proton = get_proton_path(self.steam_root)
-
-        if ge_version:
-            from ge_proton import ensure_all_prefix_deps
-            from detect_games import GAMES as _GAMES_MAP
-            self._s.log.emit("Installing prefix dependencies...")
-            self._s.pulse_start.emit("Installing prefix dependencies")
-            dep_targets = []
-            for key, gd, game in self.selected:
-                # Use per-key appid from GAMES, not card-level gd["appid"].
-                # Card-level appid is wrong for keys that have their own appid
-                # (e.g. t6zm=212910, t6sp=202970 vs card appid 202990).
-                appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
-                _install_dir = game["install_dir"] if game else None
-                compat = find_compatdata(self.steam_root, appid,
-                                         game_install_dir=_install_dir)
-                if not compat and game and game.get("install_dir"):
-                    # Prefix doesn't exist yet — build the path from the game's
-                    # steamapps dir so ensure_prefix_deps can create it
-                    steamapps = os.path.dirname(os.path.dirname(game["install_dir"]))
-                    compat = os.path.join(steamapps, "compatdata", str(appid))
-                if compat:
-                    dep_targets.append((key, compat))
-            if dep_targets:
-                done = ensure_all_prefix_deps(
-                    ge_version, dep_targets,
-                    on_progress=lambda msg: self._s.log.emit(msg),
-                    proton_path=proton,
-                    steam_root=self.steam_root,
-                )
-                self._s.log.emit(f"✓  Prefix dependencies: {done}/{len(dep_targets)} ready")
-            self._s.pulse_stop.emit()
-
-        # ── CoD4 (iw3sp + cod4r/cod4x) — Steam still running ───────────────────
-        # Runs before the Plutonium bootstrapper and before Steam is closed
-        # so the touchpad still works as a mouse for closing the CoD4R
-        # launcher window. None of the CoD4 installers touch Steam VDFs,
-        # so Steam running is safe here. Note: iw3sp renames iw3sp.exe in
-        # the Steam library while Steam is up; Steam only notices on
-        # launch or verify, so this is benign during install.
-        if has_cod4:
-            cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp")]
-            for key, gd, game in cod4_selected:
-                base_name = gd["base"]
-                self._s.progress.emit(10, f"Setting up {base_name}...")
-                def op_cod4(pct, msg): self._s.progress.emit(10 + int(pct / 100 * 2), msg)
-                try:
-                    _install_dir = game["install_dir"] if game else None
-                    compat = find_compatdata(self.steam_root, gd["appid"],
-                                             game_install_dir=_install_dir)
-                    c = KEY_CLIENT.get(key, gd["client"])
-                    # Override cod4mp client with user's popup choice
-                    if key == "cod4mp":
-                        c = _cod4_client
-                    if c == "cod4r":
-                        self._s.progress.emit(12, "Installing CoD4R — close the launcher when done...")
-                        self._s.log.emit(
-                            "CoD4R is downloading and installing now.\n"
-                            "  1. Wait for the CoD4R launcher to finish downloading and updating\n"
-                            "  2. Close the launcher when it is done\n"
-                            "  3. Click the button below to continue"
-                        )
-                        self._s.cod4r_wait.emit()
-                        install_cod4r(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=gd["appid"], source="steam")
-                        self._cod4r_event.wait()
-                        self._cod4r_event.clear()
-                        self._s.cod4r_go.emit()
-                    elif c == "cod4x":
-                        install_cod4x(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=gd["appid"])
-                    elif c == "iw3sp":
-                        install_iw3sp(game, self.steam_root, proton, compat, op_cod4)
-                    cfg.mark_game_setup(key, c, source="steam")
-                    if base_name not in logged_bases:
-                        self._s.log.emit(f"✓  {base_name} done")
-                        logged_bases.add(base_name)
-                except DownloadError as dl_ex:
-                    self._s.log.emit(f"⚠  {dl_ex.label} download failed — manual download needed")
-                    self._manual_dl_event.clear()
-                    self._manual_dl_ok = False
-                    self._s.manual_dl.emit(
-                        dl_ex.url,
-                        os.path.dirname(dl_ex.dest),
-                        os.path.basename(dl_ex.dest),
-                        dl_ex.label,
-                    )
-                    self._manual_dl_event.wait()
-                    if not self._manual_dl_ok:
-                        self._s.log.emit(f"  ✗  {base_name} skipped by user.")
-                    else:
-                        self._s.log.emit(f"  ✓  {dl_ex.label} placed manually — re-run install to finish setup")
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── IW5 64-bit downgrade (Steam still running) ───────────────────────
-        # Activision pushed a 64-bit update for MW3 that breaks Plutonium.
-        # If the user has iw5mp or iw5mp_ds selected from Steam and the
-        # install is 64-bit, walk them through either QR-based or manual
-        # Steam console depot download, then merge the 32-bit files.
-        _iw5_steam_keys = [
-            (k, gd, g) for k, gd, g in self.selected
-            if k in ("iw5mp", "iw5mp_ds") and g.get("install_dir")
-        ]
-        if _iw5_steam_keys:
-            from iw5_downgrade import (
-                is_iw5_downgrade_needed, has_enough_space,
-                open_steam_console, find_depot_staging, merge_iw5_depots,
-                ensure_depotdownloader, run_depot_download_qr,
-                cleanup_depotdownloader, detect_dlc_status,
-                IW5_DEPOT_CMDS, IW5_DEPOTS, IW5_DLC, IW5_DLC_DEPOT_CMDS,
-                REQUIRED_FREE_SPACE_GB, DEPOTDOWNLOADER_DIR,
-            )
-            _iw5_dir = _iw5_steam_keys[0][2]["install_dir"]
-            _needs_base = is_iw5_downgrade_needed(_iw5_dir)
-            _dlc_status = detect_dlc_status(_iw5_dir)
-            _dlc_needed = sorted(k for k, v in _dlc_status.items() if v != "ok")
-
-            if _dlc_needed:
-                _dlc_names = ", ".join(IW5_DLC[k]["name"] for k in _dlc_needed)
-                self._s.log.emit(f"  MW3 DLC check: missing or incorrect: {_dlc_names}")
-            else:
-                self._s.log.emit("  MW3 DLC check: all collections present.")
-
-            if _needs_base or _dlc_needed:
-                if not has_enough_space(_iw5_dir):
-                    self._s.log.emit(
-                        f"✗  MW3 downgrade requires at least "
-                        f"{REQUIRED_FREE_SPACE_GB} GB of free space."
-                    )
-                else:
-                    # Ask user which method they prefer
-                    self._iw5_dg_event.clear()
-                    self._iw5_method = ""
-                    self._s.iw5_dg_choose.emit()
-                    self._iw5_dg_event.wait()
-
-                    # Build combined depot lists
-                    _qr_depots = list(IW5_DEPOTS) if _needs_base else []
-                    _manual_cmds = list(IW5_DEPOT_CMDS) if _needs_base else []
-                    for dk in _dlc_needed:
-                        dlc = IW5_DLC[dk]
-                        _qr_depots.append({"depot": dlc["depot"], "manifest": dlc["manifest"], "app": dlc["app"]})
-                    for dk in _dlc_needed:
-                        idx = int(dk) - 1
-                        _manual_cmds.append(IW5_DLC_DEPOT_CMDS[idx])
-
-                    _what = []
-                    if _needs_base:
-                        _what.append("32-bit base game")
-                    if _dlc_needed:
-                        _what.append(f"DLC ({', '.join(IW5_DLC[k]['name'] for k in _dlc_needed)})")
-                    _what_str = " + ".join(_what)
-
-                    if self._iw5_method == "qr":
-                        # ── QR Code path ─────────────────────────────
-                        self._s.log.emit(
-                            f"Downloading MW3 files: {_what_str}.\n"
-                            "  Scan the QR code with your Steam mobile app.\n"
-                            "  The code will refresh if it expires.\n"
-                            "  Your login credentials will be deleted after the download."
-                        )
-                        self._s.progress.emit(11, "Setting up DepotDownloader...")
-                        try:
-                            ensure_depotdownloader(
-                                on_progress=lambda m: self._s.log.emit(f"  {m}"))
-
-                            staging = os.path.join(
-                                os.path.dirname(_iw5_dir),
-                                ".deckops_iw5_staging",
-                            )
-                            captured_user = None
-                            for i, depot in enumerate(_qr_depots):
-                                self._s.progress.emit(
-                                    11, f"Downloading depot {i+1} of {len(_qr_depots)}...")
-                                result = run_depot_download_qr(
-                                    staging_dir=staging,
-                                    depot_info=depot,
-                                    on_qr=lambda qr: self._s.iw5_qr_show.emit(qr),
-                                    on_auth_success=lambda u: self._s.iw5_qr_hide.emit(),
-                                    on_progress=lambda m: self._s.progress.emit(11, m),
-                                    on_log=lambda m: self._s.log.emit(f"  {m}"),
-                                    username=captured_user,
-                                )
-                                if result is None:
-                                    self._s.log.emit(f"✗  Depot {depot['depot']} download failed.")
-                                    break
-                                captured_user = result
-
-                            self._s.iw5_qr_hide.emit()
-
-                            if captured_user:
-                                self._s.progress.emit(12, "Merging MW3 files...")
-                                self._s.pulse_start.emit("Merging MW3 files")
-                                try:
-                                    merge_iw5_depots(
-                                        staging, _iw5_dir,
-                                        on_progress=lambda m: self._s.log.emit(f"  {m}"),
-                                    )
-                                    if _needs_base:
-                                        self._s.log.emit("✓  MW3 downgraded to 32-bit")
-                                    if _dlc_needed:
-                                        self._s.log.emit(f"✓  MW3 DLC installed: {', '.join(IW5_DLC[k]['name'] for k in _dlc_needed)}")
-                                finally:
-                                    self._s.pulse_stop.emit()
-
-                            # Clean up DepotDownloader tool + credentials
-                            self._s.log.emit(
-                                "  Removing DepotDownloader and any saved credentials...")
-                            cleanup_depotdownloader()
-                            self._s.log.emit("  ✓  Login credentials removed.")
-
-                        except Exception as ex:
-                            self._s.log.emit(f"✗  QR downgrade failed: {ex}")
-                            cleanup_depotdownloader()
-
-                    elif self._iw5_method == "manual":
-                        # ── Steam Console path ──────────────────────
-                        self._s.log.emit(
-                            f"Downloading MW3 files: {_what_str}.\n"
-                            "  DeckOps will open the Steam console. Paste each command\n"
-                            "  when prompted and wait for \"Depot download complete\"\n"
-                            "  before clicking continue."
-                        )
-                        self._s.progress.emit(11, "MW3 depot download...")
-                        open_steam_console()
-
-                        for i, cmd in enumerate(_manual_cmds, 1):
-                            step = f"Depot {i} of {len(_manual_cmds)}"
-                            self._s.log.emit(
-                                f"\n  Step {i}: Paste this into the Steam console:\n"
-                                f"  {cmd}\n"
-                                f"  (copied to clipboard)"
-                            )
-                            self._iw5_dg_event.clear()
-                            self._s.iw5_dg_wait.emit(cmd, step)
-                            self._iw5_dg_event.wait()
-                            self._s.iw5_dg_go.emit()
-
-                        self._s.progress.emit(12, "Merging MW3 files...")
-                        staging = find_depot_staging(self.steam_root)
-                        if staging:
-                            self._s.pulse_start.emit("Merging MW3 files")
-                            try:
-                                merge_iw5_depots(
-                                    staging, _iw5_dir,
-                                    on_progress=lambda m: self._s.log.emit(f"  {m}"),
-                                )
-                                if _needs_base:
-                                    self._s.log.emit("✓  MW3 downgraded to 32-bit")
-                                if _dlc_needed:
-                                    self._s.log.emit(f"✓  MW3 DLC installed: {', '.join(IW5_DLC[k]['name'] for k in _dlc_needed)}")
-                            except Exception as ex:
-                                self._s.log.emit(
-                                    f"✗  MW3 merge failed: {ex}")
-                            finally:
-                                self._s.pulse_stop.emit()
-                        else:
-                            self._s.log.emit(
-                                "✗  Could not find depot staging directory.\n"
-                                "  The depot download may not have completed."
-                            )
-
-        # ── Plutonium bootstrapper (Steam still running) ──────────────────────
-        if has_plut:
-            is_lcd = cfg.is_lcd()
-
-            # LCD and OLED / Other both require the user to log in, just in different
-            # prefixes. LCD logs in inside HGL's shared default prefix so
-            # the auth state is bound to the exact Wine prefix that will
-            # later launch the games. OLED / Other logs in inside the dedicated
-            # DeckOps prefix at ~/.local/share/deckops/plutonium_prefix/.
-            if is_lcd:
-                from plutonium_lcd import (launch_bootstrapper_lcd,
-                                    is_plutonium_ready_lcd)
-                plut_ready = is_plutonium_ready_lcd()
-            else:
-                plut_ready = is_plutonium_ready()
-
-            if not plut_ready:
-                if is_lcd:
-                    self._s.progress.emit(12, "Setting up Plutonium through HGL...")
-                    self._s.log.emit(
-                        "Setting up Plutonium through HGL...\n"
-                        "  1. HGL will download and launch Plutonium (this may take a few minutes)\n"
-                        "  2. Log in with your Plutonium account\n"
-                        "  3. Close the Plutonium window\n"
-                        "  4. Click the button below to continue"
-                    )
-                else:
-                    self._s.progress.emit(12, "Launching Plutonium — please log in...")
-                    self._s.log.emit(
-                        "Plutonium is launching now.\n"
-                        "  1. Wait for it to finish downloading\n"
-                        "  2. Log in with your Plutonium account\n"
-                        "  3. Close the Plutonium window\n"
-                        "  4. Click the button below to continue"
-                    )
-                try:
-                    if is_lcd:
-                        launch_bootstrapper_lcd(
-                            on_progress=lambda p, m: self._s.progress.emit(p, m)
-                        )
-                    else:
-                        launch_bootstrapper(
-                            proton,
-                            on_progress=lambda p, m: self._s.progress.emit(p, m),
-                            steam_root=self.steam_root,
-                        )
-                except DownloadError as dl_ex:
-                    self._s.log.emit(f"⚠  {dl_ex.label} download failed — manual download needed")
-                    self._manual_dl_event.clear()
-                    self._manual_dl_ok = False
-                    self._s.manual_dl.emit(
-                        dl_ex.url,
-                        os.path.dirname(dl_ex.dest),
-                        os.path.basename(dl_ex.dest),
-                        dl_ex.label,
-                    )
-                    self._manual_dl_event.wait()
-                    if not self._manual_dl_ok:
-                        self._s.log.emit("  ✗  Skipped by user.")
-                        self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
-                    self._s.log.emit(f"  ✓  {dl_ex.label} placed manually")
-                except Exception as ex:
-                    self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
-                    self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
-
-                if is_lcd:
-                    self._s.log.emit(
-                        "⏳  HGL is launching Plutonium. This may take a minute on first run\n"
-                        "   while HGL sets up the Wine prefix."
-                    )
-                    self._s.pulse_start.emit("Waiting for Plutonium login")
-
-                self._s.plut_wait.emit()
-                self._plut_event.wait()
-                self._s.plut_go.emit()
-
-                if is_lcd:
-                    self._s.pulse_stop.emit()
-
-                # Verify Plutonium is ready after the user closed the window
-                ready_check = is_plutonium_ready_lcd() if is_lcd else is_plutonium_ready()
-                if not ready_check:
-                    self._s.log.emit(
-                        "✗  Plutonium does not appear to be fully set up.\n"
-                        "   Make sure you logged in and let it finish downloading."
-                    )
-                    self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
-
-                self._s.log.emit("✓  Plutonium ready.")
-            else:
-                self._s.progress.emit(12, "Launching Plutonium to check for updates...")
-                self._s.log.emit(
-                    "Plutonium is launching now.\n"
-                    "  1. Wait for it to finish updating\n"
-                    "  2. Log in if prompted\n"
-                    "  3. Close the Plutonium window\n"
-                    "  4. Click the button below to continue"
-                )
-                try:
-                    if is_lcd:
-                        launch_bootstrapper_lcd(
-                            on_progress=lambda p, m: self._s.progress.emit(p, m)
-                        )
-                    else:
-                        launch_bootstrapper(
-                            proton,
-                            on_progress=lambda p, m: self._s.progress.emit(p, m),
-                            steam_root=self.steam_root,
-                        )
-                except Exception as ex:
-                    self._s.log.emit(f"  Plutonium update check skipped: {ex}")
-
-                if is_lcd:
-                    self._s.pulse_start.emit("Waiting for Plutonium update")
-
-                self._s.plut_wait.emit()
-                self._plut_event.wait()
-                self._s.plut_go.emit()
-
-                if is_lcd:
-                    self._s.pulse_stop.emit()
-
-                self._s.log.emit("✓  Plutonium ready.")
-
-        # ── Kill Steam once — everything from here runs with Steam closed ─────
-        _kill_steam_once()
-
-        # ── Clean slate: clear ALL launch options and compat tools ─────────
-        # Previous installs (LCD→OLED switch, older DeckOps versions) can
-        # leave stale launch options and compat tool entries that conflict
-        # with the current install. Wipe everything for MANAGED_APPIDS
-        # first, then re-apply what's needed via _apply_compat below.
-        try:
-            from wrapper import clear_launch_options, clear_compat_tool
-            for appid in MANAGED_APPIDS:
-                clear_launch_options(self.steam_root, appid)
-            clear_compat_tool(MANAGED_APPIDS)
-            self._s.log.emit("✓  Cleared all launch options and compat tools")
-        except Exception as ex:
-            self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
-
-        _apply_compat()
-        _set_launch_defaults()
-
-        # ── Plutonium games ───────────────────────────────────────────────────
-        if has_plut:
-            # Create the launcher shortcut FIRST so the appid/prefix exist
-            # before per-game installs mirror configs into it.
-            try:
-                from shortcut import create_launcher_shortcut
-                create_launcher_shortcut(
-                    on_progress=lambda m: self._s.log.emit(m)
-                )
-            except Exception as ex:
-                self._s.log.emit(f"  Launcher shortcut failed: {ex}")
-
-            # LCD: also prepare Heroic's shared prefix. Heroic initializes
-            # it during Plutonium login, but may not include the full d3dx9
-            # set needed for all games. ensure_prefix_deps only copies
-            # missing DLLs so it won't overwrite Heroic's own files.
-            if cfg.is_lcd():
-                try:
-                    from ge_proton import ensure_prefix_deps as _epd
-                    from plutonium_lcd import HEROIC_DEFAULT_WINE_PREFIX
-                    if os.path.isdir(HEROIC_DEFAULT_WINE_PREFIX):
-                        _epd(
-                            ge_version, HEROIC_DEFAULT_WINE_PREFIX,
-                            on_progress=lambda msg: self._s.log.emit(msg),
-                            proton_path=proton,
-                            steam_root=self.steam_root,
-                        )
-                        self._s.log.emit("✓  HGL shared prefix ready")
-                except Exception as ex:
-                    self._s.log.emit(f"  HGL prefix deps skipped: {ex}")
-
-            plut_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "plutonium"]
-            total_plut = len(plut_selected)
-            for idx, (key, gd, game) in enumerate(plut_selected):
-                bp = 30 + int(idx / max(total_plut, 1) * 30)
-                base_name = gd["base"]
-                if base_name not in logged_bases:
-                    self._s.progress.emit(bp, f"Setting up {base_name}...")
-                def op_plut(pct, msg, _b=bp): self._s.progress.emit(_b + int(pct / 100 * 8), msg)
-                try:
-                    from plutonium_oled import GAME_META as _PLUT_META
-                    _plut_appid = _PLUT_META[key][0] if key in _PLUT_META else gd["appid"]
-                    compat = find_compatdata(self.steam_root, _plut_appid,
-                                              game_install_dir=game["install_dir"] if game else None)
-                    install_plutonium(game, key, self.steam_root, proton, compat, op_plut)
-                    # plutonium installer (plutonium_oled.py / plutonium_lcd.py)
-                    # owns its own mark_game_setup call so lan_wrapper_path
-                    # and other install-side metadata are preserved.
-                    if base_name not in logged_bases:
-                        self._s.log.emit(f"✓  {base_name} done")
-                        logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── iw4x (Steam closed) ───────────────────────────────────────────────
-        if has_iw4x:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "iw4x"]:
-                base_name = gd["base"]
-                self._s.progress.emit(62, f"Setting up {base_name}...")
-                def op_iw4x(pct, msg): self._s.progress.emit(62 + int(pct / 100 * 8), msg)
-                try:
-                    compat = find_compatdata(self.steam_root, gd["appid"],
-                                              game_install_dir=game["install_dir"] if game else None)
-                    install_iw4x(game, self.steam_root, proton, compat, op_iw4x,
-                                 install_dlc=getattr(self, 'install_iw4x_dlc', False))
-                    cfg.mark_game_setup(key, "iw4x", source="steam")
-                    self._s.log.emit(f"✓  {base_name} done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── T7X (BO3 AlterWare client) — Steam closed ─────────────────────────
-        # Must run BEFORE CleanOps — CleanOps drops d3d11.dll into the
-        # stock BO3 dir, and the symlink farm would pick it up if it
-        # already exists. Running T7x first builds symlinks from a clean
-        # stock dir, then CleanOps only touches the stock dir afterward.
-        if has_t7x:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
-                base_name = gd["base"]
-                self._s.progress.emit(86, f"Setting up T7x...")
-                def op_t7x(pct, msg): self._s.progress.emit(86 + int(pct / 100 * 2), msg)
-                try:
-                    t7x_dir = install_t7x(game, on_progress=op_t7x)
-                    game["install_dir"] = t7x_dir
-                    cfg.mark_game_setup(key, "t7x", source="steam")
-                    self._s.log.emit(f"✓  {base_name} (T7x) done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
-
-        # ── CleanOps (BO3) — Steam closed ─────────────────────────────────────
-        if has_cleanops:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "cleanops"]:
-                base_name = gd["base"]
-                self._s.progress.emit(88, f"Setting up {base_name}...")
-                def op_cleanops(pct, msg): self._s.progress.emit(88 + int(pct / 100 * 4), msg)
-                try:
-                    compat = find_compatdata(self.steam_root, gd["appid"],
-                                              game_install_dir=game["install_dir"] if game else None)
-                    install_cleanops(game, self.steam_root, proton, compat, op_cleanops)
-                    cfg.mark_game_setup(key, "cleanops", source="steam")
-                    self._s.log.emit(f"✓  {base_name} done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── AlterWare (Ghosts / Advanced Warfare) — Steam closed ──────────────
-        has_alterware = any(KEY_CLIENT.get(k) == "alterware" for k in selected_keys)
-        if has_alterware:
-            from alterware import install_alterware
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "alterware"]:
-                base_name = gd["base"]
-                self._s.progress.emit(91, f"Setting up {base_name}...")
-                def op_alterware(pct, msg): self._s.progress.emit(91 + int(pct / 100 * 4), msg)
-                try:
-                    from detect_games import GAMES as _GAMES_MAP
-                    _appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
-                    _install_dir = game["install_dir"] if game else None
-                    compat = find_compatdata(self.steam_root, _appid,
-                                              game_install_dir=_install_dir)
-                    if not compat and _install_dir:
-                        steamapps = os.path.dirname(os.path.dirname(_install_dir))
-                        compat = os.path.join(steamapps, "compatdata", str(_appid))
-                    install_alterware(game, key, self.steam_root, proton, compat, op_alterware,
-                                     source="steam")
-                    cfg.mark_game_setup(key, "alterware", source="steam")
-                    self._s.log.emit(f"✓  {base_name} done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── T6SP-MOD (BO2 Singleplayer) — Steam closed ───────────────────
-        if has_t6sp_mod:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t6sp_mod"]:
-                base_name = gd["base"]
-                self._s.progress.emit(95, f"Installing Rattpak's T6SP-MOD (Beta)...")
-                def op_t6sp(pct, msg): self._s.progress.emit(95 + int(pct / 100 * 2), msg)
-                try:
-                    _install_dir = game["install_dir"] if game else None
-                    compat = find_compatdata(self.steam_root, gd["appid"],
-                                              game_install_dir=_install_dir)
-                    install_t6sp_mod(game, self.steam_root, proton, compat, op_t6sp)
-                    cfg.mark_game_setup(key, "t6sp_mod", source="steam")
-                    self._s.log.emit(f"✓  {base_name} (T6SP-MOD) done")
-                    logged_bases.add(base_name)
-                except Exception as ex:
-                    self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
-
-        # ── Vanilla Steam games (no mod client, just configs + controllers) ──
-        # Games like MW2 SP and MW3 SP run through Steam as-is.
-        # No download or exe replacement needed. We just mark them as set up
-        # so they show as installed on the My Games screen and get their
-        # display configs and controller profiles applied below.
-        for key, gd, game in self.selected:
-            c = KEY_CLIENT.get(key, "")
-            if c == "steam" and not cfg.is_game_setup_for_source(key, "steam"):
-                cfg.mark_game_setup(key, "steam", source="steam")
-                self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
-
-        # ── game display configs ──────────────────────────────────────────────
-        try:
-            from game_config import apply_game_configs
-            applied, skipped, failed = apply_game_configs(
-                selected_keys=selected_keys,
-                installed_games={k: g for k, gd, g in self.selected if g},
-                steam_root=self.steam_root,
-                deck_model=cfg.get_deck_model() or "oled",
-                on_progress=lambda msg: self._s.log.emit(msg),
-            )
-            if applied > 0:
-                self._s.log.emit(f"✓  Game display configs: {applied} written"
-                                 + (f", {skipped} skipped" if skipped else "")
-                                 + (f", {failed} failed" if failed else ""))
-            elif skipped > 0:
-                self._s.log.emit(f"⚠  Game display configs: none applied ({skipped} skipped)")
-            else:
-                self._s.log.emit("⚠  Game display configs: no eligible configs found")
-        except Exception as ex:
-            self._s.log.emit(f"  Game configs skipped: {ex}")
-
-        # ── Controller templates + profiles (after all games) ─────────────────
-        self._s.progress.emit(90, "Installing controller templates...")
-        self._s.log.emit("Installing controller templates...")
-        try:
-            from controller_profiles import install_controller_templates, assign_controller_profiles, assign_external_controller_profiles
-            install_controller_templates(
-                on_progress=lambda msg: self._s.log.emit(f"  {msg}")
-            )
-            gyro_mode = cfg.get_gyro_mode() or "on"
-            # Neptune profiles always assigned - user may play handheld too
-            assign_controller_profiles(
-                gyro_mode,
-                on_progress=lambda msg: self._s.log.emit(f"  {msg}")
-            )
-            self._s.log.emit(f"✓  Neptune controller profiles assigned ({gyro_mode} mode)")
-            # Docked users also get external controller profiles
-            if cfg.is_docked():
-                controller_type = cfg.get_external_controller() or "playstation"
-                assign_external_controller_profiles(
-                    controller_type,
-                    gyro_mode,
-                    on_progress=lambda msg: self._s.log.emit(f"  {msg}")
-                )
-                self._s.log.emit(f"✓  External controller profiles assigned ({controller_type})")
-        except Exception as ex:
-            self._s.log.emit(f"  Templates skipped: {ex}")
-
-        try:
-            from wrapper import set_steam_input_enabled
-            set_steam_input_enabled(self.steam_root)
-            self._s.log.emit("✓  Steam Input enabled for all games")
-        except Exception as ex:
-            self._s.log.emit(f"  Steam Input setup skipped: {ex}")
-
-        # ── Non-Steam shortcuts ───────────────────────────────────────────────
-        try:
-            from shortcut import create_shortcuts
-            self._s.log.emit("Creating non-Steam shortcuts...")
-            installed_for_shortcuts = {k: g for k, gd, g in self.selected if g}
-            create_shortcuts(
-                installed_games=installed_for_shortcuts,
-                selected_keys=selected_keys,
-                gyro_mode=cfg.get_gyro_mode() or "on",
-                on_progress=lambda msg: self._s.log.emit(msg),
-                steam_root=self.steam_root,
-            )
-        except Exception as ex:
-            self._s.log.emit(f"  Shortcuts skipped: {ex}")
-
-        # ── Custom artwork for Steam MP/ZM games ─────────────────────────────
-        try:
-            from shortcut import apply_steam_artwork
-            self._s.log.emit("Applying custom artwork for multiplayer games...")
-            apply_steam_artwork(
-                selected_keys=selected_keys,
-                on_progress=lambda msg: self._s.log.emit(msg)
-            )
-        except Exception as ex:
-            self._s.log.emit(f"  Steam artwork skipped: {ex}")
-
-        # Standard flow always finishes here. Advanced flow uses
-        # OwnInstallScreen instead and never reaches this screen.
-        cfg.complete_first_run(self.steam_root)
-        self._s.progress.emit(100, "All done!")
-        self._s.done.emit(True)
-
-
-# ── OwnInstallScreen ─────────────────────────────────────────────────────────
-class OwnInstallScreen(QWidget):
-    """
-    Install flow for the advanced ("Steam or Other") path.
-
-    Handles both Steam-selected games (passed from SetupScreen as
-    steam_selected) and own-detected games (parked by OwnScanScreen as
-    own_selected) in a single pass.
-
-    Creates non-Steam shortcuts for own games, copies GE-Proton's
-    default_pfx to build each own game's compatdata prefix automatically,
-    sets GE-Proton compat for MANAGED_APPIDS and own shortcut appids,
-    then installs mod clients. No manual game launch step required.
-    """
-
-    def __init__(self, stack):
-        super().__init__(); self.stack = stack; self.screen_name = "OwnInstallScreen"
-        self.own_selected    = {}   # dict of key -> game, set by OwnScanScreen
-        self.steam_selected  = []   # list of (key, gd, game), set by SetupScreen
+# --- _BaseInstallScreen ---
+class _BaseInstallScreen(QWidget):
+    _DONE_MSG = "Installation complete!"
+
+    def __init__(self, stack, screen_name):
+        super().__init__(); self.stack = stack; self.screen_name = screen_name
         self.steam_root = ""
         self._plut_event = threading.Event()
         self._cod4r_event = threading.Event()
@@ -1653,7 +558,7 @@ class OwnInstallScreen(QWidget):
     def _show_iw5_dg_wait(self, cmd, step_label):
         from iw5_downgrade import copy_to_clipboard
         copy_to_clipboard(cmd)
-        self.iw5_dg_btn.setText(f"{step_label} complete, continue  \u2713")
+        self.iw5_dg_btn.setText(f"{step_label} complete, continue  ✓")
         self.iw5_dg_btn.setVisible(True)
 
     def _hide_iw5_dg_wait(self):
@@ -1679,7 +584,6 @@ class OwnInstallScreen(QWidget):
         self.log.setMaximumHeight(16777215)
 
     def _ask_iw5_dg_method(self):
-        """Show chooser: QR Code Scan vs Steam Console (manual) vs Add DS."""
         msg = QMessageBox(self)
         msg.setWindowTitle("MW3 Downgrade")
         msg.setText(
@@ -1719,45 +623,6 @@ class OwnInstallScreen(QWidget):
         _log_to_file(text)
         self.log.appendPlainText(text)
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self.bar.setValue(0); self.log.clear()
-        self.plut_btn.setVisible(False)
-        self.plut_warn.setVisible(False)
-        self.cod4r_btn.setVisible(False)
-        self.iw5_dg_btn.setVisible(False)
-        self.iw5_qr_box.setVisible(False)
-        self.cont_btn.setVisible(False)
-        self._plut_event.clear()
-        self._cod4r_event.clear()
-        self._iw5_dg_event.clear()
-        self._iw5_method = ""
-        self._manual_dl_event.clear()
-        self._manual_dl_ok = False
-        self._stop_pulse()
-        # Route the continue button based on whether this was triggered
-        # from ManagementScreen (return to My Games) or the first-run
-        # wizard (go to SetupCompleteScreen).
-        try:
-            self.cont_btn.clicked.disconnect()
-        except Exception:
-            pass
-        if self._return_to_management:
-            self.cont_btn.setText("Back to My Games  >>")
-            self.cont_btn.clicked.connect(lambda: (
-                os.system("gtk-launch steam.desktop &"),
-                get_screen(self.stack, "ManagementScreen").set_installed(
-                    find_installed_games(parse_library_folders(find_steam_root()))
-                ),
-                go_to(self.stack, "ManagementScreen"),
-            ))
-            self._return_to_management = False
-        else:
-            self.cont_btn.setText("Continue  >>")
-            self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
-        _log_to_file("── Own Install started ──")
-        QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
     def _confirm_plut(self):
         self._plut_event.set()
@@ -1813,8 +678,46 @@ class OwnInstallScreen(QWidget):
 
     def _on_done(self, _):
         self._stop_pulse()
-        self.cur.setText("Installation complete!\n\nIf you enjoy these mods, please consider starring the original creators' GitHub repositories!")
+        self.cur.setText(self._DONE_MSG)
         self.cont_btn.setVisible(True)
+
+    def _go_management(self):
+        os.system("gtk-launch steam.desktop &")
+        root = find_steam_root()
+        get_screen(self.stack, "ManagementScreen").set_installed(
+            find_installed_games(parse_library_folders(root)))
+        go_to(self.stack, "ManagementScreen")
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self.bar.setValue(0); self.log.clear()
+        self.plut_btn.setVisible(False)
+        self.plut_warn.setVisible(False)
+        self.cod4r_btn.setVisible(False)
+        self.iw5_dg_btn.setVisible(False)
+        self.iw5_qr_box.setVisible(False)
+        self.cont_btn.setVisible(False)
+        self._plut_event.clear()
+        self._cod4r_event.clear()
+        self._iw5_dg_event.clear()
+        self._iw5_method = ""
+        self._manual_dl_event.clear()
+        self._manual_dl_ok = False
+        self._DONE_MSG = _BaseInstallScreen._DONE_MSG
+        self._stop_pulse()
+        try:
+            self.cont_btn.clicked.disconnect()
+        except Exception:
+            pass
+        if self._return_to_management:
+            self.cont_btn.setText("Back to My Games  >>")
+            self.cont_btn.clicked.connect(self._go_management)
+            self._return_to_management = False
+        else:
+            self.cont_btn.setText("Continue  >>")
+            self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
+        _log_to_file(f"── {self.screen_name} started ──")
+        QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
     def _run(self):
         import traceback as _tb
@@ -1822,7 +725,7 @@ class OwnInstallScreen(QWidget):
             self._run_inner()
         except Exception:
             err = _tb.format_exc()
-            _log_to_file(f"[FATAL] OwnInstallScreen._run crashed:\n{err}")
+            _log_to_file(f"[FATAL] {self.screen_name}._run crashed:\n{err}")
             try:
                 self._s.log.emit(f"✗ Install failed with error:\n{err}")
                 self._s.progress.emit(100, "Install failed — see log.")
@@ -1832,7 +735,6 @@ class OwnInstallScreen(QWidget):
 
     def _run_inner(self):
         from wrapper import get_proton_path, find_compatdata, kill_steam, set_compat_tool
-        from shortcut import enrich_own_games, write_own_shortcuts
         from cod4x import install_cod4x
         from cod4r import install_cod4r
         from iw4x import install_iw4x
@@ -1842,16 +744,27 @@ class OwnInstallScreen(QWidget):
         from t7x import install_t7x
         from ge_proton import install_ge_proton, MANAGED_APPIDS
 
-        # Build the combined selected list from both Steam and own sources.
-        # own_selected is a dict {key: game_dict} from OwnScanScreen.
-        # steam_selected is a list [(key, gd, game)] from SetupScreen.
-        # We need to merge them into self.selected as [(key, gd, game)].
-        own_as_tuples = []
-        for k, g in self.own_selected.items():
-            for gd in ALL_GAMES:
-                if k in _active_keys(gd):
-                    own_as_tuples.append((k, gd, g)); break
-        self.selected = list(self.steam_selected) + own_as_tuples
+        # --- Source awareness setup
+        # Advanced flow: steam_selected is a list (set by caller).
+        # Standard flow: steam_selected is None, self.selected already set.
+        own_selected = self.own_selected
+        has_own = bool(own_selected)
+
+        if self.steam_selected is not None:
+            # Advanced flow: merge steam + own into self.selected
+            steam_sel = list(self.steam_selected)
+            own_as_tuples = []
+            for k, g in own_selected.items():
+                for gd in ALL_GAMES:
+                    if k in _active_keys(gd):
+                        own_as_tuples.append((k, gd, g)); break
+            self.selected = steam_sel + own_as_tuples
+        else:
+            # Standard flow: self.selected already set by SetupScreen
+            steam_sel = self.selected
+
+        if has_own:
+            from shortcut import enrich_own_games, write_own_shortcuts
 
         selected_keys = [key for key, _, _ in self.selected]
         logged_bases  = set()
@@ -1859,10 +772,22 @@ class OwnInstallScreen(QWidget):
         has_cod4      = any(KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp") for k in selected_keys)
         has_t6sp_mod  = any(KEY_CLIENT.get(k) == "t6sp_mod" for k in selected_keys)
 
-        # Resolve CoD4 MP client choice from pre-install popup
         _cod4_client = getattr(self, "cod4_client", "cod4r")
+        _steam_killed = False
 
-        # ── GE-Proton download (Steam still running) ─────────────────────
+        def _kill_steam_once():
+            nonlocal _steam_killed
+            if not _steam_killed:
+                self._s.progress.emit(18, "Closing Steam...")
+                self._s.log.emit("Closing Steam...")
+                try:
+                    kill_steam(on_progress=lambda msg: self._s.log.emit(f"  {msg}"))
+                    self._s.log.emit("  ✓ Steam closed.")
+                except Exception as ex:
+                    self._s.log.emit(f"  Could not close Steam: {ex}")
+                _steam_killed = True
+
+        # --- GE-Proton download (Steam still running)
         ge_version = None
         try:
             self._s.pulse_start.emit("Installing GE-Proton")
@@ -1879,7 +804,7 @@ class OwnInstallScreen(QWidget):
 
         proton = get_proton_path(self.steam_root)
 
-        # ── BO3 client selection: cleanops, t7x, or both ─────────────────
+        # --- BO3 client selection: cleanops, t7x, or both
         # Injection must happen early so t7x is included in prefix init,
         # shortcuts, and selected_keys. Actual install runs later (after
         # CleanOps) to match the original phase order.
@@ -1892,60 +817,49 @@ class OwnInstallScreen(QWidget):
                 if k == "t7":
                     t7x_tuple = ("t7x", gd, dict(g))
                     self.selected.append(t7x_tuple)
-                    self.steam_selected.append(t7x_tuple)
+                    steam_sel.append(t7x_tuple)
                     selected_keys.append("t7x")
                     break
 
-        # ── Enrich own game dicts (shortcut_appid, compatdata_path) ───────
+        # --- Enrich own game dicts (shortcut_appid, compatdata_path)
         # enrich_own_games computes CRC-based appids, prefix paths, and
         # resolved exe/launch options WITHOUT writing any VDF entries.
         # Must run before ensure_all_prefix_deps. Actual shortcut writing
         # is deferred to write_own_shortcuts() after all mod clients are
         # installed so every target exe exists on disk.
-        self._s.progress.emit(8, "Computing own game shortcuts...")
-        self._s.log.emit("Enriching own game data...")
-        gyro_mode = cfg.get_gyro_mode() or "on"
-        own_games_dict = {k: g for k, g in self.own_selected.items()}
-        own_games_dict = enrich_own_games(
-            own_games=own_games_dict,
-            selected_keys=[k for k in self.own_selected],
-            on_progress=lambda msg: self._s.log.emit(msg),
-        )
-        _log_to_file("[BREADCRUMB] enrich_own_games returned")
+        if has_own:
+            self._s.progress.emit(8, "Computing own game shortcuts...")
+            self._s.log.emit("Enriching own game data...")
+            own_games_dict = dict(own_selected)
+            own_games_dict = enrich_own_games(
+                own_games=own_games_dict,
+                selected_keys=list(own_selected.keys()),
+                on_progress=lambda msg: self._s.log.emit(msg),
+            )
+            _log_to_file("[BREADCRUMB] enrich_own_games returned")
+            self.selected = [
+                (k, gd, own_games_dict.get(k, g)) for k, gd, g in self.selected
+            ]
+            own_games = {k: g for k, gd, g in self.selected if g and k in own_selected}
+            _log_to_file("[BREADCRUMB] own_games rebuilt, starting prefix init")
 
-        # Update self.selected with enriched own game dicts (shortcut_appid etc)
-        self.selected = [
-            (k, gd, own_games_dict.get(k, g)) for k, gd, g in self.selected
-        ]
-        # Rebuild own_games with enriched dicts for compat tool mapping later.
-        # Only include own-selected keys - Steam games don't have shortcut_appid.
-        own_games = {k: g for k, gd, g in self.selected if g and k in self.own_selected}
-        _log_to_file("[BREADCRUMB] own_games rebuilt, starting prefix init")
-
-        # ── Create prefixes + install deps from GE-Proton default_pfx ─────
-        # Every selected game gets its prefix preloaded — no exceptions.
-        # Own games use their CRC-based prefix (set by create_own_shortcuts).
-        # Steam games use their Steam appid prefix.
-        # LCD Plutonium games still get a prefix for offline mode; HGL
-        # manages its own prefix separately for online mode.
-        # ensure_all_prefix_deps handles deduplication and skips prefixes
-        # that are already initialized, so passing everything in is safe.
+        # --- Create prefixes + install deps from GE-Proton default_pfx
+        # Every selected game gets its prefix preloaded. Own games use their
+        # CRC-based prefix (set by enrich_own_games). Steam games use their
+        # Steam appid prefix. ensure_all_prefix_deps handles deduplication
+        # and skips prefixes that are already initialized.
         self._s.progress.emit(9, "Creating Proton prefixes...")
         self._s.log.emit("Creating Proton prefixes and installing dependencies...")
         self._s.pulse_start.emit("Installing prefix dependencies")
         from ge_proton import ensure_all_prefix_deps
         from detect_games import GAMES as _GAMES_MAP
-        from wrapper import find_compatdata
         dep_targets = []
         for key, gd, game in self.selected:
             if not game:
                 continue
-            if key in self.own_selected:
-                # Own games always use their CRC-based prefix
+            if key in own_selected:
                 compat = game.get("compatdata_path", "")
             else:
-                # Steam games use the per-key appid, not card-level gd["appid"].
-                # Card-level appid is wrong for keys like t6zm (212910 vs 202990).
                 appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
                 compat = find_compatdata(self.steam_root, appid,
                                          game_install_dir=game.get("install_dir"))
@@ -1966,14 +880,10 @@ class OwnInstallScreen(QWidget):
         self._s.pulse_stop.emit()
         _log_to_file("[BREADCRUMB] prefix deps done")
 
-        # ── Install CoD4 (iw3sp + cod4r/cod4x) — Steam still running ─────
+        # --- CoD4 (iw3sp + cod4r/cod4x) -- Steam still running
         # Runs before the Plutonium bootstrapper and before Steam is closed
         # so the touchpad still works as a mouse for closing the CoD4R
-        # launcher window. Requires enrichment + prefix deps, which now
-        # also run pre-kill: enrich_own_games is pure computation (no VDF
-        # writes) and ensure_all_prefix_deps runs pre-kill in the standard
-        # flow already. VDF writers (clean slate, compat tools) stay after
-        # the Steam kill.────────
+        # launcher window.
         _log_to_file("[BREADCRUMB] starting cod4 install phase")
         if has_cod4:
             cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp")]
@@ -1982,9 +892,8 @@ class OwnInstallScreen(QWidget):
                 self._s.progress.emit(9, f"Setting up {base_name}...")
                 def op_cod4(pct, msg): self._s.progress.emit(9 + int(pct / 100 * 4), msg)
                 try:
-                    source = "own" if key in self.own_selected else "steam"
+                    source = "own" if key in own_selected else "steam"
                     c = KEY_CLIENT.get(key, gd["client"])
-                    # Override cod4mp client with user's popup choice
                     if key == "cod4mp":
                         c = _cod4_client
                     if source == "own":
@@ -2035,13 +944,13 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-        # ── IW5 64-bit downgrade (Steam still running) ───────────────────
-        # Only for Steam-sourced IW5 installs — own-source installs are
+        # --- IW5 64-bit downgrade (Steam still running)
+        # Only for Steam-sourced IW5 installs. Own-source installs are
         # unaffected since users provide their own game files.
         _iw5_steam_keys = [
             (k, gd, g) for k, gd, g in self.selected
             if k in ("iw5mp", "iw5mp_ds")
-            and k not in self.own_selected
+            and k not in own_selected
             and g.get("install_dir")
         ]
         if _iw5_steam_keys:
@@ -2076,7 +985,6 @@ class OwnInstallScreen(QWidget):
                     self._s.iw5_dg_choose.emit()
                     self._iw5_dg_event.wait()
 
-                    # Build combined depot lists
                     _qr_depots = list(IW5_DEPOTS) if _needs_base else []
                     _manual_cmds = list(IW5_DEPOT_CMDS) if _needs_base else []
                     for dk in _dlc_needed:
@@ -2199,7 +1107,7 @@ class OwnInstallScreen(QWidget):
                                 "  The depot download may not have completed."
                             )
 
-        # ── Plutonium bootstrapper (Steam still running) ─────────────────
+        # --- Plutonium bootstrapper (Steam still running)
         # Downloads Plutonium and launches it so the user can log in. LCD
         # routes through HGL (shared default prefix); OLED uses the
         # dedicated DeckOps prefix via Proton directly.
@@ -2323,17 +1231,11 @@ class OwnInstallScreen(QWidget):
 
                 self._s.log.emit("✓  Plutonium ready.")
 
-        # ── Kill Steam ────────────────────────────────────────────────────
-        self._s.progress.emit(18, "Closing Steam...")
-        self._s.log.emit("Closing Steam...")
-        try:
-            kill_steam(on_progress=lambda msg: self._s.log.emit(f"  {msg}"))
-            self._s.log.emit("  ✓ Steam closed.")
-        except Exception as ex:
-            self._s.log.emit(f"  Could not close Steam: {ex}")
+        # --- Kill Steam
+        _kill_steam_once()
 
-        # ── Clean slate: clear ALL launch options and compat tools ─────
-        # Previous installs (LCD→OLED switch, older DeckOps versions) can
+        # --- Clean slate: clear ALL launch options and compat tools
+        # Previous installs (LCD->OLED switch, older DeckOps versions) can
         # leave stale launch options and compat tool entries that conflict
         # with the current install. Wipe everything for MANAGED_APPIDS
         # first, then re-apply what's needed below.
@@ -2346,24 +1248,22 @@ class OwnInstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
 
-        # ── Set GE-Proton compat for MANAGED_APPIDS ──────────────────────
-        # Must run AFTER kill_steam - Steam overwrites config.vdf on exit.
+        # --- Set GE-Proton compat for MANAGED_APPIDS
+        # Must run AFTER kill_steam -- Steam overwrites config.vdf on exit.
         # Only write for Steam appids if the user actually has Steam games
-        # selected - otherwise this may trigger Steam to re-download games.
-        if ge_version and self.steam_selected:
+        # selected; otherwise this may trigger Steam to re-download games.
+        if ge_version and steam_sel:
             try:
                 set_compat_tool(MANAGED_APPIDS, ge_version)
                 self._s.log.emit(f"✓  {ge_version} set for Steam game appids")
-                # BO3 needs Proton Experimental — GE-Proton causes launch failures
+                # BO3 needs Proton Experimental -- GE-Proton causes launch failures
                 set_compat_tool(["311210"], "proton_experimental")
                 self._s.log.emit("✓  Proton Experimental set for BO3")
             except Exception as ex:
                 self._s.log.emit(f"  CompatToolMapping for Steam appids skipped: {ex}")
 
-        # ── Plutonium games ───────────────────────────────────────────────
+        # --- Plutonium games
         if has_plut:
-            # Create the launcher shortcut FIRST so the appid/prefix exist
-            # before per-game installs mirror configs into it.
             try:
                 from shortcut import create_launcher_shortcut
                 create_launcher_shortcut(
@@ -2372,10 +1272,7 @@ class OwnInstallScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"  Launcher shortcut failed: {ex}")
 
-            # LCD: also prepare Heroic's shared prefix. Heroic initializes
-            # it during Plutonium login, but may not include the full d3dx9
-            # set needed for all games. ensure_prefix_deps only copies
-            # missing DLLs so it won't overwrite Heroic's own files.
+            # LCD: prepare Heroic's shared prefix
             if cfg.is_lcd():
                 try:
                     from ge_proton import ensure_prefix_deps as _epd
@@ -2391,10 +1288,6 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"  HGL prefix deps skipped: {ex}")
 
-            # Per-game Plutonium install: copy Plutonium into each prefix,
-            # write config.json with game paths. Own games skip the wrapper
-            # (shortcuts point at Plutonium directly). Steam games in the
-            # mixed flow get the full wrapper treatment.
             plut_selected = [(k, gd, g) for k, gd, g in self.selected
                              if KEY_CLIENT.get(k) == "plutonium"]
             installed_for_plut = {k: g for k, gd, g in self.selected if g}
@@ -2406,7 +1299,7 @@ class OwnInstallScreen(QWidget):
                     self._s.progress.emit(bp, f"Setting up {base_name}...")
                 def op_plut(pct, msg, _b=bp): self._s.progress.emit(_b + int(pct / 100 * 6), msg)
                 try:
-                    source = "own" if key in self.own_selected else "steam"
+                    source = "own" if key in own_selected else "steam"
                     if source == "own":
                         compat = game.get("compatdata_path", "")
                     else:
@@ -2417,17 +1310,13 @@ class OwnInstallScreen(QWidget):
                                      on_progress=op_plut,
                                      installed_games=installed_for_plut,
                                      source=source)
-                    # plutonium installer (plutonium_oled.py / plutonium_lcd.py)
-                    # owns its own mark_game_setup call so lan_wrapper_path
-                    # and other install-side metadata are preserved. wp is
-                    # discarded here -- the installer already persisted it.
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-        # ── T6SP-MOD (BO2 Singleplayer) ──────────────────────────────────
+        # --- T6SP-MOD (BO2 Singleplayer)
         _log_to_file("[BREADCRUMB] starting t6sp_mod install phase")
         if has_t6sp_mod:
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t6sp_mod"]:
@@ -2435,7 +1324,7 @@ class OwnInstallScreen(QWidget):
                 self._s.progress.emit(52, f"Installing Rattpak's T6SP-MOD (Beta)...")
                 def op_t6sp(pct, msg): self._s.progress.emit(52 + int(pct / 100 * 4), msg)
                 try:
-                    source = "own" if key in self.own_selected else "steam"
+                    source = "own" if key in own_selected else "steam"
                     if source == "own":
                         compat = game.get("compatdata_path", "")
                     else:
@@ -2448,7 +1337,7 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-        # ── Install iw4x ─────────────────────────────────────────────────
+        # --- IW4x
         _log_to_file("[BREADCRUMB] starting iw4x install phase")
         has_iw4x = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
         if has_iw4x:
@@ -2457,7 +1346,7 @@ class OwnInstallScreen(QWidget):
                 self._s.progress.emit(56, f"Setting up {base_name}...")
                 def op_iw4x(pct, msg): self._s.progress.emit(56 + int(pct / 100 * 7), msg)
                 try:
-                    source = "own" if key in self.own_selected else "steam"
+                    source = "own" if key in own_selected else "steam"
                     if source == "own":
                         compat = game.get("compatdata_path", "")
                     else:
@@ -2471,8 +1360,8 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-        # ── Install T7X (BO3 AlterWare client) ─────────────────────────
-        # Must run BEFORE CleanOps — CleanOps drops d3d11.dll into the
+        # --- T7X (BO3 AlterWare client)
+        # Must run BEFORE CleanOps: CleanOps drops d3d11.dll into the
         # stock BO3 dir, and the symlink farm would pick it up if it
         # already exists. Running T7x first builds symlinks from a clean
         # stock dir, then CleanOps only touches the stock dir afterward.
@@ -2483,7 +1372,7 @@ class OwnInstallScreen(QWidget):
                 self._s.progress.emit(70, f"Setting up T7x...")
                 def op_t7x(pct, msg): self._s.progress.emit(70 + int(pct / 100 * 2), msg)
                 try:
-                    source = "own" if key in self.own_selected else "steam"
+                    source = "own" if key in own_selected else "steam"
                     t7x_dir = install_t7x(game, on_progress=op_t7x)
                     game["install_dir"] = t7x_dir
                     cfg.mark_game_setup(key, "t7x", source=source)
@@ -2492,7 +1381,7 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
 
-        # ── Install CleanOps (BO3) ────────────────────────────────────────
+        # --- CleanOps (BO3)
         _log_to_file("[BREADCRUMB] starting cleanops install phase")
         if has_cleanops:
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "cleanops"]:
@@ -2500,7 +1389,7 @@ class OwnInstallScreen(QWidget):
                 self._s.progress.emit(72, f"Setting up {base_name}...")
                 def op_cleanops(pct, msg): self._s.progress.emit(72 + int(pct / 100 * 4), msg)
                 try:
-                    source = "own" if key in self.own_selected else "steam"
+                    source = "own" if key in own_selected else "steam"
                     if source == "own":
                         compat = game.get("compatdata_path", "")
                     else:
@@ -2513,7 +1402,7 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-        # ── Install AlterWare (Ghosts / Advanced Warfare) ─────────────────
+        # --- AlterWare (Ghosts / Advanced Warfare)
         _log_to_file("[BREADCRUMB] starting alterware install phase")
         has_alterware = any(KEY_CLIENT.get(k) == "alterware" for k in selected_keys)
         if has_alterware:
@@ -2523,7 +1412,7 @@ class OwnInstallScreen(QWidget):
                 self._s.progress.emit(76, f"Setting up {base_name}...")
                 def op_alterware(pct, msg): self._s.progress.emit(76 + int(pct / 100 * 4), msg)
                 try:
-                    source = "own" if key in self.own_selected else "steam"
+                    source = "own" if key in own_selected else "steam"
                     _appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
                     _install_dir = game.get("install_dir")
                     if source == "own":
@@ -2545,15 +1434,15 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-        # ── Mark vanilla games ────────────────────────────────────────────
+        # --- Mark vanilla games
         for key, gd, game in self.selected:
             c = KEY_CLIENT.get(key, "")
-            source = "own" if key in self.own_selected else "steam"
+            source = "own" if key in own_selected else "steam"
             if c == "steam" and not cfg.is_game_setup_for_source(key, source):
                 cfg.mark_game_setup(key, "steam", source=source)
                 self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
 
-        # ── Game display configs ──────────────────────────────────────────
+        # --- Game display configs
         self._s.progress.emit(78, "Applying game configs...")
         try:
             from game_config import apply_game_configs
@@ -2568,10 +1457,14 @@ class OwnInstallScreen(QWidget):
                 self._s.log.emit(f"✓  Game display configs: {applied} written"
                                  + (f", {skipped} skipped" if skipped else "")
                                  + (f", {failed} failed" if failed else ""))
+            elif skipped > 0:
+                self._s.log.emit(f"⚠  Game display configs: none applied ({skipped} skipped)")
+            else:
+                self._s.log.emit("⚠  Game display configs: no eligible configs found")
         except Exception as ex:
             self._s.log.emit(f"  Game configs skipped: {ex}")
 
-        # ── Controller templates ──────────────────────────────────────────
+        # --- Controller templates
         self._s.progress.emit(88, "Installing controller templates...")
         try:
             from controller_profiles import install_controller_templates, assign_controller_profiles, assign_external_controller_profiles
@@ -2579,13 +1472,11 @@ class OwnInstallScreen(QWidget):
                 on_progress=lambda msg: self._s.log.emit(f"  {msg}")
             )
             gyro_mode = cfg.get_gyro_mode() or "on"
-            # Neptune profiles always assigned - user may play handheld too
             assign_controller_profiles(
                 gyro_mode,
                 on_progress=lambda msg: self._s.log.emit(f"  {msg}")
             )
             self._s.log.emit(f"✓  Neptune controller profiles assigned ({gyro_mode} mode)")
-            # Docked users also get external controller profiles
             if cfg.is_docked():
                 controller_type = cfg.get_external_controller() or "playstation"
                 assign_external_controller_profiles(
@@ -2604,32 +1495,32 @@ class OwnInstallScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Steam Input setup skipped: {ex}")
 
-        # ── Write own game shortcuts (VDF, artwork, controllers, compat) ──
+        # --- Write own game shortcuts (VDF, artwork, controllers, compat)
         # All mod client exes now exist on disk. write_own_shortcuts reads
         # the enrichment data set by enrich_own_games() earlier and writes
         # the actual VDF entries, downloads artwork, assigns controller
         # configs, and sets GE-Proton compat tool per shortcut.
-        if self.own_selected:
-            self._s.progress.emit(88, "Writing own game shortcuts...")
+        if has_own:
+            gyro_mode = cfg.get_gyro_mode() or "on"
+            self._s.progress.emit(90, "Writing own game shortcuts...")
             try:
                 write_own_shortcuts(
                     own_games=own_games,
-                    selected_keys=[k for k in self.own_selected],
+                    selected_keys=list(own_selected.keys()),
                     gyro_mode=gyro_mode,
                     on_progress=lambda msg: self._s.log.emit(msg),
                 )
             except Exception as ex:
                 self._s.log.emit(f"  Own shortcuts failed: {ex}")
 
-        # ── Non-Steam shortcuts for Steam games (mixed flow) ─────────────
-        # Steam games also need their non-Steam shortcuts (e.g. WaW MP,
-        # CoD4 MP) created via create_shortcuts(). Without this, Steam games
-        # in the mixed flow don't get their mod client shortcuts.
-        if self.steam_selected:
+        # --- Non-Steam shortcuts for Steam games
+        steam_keys = [k for k, _, _ in steam_sel]
+        if steam_sel:
             try:
                 from shortcut import create_shortcuts
-                steam_installed = {k: g for k, gd, g in self.steam_selected if g}
-                steam_keys = [k for k, _, _ in self.steam_selected]
+                self._s.log.emit("Creating non-Steam shortcuts...")
+                steam_installed = {k: g for k, gd, g in steam_sel if g}
+                gyro_mode = cfg.get_gyro_mode() or "on"
                 create_shortcuts(
                     installed_games=steam_installed,
                     selected_keys=steam_keys,
@@ -2642,9 +1533,8 @@ class OwnInstallScreen(QWidget):
 
             # Set default launch option so Steam Deck skips the mode picker
             has_cod4_steam = any(KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp")
-                                for k, _, _ in self.steam_selected)
-            has_waw_steam = any(k in ("t4sp", "t4mp")
-                               for k, _, _ in self.steam_selected)
+                                for k in steam_keys)
+            has_waw_steam = any(k in ("t4sp", "t4mp") for k in steam_keys)
             defaults = {}
             if has_cod4_steam:
                 defaults["7940"] = ("7a722f97", "1")   # CoD4 -> Singleplayer
@@ -2658,12 +1548,12 @@ class OwnInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"  Launch options skipped: {ex}")
 
-        # ── Steam artwork for Steam-sourced games ─────────────────────────
-        if self.steam_selected:
+        # --- Steam artwork
+        if steam_sel:
             self._s.progress.emit(95, "Applying Steam artwork...")
             try:
                 from shortcut import apply_steam_artwork
-                steam_keys = [k for k, _, _ in self.steam_selected]
+                self._s.log.emit("Applying custom artwork for multiplayer games...")
                 apply_steam_artwork(
                     selected_keys=steam_keys,
                     on_progress=lambda msg: self._s.log.emit(msg)
@@ -2671,11 +1561,27 @@ class OwnInstallScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"  Steam artwork skipped: {ex}")
 
-        # ── Done ──────────────────────────────────────────────────────────
+        # --- Done
         _log_to_file("[BREADCRUMB] all phases complete, finishing up")
         cfg.complete_first_run(self.steam_root)
+        if has_own:
+            self._DONE_MSG = (
+                "Installation complete!\n\n"
+                "If you enjoy these mods, please consider starring "
+                "the original creators' GitHub repositories!")
         self._s.progress.emit(100, "All done!")
         self._s.done.emit(True)
+
+
+
+# --- InstallScreen ---
+class InstallScreen(_BaseInstallScreen):
+    def __init__(self, stack):
+        super().__init__(stack, "InstallScreen")
+        self.selected = []
+        self.own_selected = {}
+        self.steam_selected = None
+
 
 
 # ── OwnScanScreen ────────────────────────────────────────────────────────────
@@ -2878,14 +1784,14 @@ class OwnScanScreen(QWidget):
         go_to(self.stack, "WelcomeScreen")
 
     def _continue(self):
-        """Store selected own games on OwnInstallScreen and advance to WelcomeScreen."""
+        """Store selected own games on InstallScreen and advance to WelcomeScreen."""
         selected = {}
         for key, cb in self._checks.items():
             if cb.isChecked() and key in self._own_found:
                 selected[key] = self._own_found[key]
-        # Park own games on OwnInstallScreen - SetupScreen will route there
+        # Park own games on InstallScreen -- SetupScreen will route there
         # after the user picks their Steam games
-        own_screen = get_screen(self.stack, "OwnInstallScreen")
+        own_screen = get_screen(self.stack, "InstallScreen")
         own_screen.own_selected = selected
         # Advance to WelcomeScreen for Steam game detection
         ws = get_screen(self.stack, "WelcomeScreen")
