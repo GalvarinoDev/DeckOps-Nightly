@@ -630,32 +630,12 @@
 		"description"		""
 		"inputs"
 		{
-			"click"
-			{
-				"activators"
-				{
-					"Full_Press"
-					{
-						"bindings"
-						{
-							"binding"		"mouse_button LEFT, , "
-						}
-						"settings"
-						{
-							"haptic_intensity"		"1"
-						}
-					}
-				}
-				"disabled_activators"
-				{
-				}
-			}
 		}
 	}
 	"group"
 	{
 		"id"		"17"
-		"mode"		"mouse_region"
+		"mode"		"single_button"
 		"name"		""
 		"description"		""
 		"inputs"
@@ -677,9 +657,47 @@
 				}
 			}
 		}
-		"settings"
+	}
+	"group"
+	{
+		"id"		"19"
+		"mode"		"absolute_mouse"
+		"name"		""
+		"description"		""
+		"inputs"
 		{
-			"output_joystick"		"3"
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"mouse_button LEFT, , "
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+			"touch"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"controller_action ts_hover, , "
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
 		}
 	}
 	"group"
@@ -766,11 +784,12 @@
 			"0"		"button_diamond active"
 			"1"		"left_trackpad inactive"
 			"11"		"left_trackpad inactive"
-			"17"		"left_trackpad active"
+			"17"		"center_trackpad active"
 			"2"		"right_trackpad inactive"
 			"6"		"right_trackpad inactive"
 			"10"		"right_trackpad inactive"
-			"14"		"right_trackpad active"
+			"14"		"center_trackpad inactive"
+			"19"		"center_trackpad inactive"
 			"3"		"joystick active"
 			"4"		"left_trigger active"
 			"5"		"right_trigger active"
