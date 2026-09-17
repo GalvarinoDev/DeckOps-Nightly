@@ -351,8 +351,12 @@ def _ask_iw4x_dlc(parent, selected) -> bool:
     Returns True if the user wants DLC, False otherwise.
     Only shows the dialog if iw4x is in the selected games.
     """
-    has_iw4x = any(KEY_CLIENT.get(k) == "iw4x" for k, _, _ in selected)
-    if not has_iw4x:
+    iw4x_games = [(k, gd, g) for k, gd, g in selected if KEY_CLIENT.get(k) == "iw4x"]
+    if not iw4x_games:
+        return False
+    from iw4x import is_iw4x_dlc_installed
+    if all(is_iw4x_dlc_installed(g["install_dir"])
+           for _, _, g in iw4x_games if g.get("install_dir")):
         return False
     reply = QMessageBox.question(
         parent,
