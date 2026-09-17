@@ -309,9 +309,8 @@ def _plut_key(game_key: str) -> str:
 def _heroic_app_name(game_key: str) -> str:
     """
     Generate a deterministic Heroic app_name from a DeckOps game key.
-    Uses a sha256 hash truncated to 22 chars of url-safe base64, matching
-    Heroic's ID length. Prefixed with 'do_' so DeckOps entries are easy
-    to identify in the library.
+    Uses a sha256 hash truncated to 19 chars of url-safe base64, prefixed
+    with 'do_' so DeckOps entries are easy to identify in the library.
     """
     import base64
     digest = hashlib.sha256(f"deckops_plut_{game_key}".encode()).digest()

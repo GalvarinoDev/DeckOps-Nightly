@@ -27,6 +27,7 @@ import stat
 import shutil
 import json
 import subprocess
+import time
 import urllib.request
 
 from log import get_logger
@@ -217,7 +218,6 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
     bootstrapper = os.path.join(plut_dir, "plutonium.exe")
 
     prog(5, "Downloading Plutonium bootstrapper...")
-    import time
     _primary_failed = False
     for attempt in range(3):
         try:
@@ -308,8 +308,6 @@ def _ensure_shared_plutonium(src_plut_dir: str, on_progress=None) -> bool:
         if on_progress:
             on_progress(msg)
 
-    import time
-
     all_present = True
     for subdir in _PLUT_SHARED_SUBDIRS:
         src = os.path.join(src_plut_dir, subdir)
@@ -362,7 +360,6 @@ def _copy_plut_to_prefix(src_plut_dir: str, dest_plut_dir: str,
 
     Falls back to full copy if shared dirs aren't available.
     """
-    import time
 
     def prog(msg):
         if on_progress:

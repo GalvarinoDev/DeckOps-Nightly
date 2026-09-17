@@ -32,8 +32,7 @@ The launcher persists its settings at:
 with three lines: game path, theme index, theme name.
 
 Path format:
-  - Steam installs use the S: drive (Proton maps steamapps to S:)
-  - Own installs use the Z: drive (Wine maps / to Z:)
+  - Both Steam and own installs use the Z: drive (Wine maps / to Z:)
 """
 
 import os
