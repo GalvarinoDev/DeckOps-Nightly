@@ -635,6 +635,7 @@ def set_steam_input_enabled(steam_root, appids=None):
         "202970",  # BO2 SP
         "202990",  # BO2 MP
         "212910",  # BO2 ZM
+        "311210",  # BO3
     ]
 
     if appids is None:

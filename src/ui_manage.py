@@ -2048,6 +2048,9 @@ class UpdateScreen(QWidget):
                     install_t6sp_mod(game, self.steam_root, proton, compat, op,
                                     source=source)
                 self._s.log.emit(f"✓  {base_name} ({key}) done")
+                cfg.mark_game_setup(key, c, source=source,
+                                    wrapper_path=entry.get("wrapper_path"),
+                                    lan_wrapper_path=entry.get("lan_wrapper_path"))
             except Exception as ex:
                 self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
