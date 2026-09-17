@@ -334,9 +334,26 @@ if [ -n "$STEAM_ROOT" ]; then
         for f in "iw4x.dll" "iw4x.exe"; do
             [ -f "$mw2_dir/$f" ] && rm -f "$mw2_dir/$f" && success "Removed $f" || skip "$f not found"
         done
-        for d in "iw4x" "iw4x-updoot"; do
-            [ -d "$mw2_dir/$d" ] && rm -rf "$mw2_dir/$d" && success "Removed $d/" || skip "$d/ not found"
-        done
+        # Ask before removing DLC (~3 GB of free maps)
+        _remove_mw2_dlc=false
+        if [ -d "$mw2_dir/iw4x" ] && ls "$mw2_dir/iw4x/"*.iwd >/dev/null 2>&1; then
+            echo ""
+            read -rp "  Remove free MW2 DLC maps (~3 GB)? [y/N] " _dlc_ans
+            [[ "$_dlc_ans" =~ ^[Yy] ]] && _remove_mw2_dlc=true
+        fi
+        if $_remove_mw2_dlc; then
+            for d in "iw4x" "iw4x-updoot"; do
+                [ -d "$mw2_dir/$d" ] && rm -rf "$mw2_dir/$d" && success "Removed $d/" || skip "$d/ not found"
+            done
+        else
+            # Remove iw4x subdirs and non-iwd files, keep DLC .iwd files
+            if [ -d "$mw2_dir/iw4x" ]; then
+                find "$mw2_dir/iw4x" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
+                find "$mw2_dir/iw4x" -maxdepth 1 -type f ! -name "*.iwd" -delete
+                success "Removed iw4x/ client files (kept DLC maps)"
+            fi
+            [ -d "$mw2_dir/iw4x-updoot" ] && rm -rf "$mw2_dir/iw4x-updoot" && success "Removed iw4x-updoot/" || true
+        fi
     fi
 
     cod4_dir=$(find_install_dir 7940) || true
@@ -502,12 +519,14 @@ USERDATA_DIR = os.path.join(STEAM_DIR, "userdata")
 OWN_CLEANUP = {
     "iw4mp.exe": {
         "files": ["iw4x.dll", "iw4x.exe"],
-        "dirs":  ["iw4x", "iw4x-updoot"],
+        "dirs":  ["iw4x-updoot"],
+        "dlc_dir": "iw4x",
     },
     # Own shortcuts point at iw4x.exe, not iw4mp.exe
     "iw4x.exe": {
         "files": ["iw4x.dll", "iw4x.exe"],
-        "dirs":  ["iw4x", "iw4x-updoot"],
+        "dirs":  ["iw4x-updoot"],
+        "dlc_dir": "iw4x",
     },
     "iw3mp.exe": {
         "files": ["cod4x_021.dll", "cod4x_loader.exe", "cod4x.exe",
@@ -666,6 +685,31 @@ for uid in os.listdir(USERDATA_DIR):
                     print(f"    Removed {dname}/")
                 except Exception as ex:
                     print(f"    Failed to remove {dname}/: {ex}")
+
+        # DLC directory: ask before removing .iwd files
+        dlc_dir_name = cleanup.get("dlc_dir")
+        if dlc_dir_name:
+            dlc_path = os.path.join(install_dir, dlc_dir_name)
+            if os.path.isdir(dlc_path):
+                has_iwds = any(f.endswith(".iwd") for f in os.listdir(dlc_path))
+                remove_all = True
+                if has_iwds:
+                    try:
+                        ans = input(f"    Remove free MW2 DLC maps (~3 GB)? [y/N] ").strip()
+                        remove_all = ans.lower().startswith("y")
+                    except EOFError:
+                        remove_all = False
+                if remove_all:
+                    shutil.rmtree(dlc_path)
+                    print(f"    Removed {dlc_dir_name}/")
+                else:
+                    for entry in os.listdir(dlc_path):
+                        p = os.path.join(dlc_path, entry)
+                        if os.path.isdir(p):
+                            shutil.rmtree(p)
+                        elif not entry.endswith(".iwd"):
+                            os.remove(p)
+                    print(f"    Removed {dlc_dir_name}/ client files (kept DLC maps)")
 
         # Remove files in subdirectories (e.g. main/*.iwd, zone/english/*.ff)
         for subdir, fnames in cleanup.get("subdirs", {}).items():
