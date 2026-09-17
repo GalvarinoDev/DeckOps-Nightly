@@ -1288,6 +1288,13 @@ class ConfigureScreen(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        # Sync music toggle with current state (may have changed via mute button)
+        self._music_on = cfg.get_music_enabled()
+        self._music_toggle.setText("Music: ON" if self._music_on else "Music: OFF")
+        self._music_toggle.setStyleSheet(
+            self._music_toggle.styleSheet()
+            .replace(C_IW if not self._music_on else C_DARK_BTN,
+                     C_IW if self._music_on else C_DARK_BTN))
         # Refresh dynamic state
         model = cfg.get_deck_model() or "unknown"
         source = cfg.get_game_source() or "steam"
