@@ -270,7 +270,7 @@ def get_external_controller() -> str | None:
 
 
 def set_external_controller(controller_type: str):
-    """Save the user's external controller type. Should be 'playstation', 'xbox', or 'other'."""
+    """Save the user's external controller type. Should be 'playstation', 'xbox', 'steamcontroller', or 'other'."""
     config = load()
     config["external_controller"] = controller_type
     save(config)
