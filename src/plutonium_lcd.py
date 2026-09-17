@@ -44,7 +44,7 @@ import urllib.request
 
 from identity import VENV_PYTHON
 from log import get_logger
-from net import DownloadError
+from net import BROWSER_UA as _BROWSER_UA, DownloadError
 
 _log = get_logger(__name__)
 
@@ -194,13 +194,6 @@ HEROIC_PREFIX_BASE = os.path.expanduser(
 
 
 # ── Steam paths (same as shortcut.py) ───────────────────────────────────────
-
-_BROWSER_UA = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "*/*",
-}
 
 
 # ── Plutonium game definitions for Heroic ───────────────────────────────────
