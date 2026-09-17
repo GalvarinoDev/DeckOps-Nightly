@@ -575,8 +575,6 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
             on_progress(0, msg)
 
     # Resolve to NVMe path — ensure_all_prefix_deps already placed it here
-    import time
-    start = time.time()
     compatdata_path = _nvme_compatdata(str(appid))
     log(f"  Prefix path: {compatdata_path}")
 
@@ -597,7 +595,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     prog(10, "Downloading CoD4x installer...")
     setup_dir = tempfile.mkdtemp(prefix="deckops_cod4x_")
     setup_exe = os.path.join(setup_dir, "CoD4x_Setup.exe")
-    _used_fallback = False
+    _dl_source = "cod4x.ovh"
     try:
         _download(
             _SETUP_EXE_URL, setup_exe,
@@ -608,6 +606,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     except Exception as e:
         log(f"  ⚠ Setup.exe download failed: {e}")
         log("  ℹ Falling back to archive.org mirror...")
+        _dl_source = "archive.org"
         try:
             _download(
                 _ARCHIVE_FALLBACK_URL, setup_exe,
@@ -627,70 +626,60 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
                 ),
             )
 
-    # ── Step 3: Run setup.exe through Proton (skipped if fallback used) ──
-    if not _used_fallback:
-        # We pass /DIR= with the Wine Z: drive path so Inno Setup knows where
-        # to install. We also pre-wrote the registry key (step 1b) as a safety
-        # net in case /DIR is ignored by the installer's custom script.
-        #
-        # /LOG tells Inno Setup to write a detailed log to the prefix's temp
-        # directory. We collect it after the run for debugging.
-        # Use pinned GE-Proton for the installer to avoid regressions from
-        # newer GE-Proton releases.
-        prog(55, "Running CoD4x installer...")
-        _pinned = os.path.expanduser(
-            "~/.local/share/Steam/compatibilitytools.d/GE-Proton10-34/proton"
+    # ── Step 3: Run setup.exe through Proton ───────────────────────────────
+    # /DIR= tells Inno Setup where to install. Registry key (step 1b) is a
+    # safety net in case /DIR is ignored. /LOG writes a debug log to the
+    # prefix temp dir. Pinned GE-Proton avoids regressions.
+    prog(55, "Running CoD4x installer...")
+    _pinned = os.path.expanduser(
+        "~/.local/share/Steam/compatibilitytools.d/GE-Proton10-34/proton"
+    )
+    _install_proton = _pinned if os.path.exists(_pinned) else proton_path
+    _compat_install = steam_root or os.path.dirname(os.path.dirname(_install_proton))
+
+    wine_install_dir = _linux_to_wine_path(install_dir)
+    log(f"  Install dir (Wine): {wine_install_dir}")
+
+    env = os.environ.copy()
+    env["STEAM_COMPAT_DATA_PATH"] = compatdata_path
+    env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
+
+    try:
+        result = subprocess.run(
+            [
+                _install_proton, "run", setup_exe,
+                "/VERYSILENT", "/SUPPRESSMSGBOXES",
+                f"/DIR={wine_install_dir}",
+                "/LOG",
+            ],
+            env=env,
+            capture_output=True,
+            timeout=600,
+            cwd=install_dir,
         )
-        _install_proton = _pinned if os.path.exists(_pinned) else proton_path
-        _compat_install = steam_root or os.path.dirname(os.path.dirname(_install_proton))
+        log("  ✓ CoD4x installer completed")
+        if result.returncode != 0:
+            log(f"  ℹ setup.exe exit code: {result.returncode} (non-zero is normal for Inno Setup)")
+    except subprocess.TimeoutExpired:
+        shutil.rmtree(setup_dir, ignore_errors=True)
+        raise RuntimeError("CoD4x installer timed out after 10 minutes")
+    except Exception as e:
+        shutil.rmtree(setup_dir, ignore_errors=True)
+        raise RuntimeError(f"CoD4x installer failed: {e}")
+    finally:
+        shutil.rmtree(setup_dir, ignore_errors=True)
 
-        wine_install_dir = _linux_to_wine_path(install_dir)
-        log(f"  Install dir (Wine): {wine_install_dir}")
+    # ── Step 3b: Collect Inno Setup log ──────────────────────────────────
+    _collect_inno_log(compatdata_path, on_progress=log)
 
-        env = os.environ.copy()
-        env["STEAM_COMPAT_DATA_PATH"] = compatdata_path
-        env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
-
-        try:
-            result = subprocess.run(
-                [
-                    _install_proton, "run", setup_exe,
-                    "/VERYSILENT", "/SUPPRESSMSGBOXES",
-                    f"/DIR={wine_install_dir}",
-                    "/LOG",
-                ],
-                env=env,
-                capture_output=True,
-                timeout=600,
-                cwd=install_dir,
-            )
-            # The setup.exe may return non-zero even on success (Inno Setup quirk)
-            # so we don't check returncode — we verify file placement below
-            log("  ✓ CoD4x installer completed")
-            if result.returncode != 0:
-                log(f"  ℹ setup.exe exit code: {result.returncode} (non-zero is normal for Inno Setup)")
-        except subprocess.TimeoutExpired:
-            shutil.rmtree(setup_dir, ignore_errors=True)
-            raise RuntimeError("CoD4x installer timed out after 10 minutes")
-        except Exception as e:
-            shutil.rmtree(setup_dir, ignore_errors=True)
-            raise RuntimeError(f"CoD4x installer failed: {e}")
-        finally:
-            # Clean up the setup exe regardless of outcome
-            shutil.rmtree(setup_dir, ignore_errors=True)
-
-        # ── Step 3b: Collect Inno Setup log ──────────────────────────────
-        _collect_inno_log(compatdata_path, on_progress=log)
-
-        # ── Step 3c: Relocate chain-loader to real game directory ────────
-        # If /DIR worked, setup.exe placed files directly in install_dir and
-        # this is a no-op. If /DIR was ignored, files ended up in the prefix's
-        # Program Files fallback path — this function copies them over.
-        prog(65, "Placing chain-loader...")
-        relocated = _relocate_chainloader(compatdata_path, install_dir, on_progress=log)
-        if not relocated:
-            log("  ⚠ Chain-loader relocation failed — CoD4x may not work")
-            log("  ℹ Check logs/cod4x_inno_setup.log for details")
+    # ── Step 3c: Relocate chain-loader to real game directory ────────────
+    # If /DIR worked, this is a no-op. If /DIR was ignored, files ended up
+    # in the prefix's Program Files fallback path.
+    prog(65, "Placing chain-loader...")
+    relocated = _relocate_chainloader(compatdata_path, install_dir, on_progress=log)
+    if not relocated:
+        log("  ⚠ Chain-loader relocation failed — CoD4x may not work")
+        log("  ℹ Check logs/cod4x_inno_setup.log for details")
 
     # ── Step 4: Write registry keys (post-setup) ─────────────────────────
     # The Proton run may have created a fresh user.reg, so write keys again
@@ -730,7 +719,8 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     prog(95, "Saving metadata...")
     _write_metadata(install_dir, {
         "version": "21.3",
-        "method": "archive_fallback" if _used_fallback else "setup_exe",
+        "method": "setup_exe",
+        "download_source": _dl_source,
         "appdata_dir": appdata_dir,
         "compatdata_path": compatdata_path,
     })
