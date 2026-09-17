@@ -365,13 +365,12 @@ def _detached_open(args):
 
 def _ask_iw4x_dlc(parent, selected) -> str:
     """
-    Ask about free IW4x DLC maps.
+    Ask about free IW4x DLC maps during install.
 
     Returns:
-      "install" - download DLC (fresh install, user said yes)
-      "keep"    - DLC already present, user wants to keep it
-      "remove"  - DLC already present, user wants to remove it
-      ""        - no IW4x selected, or user declined fresh install
+      "install" - download DLC (user said yes)
+      "keep"    - DLC already present, skip silently
+      ""        - no IW4x selected, or user declined
     """
     iw4x_games = [(k, gd, g) for k, gd, g in selected if KEY_CLIENT.get(k) == "iw4x"]
     if not iw4x_games:
@@ -381,15 +380,7 @@ def _ask_iw4x_dlc(parent, selected) -> str:
                       for _, _, g in iw4x_games if g.get("install_dir"))
 
     if dlc_present:
-        reply = QMessageBox.question(
-            parent,
-            "Free DLC Maps",
-            "Free DLC maps are already installed for Modern Warfare 2.\n\n"
-            "Would you like to keep them?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes,
-        )
-        return "keep" if reply == QMessageBox.Yes else "remove"
+        return "keep"
 
     reply = QMessageBox.question(
         parent,
