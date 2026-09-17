@@ -1374,8 +1374,10 @@ class _BaseInstallScreen(QWidget):
                     else:
                         compat = find_compatdata(self.steam_root, gd["appid"],
                                                   game_install_dir=game.get("install_dir"))
+                    _dlc_action = getattr(self, 'install_iw4x_dlc', '')
                     install_iw4x(game, self.steam_root, proton, compat, op_iw4x, source=source,
-                                 install_dlc=getattr(self, 'install_iw4x_dlc', False))
+                                 install_dlc=(_dlc_action == "install"),
+                                 remove_dlc=(_dlc_action == "remove"))
                     cfg.mark_game_setup(key, "iw4x", source=source)
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)

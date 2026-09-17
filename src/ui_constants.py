@@ -363,19 +363,34 @@ def _detached_open(args):
 
 # ── Install dialogs ───────────────────────────────────────────────────────────
 
-def _ask_iw4x_dlc(parent, selected) -> bool:
+def _ask_iw4x_dlc(parent, selected) -> str:
     """
-    Show a dialog asking whether to install free IW4x DLC maps.
-    Returns True if the user wants DLC, False otherwise.
-    Only shows the dialog if iw4x is in the selected games.
+    Ask about free IW4x DLC maps.
+
+    Returns:
+      "install" - download DLC (fresh install, user said yes)
+      "keep"    - DLC already present, user wants to keep it
+      "remove"  - DLC already present, user wants to remove it
+      ""        - no IW4x selected, or user declined fresh install
     """
     iw4x_games = [(k, gd, g) for k, gd, g in selected if KEY_CLIENT.get(k) == "iw4x"]
     if not iw4x_games:
-        return False
+        return ""
     from iw4x import is_iw4x_dlc_installed
-    if all(is_iw4x_dlc_installed(g["install_dir"])
-           for _, _, g in iw4x_games if g.get("install_dir")):
-        return False
+    dlc_present = all(is_iw4x_dlc_installed(g["install_dir"])
+                      for _, _, g in iw4x_games if g.get("install_dir"))
+
+    if dlc_present:
+        reply = QMessageBox.question(
+            parent,
+            "Free DLC Maps",
+            "Free DLC maps are already installed for Modern Warfare 2.\n\n"
+            "Would you like to keep them?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        return "keep" if reply == QMessageBox.Yes else "remove"
+
     reply = QMessageBox.question(
         parent,
         "Free DLC Maps",
@@ -386,7 +401,7 @@ def _ask_iw4x_dlc(parent, selected) -> bool:
         QMessageBox.Yes | QMessageBox.No,
         QMessageBox.Yes,
     )
-    return reply == QMessageBox.Yes
+    return "install" if reply == QMessageBox.Yes else ""
 
 def _ask_bo3_client(parent, selected) -> str:
     """
