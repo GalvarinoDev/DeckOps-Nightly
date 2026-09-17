@@ -11,7 +11,7 @@ All screen classes are imported from split modules:
 
 import sys, os, threading
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QStackedWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar, QWidget
+from PyQt5.QtWidgets import QApplication, QMainWindow, QStackedWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar, QWidget
 from PyQt5.QtCore import Qt, QTimer
 
 import bootstrap as _bootstrap
@@ -20,8 +20,9 @@ import config as cfg
 from identity import APP_TITLE
 
 from ui_constants import (
-    C_DIM, font, _btn, _lbl, _title_block, _Sigs,
+    C_DIM, C_DARK_BTN, font, _btn, _lbl, _title_block, _Sigs,
     _load_font, _app_style, _start_audio, _kill_audio,
+    _set_audio_enabled,
     go_to, get_screen,
 )
 
@@ -117,16 +118,42 @@ class DeckOpsWindow(QMainWindow):
         self.stack.currentChanged.connect(self._update_dbg_label)
         self._update_dbg_label(0)
 
+        # Persistent mute button — bottom-right, always visible
+        self._muted = not cfg.get_music_enabled()
+        self._mute_btn = QPushButton("\U0001F507" if self._muted else "\U0001F50A", self)
+        self._mute_btn.setFixedSize(42, 42)
+        self._mute_btn.setFont(font(16))
+        self._mute_btn.setStyleSheet(
+            f"QPushButton{{background:{C_DARK_BTN};border:none;border-radius:21px;}}"
+            f"QPushButton:hover{{background:#444455;}}"
+        )
+        self._mute_btn.setCursor(Qt.PointingHandCursor)
+        self._mute_btn.clicked.connect(self._toggle_mute)
+        self._mute_btn.raise_()
+
     def _update_dbg_label(self, idx):
         w = self.stack.widget(idx)
         name = getattr(w, "screen_name", w.__class__.__name__)
         self._dbg_label.setText(f"[{idx}] {name}")
         self._dbg_label.adjustSize()
 
+    def _toggle_mute(self):
+        self._muted = not self._muted
+        if self._muted:
+            _kill_audio()
+            _set_audio_enabled(False)
+            self._mute_btn.setText("\U0001F507")
+        else:
+            _set_audio_enabled(True)
+            _start_audio()
+            self._mute_btn.setText("\U0001F50A")
+
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._dbg_label.move(8, self.height() - self._dbg_label.height() - 8)
         self._dbg_label.raise_()
+        self._mute_btn.move(self.width() - 54, self.height() - 54)
+        self._mute_btn.raise_()
 
     def closeEvent(self, e):
         _kill_audio()
