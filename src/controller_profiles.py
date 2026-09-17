@@ -97,6 +97,13 @@ TEMPLATES = [
     "controller_ps4_deckops_ads.vdf",
     "controller_ps4_deckops_other.vdf",
     "controller_ps4_deckops_other_ads.vdf",
+    # BO3 (CleanOps) -- per-game PS controller variants
+    "controller_ps5_deckops_bo3.vdf",
+    "controller_ps5_deckops_bo3_ads.vdf",
+    "controller_ps5_edge_deckops_bo3.vdf",
+    "controller_ps5_edge_deckops_bo3_ads.vdf",
+    "controller_ps4_deckops_bo3.vdf",
+    "controller_ps4_deckops_bo3_ads.vdf",
     # Xbox 360
     "controller_xbox360_deckops.vdf",
     "controller_xbox360_deckops_other.vdf",
@@ -179,7 +186,7 @@ APPID_PROFILE_MAP = {
     "202970": "standard",  # BO2 SP -- via Steam
     "202990": "standard",  # BO2 MP -- Plutonium
     "212910": "standard",  # BO2 ZM -- Plutonium
-    "311210": "standard",  # BO3 -- CleanOps (native controller support)
+    "311210": "bo3",       # BO3 -- CleanOps (native controller support, per-game PS templates)
     "209160": "standard",  # Ghosts SP -- AlterWare (native controller + aim assist)
     "209170": "standard",  # Ghosts MP -- AlterWare (native controller + aim assist)
     "209650": "standard",  # AW SP -- AlterWare (native controller + aim assist)
@@ -272,7 +279,7 @@ SHORTCUT_DEFS = {
         "name":          "Call of Duty: Black Ops 3 T7x",
         "exe_name":      "t7x.exe",
         "game_appid":    "311210",
-        "profile_type":  "standard",
+        "profile_type":  "bo3",
     },
 }
 
@@ -318,6 +325,10 @@ def _profile_filename(profile_type: str, gyro_mode: str) -> list[str]:
     Legion, legion_go_2, and 2btn devices only have ads/off variants —
     hold/toggle falls back to ads for those devices.
     """
+    # BO3 has per-game PS templates but uses standard Neptune for primary controller
+    if profile_type == "bo3":
+        profile_type = "standard"
+
     # Map gyro_mode to VDF filename suffix
     _SUFFIX_MAP = {"on": "ads", "hold": "hold", "toggle": "toggle"}
     suffix = _SUFFIX_MAP.get(gyro_mode, "off")
@@ -373,7 +384,9 @@ def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mo
     use_ads = gyro_mode in ("on", "hold", "toggle")
 
     if controller_type == "playstation":
-        if profile_type == "other":
+        if profile_type == "bo3":
+            suffix = "_bo3_ads" if use_ads else "_bo3"
+        elif profile_type == "other":
             suffix = "_other_ads" if use_ads else "_other"
         else:
             suffix = "_ads" if use_ads else ""
@@ -383,7 +396,11 @@ def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mo
             f"controller_ps5_edge_deckops{suffix}.vdf",
         ]
 
-    elif controller_type == "xbox":
+    # Non-PlayStation controllers have no per-game variants
+    if profile_type == "bo3":
+        profile_type = "standard"
+
+    if controller_type == "xbox":
         if profile_type == "other":
             return [
                 "controller_xbox360_deckops_other.vdf",

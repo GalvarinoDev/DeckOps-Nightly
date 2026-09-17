@@ -1851,6 +1851,12 @@ for f in \
     "controller_ps4_deckops_ads.vdf" \
     "controller_ps4_deckops_other.vdf" \
     "controller_ps4_deckops_other_ads.vdf" \
+    "controller_ps5_deckops_bo3.vdf" \
+    "controller_ps5_deckops_bo3_ads.vdf" \
+    "controller_ps5_edge_deckops_bo3.vdf" \
+    "controller_ps5_edge_deckops_bo3_ads.vdf" \
+    "controller_ps4_deckops_bo3.vdf" \
+    "controller_ps4_deckops_bo3_ads.vdf" \
     "controller_xbox360_deckops.vdf" \
     "controller_xbox360_deckops_other.vdf" \
     "controller_xboxone_deckops.vdf" \

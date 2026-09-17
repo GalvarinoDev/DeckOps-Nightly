@@ -1,9 +1,9 @@
 "controller_mappings"
 {
 	"version"		"3"
-	"title"		"DeckOps - PS5 Edge"
-	"description"		"PS5 DualSense Edge controller layout"
-	"controller_type"		"controller_ps5_edge"
+	"title"		"DeckOps BO3 - PS4"
+	"description"		"BO3 CleanOps controller layout"
+	"controller_type"		"controller_ps4"
 	"group"
 	{
 		"id"		"0"
@@ -20,7 +20,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button A, Stand/Jump, , "
+							"binding"		"xinput_button A, , "
 						}
 					}
 				}
@@ -36,7 +36,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button B, Crouch/Prone, , "
+							"binding"		"xinput_button B, , "
 						}
 					}
 				}
@@ -52,7 +52,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button X, Use/Reload, , "
+							"binding"		"xinput_button X, , "
 						}
 					}
 				}
@@ -68,7 +68,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button Y, Switch Weapon, , "
+							"binding"		"xinput_button Y, , "
 						}
 					}
 				}
@@ -94,7 +94,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button dpad_up, Inventory, , "
+							"binding"		"xinput_button dpad_up, , "
 						}
 						"settings"
 						{
@@ -114,7 +114,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button dpad_down, Inventory, , "
+							"binding"		"xinput_button dpad_down, , "
 						}
 						"settings"
 						{
@@ -134,7 +134,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button dpad_right, Inventory, , "
+							"binding"		"xinput_button dpad_right, , "
 						}
 						"settings"
 						{
@@ -154,7 +154,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button dpad_left, Inventory, , "
+							"binding"		"xinput_button dpad_left, , "
 						}
 						"settings"
 						{
@@ -184,7 +184,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button JOYSTICK_RIGHT, Melee, , "
+							"binding"		"xinput_button JOYSTICK_RIGHT, , "
 						}
 						"settings"
 						{
@@ -214,7 +214,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button JOYSTICK_LEFT, Sprint/Hold Breath, , "
+							"binding"		"xinput_button JOYSTICK_LEFT, , "
 						}
 						"settings"
 						{
@@ -244,7 +244,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button TRIGGER_LEFT, Aim Down Sight, , "
+							"binding"		"xinput_button TRIGGER_LEFT, , "
 						}
 						"settings"
 						{
@@ -278,7 +278,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button TRIGGER_RIGHT, Fire Weapon, , "
+							"binding"		"xinput_button TRIGGER_RIGHT, , "
 						}
 						"settings"
 						{
@@ -312,7 +312,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button JOYSTICK_RIGHT, Melee, , "
+							"binding"		"xinput_button JOYSTICK_RIGHT, , "
 						}
 						"settings"
 						{
@@ -342,7 +342,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button JOYSTICK_RIGHT, Melee, , "
+							"binding"		"xinput_button JOYSTICK_RIGHT, , "
 						}
 					}
 				}
@@ -368,7 +368,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button DPAD_UP, Inventory, , "
+							"binding"		"xinput_button DPAD_UP, , "
 						}
 						"settings"
 						{
@@ -388,7 +388,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button DPAD_DOWN, Inventory, , "
+							"binding"		"xinput_button DPAD_DOWN, , "
 						}
 						"settings"
 						{
@@ -408,7 +408,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button DPAD_RIGHT, Inventory, , "
+							"binding"		"xinput_button DPAD_RIGHT, , "
 						}
 						"settings"
 						{
@@ -428,7 +428,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button DPAD_LEFT, Inventory, , "
+							"binding"		"xinput_button DPAD_LEFT, , "
 						}
 						"settings"
 						{
@@ -463,7 +463,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"mouse_button LEFT, , "
+							"binding"		"key_press INSERT, , "
 						}
 					}
 				}
@@ -489,7 +489,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button SELECT, , "
+							"binding"		"key_press INSERT, , "
 						}
 					}
 				}
@@ -501,18 +501,8 @@
 	}
 	"group"
 	{
-		"id"		"14"
-		"mode"		"absolute_mouse"
-		"name"		""
-		"description"		""
-		"inputs"
-		{
-		}
-	}
-	"group"
-	{
-		"id"		"17"
-		"mode"		"single_button"
+		"id"		"12"
+		"mode"		"flickstick"
 		"name"		""
 		"description"		""
 		"inputs"
@@ -525,7 +515,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"key_press Z, Push to Talk, , "
+							"binding"		"xinput_button JOYSTICK_RIGHT, , "
 						}
 					}
 				}
@@ -537,7 +527,85 @@
 	}
 	"group"
 	{
-		"id"		"19"
+		"id"		"13"
+		"mode"		"flickstick"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"xinput_button JOYSTICK_LEFT, , "
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+	}
+	"group"
+	{
+		"id"		"14"
+		"mode"		"flickstick"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"xinput_button JOYSTICK_RIGHT, , "
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+	}
+	"group"
+	{
+		"id"		"15"
+		"mode"		"flickstick"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"xinput_button JOYSTICK_LEFT, , "
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+	}
+	"group"
+	{
+		"id"		"18"
 		"mode"		"absolute_mouse"
 		"name"		""
 		"description"		""
@@ -552,6 +620,10 @@
 						"bindings"
 						{
 							"binding"		"mouse_button LEFT, , "
+						}
+						"settings"
+						{
+							"haptic_intensity"		"1"
 						}
 					}
 				}
@@ -568,6 +640,36 @@
 						"bindings"
 						{
 							"binding"		"controller_action ts_hover, , "
+						}
+						"settings"
+						{
+							"haptic_intensity"		"1"
+						}
+					}
+				}
+				"disabled_activators"
+				{
+				}
+			}
+		}
+	}
+	"group"
+	{
+		"id"		"21"
+		"mode"		"single_button"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+			"click"
+			{
+				"activators"
+				{
+					"Full_Press"
+					{
+						"bindings"
+						{
+							"binding"		"key_press INSERT, , "
 						}
 					}
 				}
@@ -609,7 +711,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button select, , "
+							"binding"		"key_press ESCAPE, , "
 						}
 					}
 				}
@@ -625,7 +727,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button shoulder_left, Special Grenade, , "
+							"binding"		"xinput_button shoulder_left, , "
 						}
 					}
 				}
@@ -641,7 +743,7 @@
 					{
 						"bindings"
 						{
-							"binding"		"xinput_button shoulder_right, Frag Grenade, , "
+							"binding"		"xinput_button shoulder_right, , "
 						}
 					}
 				}
@@ -649,70 +751,23 @@
 				{
 				}
 			}
-			"button_back_left"
-			{
-				"activators"
-				{
-					"Full_Press"
-					{
-						"bindings"
-						{
-							"binding"		"xinput_button X, Use/Reload, , "
-						}
-					}
-				}
-				"disabled_activators"
-				{
-				}
-			}
-			"button_back_right"
-			{
-				"activators"
-				{
-					"Full_Press"
-					{
-						"bindings"
-						{
-							"binding"		"key_press Z, Push to Talk, , "
-						}
-					}
-				}
-				"disabled_activators"
-				{
-				}
-			}
-			"button_back_left_upper"
-			{
-				"activators"
-				{
-					"Full_Press"
-					{
-						"bindings"
-						{
-							"binding"		"xinput_button A, Stand/Jump, , "
-						}
-					}
-				}
-				"disabled_activators"
-				{
-				}
-			}
-			"button_back_right_upper"
-			{
-				"activators"
-				{
-					"Full_Press"
-					{
-						"bindings"
-						{
-							"binding"		"xinput_button B, Crouch/Prone, , "
-						}
-					}
-				}
-				"disabled_activators"
-				{
-				}
-			}
+		}
+	}
+	"group"
+	{
+		"id"		"16"
+		"mode"		"gyro_to_joystick"
+		"name"		""
+		"description"		""
+		"inputs"
+		{
+		}
+		"settings"
+		{
+			"gyro_natural_sensitivity"		"1600"
+			"acceleration"		"1"
+			"gyro_ratchet_button_mask"		"33554432"
+			"gyro_speed_to_joystick_min"		"0"
 		}
 	}
 	"preset"
@@ -724,18 +779,22 @@
 			"7"		"switch active"
 			"0"		"button_diamond active"
 			"1"		"left_trackpad inactive"
-			"11"		"left_trackpad inactive"
-			"17"		"center_trackpad active"
+			"11"		"left_trackpad active"
+			"15"		"left_trackpad inactive"
 			"2"		"right_trackpad inactive"
 			"6"		"right_trackpad inactive"
 			"10"		"right_trackpad inactive"
-			"14"		"center_trackpad inactive"
-			"19"		"center_trackpad inactive"
+			"14"		"right_trackpad inactive"
+			"18"		"right_trackpad active"
 			"3"		"joystick active"
+			"13"		"joystick inactive"
 			"4"		"left_trigger active"
 			"5"		"right_trigger active"
 			"8"		"right_joystick active"
+			"12"		"right_joystick inactive"
 			"9"		"dpad active"
+			"21"		"center_trackpad inactive"
+			"16"		"gyro active"
 		}
 	}
 	"settings"
