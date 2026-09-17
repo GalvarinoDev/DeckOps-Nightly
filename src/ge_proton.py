@@ -69,18 +69,25 @@ def _get_latest_release():
     version = data["tag_name"]  # e.g. "GE-Proton11-7"
     tarball_url  = None
     checksum_url = None
+    tarball_asset = None
 
     for asset in data.get("assets", []):
         name = asset["name"]
         if name.endswith("-x86_64.tar.gz"):
             tarball_url = asset["browser_download_url"]
+            tarball_asset = name
         elif name.endswith("-x86_64.sha512sum"):
             checksum_url = asset["browser_download_url"]
 
     if not tarball_url:
         raise RuntimeError(f"No x86_64 .tar.gz asset found for {version}")
 
-    return version, tarball_url, checksum_url
+    # GE-Proton 11+ tarballs extract to a directory matching the asset
+    # name minus .tar.gz (e.g. "GE-Proton11-7-x86_64"), not the tag.
+    # Steam registers compat tools by directory name, so this must match.
+    dir_name = tarball_asset.removesuffix(".tar.gz")
+
+    return version, tarball_url, checksum_url, dir_name
 
 
 def _is_installed(version):
@@ -196,23 +203,23 @@ def install_ge_proton(on_progress=None):
     local_version = _get_local_version()
     prog(0, "Checking for GE-Proton updates...")
 
-    version, tarball_url, checksum_url = _get_latest_release()
+    version, tarball_url, checksum_url, dir_name = _get_latest_release()
 
-    if local_version == version:
-        prog(100, f"GE-Proton {version} is up to date.")
-        return version
+    if local_version == dir_name:
+        prog(100, f"GE-Proton {dir_name} is up to date.")
+        return dir_name
 
-    if _is_installed(version):
-        prog(100, f"GE-Proton {version} is up to date.")
-        return version
+    if _is_installed(dir_name):
+        prog(100, f"GE-Proton {dir_name} is up to date.")
+        return dir_name
 
-    prog(5, f"New version available: {version}")
+    prog(5, f"New version available: {dir_name}")
     os.makedirs(COMPAT_DIR, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix="deckops_ge_") as tmp:
-        tarball_path = os.path.join(tmp, f"{version}.tar.gz")
+        tarball_path = os.path.join(tmp, f"{dir_name}.tar.gz")
 
-        prog(10, f"Downloading {version}...")
+        prog(10, f"Downloading {dir_name}...")
         _download(tarball_url, tarball_path, on_progress=on_progress)
 
         if checksum_url:
@@ -223,8 +230,8 @@ def install_ge_proton(on_progress=None):
 
         # Use system tar for speed and memory efficiency — Python's tarfile
         # module is noticeably slower and more memory-hungry when extracting
-        # Python's tarfile module for large archives like GE-Proton.
-        prog(87, f"Extracting {version}...")
+        # large archives like GE-Proton.
+        prog(87, f"Extracting {dir_name}...")
         import subprocess
         result = subprocess.run(
             ["tar", "-xzf", tarball_path, "-C", COMPAT_DIR],
@@ -234,9 +241,9 @@ def install_ge_proton(on_progress=None):
             # Fall back to Python tarfile if tar isn't available
             with tarfile.open(tarball_path, "r:gz") as tar:
                 tar.extractall(COMPAT_DIR)
-        prog(100, f"GE-Proton {version} installed.")
+        prog(100, f"GE-Proton {dir_name} installed.")
 
-    return version
+    return dir_name
 
 
 # ── CompatToolMapping ─────────────────────────────────────────────────────────
