@@ -214,7 +214,15 @@ def install_iw4x(game: dict, steam_root: str,
     install_dir = game["install_dir"]
     iw4x_dir    = os.path.join(install_dir, "iw4x")
     if os.path.exists(iw4x_dir):
-        shutil.rmtree(iw4x_dir)
+        # Preserve DLC .iwd files across reinstall so users don't
+        # re-download ~3 GB every time.  Remove everything else
+        # (subdirs, non-iwd files) so release.zip extracts cleanly.
+        for entry in os.listdir(iw4x_dir):
+            p = os.path.join(iw4x_dir, entry)
+            if os.path.isdir(p):
+                shutil.rmtree(p)
+            elif not entry.endswith(".iwd"):
+                os.remove(p)
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -297,10 +305,11 @@ def install_iw4x(game: dict, steam_root: str,
         install_iw4x_dlc(install_dir, on_progress=dlc_prog)
 
 
-def uninstall_iw4x(game: dict):
+def uninstall_iw4x(game: dict, remove_dlc: bool = False):
     """
-    Restore iw4mp.exe from iw4mp.exe.bak and remove all IW4x files,
-    including DLC content.
+    Restore iw4mp.exe from iw4mp.exe.bak and remove IW4x client files.
+    DLC content (~3 GB) is preserved by default; pass remove_dlc=True
+    to delete it as well.
     """
     install_dir = game["install_dir"]
 
@@ -319,15 +328,27 @@ def uninstall_iw4x(game: dict):
 
     iw4x_dir = os.path.join(install_dir, "iw4x")
     if os.path.exists(iw4x_dir):
-        shutil.rmtree(iw4x_dir)
+        if remove_dlc:
+            shutil.rmtree(iw4x_dir)
+        else:
+            # Remove subdirs and non-iwd files, keep DLC .iwd files
+            for entry in os.listdir(iw4x_dir):
+                p = os.path.join(iw4x_dir, entry)
+                if os.path.isdir(p):
+                    shutil.rmtree(p)
+                elif not entry.endswith(".iwd"):
+                    os.remove(p)
 
     # Clean up zone/patch directory added by release.zip
     zone_patch = os.path.join(install_dir, "zone", "patch")
     if os.path.exists(zone_patch):
         shutil.rmtree(zone_patch)
 
+    if not remove_dlc:
+        return
+
     # Remove DLC .ff files from zone/dlc/.
-    # Only delete filenames that come from the CDN manifest — the base game
+    # Only delete filenames that come from the CDN manifest -- the base game
     # may have its own files in zone/dlc/ that we must not touch.
     _DLC_FF_FILENAMES = {
         # CoD4 (iw3)

@@ -22,8 +22,8 @@ import config as cfg
 
 from ui_constants import (
     C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN, C_RED_BTN, C_BLUE_BTN,
-    font, _btn, _lbl, _hdiv, _title_block, _log_to_file, _Sigs,
-    _detached_open, _header_path, _ask_iw4x_dlc,
+    font, _btn, _lbl, _hdiv, _title_block, _log_to_file, _copy_log_to_clipboard,
+    _Sigs, _detached_open, _header_path, _ask_iw4x_dlc,
     ALL_GAMES, KEY_CLIENT, KEY_MODE_LABEL,
     _active_keys, _active_client, _active_appid,
     SP_IMAGE_URLS, IMG_RATIO, CARD_COLS, CARD_MAX_W,
@@ -874,14 +874,12 @@ class SetupCompleteScreen(QWidget):
         sl.addWidget(_hdiv())
         sl.addWidget(_lbl("🎮  Black Ops III: First Launch", 12, C_TREY, bold=True, align=Qt.AlignLeft))
         sl.addWidget(_lbl(
-            "CleanOps and T7X finish installing on their first run. Do the "
+            "CleanOps finishes installing on its first run. Do the "
             "first launch in Desktop Mode:\n\n"
             "1. Launch Black Ops III (CleanOps). It will patch the game and "
             "may slow the Deck temporarily.\n"
             "2. If it does not launch, press the blue Stop button in Steam, "
-            "then relaunch to verify it works.\n"
-            "3. If you installed T7X, launch it after CleanOps is working.\n\n"
-            "Skip step 3 if you only installed CleanOps.",
+            "then relaunch to verify it works.",
             11, C_DIM, align=Qt.AlignLeft))
 
         # ── LCD notes (LCD users only) ────────────────────────────────────────
@@ -938,10 +936,10 @@ class SetupCompleteScreen(QWidget):
         lay.addWidget(scroll, stretch=1)
 
         # ── Continue button (pinned outside scroll) ───────────────────────────
-        lay.addSpacing(8)
-        cont = _btn("Continue  >>", C_IW, h=52)
+        cont = _btn("Continue  >>", C_IW, size=13, h=42)
+        cont.setFixedWidth(240)
         cont.clicked.connect(self._go_management)
-        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(cont, stretch=1); cw.addStretch()
+        cw = QHBoxLayout(); cw.setContentsMargins(0,4,0,12); cw.addStretch(); cw.addWidget(cont); cw.addStretch()
         lay.addLayout(cw)
 
     def showEvent(self, e):
@@ -1125,6 +1123,10 @@ class ConfigureScreen(QWidget):
         udr.addWidget(self._update_btn)
         self._update_status = _lbl("", 11, C_DIM, wrap=False)
         udr.addWidget(self._update_status, stretch=1)
+        log_btn = _btn("Copy Log", C_DARK_BTN, size=12, h=40)
+        log_btn.setFixedWidth(120)
+        log_btn.clicked.connect(lambda: _copy_log_to_clipboard(self.status))
+        udr.addWidget(log_btn)
         uninstall_btn = _btn("Full Uninstall", C_RED_BTN, size=12, h=40)
         reset_cfg_btn = _btn("Reset DeckOps Config", C_RED_BTN, size=12, h=40)
         uninstall_btn.clicked.connect(self._confirm_uninstall)
@@ -1747,6 +1749,12 @@ class UpdateScreen(QWidget):
         self.log.setFont(font(11))
         self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
         lay.addWidget(self.log, stretch=1)
+
+        self._log_status = _lbl("", 10, C_DIM, wrap=False)
+        log_btn = _btn("Copy Log", C_DARK_BTN, size=10, h=32); log_btn.setFixedWidth(120)
+        log_btn.clicked.connect(lambda: _copy_log_to_clipboard(self._log_status))
+        lr = QHBoxLayout(); lr.addStretch(); lr.addWidget(log_btn); lr.addWidget(self._log_status); lr.addStretch()
+        lay.addLayout(lr)
 
         self.steam_btn = _btn("Steam is closed  ✓", C_TREY, size=13, h=52)
         self.steam_btn.setFixedWidth(360); self.steam_btn.setVisible(False)
