@@ -20,7 +20,7 @@ from net import DownloadError
 
 from ui_constants import (
     C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN, C_BLUE_BTN,
-    font, _btn, _lbl, _title_block, _log_to_file, _Sigs,
+    font, _btn, _lbl, _title_block, _log_to_file, _copy_log_to_clipboard, _Sigs,
     ALL_GAMES, KEY_CLIENT, KEY_EXES, KEY_MODE_LABEL,
     _active_keys, _active_client, _active_appid,
     _ask_iw4x_dlc, _ask_bo3_client, _ask_cod4_client,
@@ -465,6 +465,12 @@ class _BaseInstallScreen(QWidget):
         self.log = QPlainTextEdit(); self.log.setReadOnly(True); self.log.setFont(font(11))
         self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
         clay.addWidget(self.log, stretch=1)
+
+        self._log_status = _lbl("", 10, C_DIM, wrap=False)
+        log_btn = _btn("Copy Log", C_DARK_BTN, size=10, h=32); log_btn.setFixedWidth(120)
+        log_btn.clicked.connect(lambda: _copy_log_to_clipboard(self._log_status))
+        lr = QHBoxLayout(); lr.addStretch(); lr.addWidget(log_btn); lr.addWidget(self._log_status); lr.addStretch()
+        clay.addLayout(lr)
 
         self.plut_warn = _lbl(
             "⚠  LCD: Plutonium takes time to download and launch.\n"

@@ -45,6 +45,24 @@ def _log_to_file(text: str):
     _log.info(text)
 
 
+def _copy_log_to_clipboard(status_widget=None):
+    """Read the last 200 lines of install.log and copy to clipboard."""
+    from iw5_downgrade import copy_to_clipboard
+    try:
+        with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        tail = "".join(lines[-200:])
+        copy_to_clipboard(tail)
+        if status_widget:
+            status_widget.setText("Log copied to clipboard (last 200 lines)")
+    except FileNotFoundError:
+        if status_widget:
+            status_widget.setText("No log file found")
+    except Exception as ex:
+        if status_widget:
+            status_widget.setText(f"Failed to copy log: {ex}")
+
+
 # ── Colors ────────────────────────────────────────────────────────────────────
 
 C_BG       = "#141416"
