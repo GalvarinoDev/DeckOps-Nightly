@@ -413,6 +413,8 @@ class _BaseInstallScreen(QWidget):
         self._iw5_method = ""
         self._manual_dl_event = threading.Event()
         self._manual_dl_ok = False
+        self._retry_dl_event = threading.Event()
+        self._retry_dl_choice = ""
         self._zd_event = threading.Event()
         self._zd_accept = False
         self._return_to_management = False
@@ -549,6 +551,7 @@ class _BaseInstallScreen(QWidget):
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
         self._s.manual_dl.connect(self._show_manual_dl_dialog)
+        self._s.retry_dl.connect(self._show_retry_dl_dialog)
         self._s.zd_ask.connect(self._show_zd_ask)
         self._s.zd_go.connect(self._hide_zd_ask)
 
@@ -674,6 +677,27 @@ class _BaseInstallScreen(QWidget):
     def _confirm_cod4r(self):
         self._cod4r_event.set()
 
+    def _show_retry_dl_dialog(self, label, error_msg):
+        msg = QMessageBox(self)
+        msg.setWindowTitle(f"{label} — Download Failed")
+        msg.setText(
+            f"<b>{label}</b> download failed after multiple attempts.<br><br>"
+            f"Error: {error_msg}<br><br>"
+            f"Would you like to retry, download manually, or skip?"
+        )
+        retry_btn = msg.addButton("Retry", QMessageBox.AcceptRole)
+        manual_btn = msg.addButton("Download Manually", QMessageBox.ActionRole)
+        msg.addButton("Skip", QMessageBox.RejectRole)
+        msg.exec_()
+        clicked = msg.clickedButton()
+        if clicked == retry_btn:
+            self._retry_dl_choice = "retry"
+        elif clicked == manual_btn:
+            self._retry_dl_choice = "manual"
+        else:
+            self._retry_dl_choice = "skip"
+        self._retry_dl_event.set()
+
     def _show_manual_dl_dialog(self, url, dest_folder, filename, label):
         """
         Show a dialog telling the user to manually download a file.
@@ -747,6 +771,8 @@ class _BaseInstallScreen(QWidget):
         self._iw5_method = ""
         self._manual_dl_event.clear()
         self._manual_dl_ok = False
+        self._retry_dl_event.clear()
+        self._retry_dl_choice = ""
         self._DONE_MSG = _BaseInstallScreen._DONE_MSG
         self._stop_pulse()
         try:
@@ -971,20 +997,43 @@ class _BaseInstallScreen(QWidget):
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
                 except DownloadError as dl_ex:
-                    self._s.log.emit(f"⚠  {dl_ex.label} download failed — manual download needed")
-                    self._manual_dl_event.clear()
-                    self._manual_dl_ok = False
-                    self._s.manual_dl.emit(
-                        dl_ex.url,
-                        os.path.dirname(dl_ex.dest),
-                        os.path.basename(dl_ex.dest),
-                        dl_ex.label,
-                    )
-                    self._manual_dl_event.wait()
-                    if not self._manual_dl_ok:
-                        self._s.log.emit(f"  ✗  {base_name} skipped by user.")
-                    else:
-                        self._s.log.emit(f"  ✓  {dl_ex.label} placed manually — re-run install to finish setup")
+                    _dl_resolved = False
+                    while not _dl_resolved:
+                        self._retry_dl_event.clear()
+                        self._retry_dl_choice = ""
+                        self._s.retry_dl.emit(dl_ex.label, str(dl_ex))
+                        self._retry_dl_event.wait()
+                        if self._retry_dl_choice == "retry":
+                            try:
+                                if c == "cod4r":
+                                    install_cod4r(game, self.steam_root, proton, compat, op_cod4,
+                                                  appid=cod4_appid, source=source)
+                                elif c == "cod4x":
+                                    install_cod4x(game, self.steam_root, proton, compat, op_cod4,
+                                                  appid=cod4_appid)
+                                elif c == "iw3sp":
+                                    install_iw3sp(game, self.steam_root, proton, compat, op_cod4, source=source)
+                                self._s.log.emit(f"✓  {base_name} done (retry succeeded)")
+                                _dl_resolved = True
+                            except DownloadError as dl_ex2:
+                                dl_ex = dl_ex2
+                        elif self._retry_dl_choice == "manual":
+                            self._s.log.emit(f"⚠  {dl_ex.label} — opening manual download dialog")
+                            self._manual_dl_event.clear()
+                            self._manual_dl_ok = False
+                            self._s.manual_dl.emit(
+                                dl_ex.url, os.path.dirname(dl_ex.dest),
+                                os.path.basename(dl_ex.dest), dl_ex.label,
+                            )
+                            self._manual_dl_event.wait()
+                            if self._manual_dl_ok:
+                                self._s.log.emit(f"  ✓  {dl_ex.label} placed manually")
+                            else:
+                                self._s.log.emit(f"  ✗  {base_name} skipped by user.")
+                            _dl_resolved = True
+                        else:
+                            self._s.log.emit(f"  ✗  {base_name} skipped by user.")
+                            _dl_resolved = True
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
@@ -1215,20 +1264,41 @@ class _BaseInstallScreen(QWidget):
                             steam_root=self.steam_root,
                         )
                 except DownloadError as dl_ex:
-                    self._s.log.emit(f"⚠  {dl_ex.label} download failed — manual download needed")
-                    self._manual_dl_event.clear()
-                    self._manual_dl_ok = False
-                    self._s.manual_dl.emit(
-                        dl_ex.url,
-                        os.path.dirname(dl_ex.dest),
-                        os.path.basename(dl_ex.dest),
-                        dl_ex.label,
-                    )
-                    self._manual_dl_event.wait()
-                    if not self._manual_dl_ok:
-                        self._s.log.emit("  ✗  Skipped by user.")
-                        self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
-                    self._s.log.emit(f"  ✓  {dl_ex.label} placed manually")
+                    _dl_resolved = False
+                    while not _dl_resolved:
+                        self._retry_dl_event.clear()
+                        self._retry_dl_choice = ""
+                        self._s.retry_dl.emit(dl_ex.label, str(dl_ex))
+                        self._retry_dl_event.wait()
+                        if self._retry_dl_choice == "retry":
+                            try:
+                                if is_lcd:
+                                    launch_bootstrapper_lcd(
+                                        on_progress=lambda p, m: self._s.progress.emit(p, m))
+                                else:
+                                    launch_bootstrapper(
+                                        proton,
+                                        on_progress=lambda p, m: self._s.progress.emit(p, m),
+                                        steam_root=self.steam_root)
+                                _dl_resolved = True
+                            except DownloadError as dl_ex2:
+                                dl_ex = dl_ex2
+                        elif self._retry_dl_choice == "manual":
+                            self._manual_dl_event.clear()
+                            self._manual_dl_ok = False
+                            self._s.manual_dl.emit(
+                                dl_ex.url, os.path.dirname(dl_ex.dest),
+                                os.path.basename(dl_ex.dest), dl_ex.label,
+                            )
+                            self._manual_dl_event.wait()
+                            if not self._manual_dl_ok:
+                                self._s.log.emit("  ✗  Skipped by user.")
+                                self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
+                            self._s.log.emit(f"  ✓  {dl_ex.label} placed manually")
+                            _dl_resolved = True
+                        else:
+                            self._s.log.emit("  ✗  Skipped by user.")
+                            self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
                 except Exception as ex:
                     self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
                     self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
