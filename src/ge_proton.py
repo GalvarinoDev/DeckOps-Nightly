@@ -1,7 +1,7 @@
 """
 ge_proton.py - DeckOps GE-Proton installer
 
-Downloads and installs a pinned GE-Proton release from GitHub, then
+Downloads and installs the latest GE-Proton release from GitHub, then
 writes the CompatToolMapping entry in Steam's config.vdf so each game
 uses it automatically.
 
@@ -30,10 +30,7 @@ from net import BROWSER_UA as _BROWSER_UA
 _log = get_logger(__name__)
 
 
-# Pinned to GE-Proton10-34 — GE-Proton11-1 causes black screens and
-# launcher crashes during install.  Update this tag when a newer stable
-# release has been tested.
-GITHUB_API   = "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/tags/GE-Proton10-34"
+GITHUB_API   = "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest"
 COMPAT_DIR   = os.path.expanduser("~/.local/share/Steam/compatibilitytools.d")
 
 # Steam appids that DeckOps manages — GE-Proton will be set for all of these
@@ -60,29 +57,28 @@ MANAGED_APPIDS = [
 
 # ── GitHub API ────────────────────────────────────────────────────────────────
 
-def _get_pinned_release():
+def _get_latest_release():
     """
-    Query the GitHub API for the PINNED GE-Proton release (GITHUB_API
-    points at a specific tag, not /releases/latest — see the pin comment
-    at the top of this file). Returns (version, tarball_url, checksum_url).
+    Query the GitHub API for the latest GE-Proton release.
+    Returns (version, tarball_url, checksum_url).
     """
     req = urllib.request.Request(GITHUB_API, headers=_BROWSER_UA)
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = json.loads(resp.read())
 
-    version = data["tag_name"]  # e.g. "GE-Proton10-28"
+    version = data["tag_name"]  # e.g. "GE-Proton11-7"
     tarball_url  = None
     checksum_url = None
 
     for asset in data.get("assets", []):
         name = asset["name"]
-        if name.endswith(".tar.gz"):
+        if name.endswith("-x86_64.tar.gz"):
             tarball_url = asset["browser_download_url"]
-        elif name.endswith(".sha512sum"):
+        elif name.endswith("-x86_64.sha512sum"):
             checksum_url = asset["browser_download_url"]
 
     if not tarball_url:
-        raise RuntimeError(f"No .tar.gz asset found for {version}")
+        raise RuntimeError(f"No x86_64 .tar.gz asset found for {version}")
 
     return version, tarball_url, checksum_url
 
@@ -187,7 +183,7 @@ def _verify_checksum(tarball_path, checksum_url):
 
 def install_ge_proton(on_progress=None):
     """
-    Download and install the pinned GE-Proton to compatibilitytools.d.
+    Download and install the latest GE-Proton to compatibilitytools.d.
     Returns the version string (e.g. 'GE-Proton10-34') so it can be
     passed to set_compat_tool().
 
@@ -205,7 +201,7 @@ def install_ge_proton(on_progress=None):
     else:
         prog(0, "Checking latest GE-Proton release...")
 
-    version, tarball_url, checksum_url = _get_pinned_release()
+    version, tarball_url, checksum_url = _get_latest_release()
     prog(5, f"Latest: {version}")
 
     if local_version == version:
@@ -954,7 +950,7 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
 
 def setup_ge_proton(on_progress=None):
     """
-    Full setup: install the pinned GE-Proton and set it for all managed appids.
+    Full setup: install the latest GE-Proton and set it for all managed appids.
     Call this from ui_qt.py early in the install flow.
 
     Returns the installed version string.
