@@ -297,13 +297,8 @@ def set_docked_resolution(resolution: str):
     save(config)
 
 
-def get_game_source() -> str | None:
-    """Returns 'steam', 'own', or None if not yet set."""
-    return load().get("game_source")
-
-
 def set_game_source(source: str):
-    """Save game source. source should be 'steam' or 'own'."""
+    """Save game source preference."""
     config = load()
     config["game_source"] = source
     save(config)

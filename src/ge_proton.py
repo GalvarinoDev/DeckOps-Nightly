@@ -946,23 +946,3 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
             success += 1
 
     return success
-
-
-# ── Public API ────────────────────────────────────────────────────────────────
-
-def setup_ge_proton(on_progress=None):
-    """
-    Full setup: install the latest GE-Proton and set it for all managed appids.
-    Call this from ui_qt.py early in the install flow.
-
-    Returns the installed version string.
-    """
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
-
-    version = install_ge_proton(on_progress=on_progress)
-    prog(0, f"Setting GE-Proton {version} for all games...")
-    set_compat_tool(MANAGED_APPIDS, version)
-    prog(100, f"✓  GE-Proton {version} set for all games.")
-    return version

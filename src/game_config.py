@@ -34,8 +34,7 @@ _log = get_logger(__name__)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-_HERE        = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(_HERE)
+from steam_common import PROJECT_ROOT
 CONFIGS_DIR  = os.path.join(PROJECT_ROOT, "assets", "configs")
 
 # Heroic shared default prefix — used by LCD online play for all Plutonium

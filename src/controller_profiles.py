@@ -54,18 +54,16 @@ _log = get_logger(__name__)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-_HERE         = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT  = os.path.dirname(_HERE)
-ASSETS_DIR    = os.path.join(PROJECT_ROOT, "assets", "controllers")
-TEMPLATES_DIR = os.path.expanduser("~/.steam/steam/controller_base/templates")
 from steam_common import (
-    STEAM_ROOT, STEAM_CONFIG, MIN_UID,
+    PROJECT_ROOT, STEAM_ROOT, STEAM_CONFIG, MIN_UID,
     calc_shortcut_appid as _calc_appid_int,
     find_all_steam_uids as _find_all_steam_uids,
     get_deck_serial as _get_deck_serial,
     patch_configset as _patch_configset,
     record_configset_edit as _record_configset_edit,
 )
+ASSETS_DIR    = os.path.join(PROJECT_ROOT, "assets", "controllers")
+TEMPLATES_DIR = os.path.expanduser("~/.steam/steam/controller_base/templates")
 
 STEAM_DIR = STEAM_ROOT  # alias kept for existing references in this module
 

@@ -22,7 +22,7 @@ _log = get_logger(__name__)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from steam_common import PROJECT_ROOT
 FONTS_DIR    = os.path.join(PROJECT_ROOT, "assets", "fonts")
 HEADERS_DIR  = os.path.join(PROJECT_ROOT, "assets", "images", "headers")
 HEROES_DIR   = os.path.join(PROJECT_ROOT, "assets", "images", "heroes")

@@ -35,7 +35,7 @@ _log = get_logger(__name__)
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 from steam_common import (
-    STEAM_ROOT, USERDATA_DIR, STEAM_CONFIG, MIN_UID,
+    PROJECT_ROOT, STEAM_ROOT, USERDATA_DIR, STEAM_CONFIG, MIN_UID,
     calc_shortcut_appid as _calc_shortcut_appid,
     find_all_steam_uids as _find_all_steam_uids,
     get_deck_serial as _get_deck_serial,
@@ -44,9 +44,6 @@ from steam_common import (
 )
 
 COMPAT_ROOT    = os.path.join(STEAM_ROOT, "steamapps", "compatdata")
-
-_HERE          = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT   = os.path.dirname(_HERE)
 ASSETS_DIR     = os.path.join(PROJECT_ROOT, "assets", "controllers")
 
 
