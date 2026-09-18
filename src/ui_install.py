@@ -9,7 +9,7 @@ import os, subprocess, threading
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
-    QLabel, QCheckBox, QProgressBar,
+    QLabel, QCheckBox, QProgressBar, QPushButton, QButtonGroup,
     QPlainTextEdit, QFileDialog, QMessageBox,
 )
 from PyQt5.QtCore import Qt, QTimer, QStorageInfo, QUrl
@@ -23,7 +23,7 @@ from ui_constants import (
     font, _btn, _lbl, _title_block, _header_bar, _badge, _log_to_file, _copy_log_to_clipboard, _Sigs,
     ALL_GAMES, KEY_CLIENT, KEY_EXES, KEY_MODE_LABEL,
     _active_keys, _active_client, _active_appid,
-    _ask_iw4x_dlc, _ask_bo3_client, _ask_cod4_client,
+    _ask_bo3_client,
     go_to, get_screen,
 )
 
@@ -163,6 +163,9 @@ class SetupScreen(QWidget):
         self.steam_installed={}; self.own_installed={}; self.steam_root=""
         self._checks={}
         self._extra_paths = []
+        self._cod4_choice = "cod4r"
+        self._iw4x_dlc_cb = None; self._iw4x_dlc_present = False
+        self._zd_cb = None
 
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
@@ -204,6 +207,8 @@ class SetupScreen(QWidget):
             item = self._ll.takeAt(0)
             if item.widget(): item.widget().deleteLater()
         self._checks.clear()
+        self._iw4x_dlc_cb = None; self._iw4x_dlc_present = False
+        self._zd_cb = None
 
         MAX_SLOTS  = 3
         SLOT_W     = 28
@@ -283,6 +288,7 @@ class SetupScreen(QWidget):
             name_wrap_lay.setSpacing(2)
             name_lbl = _lbl(gd["base"], 14, "#FFF", align=Qt.AlignLeft, wrap=False)
             name_wrap_lay.addWidget(name_lbl)
+            self._row_options(name_wrap_lay, keys, all_installed)
             row.addWidget(name_wrap, stretch=1)
 
             # Source badge: show OWN if any key in this row is own-source
@@ -299,6 +305,60 @@ class SetupScreen(QWidget):
 
             cw = QWidget(); cw.setLayout(row)
             self._ll.insertWidget(self._ll.count() - 1, cw)
+
+    def _row_options(self, lay, keys, all_installed):
+        """Per-game install choices shown under the name while that mode is ticked (replaces pop-ups)."""
+        def _bind(key, w):
+            cb = self._checks.get(key, (None,))[0]
+            w.setVisible(bool(cb and cb.isChecked()))
+            if cb: cb.toggled.connect(w.setVisible)
+
+        def _opt_box():
+            w = QWidget(); v = QVBoxLayout(w); v.setContentsMargins(0, 4, 0, 0); v.setSpacing(4)
+            return w, v
+
+        if "cod4mp" in keys and "cod4mp" in all_installed:
+            w, v = _opt_box()
+            h = QHBoxLayout(); h.setSpacing(6)
+            h.addWidget(_lbl("Multiplayer client:", 11, C_DIM, wrap=False))
+            grp = QButtonGroup(w)
+            for val, text in (("cod4r", "CoD4R (recommended)"), ("cod4x", "CoD4x")):
+                b = QPushButton(text); b.setCheckable(True); b.setFont(font(10, True)); b.setFixedHeight(34)
+                b.setStyleSheet(
+                    f"QPushButton{{background:{C_DARK_BTN};color:#AAA;border:none;border-radius:6px;padding:0 12px;}}"
+                    f"QPushButton:checked{{background:{C_IW};color:#FFF;}}")
+                grp.addButton(b); b.setChecked(self._cod4_choice == val)
+                b.toggled.connect(lambda on, v_=val: on and setattr(self, "_cod4_choice", v_))
+                h.addWidget(b)
+            h.addStretch(); v.addLayout(h)
+            v.addWidget(_lbl("CoD4R has native controller support. CoD4x needs manual input setup.",
+                             10, "#666677", align=Qt.AlignLeft))
+            lay.addWidget(w); _bind("cod4mp", w)
+
+        if "iw4mp" in keys and "iw4mp" in all_installed:
+            w, v = _opt_box()
+            from iw4x import is_iw4x_dlc_installed
+            idir = all_installed["iw4mp"].get("install_dir", "")
+            self._iw4x_dlc_present = bool(idir) and is_iw4x_dlc_installed(idir)
+            if self._iw4x_dlc_present:
+                v.addWidget(_lbl("Free IW4x DLC maps already installed.", 10, "#666677", align=Qt.AlignLeft))
+            else:
+                self._iw4x_dlc_cb = QCheckBox("Install free DLC maps (~3 GB, recommended for most servers)")
+                self._iw4x_dlc_cb.setFont(font(11)); self._iw4x_dlc_cb.setChecked(True)
+                self._iw4x_dlc_cb.setStyleSheet("color:#CCC;background:transparent;")
+                v.addWidget(self._iw4x_dlc_cb)
+            lay.addWidget(w); _bind("iw4mp", w)
+
+        if "t6zm" in keys and "t6zm" in all_installed and not cfg.is_zd_installed():
+            from zombies_declassified import has_bo2_zm_dlc
+            bdir = all_installed["t6zm"].get("install_dir", "")
+            if bdir and has_bo2_zm_dlc(bdir):
+                w, v = _opt_box()
+                self._zd_cb = QCheckBox("Zombies Declassified: 10 classic Zombies maps (~9 GB)")
+                self._zd_cb.setFont(font(11)); self._zd_cb.setChecked(False)
+                self._zd_cb.setStyleSheet("color:#CCC;background:transparent;")
+                v.addWidget(self._zd_cb)
+                lay.addWidget(w); _bind("t6zm", w)
 
     def _add_mw3_free_row(self, gd, checks_w):
         row = QHBoxLayout(); row.setSpacing(12); row.setContentsMargins(8, 8, 8, 8)
@@ -405,9 +465,16 @@ class SetupScreen(QWidget):
             for _gd in ALL_GAMES:
                 if _k in _active_keys(_gd):
                     all_tuples.append((_k, _gd, _g)); break
-        s.install_iw4x_dlc = _ask_iw4x_dlc(self, all_tuples)
+        sel = {k for k, _, _ in all_tuples}
+        if "iw4mp" not in sel:
+            s.install_iw4x_dlc = ""
+        elif self._iw4x_dlc_present:
+            s.install_iw4x_dlc = "keep"
+        else:
+            s.install_iw4x_dlc = "install" if self._iw4x_dlc_cb and self._iw4x_dlc_cb.isChecked() else ""
+        s.cod4_client = self._cod4_choice if "cod4mp" in sel else "cod4r"
+        s.zd_choice = bool(self._zd_cb and self._zd_cb.isChecked())
         s.bo3_client = _ask_bo3_client(self, all_tuples)
-        s.cod4_client = _ask_cod4_client(self, all_tuples)
         go_to(self.stack, "InstallScreen")
 
 # --- _BaseInstallScreen ---
@@ -429,6 +496,7 @@ class _BaseInstallScreen(QWidget):
         self._zd_accept = False
         self._return_to_management = False
         self._from_manage = False
+        self.zd_choice = None
         self.bo3_client = "cleanops"
 
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
@@ -748,6 +816,7 @@ class _BaseInstallScreen(QWidget):
 
     def _on_done(self, ok):
         self._stop_pulse()
+        self.zd_choice = None
         if ok:
             self.cur.setText(self._DONE_MSG)
         else:
@@ -1589,16 +1658,19 @@ class _BaseInstallScreen(QWidget):
                     _zd_storage = resolve_zd_storage({k: g for k, gd, g in self.selected}.get("t6zm"))
 
                     if _zd_storage and os.path.isdir(_zd_storage):
-                        # Ask user before downloading ~9 GB
-                        self._s.progress.emit(76, "Zombies Declassified available")
-                        self._s.log.emit("Zombies Declassified (DLC5) is available for BO2 Zombies.")
-                        self._zd_event.clear()
-                        self._zd_accept = False
-                        self._s.zd_ask.emit()
-                        self._zd_event.wait()
-                        self._s.zd_go.emit()
+                        # Choice comes from the game-selection row; None means ask now (~9 GB)
+                        _zd_yes = self.zd_choice
+                        if _zd_yes is None:
+                            self._s.progress.emit(76, "Zombies Declassified available")
+                            self._s.log.emit("Zombies Declassified (DLC5) is available for BO2 Zombies.")
+                            self._zd_event.clear()
+                            self._zd_accept = False
+                            self._s.zd_ask.emit()
+                            self._zd_event.wait()
+                            self._s.zd_go.emit()
+                            _zd_yes = self._zd_accept
 
-                        if self._zd_accept:
+                        if _zd_yes:
                             self._s.progress.emit(76, "Installing Zombies Declassified...")
                             self._s.log.emit("Installing Zombies Declassified (DLC5 map pack)...")
                             from zombies_declassified import install_zd

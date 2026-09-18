@@ -466,37 +466,6 @@ def _ask_bo3_client(parent, selected) -> str:
     #     return "both"
     # return "cleanops"
 
-def _ask_cod4_client(parent, selected) -> str:
-    """
-    Show a dialog recommending CoD4R over CoD4x for Call of Duty 4.
-    Returns "cod4r" (default) or "cod4x".
-    Only shows the dialog if cod4mp is in the selected games.
-    """
-    has_cod4mp = any(k == "cod4mp" for k, _, _ in selected)
-    if not has_cod4mp:
-        return "cod4r"
-
-    msg = QMessageBox(parent)
-    msg.setWindowTitle("Call of Duty 4 - Client Selection")
-    msg.setText(
-        "Which multiplayer client would you like to install?\n\n"
-        "CoD4R (Recommended)\n"
-        "Native controller support, server browser, QoL improvements, "
-        "and bot support. Built for handheld gaming.\n\n"
-        "CoD4x\n"
-        "Established community client. No native controller support -- "
-        "requires manual input configuration."
-    )
-    btn_cod4r = msg.addButton("CoD4R (Recommended)", QMessageBox.AcceptRole)
-    msg.addButton("CoD4x", QMessageBox.RejectRole)
-    msg.setDefaultButton(btn_cod4r)
-    msg.exec_()
-
-    if msg.clickedButton() == btn_cod4r:
-        return "cod4r"
-    return "cod4x"
-
-
 # ── Title block ───────────────────────────────────────────────────────────────
 
 def _title_block(lay, main_size=56):
