@@ -39,6 +39,28 @@ def has_bo2_zm_dlc(bo2_dir: str) -> bool:
     return all(os.path.isfile(os.path.join(zone, f)) for f in _ZD_REQUIRED_DLC)
 
 
+def resolve_zd_storage(t6zm_game=None):
+    """Plutonium storage/t6 that ZD lives in. One lookup order for install, update and Options,
+    so an update always finds the existing install instead of starting a fresh one elsewhere."""
+    import config as cfg
+    if cfg.is_lcd():
+        from plutonium_lcd import get_shared_plut_dir
+        pd = get_shared_plut_dir()
+        return os.path.join(pd, "storage", "t6") if pd else None
+    install_dir = (t6zm_game or {}).get("install_dir", "")
+    meta = os.path.join(install_dir, "deckops_plutonium.json") if install_dir else ""
+    if meta and os.path.exists(meta):
+        try:
+            with open(meta) as f:
+                pd = json.load(f).get("plut_dir", "")
+            if pd:
+                return os.path.join(pd, "storage", "t6")
+        except Exception:
+            _log.warning("Could not read %s", meta, exc_info=True)
+    from plutonium_oled import get_dedicated_plut_dir
+    return os.path.join(get_dedicated_plut_dir(), "storage", "t6")
+
+
 def _manifest_hash(file_list: list) -> str:
     return hashlib.sha256("\n".join(file_list).encode()).hexdigest()[:16]
 
@@ -154,6 +176,11 @@ def update_zd(plut_storage_t6: str, on_progress=None):
 
     current = get_zd_info(plut_storage_t6)
     current_hash = current.get("manifest_hash", "")
+    if not current_hash:
+        # No install at this path: never turn an update into a fresh ~9 GB download
+        prog(100, f"Zombies Declassified not found in {plut_storage_t6}, skipped.")
+        _log.warning("update_zd: no ZD metadata at %s", plut_storage_t6)
+        return False
 
     files = fetch_manifest(on_progress)
     new_hash = _manifest_hash(files)

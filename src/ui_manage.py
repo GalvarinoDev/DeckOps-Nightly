@@ -23,7 +23,7 @@ import config as cfg
 from ui_constants import (
     C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN, C_RED_BTN, C_BLUE_BTN,
     font, _btn, _lbl, _hdiv, _title_block, _log_to_file, _copy_log_to_clipboard,
-    _Sigs, _detached_open, _header_path, _ask_iw4x_dlc,
+    _Sigs, _detached_open, _header_bar, _badge, _header_path, _ask_iw4x_dlc,
     ALL_GAMES, KEY_CLIENT, KEY_MODE_LABEL,
     _active_keys, _active_client, _active_appid,
     SP_IMAGE_URLS, IMG_RATIO, CARD_COLS, CARD_MAX_W,
@@ -37,6 +37,37 @@ from identity import GITHUB_USER, GITHUB_REPO
 from log import get_logger
 
 _log = get_logger(__name__)
+
+
+def _check_update_status():
+    """Compare local VERSION sha to GitHub main. Returns 'OK|..', 'UPDATE|..' or 'FAIL|..'."""
+    try:
+        version_file = os.path.join(PROJECT_ROOT, "VERSION")
+        local_sha = "0"
+        if os.path.isfile(version_file):
+            with open(version_file) as f:
+                local_sha = f.read().strip() or "0"
+        api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}"
+        req = urllib.request.Request(f"{api}/commits/main", headers={"User-Agent": "DeckOps"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            remote_sha = json.loads(r.read()).get("sha", "")
+        if not remote_sha:
+            return "FAIL|Could not reach GitHub."
+        if local_sha == remote_sha:
+            return "OK|You're up to date!"
+        file_count = "unknown"
+        if local_sha != "0":
+            try:
+                creq = urllib.request.Request(f"{api}/compare/{local_sha}...{remote_sha}",
+                                              headers={"User-Agent": "DeckOps"})
+                with urllib.request.urlopen(creq, timeout=15) as r2:
+                    file_count = str(len(json.loads(r2.read()).get("files", [])))
+            except Exception:
+                pass
+        return f"UPDATE|Update available — {file_count} file(s) changed."
+    except Exception as ex:
+        _log.warning("Update check failed: %s", ex)
+        return "FAIL|Update check failed."
 
 
 # ── ManagementCard ────────────────────────────────────────────────────────────
@@ -89,7 +120,7 @@ class ManagementCard(QFrame):
 
         # Client badge — overlaid top-left on the image
         self._client_badge = QPushButton(client.upper(), img_container)
-        self._client_badge.setFont(font(8, True)); self._client_badge.setEnabled(False)
+        self._client_badge.setFont(font(9, True)); self._client_badge.setEnabled(False)
         self._client_badge.setStyleSheet(
             f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:3px;padding:2px 6px;}}"
             f"QPushButton:disabled{{background:{color};color:#FFF;}}"
@@ -103,48 +134,29 @@ class ManagementCard(QFrame):
         bb = QHBoxLayout(self._btn_bar)
         bb.setContentsMargins(6, 0, 6, 0); bb.setSpacing(4)
 
+        def _card_btn(text, bg, fg="#FFF"):
+            b = QPushButton(text); b.setFont(font(11, True)); b.setFixedHeight(40)
+            b.setStyleSheet(
+                f"QPushButton{{background:{bg};color:{fg};border:none;border-radius:4px;padding:0 12px;}}"
+                f"QPushButton:disabled{{background:{bg};color:{fg};}}")
+            return b
+
         if self._is_lan:
-            readd_btn = _btn("Re-Add", C_TREY, size=9, h=26)
-            if on_readd:
-                readd_btn.clicked.connect(lambda: on_readd(gd))
-            readd_btn.setStyleSheet(
-                f"QPushButton{{background:{C_TREY};color:#FFF;border:none;"
-                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
-            )
-            bb.addStretch(); bb.addWidget(readd_btn); bb.addStretch()
+            b = _card_btn("Re-Add", C_TREY)
+            if on_readd: b.clicked.connect(lambda: on_readd(gd))
         elif not is_setup and is_present:
-            setup_btn = _btn("Set Up", C_IW, size=9, h=26)
-            setup_btn.clicked.connect(lambda: on_setup(gd))
-            setup_btn.setStyleSheet(
-                f"QPushButton{{background:{C_IW};color:#FFF;border:none;"
-                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
-            )
-            bb.addStretch(); bb.addWidget(setup_btn); bb.addStretch()
+            b = _card_btn("Set Up", C_IW)
+            b.clicked.connect(lambda: on_setup(gd))
         elif is_setup:
-            cfg_btn = _btn("Options", C_DARK_BTN, size=11, h=30)
-            cfg_btn.clicked.connect(lambda: on_configure(gd, ik))
-            cfg_btn.setStyleSheet(
-                f"QPushButton{{background:rgba(51,51,63,200);color:#CCC;border:none;"
-                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
-            )
-            bb.addStretch(); bb.addWidget(cfg_btn); bb.addStretch()
+            b = _card_btn("Options", "rgba(51,51,63,200)", "#CCC")
+            b.clicked.connect(lambda: on_configure(gd, ik))
         elif "iw5mp_ds" in keys and on_add_ds:
-            ds_btn = _btn("Setup Free Game", C_IW, size=9, h=26)
-            ds_btn.clicked.connect(lambda: on_add_ds(gd))
-            ds_btn.setStyleSheet(
-                f"QPushButton{{background:{C_IW};color:#FFF;border:none;"
-                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
-            )
-            bb.addStretch(); bb.addWidget(ds_btn); bb.addStretch()
+            b = _card_btn("Set Up Free Game", C_IW)
+            b.clicked.connect(lambda: on_add_ds(gd))
         else:
-            setup_btn = _btn("Set Up", C_DARK_BTN, size=9, h=26)
-            setup_btn.setEnabled(False)
-            setup_btn.setStyleSheet(
-                f"QPushButton{{background:rgba(37,37,53,200);color:#555568;border:none;"
-                f"border-radius:4px;font-weight:bold;padding:0 10px;}}"
-                f"QPushButton:disabled{{background:rgba(37,37,53,200);color:#555568;}}"
-            )
-            bb.addStretch(); bb.addWidget(setup_btn); bb.addStretch()
+            b = _card_btn("Set Up", "rgba(37,37,53,200)", "#555568")
+            b.setEnabled(False)
+        bb.addStretch(); bb.addWidget(b); bb.addStretch()
 
         self._btn_bar.adjustSize()
         self._btn_bar.raise_()
@@ -162,7 +174,18 @@ class ManagementCard(QFrame):
             if os.path.exists(cached):
                 self._raw_pixmap = QPixmap(cached)
             else:
+                self._img_sigs = _Sigs()
+                self._img_sigs.log.connect(self._on_image_fetched)
                 threading.Thread(target=self._fetch, args=(self._appid,), daemon=True).start()
+
+    def _on_image_fetched(self, path):
+        try:
+            pix = QPixmap(path)
+            if not pix.isNull():
+                self._raw_pixmap = pix
+                self._scale_image()
+        except RuntimeError:
+            pass  # card was rebuilt while the download ran
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
@@ -192,10 +215,7 @@ class ManagementCard(QFrame):
             import urllib.request
             dest = _header_path(appid)
             urllib.request.urlretrieve(url, dest)
-            pix = QPixmap(dest)
-            if not pix.isNull():
-                self._raw_pixmap = pix
-                QTimer.singleShot(0, self._scale_image)
+            self._img_sigs.log.emit(dest)
         except Exception:
             _log.debug("image load failed", exc_info=True)
 
@@ -206,34 +226,22 @@ class ManagementScreen(QWidget):
         super().__init__(); self.stack=stack; self.installed={}; self.screen_name = "ManagementScreen"
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
-        hdr = QWidget(); hdr.setFixedHeight(60)
-        hdr.setStyleSheet(f"background:{C_CARD};")
-        hl = QHBoxLayout(hdr); hl.setContentsMargins(20,0,20,0)
-        title = QLabel("DECKOPS"); title.setFont(font(22, display=True))
-        title.setStyleSheet("color:#FFF;background:transparent;")
-        hl.addWidget(title)
-        nightly_lbl = QLabel("NIGHTLY"); nightly_lbl.setFont(font(9, bold=True))
-        nightly_lbl.setStyleSheet(
-            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
-            "border-radius:4px;padding:1px 6px;"
-        )
-        hl.addWidget(nightly_lbl)
-        hl.addStretch()
-        self._deckops_update_btn = _btn("Update DeckOps", C_DARK_BTN, size=10, h=36)
-        self._deckops_update_btn.setFixedWidth(140)
+        hdr, hl = _header_bar()
+        self._deckops_update_btn = _btn("Update DeckOps", C_DARK_BTN, size=11, h=40)
+        self._deckops_update_btn.setFixedWidth(170)
         self._deckops_update_btn.clicked.connect(self._check_deckops_update)
         hl.addWidget(self._deckops_update_btn)
         hl.addSpacing(8)
-        self._game_update_btn = _btn("Update Games", C_DARK_BTN, size=10, h=36)
-        self._game_update_btn.setFixedWidth(140)
+        self._game_update_btn = _btn("Update Games", C_DARK_BTN, size=11, h=40)
+        self._game_update_btn.setFixedWidth(160)
         self._game_update_btn.clicked.connect(self._update_all_games)
         hl.addWidget(self._game_update_btn)
         hl.addSpacing(8)
-        guide_btn = _btn("📋  Guide", C_DARK_BTN, size=10, h=36); guide_btn.setFixedWidth(90)
-        guide_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
+        guide_btn = _btn("📋  Guide", C_DARK_BTN, size=11, h=40); guide_btn.setFixedWidth(120)
+        guide_btn.clicked.connect(self._open_guide)
         hl.addWidget(guide_btn)
         hl.addSpacing(8)
-        cfg_btn = _btn("⚙  Settings", C_DARK_BTN, size=11, h=36); cfg_btn.setFixedWidth(120)
+        cfg_btn = _btn("⚙  Settings", C_DARK_BTN, size=11, h=40); cfg_btn.setFixedWidth(140)
         cfg_btn.clicked.connect(lambda: go_to(self.stack, "ConfigureScreen"))
         hl.addWidget(cfg_btn)
         lay.addWidget(hdr)
@@ -253,14 +261,42 @@ class ManagementScreen(QWidget):
         self._status.setContentsMargins(16,4,16,4)
         lay.addWidget(self._status)
 
+    def _open_guide(self):
+        get_screen(self.stack, "SetupCompleteScreen")._from_guide = True
+        go_to(self.stack, "SetupCompleteScreen")
+
     def set_installed(self, installed):
         self.installed = installed
         self._rebuild()
 
     def showEvent(self, e):
         super().showEvent(e)
-        self.installed = find_all_games()
-        self._rebuild()
+        self._refresh()
+
+    def _refresh(self):
+        if getattr(self, "_scanning", False): return
+        self._scanning = True
+        self._game_update_btn.setEnabled(False)
+        if not self.installed: self._status.setText("Loading games...")
+        self._scan_sigs = _Sigs()
+        self._scan_sigs.done.connect(self._on_scanned)
+        threading.Thread(target=self._do_scan, daemon=True).start()
+
+    def _do_scan(self):
+        try:
+            self._scanned = find_all_games()
+        except Exception:
+            _log.warning("game scan failed", exc_info=True)
+            self._scanned = None
+        self._scan_sigs.done.emit(self._scanned is not None)
+
+    def _on_scanned(self, ok):
+        self._scanning = False
+        self._game_update_btn.setEnabled(True)
+        if self._status.text() == "Loading games...": self._status.setText("")
+        if ok:
+            self.installed = self._scanned
+            self._rebuild()
 
     def _rebuild(self):
         while self._grid.count():
@@ -301,48 +337,7 @@ class ManagementScreen(QWidget):
         threading.Thread(target=self._deckops_update_worker, daemon=True).start()
 
     def _deckops_update_worker(self):
-        try:
-            version_file = os.path.join(PROJECT_ROOT, "VERSION")
-            local_sha = "0"
-            if os.path.isfile(version_file):
-                with open(version_file) as f:
-                    local_sha = f.read().strip() or "0"
-
-            req = urllib.request.Request(
-                f"https://api.github.com/repos/{self._GITHUB_USER}/{self._GITHUB_REPO}/commits/main",
-                headers={"User-Agent": "DeckOps"},
-            )
-            with urllib.request.urlopen(req, timeout=10) as r:
-                data = json.loads(r.read())
-            remote_sha = data.get("sha", "")
-
-            if not remote_sha:
-                self._du_sig.log.emit("FAIL|Could not reach GitHub.")
-                return
-
-            if local_sha == remote_sha:
-                self._du_sig.log.emit("OK|You're up to date!")
-                return
-
-            file_count = "unknown"
-            if local_sha != "0":
-                try:
-                    creq = urllib.request.Request(
-                        f"https://api.github.com/repos/{self._GITHUB_USER}/{self._GITHUB_REPO}/compare/{local_sha}...{remote_sha}",
-                        headers={"User-Agent": "DeckOps"},
-                    )
-                    with urllib.request.urlopen(creq, timeout=15) as r2:
-                        cdata = json.loads(r2.read())
-                    files = cdata.get("files", [])
-                    file_count = str(len(files))
-                except Exception:
-                    pass
-
-            self._du_sig.log.emit(f"UPDATE|Update available — {file_count} file(s) changed.")
-
-        except Exception as ex:
-            _log.warning("Update check failed: %s", ex)
-            self._du_sig.log.emit("FAIL|Update check failed.")
+        self._du_sig.log.emit(_check_update_status())
 
     def _on_deckops_update_signal(self, msg):
         kind, text = msg.split("|", 1)
@@ -360,13 +355,15 @@ class ManagementScreen(QWidget):
             self._deckops_update_status.setStyleSheet(f"color:{C_DIM};")
 
     def _apply_deckops_update(self):
-        # Route to ConfigureScreen's apply logic
+        # Apply runs on Settings; show it so download progress is visible
         s = get_screen(self.stack, "ConfigureScreen")
-        s._apply_update()
+        go_to(self.stack, "ConfigureScreen")
+        QTimer.singleShot(0, s._apply_update)
 
     # ── Update all games (batch) ──────────────────────────────────────────
     def _update_all_games(self):
-        all_installed = find_all_games()
+        root = find_steam_root()
+        all_installed = self.installed
 
         # Build selected list: all set-up games with a mod client
         _gd_by_key = {}
@@ -390,16 +387,20 @@ class ManagementScreen(QWidget):
             return
 
         names = ", ".join(s[1]["base"] for s in selected)
-        reply = QMessageBox.question(
-            self, "Update All Games",
-            f"This will update {len(selected)} game(s):\n\n{names}\n\nContinue?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes,
-        )
-        if reply != QMessageBox.Yes:
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Update All Games")
+        msg.setText(f"This will update {len(selected)} game(s):\n\n{names}\n\nContinue?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.Yes)
+        zd_cb = None
+        if cfg.is_zd_installed() and any(k == "t6zm" for k, _, _ in selected):
+            zd_cb = QCheckBox("Also check Zombies Declassified for updates (up to ~9 GB)")
+            msg.setCheckBox(zd_cb)
+        if msg.exec_() != QMessageBox.Yes:
             return
 
         us = get_screen(self.stack, "UpdateScreen")
+        us.update_zd = bool(zd_cb and zd_cb.isChecked())
         us.selected = selected
         us.steam_root = root
         go_to(self.stack, "UpdateScreen")
@@ -556,30 +557,8 @@ class ManagementScreen(QWidget):
     def _zombies_declassified(self, gd, installed_keys):
         """Install, update, or uninstall Zombies Declassified DLC5 for BO2 ZM."""
 
-        # Resolve Plutonium storage/t6 path
-        plut_storage_t6 = None
-        if cfg.is_lcd():
-            from plutonium_lcd import get_shared_plut_dir
-            plut_dir = get_shared_plut_dir()
-            if plut_dir:
-                plut_storage_t6 = os.path.join(plut_dir, "storage", "t6")
-        else:
-            game = self.installed.get("t6zm", {})
-            install_dir = game.get("install_dir", "")
-            if install_dir:
-                meta_path = os.path.join(install_dir, "deckops_plutonium.json")
-                if os.path.exists(meta_path):
-                    try:
-                        with open(meta_path) as f:
-                            meta = json.load(f)
-                        pd = meta.get("plut_dir", "")
-                        if pd:
-                            plut_storage_t6 = os.path.join(pd, "storage", "t6")
-                    except Exception:
-                        pass
-            if not plut_storage_t6:
-                from plutonium_oled import get_dedicated_plut_dir
-                plut_storage_t6 = os.path.join(get_dedicated_plut_dir(), "storage", "t6")
+        from zombies_declassified import resolve_zd_storage
+        plut_storage_t6 = resolve_zd_storage(self.installed.get("t6zm"))
 
         if not plut_storage_t6 or not os.path.isdir(plut_storage_t6):
             self._status.setText("Could not find Plutonium storage/t6 directory.")
@@ -932,6 +911,7 @@ class ManagementScreen(QWidget):
 class SetupCompleteScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack = stack; self.screen_name = "SetupCompleteScreen"
+        self._from_guide = False
         lay = QVBoxLayout(self); lay.setContentsMargins(60,20,60,20); lay.setSpacing(0)
 
         t = QLabel("SETUP COMPLETE"); t.setFont(font(28, True)); t.setAlignment(Qt.AlignCenter)
@@ -1098,17 +1078,14 @@ class SetupCompleteScreen(QWidget):
                 count = len(restored) if restored else 0
                 if count > 0:
                     groups = ", ".join(restored.keys())
-                    self._s.done.emit(True)
-                    QTimer.singleShot(0, lambda: self._restore_finished(
-                        f"✓  Restored saves for {count} group(s): {groups}"))
+                    self._s.log.emit(f"✓  Restored saves for {count} group(s): {groups}")
                 else:
-                    QTimer.singleShot(0, lambda: self._restore_finished(
-                        "No matching save data found to restore."))
+                    self._s.log.emit("No matching save data found to restore.")
             except Exception as ex:
-                QTimer.singleShot(0, lambda: self._restore_finished(
-                    f"⚠  Restore failed: {ex}"))
+                self._s.log.emit(f"⚠  Restore failed: {ex}")
 
         self._s = _Sigs()
+        self._s.log.connect(self._restore_finished)
         threading.Thread(target=_run, daemon=True).start()
 
     def _restore_finished(self, message):
@@ -1126,9 +1103,10 @@ class SetupCompleteScreen(QWidget):
 
     def _go_management(self):
         # Restart Steam so shortcuts and compat tool changes take effect.
-        os.system("gtk-launch steam.desktop &")
-        root = find_steam_root()
-        get_screen(self.stack, "ManagementScreen").set_installed(find_all_games(root))
+        if not self._from_guide:
+            from wrapper import launch_steam
+            launch_steam()
+        self._from_guide = False
         go_to(self.stack, "ManagementScreen")
 
 
@@ -1137,17 +1115,30 @@ class ConfigureScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.screen_name = "ConfigureScreen"
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
-        t = QLabel("SETTINGS"); t.setFont(font(28,True)); t.setAlignment(Qt.AlignCenter)
-        t.setStyleSheet("color:#FFF;background:transparent;padding:20px 0 10px 0;"); lay.addWidget(t)
+        hdr, hl = _header_bar()
+        t = _lbl("SETTINGS", 16, "#CCC", bold=True, wrap=False)
+        hl.insertSpacing(2, 20); hl.insertWidget(3, t)
+        back = _btn("<< Back", C_DARK_BTN, size=12, h=40); back.setFixedWidth(140)
+        back.clicked.connect(lambda: go_to(self.stack, "ManagementScreen"))
+        hl.addWidget(back)
+        lay.addWidget(hdr)
 
-        # Scroll area for all settings content
+        # Scroll only kicks in on windows smaller than the Deck screen
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
         inner = QWidget()
-        sl = QVBoxLayout(inner); sl.setContentsMargins(60,10,60,30); sl.setSpacing(18)
+        cols = QHBoxLayout(inner); cols.setContentsMargins(40,16,40,16); cols.setSpacing(40)
+        left = QVBoxLayout(); left.setSpacing(10)
+        right = QVBoxLayout(); right.setSpacing(10)
+        cols.addLayout(left, 1); cols.addLayout(right, 1)
 
-        # ── Background Music ──────────────────────────────────────────────
-        sl.addWidget(_lbl("Background Music", 13, "#CCC", align=Qt.AlignLeft))
+        def _head(col, text, color="#CCC", first=False):
+            if not first: col.addSpacing(12)
+            col.addWidget(_lbl(text, 13, color, bold=True, align=Qt.AlignLeft))
+
+        # ── Left: Background Music ────────────────────────────────────────
+        _head(left, "Background Music", first=True)
         mr = QHBoxLayout(); mr.setSpacing(12)
         self._music_on = _music_enabled
         self._music_toggle = _btn(
@@ -1160,14 +1151,13 @@ class ConfigureScreen(QWidget):
         self._vol_slider = QSlider(Qt.Horizontal); self._vol_slider.setRange(0,100)
         self._vol_slider.setValue(int(_music_volume*100))
         self._vol_label = _lbl(f"{int(_music_volume*100)}%", 12, C_DIM, wrap=False)
-        self._vol_label.setFixedWidth(40)
+        self._vol_label.setFixedWidth(44)
         self._vol_slider.valueChanged.connect(self._set_volume)
         mr.addWidget(self._music_toggle); mr.addWidget(self._vol_slider,stretch=1); mr.addWidget(self._vol_label)
-        sl.addLayout(mr)
-        sl.addWidget(_hdiv())
+        left.addLayout(mr)
 
-        # ── Controller Profiles ───────────────────────────────────────────
-        sl.addWidget(_lbl("Controller Profiles", 13, "#CCC", align=Qt.AlignLeft))
+        # ── Left: Controller Profiles ─────────────────────────────────────
+        _head(left, "Controller Profiles")
         gr = QHBoxLayout(); gr.setSpacing(8)
         gr.addWidget(_lbl("Gyro:", 12, "#AAA", wrap=False))
         self._gyro_btns = {}
@@ -1175,105 +1165,110 @@ class ConfigureScreen(QWidget):
         # Hold/toggle hidden dynamically in showEvent.
         for mode in ("on", "hold", "toggle", "off"):
             labels = {"on": "ADS", "hold": "Hold", "toggle": "Toggle", "off": "Off"}
-            b = _btn(labels[mode], C_DARK_BTN, size=11, h=36)
-            b.setFixedWidth(90)
+            b = _btn(labels[mode], C_DARK_BTN, size=11, h=40)
+            b.setFixedWidth(96)
             b.clicked.connect(lambda checked, m=mode: self._set_gyro(m))
             gr.addWidget(b)
             self._gyro_btns[mode] = b
-        gr.addSpacing(16)
-        ctrl_btn = _btn("Re-apply Templates", C_DARK_BTN, size=12, h=36)
-        ctrl_btn.clicked.connect(self._apply_controller_profiles)
-        gr.addWidget(ctrl_btn)
         gr.addStretch()
-        sl.addLayout(gr)
-        sl.addWidget(_hdiv())
+        left.addLayout(gr)
+        ctrl_btn = _btn("Re-apply Templates", C_DARK_BTN, size=12, h=40)
+        ctrl_btn.setFixedWidth(220)
+        ctrl_btn.clicked.connect(self._apply_controller_profiles)
+        left.addWidget(ctrl_btn)
 
-        # ── Player Name & Links ───────────────────────────────────────────
-        sl.addWidget(_lbl("Player Name & Links", 13, "#CCC", align=Qt.AlignLeft))
+        # ── Left: Player Name ─────────────────────────────────────────────
+        _head(left, "Player Name")
         nr = QHBoxLayout(); nr.setSpacing(12)
         self._name_input = QLineEdit()
         self._name_input.setPlaceholderText("Enter player name...")
-        self._name_input.setFixedHeight(36)
+        self._name_input.setFixedHeight(40)
         self._name_input.setMaxLength(32)
         self._name_input.setStyleSheet(
             "QLineEdit{background:#2A2A3A;color:#FFF;border:1px solid #444;"
             "border-radius:6px;padding:0 10px;font-size:13px;}"
             "QLineEdit:focus{border:1px solid #888;}"
         )
-        save_btn = _btn("Save", C_IW, size=12, h=36)
-        save_btn.setFixedWidth(80)
+        save_btn = _btn("Save", C_IW, size=12, h=40)
+        save_btn.setFixedWidth(90)
         save_btn.clicked.connect(self._save_name)
         nr.addWidget(self._name_input, stretch=1); nr.addWidget(save_btn)
-        discord_btn = _btn("Discord", "#5865F2", size=12, h=36)
-        discord_btn.setFixedWidth(100)
-        discord_btn.clicked.connect(lambda: self._open_url("https://discord.gg/bkSQeq5Azk"))
-        stable_btn = _btn("Stable", C_DARK_BTN, size=12, h=36)
-        stable_btn.setFixedWidth(100)
-        stable_btn.clicked.connect(lambda: self._open_url(f"https://github.com/{GITHUB_USER}/DeckOps"))
-        nightly_btn = _btn("Nightly", C_DARK_BTN, size=12, h=36)
-        nightly_btn.setFixedWidth(100)
-        nightly_btn.clicked.connect(lambda: self._open_url(f"https://github.com/{GITHUB_USER}/DeckOps-Nightly"))
-        nr.addWidget(discord_btn); nr.addWidget(stable_btn); nr.addWidget(nightly_btn)
-        sl.addLayout(nr)
+        left.addLayout(nr)
         self._name_note = _lbl("Sets your offline name for CoD4x, IW4x, AlterWare, T7X, and Plutonium. Does not affect CleanOps.", 10, C_DIM, align=Qt.AlignLeft)
-        sl.addWidget(self._name_note)
-        sl.addWidget(_hdiv())
+        left.addWidget(self._name_note)
 
-        # ── Shader Cache (LCD only) ───────────────────────────────────────
+        # ── Left: Shader Cache (LCD only) ─────────────────────────────────
         self._shader_row = QWidget()
-        sr_lay = QVBoxLayout(self._shader_row); sr_lay.setContentsMargins(0,0,0,0); sr_lay.setSpacing(8)
-        sr_lay.addWidget(_lbl("Shader Cache", 13, "#CCC", align=Qt.AlignLeft))
-        sc_btn = _btn("Clear Shader Cache", C_DARK_BTN, size=12, h=36)
+        sr_lay = QVBoxLayout(self._shader_row); sr_lay.setContentsMargins(0,0,0,0); sr_lay.setSpacing(10)
+        sr_lay.addSpacing(12)
+        sr_lay.addWidget(_lbl("Shader Cache", 13, "#CCC", bold=True, align=Qt.AlignLeft))
+        sc_btn = _btn("Clear Shader Cache", C_DARK_BTN, size=12, h=40)
         sc_btn.setFixedWidth(220)
         sc_btn.clicked.connect(self._clear_shader_cache)
-        sr_h = QHBoxLayout(); sr_h.addWidget(sc_btn); sr_h.addStretch()
-        sr_lay.addLayout(sr_h)
-        sl.addWidget(self._shader_row)
-        self._shader_hdiv = _hdiv()
-        sl.addWidget(self._shader_hdiv)
+        sr_lay.addWidget(sc_btn)
+        left.addWidget(self._shader_row)
+        # Kept for showEvent's LCD toggle; the two-column layout has no dividers
+        self._shader_hdiv = QWidget(); self._shader_hdiv.setFixedHeight(0)
+        left.addWidget(self._shader_hdiv)
+        left.addStretch()
 
-        # ── Updates & Danger Zone (single row) ────────────────────────────
-        sl.addWidget(_lbl("Updates & Danger Zone", 13, "#CCC", align=Qt.AlignLeft))
-        udr = QHBoxLayout(); udr.setSpacing(12)
+        # ── Right: Links ──────────────────────────────────────────────────
+        _head(right, "Links", first=True)
+        lr = QHBoxLayout(); lr.setSpacing(12)
+        discord_btn = _btn("Discord", "#5865F2", size=12, h=40)
+        discord_btn.setFixedWidth(120)
+        discord_btn.clicked.connect(lambda: self._open_url("https://discord.gg/bkSQeq5Azk"))
+        stable_btn = _btn("Stable", C_DARK_BTN, size=12, h=40)
+        stable_btn.setFixedWidth(120)
+        stable_btn.clicked.connect(lambda: self._open_url(f"https://github.com/{GITHUB_USER}/DeckOps"))
+        nightly_btn = _btn("Nightly", C_DARK_BTN, size=12, h=40)
+        nightly_btn.setFixedWidth(120)
+        nightly_btn.clicked.connect(lambda: self._open_url(f"https://github.com/{GITHUB_USER}/DeckOps-Nightly"))
+        lr.addWidget(discord_btn); lr.addWidget(stable_btn); lr.addWidget(nightly_btn); lr.addStretch()
+        right.addLayout(lr)
+
+        # ── Right: Updates & Logs ─────────────────────────────────────────
+        _head(right, "Updates & Logs")
         self._update_btn = _btn("Check for Updates", C_BLUE_BTN, size=12, h=40)
         self._update_btn.setFixedWidth(220)
         self._update_btn.clicked.connect(self._check_for_updates)
-        udr.addWidget(self._update_btn)
-        self._update_status = _lbl("", 11, C_DIM, wrap=False)
-        udr.addWidget(self._update_status, stretch=1)
+        right.addWidget(self._update_btn)
+        self._update_status = _lbl("", 11, C_DIM, align=Qt.AlignLeft)
+        right.addWidget(self._update_status)
+        udr = QHBoxLayout(); udr.setSpacing(12)
         log_btn = _btn("Copy Log", C_DARK_BTN, size=12, h=40)
-        log_btn.setFixedWidth(120)
-        log_btn.clicked.connect(lambda: _copy_log_to_clipboard(self.status))
-        udr.addWidget(log_btn)
+        log_btn.setFixedWidth(130)
         view_log_btn = _btn("View Log", C_DARK_BTN, size=12, h=40)
-        view_log_btn.setFixedWidth(120)
+        view_log_btn.setFixedWidth(130)
         view_log_btn.clicked.connect(self._view_log)
-        udr.addWidget(view_log_btn)
+        udr.addWidget(log_btn); udr.addWidget(view_log_btn); udr.addStretch()
+        right.addLayout(udr)
+        self._log_status = _lbl("", 11, C_DIM, align=Qt.AlignLeft)
+        right.addWidget(self._log_status)
+        log_btn.clicked.connect(lambda: _copy_log_to_clipboard(self._log_status))
+
+        # ── Right: Danger Zone ────────────────────────────────────────────
+        _head(right, "Danger Zone", "#E05050")
+        right.addWidget(_lbl("These remove DeckOps changes. Each asks for confirmation first.",
+                             11, C_DIM, align=Qt.AlignLeft))
+        dzr = QHBoxLayout(); dzr.setSpacing(12)
         uninstall_btn = _btn("Full Uninstall", C_RED_BTN, size=12, h=40)
         reset_cfg_btn = _btn("Reset DeckOps Config", C_RED_BTN, size=12, h=40)
         uninstall_btn.clicked.connect(self._confirm_uninstall)
         reset_cfg_btn.clicked.connect(self._confirm_reset)
-        udr.addWidget(uninstall_btn); udr.addWidget(reset_cfg_btn)
-        sl.addLayout(udr)
-        sl.addWidget(_hdiv())
+        dzr.addWidget(uninstall_btn); dzr.addWidget(reset_cfg_btn); dzr.addStretch()
+        right.addLayout(dzr)
 
-        # ── About ─────────────────────────────────────────────────────────
+        # ── Right: About + status ─────────────────────────────────────────
+        right.addSpacing(12)
         self._about_label = _lbl("", 11, C_DIM, align=Qt.AlignLeft)
-        sl.addWidget(self._about_label)
-
-        sl.addStretch()
-        self.status = _lbl("", 12, C_DIM)
-        sl.addWidget(self.status)
+        right.addWidget(self._about_label)
+        self.status = _lbl("", 12, C_DIM, align=Qt.AlignLeft)
+        right.addWidget(self.status)
+        right.addStretch()
 
         scroll.setWidget(inner)
         lay.addWidget(scroll, stretch=1)
-
-        # Back button stays outside the scroll area
-        back = _btn("<< Back", C_DARK_BTN, h=48); back.setFixedWidth(160)
-        back.clicked.connect(lambda: go_to(self.stack, "ManagementScreen"))
-        bw = QHBoxLayout(); bw.setContentsMargins(60,8,60,16)
-        bw.addWidget(back); bw.addStretch()
-        lay.addLayout(bw)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -1476,7 +1471,7 @@ class ConfigureScreen(QWidget):
         txt.setPlainText(tail)
         vl.addWidget(txt, stretch=1)
         br = QHBoxLayout()
-        copy_btn = _btn("Copy to Clipboard", C_DARK_BTN, size=11, h=36)
+        copy_btn = _btn("Copy to Clipboard", C_DARK_BTN, size=11, h=40)
         copy_btn.clicked.connect(lambda: (
             QApplication.clipboard().setText(tail),
             self.status.setText("Log copied to clipboard."),
@@ -1547,49 +1542,7 @@ class ConfigureScreen(QWidget):
         threading.Thread(target=self._update_worker, daemon=True).start()
 
     def _update_worker(self):
-        try:
-            version_file = os.path.join(PROJECT_ROOT, "VERSION")
-            local_sha = "0"
-            if os.path.isfile(version_file):
-                with open(version_file) as f:
-                    local_sha = f.read().strip() or "0"
-
-            req = urllib.request.Request(
-                f"https://api.github.com/repos/{self._GITHUB_USER}/{self._GITHUB_REPO}/commits/main",
-                headers={"User-Agent": "DeckOps"},
-            )
-            with urllib.request.urlopen(req, timeout=10) as r:
-                data = json.loads(r.read())
-            remote_sha = data.get("sha", "")
-
-            if not remote_sha:
-                self._update_sig.log.emit("FAIL|Could not reach GitHub.")
-                return
-
-            if local_sha == remote_sha:
-                self._update_sig.log.emit("OK|You're up to date!")
-                return
-
-            # Get changed file count
-            file_count = "unknown"
-            if local_sha != "0":
-                try:
-                    creq = urllib.request.Request(
-                        f"https://api.github.com/repos/{self._GITHUB_USER}/{self._GITHUB_REPO}/compare/{local_sha}...{remote_sha}",
-                        headers={"User-Agent": "DeckOps"},
-                    )
-                    with urllib.request.urlopen(creq, timeout=15) as r2:
-                        cdata = json.loads(r2.read())
-                    files = cdata.get("files", [])
-                    file_count = str(len(files))
-                except Exception:
-                    pass
-
-            self._update_sig.log.emit(f"UPDATE|Update available — {file_count} file(s) changed.")
-
-        except Exception as ex:
-            _log.warning("Update check failed: %s", ex)
-            self._update_sig.log.emit("FAIL|Update check failed.")
+        self._update_sig.log.emit(_check_update_status())
 
     def _on_update_signal(self, msg):
         """Slot that runs on the main thread via pyqtSignal."""
@@ -1883,6 +1836,7 @@ class UpdateScreen(QWidget):
 
     def __init__(self, stack):
         super().__init__(); self.stack = stack; self.screen_name = "UpdateScreen"
+        self.update_zd = False
         self.selected   = []
         self.steam_root = ""
         self._steam_closed = threading.Event()
@@ -1906,7 +1860,7 @@ class UpdateScreen(QWidget):
         lay.addWidget(self.log, stretch=1)
 
         self._log_status = _lbl("", 10, C_DIM, wrap=False)
-        log_btn = _btn("Copy Log", C_DARK_BTN, size=10, h=32); log_btn.setFixedWidth(120)
+        log_btn = _btn("Copy Log", C_DARK_BTN, size=11, h=40); log_btn.setFixedWidth(130)
         log_btn.clicked.connect(lambda: _copy_log_to_clipboard(self._log_status))
         lr = QHBoxLayout(); lr.addStretch(); lr.addWidget(log_btn); lr.addWidget(self._log_status); lr.addStretch()
         lay.addLayout(lr)
@@ -1957,8 +1911,6 @@ class UpdateScreen(QWidget):
         self.back_btn.setVisible(True)
 
     def _go_back(self):
-        root = find_steam_root()
-        get_screen(self.stack, "ManagementScreen").set_installed(find_all_games(root))
         go_to(self.stack, "ManagementScreen")
 
     def _run(self):
@@ -2231,22 +2183,18 @@ class UpdateScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Steam Input setup skipped: {ex}")
 
-        # Auto-update Zombies Declassified if installed and T6ZM was updated
-        if cfg.is_zd_installed() and any(k == "t6zm" for k, _, _ in self.selected):
+        # Zombies Declassified: only when the user opted in on the Update Games prompt
+        _do_zd = self.update_zd; self.update_zd = False
+        if _do_zd and cfg.is_zd_installed() and any(k == "t6zm" for k, _, _ in self.selected):
             try:
                 self._s.log.emit("Checking Zombies Declassified for updates...")
+                from zombies_declassified import resolve_zd_storage
+                _zd_storage = resolve_zd_storage({k: g for k, _, g in self.selected}.get("t6zm"))
 
-                _zd_storage = None
-                if cfg.is_lcd():
-                    from plutonium_lcd import get_shared_plut_dir as _gsp
-                    _pd = _gsp()
-                    if _pd:
-                        _zd_storage = os.path.join(_pd, "storage", "t6")
+                from zombies_declassified import is_zd_installed as _zd_at
+                if not _zd_storage or not _zd_at(_zd_storage):
+                    self._s.log.emit(f"⚠  Zombies Declassified not found in {_zd_storage}, skipped (nothing downloaded).")
                 else:
-                    from plutonium_oled import get_dedicated_plut_dir as _gdp
-                    _zd_storage = os.path.join(_gdp(), "storage", "t6")
-
-                if _zd_storage:
                     from zombies_declassified import update_zd
                     updated = update_zd(_zd_storage,
                                         lambda p, m: self._s.log.emit(f"  ZD: {m}"))
