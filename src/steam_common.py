@@ -33,6 +33,7 @@ _log = get_logger(__name__)
 
 # ── Paths / constants ─────────────────────────────────────────────────────────
 
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STEAM_ROOT   = os.path.expanduser("~/.local/share/Steam")
 USERDATA_DIR = os.path.join(STEAM_ROOT, "userdata")
 STEAM_CONFIG = os.path.join(STEAM_ROOT, "config", "config.vdf")
