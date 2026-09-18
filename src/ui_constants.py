@@ -8,7 +8,7 @@ and ui_qt.py can all import from a single source without circular deps.
 import os
 
 from PyQt5.QtWidgets import (
-    QLabel, QPushButton, QFrame, QHBoxLayout, QVBoxLayout, QMessageBox,
+    QLabel, QPushButton, QFrame, QHBoxLayout, QVBoxLayout, QMessageBox, QWidget,
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QObject
 from PyQt5.QtGui import QFont, QFontDatabase
@@ -325,6 +325,32 @@ def _lbl(text, size=14, color="#FFF", bold=False, align=Qt.AlignCenter, wrap=Tru
     w = QLabel(text); w.setFont(font(size,bold)); w.setAlignment(align)
     w.setWordWrap(wrap); w.setStyleSheet(f"color:{color};background:transparent;")
     return w
+
+def _header_bar():
+    """Compact top bar used by list screens. Returns (bar, row layout) so callers can append buttons."""
+    hdr = QWidget(); hdr.setFixedHeight(60); hdr.setStyleSheet(f"background:{C_CARD};")
+    hl = QHBoxLayout(hdr); hl.setContentsMargins(20,0,20,0)
+    t = QLabel("DECKOPS"); t.setFont(font(22, display=True))
+    t.setStyleSheet("color:#FFF;background:transparent;"); hl.addWidget(t)
+    b = QLabel(BRANCH.upper()); b.setFont(font(10, bold=True))
+    b.setStyleSheet(
+        f"color:{C_ACCENT};background:{C_ACCENT_BG};border:1px solid {C_ACCENT};"
+        "border-radius:4px;padding:1px 6px;")
+    hl.addWidget(b); hl.addStretch()
+    return hdr, hl
+
+def _badge(text, color, w, h=30, size=10, radius=6):
+    b = QPushButton(text); b.setFont(font(size, True)); b.setFixedSize(w, h); b.setEnabled(False)
+    b.setStyleSheet(
+        f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:{radius}px;}}"
+        f"QPushButton:disabled{{background:{color};color:#FFF;}}")
+    return b
+
+def _back_row(lay, slot):
+    b = _btn("<< Back", C_DARK_BTN, size=12, h=44); b.setFixedWidth(140)
+    b.clicked.connect(slot)
+    row = QHBoxLayout(); row.addWidget(b); row.addStretch(); lay.addLayout(row)
+    return b
 
 def _hdiv():
     d = QFrame(); d.setFrameShape(QFrame.HLine); d.setFixedHeight(1)

@@ -9,10 +9,10 @@ import os, subprocess, threading
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
-    QLabel, QPushButton, QCheckBox, QProgressBar,
+    QLabel, QCheckBox, QProgressBar,
     QPlainTextEdit, QFileDialog, QMessageBox,
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QStorageInfo, QUrl
 
 from detect_games import find_steam_root, find_all_games
 import config as cfg
@@ -20,7 +20,7 @@ from net import DownloadError
 
 from ui_constants import (
     C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN, C_BLUE_BTN,
-    font, _btn, _lbl, _title_block, _log_to_file, _copy_log_to_clipboard, _Sigs,
+    font, _btn, _lbl, _title_block, _header_bar, _badge, _log_to_file, _copy_log_to_clipboard, _Sigs,
     ALL_GAMES, KEY_CLIENT, KEY_EXES, KEY_MODE_LABEL,
     _active_keys, _active_client, _active_appid,
     _ask_iw4x_dlc, _ask_bo3_client, _ask_cod4_client,
@@ -47,30 +47,56 @@ class WelcomeScreen(QWidget):
         self.results.setTextFormat(Qt.RichText)
         lay.addWidget(self.results)
         lay.addStretch()
+        self._scanning = False
+        self.back = _btn("<< Back", C_DARK_BTN, h=52); self.back.setFixedWidth(180)
+        self.back.clicked.connect(self._go_back)
+        self.retry = _btn("Scan Again", C_DARK_BTN, h=52); self.retry.setFixedWidth(200)
+        self.retry.clicked.connect(self._start_scan)
         self.cont = _btn("Continue >>", C_IW, h=52)
         self.cont.setFixedWidth(260); self.cont.setVisible(False)
         self.cont.clicked.connect(self._go_next)
-        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont); cw.addStretch()
+        cw = QHBoxLayout(); cw.setSpacing(16); cw.addStretch()
+        cw.addWidget(self.back); cw.addWidget(self.retry); cw.addWidget(self.cont); cw.addStretch()
         lay.addLayout(cw)
 
     def showEvent(self, e):
         super().showEvent(e)
-        self.bar.setValue(0); self.results.setText(""); self.cont.setVisible(False)
-        QTimer.singleShot(200, self._scan_steam)
+        self._start_scan()
 
-    def _scan_steam(self):
-        self.status.setText("Scanning for Steam..."); self.bar.setValue(20)
-        self.steam_root = find_steam_root()
-        if not self.steam_root:
-            self.status.setText("Steam not found. Is it installed?")
+    def _go_back(self):
+        go_to(self.stack, "SetupFlowScreen" if cfg.is_first_run() else "ManagementScreen")
+
+    def _start_scan(self):
+        if self._scanning: return
+        self._scanning = True
+        self.bar.setValue(20); self.results.setText("")
+        self.cont.setVisible(False); self.retry.setVisible(False); self.back.setVisible(False)
+        self.status.setText("Scanning for Steam and games...")
+        self.status.setStyleSheet(f"color:{C_DIM};background:transparent;")
+        self._s = _Sigs()
+        self._s.done.connect(self._on_scanned)
+        threading.Thread(target=self._do_scan, daemon=True).start()
+
+    def _do_scan(self):
+        root, merged = "", {}
+        try:
+            root = find_steam_root() or ""
+            if root: merged = find_all_games(root)
+        except Exception as ex:
+            _log_to_file(f"[WelcomeScreen] scan failed: {ex}")
+        self.steam_root, self._merged = root, merged
+        self._s.done.emit(bool(root))
+
+    def _on_scanned(self, steam_found):
+        self._scanning = False
+        self.back.setVisible(True)
+        if not steam_found:
+            self.bar.setValue(100); self.retry.setVisible(True)
+            self.status.setText("Steam not found. Install Steam and open it once, then scan again.")
             self.status.setStyleSheet(f"color:{C_TREY};background:transparent;")
-            self.bar.setValue(100); return
-        self.status.setText(f"Found Steam at {self.steam_root}"); self.bar.setValue(40)
-        QTimer.singleShot(200, self._scan_games)
-
-    def _scan_games(self):
-        self.status.setText("Scanning for games..."); self.bar.setValue(70)
-        merged = find_all_games(self.steam_root)
+            return
+        self.bar.setValue(70)
+        merged = self._merged
         self.steam_installed = {k: v for k, v in merged.items() if v.get("source") != "own"}
         self.own_installed = {k: v for k, v in merged.items() if v.get("source") == "own"}
         self.installed = merged
@@ -81,13 +107,22 @@ class WelcomeScreen(QWidget):
             self.installed = {k:v for k,v in self.installed.items() if k in lcd_allowed}
             self.steam_installed = {k:v for k,v in self.steam_installed.items() if k in lcd_allowed}
             self.own_installed = {k:v for k,v in self.own_installed.items() if k in lcd_allowed}
-        QTimer.singleShot(200, self._show_results)
+        self._show_results()
 
     def _show_results(self):
         self.bar.setValue(100)
+        self.cont.setText("Continue >>")
         if not self.installed:
-            self.status.setText("No supported games found.")
-            self.status.setStyleSheet(f"color:{C_TREY};background:transparent;"); return
+            self.retry.setVisible(True)
+            self.status.setStyleSheet(f"color:{C_TREY};background:transparent;")
+            if cfg.is_first_run():
+                self.status.setText(
+                    "No supported games found. If your games are in a custom folder, "
+                    "continue and use Choose Folder.")
+                self.cont.setText("Choose Folder >>"); self.cont.setVisible(True)
+            else:
+                self.status.setText("No supported games found.")
+            return
         unique = len({g["name"].split(" - ")[0].split(" (")[0] for g in self.installed.values()})
         self.status.setText(f"Found {unique} supported game(s)!")
         self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
@@ -131,21 +166,7 @@ class SetupScreen(QWidget):
 
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
-        # ── Compact header bar ─────────────────────────────────────────
-        hdr = QWidget(); hdr.setFixedHeight(60)
-        hdr.setStyleSheet(f"background:{C_CARD};")
-        hl = QHBoxLayout(hdr); hl.setContentsMargins(20,0,20,0)
-        title = QLabel("DECKOPS"); title.setFont(font(22, display=True))
-        title.setStyleSheet("color:#FFF;background:transparent;")
-        hl.addWidget(title)
-        nightly_lbl = QLabel("NIGHTLY"); nightly_lbl.setFont(font(9, bold=True))
-        nightly_lbl.setStyleSheet(
-            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
-            "border-radius:4px;padding:1px 6px;"
-        )
-        hl.addWidget(nightly_lbl)
-        hl.addStretch()
-        lay.addWidget(hdr)
+        lay.addWidget(_header_bar()[0])
 
         # ── Content area ───────────────────────────────────────────────
         content = QWidget()
@@ -240,7 +261,7 @@ class SetupScreen(QWidget):
                     cb.setChecked(True)
 
                 mode_color = C_TREY if not installed else "#666677"
-                mode_lbl = _lbl(KEY_MODE_LABEL.get(key, key), 9, mode_color,
+                mode_lbl = _lbl(KEY_MODE_LABEL.get(key, key), 10, mode_color,
                                  align=Qt.AlignHCenter, wrap=False)
 
                 slot_lay.addWidget(cb, alignment=Qt.AlignHCenter)
@@ -273,39 +294,21 @@ class SetupScreen(QWidget):
                 src_text, src_color = "OWN", C_TREY
             else:
                 src_text, src_color = "STEAM", C_IW
-            src_badge = QPushButton(src_text)
-            src_badge.setFont(font(8, True)); src_badge.setFixedSize(60, 22)
-            src_badge.setEnabled(False)
-            src_badge.setStyleSheet(
-                f"QPushButton{{background:{src_color};color:#FFF;border:none;border-radius:4px;}}"
-                f"QPushButton:disabled{{background:{src_color};color:#FFF;}}")
-            row.addWidget(src_badge)
-
-            badge = QPushButton(client.upper())
-            badge.setFont(font(10, True)); badge.setFixedSize(160, 30)
-            badge.setEnabled(False)
-            badge.setStyleSheet(
-                f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:6px;}}"
-                f"QPushButton:disabled{{background:{color};color:#FFF;}}")
-            row.addWidget(badge)
+            row.addWidget(_badge(src_text, src_color, 72, h=26, size=10, radius=4))
+            row.addWidget(_badge(client.upper(), color, 160))
 
             cw = QWidget(); cw.setLayout(row)
             self._ll.insertWidget(self._ll.count() - 1, cw)
 
     def _add_mw3_free_row(self, gd, checks_w):
         row = QHBoxLayout(); row.setSpacing(12); row.setContentsMargins(8, 8, 8, 8)
-        btn = _btn("Get Free", C_BLUE_BTN, size=9, h=30); btn.setFixedWidth(checks_w)
+        btn = _btn("Get Free", C_BLUE_BTN, size=11, h=40); btn.setFixedWidth(checks_w)
         btn.clicked.connect(self._add_mw3_ds)
         row.addWidget(btn)
         name_lbl = _lbl(gd["base"], 14, "#555566", align=Qt.AlignLeft, wrap=False)
         row.addWidget(name_lbl, stretch=1)
         color = C_IW if gd["dev"] == "iw" else C_TREY
-        badge = QPushButton(_active_client(gd).upper())
-        badge.setFont(font(10, True)); badge.setFixedSize(160, 30); badge.setEnabled(False)
-        badge.setStyleSheet(
-            f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:6px;}}"
-            f"QPushButton:disabled{{background:{color};color:#FFF;}}")
-        row.addWidget(badge)
+        row.addWidget(_badge(_active_client(gd).upper(), color, 160))
         cw = QWidget(); cw.setLayout(row)
         self._ll.insertWidget(self._ll.count() - 1, cw)
 
@@ -320,17 +323,63 @@ class SetupScreen(QWidget):
             "DeckOps. MW3 will appear as a detected game."
         )
 
+    @staticmethod
+    def _removable_mounts():
+        # SD cards / USB drives; username-agnostic so it works on Bazzite/CachyOS too
+        out = set()
+        for v in QStorageInfo.mountedVolumes():
+            root = v.rootPath()
+            if (v.isValid() and v.isReady() and not v.isReadOnly()
+                    and root.startswith(("/run/media/", "/media/", "/mnt/"))):
+                out.add(root)
+        return sorted(out)
+
     def _pick_folder(self):
-        folder = QFileDialog.getExistingDirectory(
-            self, "Select your games folder", os.path.expanduser("~"),
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
+        home = os.path.expanduser("~")
+        mounts = self._removable_mounts()
+        dlg = QFileDialog(self, "Select your games folder", mounts[0] if len(mounts) == 1 else home)
+        dlg.setFileMode(QFileDialog.Directory)
+        # Qt's own dialog honors custom sidebar entries; the KDE/portal one ignores them
+        dlg.setOptions(QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks | QFileDialog.DontUseNativeDialog)
+        dlg.setSidebarUrls([QUrl.fromLocalFile(home)] + [QUrl.fromLocalFile(m) for m in mounts])
+        dlg.resize(1000, 600)
+        if not dlg.exec_():
+            return
+        folder = dlg.selectedFiles()[0] if dlg.selectedFiles() else ""
         if not folder or folder in self._extra_paths:
             return
         self._extra_paths.append(folder)
+        self._folder_btn.setEnabled(False); self.inst_btn.setEnabled(False)
+        self.warning.setText(f"Scanning {folder}...")
+        self.warning.setStyleSheet(f"color:{C_DIM};background:transparent;")
+        self.warning.setVisible(True)
+        self._scan_sigs = _Sigs()
+        self._scan_sigs.done.connect(self._on_folder_scanned)
+        threading.Thread(target=self._do_folder_scan, daemon=True).start()
+
+    def _do_folder_scan(self):
         from detect_games import find_own_installed
-        new_own = find_own_installed(extra_paths=self._extra_paths)
-        self.own_installed = new_own
+        try:
+            found = find_own_installed(extra_paths=self._extra_paths)
+        except Exception as ex:
+            _log_to_file(f"[SetupScreen] folder scan failed: {ex}")
+            found = {}
+        self._scanned_own = {k: v for k, v in found.items() if k not in self.steam_installed}
+        self._scan_sigs.done.emit(True)
+
+    def _on_folder_scanned(self, _):
+        own = self._scanned_own
+        if cfg.is_lcd():
+            lcd_allowed = set()
+            for g in ALL_GAMES: lcd_allowed.update(g.get("lcd_keys", g["keys"]))
+            own = {k: v for k, v in own.items() if k in lcd_allowed}
+        added = len(set(own) - set(self.own_installed))
+        self.own_installed = own
+        self._folder_btn.setEnabled(True); self.inst_btn.setEnabled(True)
         self._build()
+        self.warning.setText(f"Found {added} new game(s)." if added else "No new supported games in that folder.")
+        self.warning.setStyleSheet(f"color:{C_IW if added else C_TREY};background:transparent;")
+        self.warning.setVisible(True)
 
     def _go_install(self):
         steam_selected = []
@@ -344,6 +393,7 @@ class SetupScreen(QWidget):
 
         if not steam_selected and not own_selected:
             self.warning.setText("Select at least one game to continue.")
+            self.warning.setStyleSheet(f"color:{C_TREY};background:transparent;")
             self.warning.setVisible(True); return
 
         s = get_screen(self.stack, "InstallScreen")
@@ -378,22 +428,12 @@ class _BaseInstallScreen(QWidget):
         self._zd_event = threading.Event()
         self._zd_accept = False
         self._return_to_management = False
+        self._from_manage = False
         self.bo3_client = "cleanops"
 
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
-        hdr = QWidget(); hdr.setFixedHeight(60)
-        hdr.setStyleSheet(f"background:{C_CARD};")
-        hl = QHBoxLayout(hdr); hl.setContentsMargins(20,0,20,0)
-        _ht = QLabel("DECKOPS"); _ht.setFont(font(22, display=True))
-        _ht.setStyleSheet("color:#FFF;background:transparent;"); hl.addWidget(_ht)
-        _nb = QLabel("NIGHTLY"); _nb.setFont(font(9, bold=True))
-        _nb.setStyleSheet(
-            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
-            "border-radius:4px;padding:1px 6px;"
-        )
-        hl.addWidget(_nb); hl.addStretch()
-        lay.addWidget(hdr)
+        lay.addWidget(_header_bar()[0])
 
         content = QWidget()
         clay = QVBoxLayout(content); clay.setContentsMargins(80,20,80,60); clay.setSpacing(20)
@@ -430,8 +470,8 @@ class _BaseInstallScreen(QWidget):
         self.log.setStyleSheet("QPlainTextEdit{color:#666677;background:transparent;border:none;padding:10px;}")
         clay.addWidget(self.log, stretch=1)
 
-        self._log_status = _lbl("", 10, C_DIM, wrap=False)
-        log_btn = _btn("Copy Log", C_DARK_BTN, size=10, h=32); log_btn.setFixedWidth(120)
+        self._log_status = _lbl("", 11, C_DIM, wrap=False)
+        log_btn = _btn("Copy Log", C_DARK_BTN, size=11, h=40); log_btn.setFixedWidth(130)
         log_btn.clicked.connect(lambda: _copy_log_to_clipboard(self._log_status))
         lr = QHBoxLayout(); lr.addStretch(); lr.addWidget(log_btn); lr.addWidget(self._log_status); lr.addStretch()
         clay.addLayout(lr)
@@ -481,7 +521,7 @@ class _BaseInstallScreen(QWidget):
         self.zd_yes = _btn("Install Zombies Declassified (~9 GB)", C_IW, size=13, h=52)
         self.zd_yes.setFixedWidth(460); self.zd_yes.setVisible(False)
         self.zd_yes.clicked.connect(lambda: self._confirm_zd(True))
-        self.zd_skip = _btn("Skip", C_DARK_BTN, size=13, h=42)
+        self.zd_skip = _btn("Skip", C_DARK_BTN, size=13, h=52)
         self.zd_skip.setFixedWidth(200); self.zd_skip.setVisible(False)
         self.zd_skip.clicked.connect(lambda: self._confirm_zd(False))
         zw = QHBoxLayout(); zw.addStretch(); zw.addWidget(self.zd_yes); zw.addSpacing(12); zw.addWidget(self.zd_skip); zw.addStretch()
@@ -628,8 +668,10 @@ class _BaseInstallScreen(QWidget):
 
     def _append_log(self, text):
         _log_to_file(text)
+        sb = self.log.verticalScrollBar()
+        at_bottom = sb.value() >= sb.maximum() - 4
         self.log.appendPlainText(text)
-        self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
+        if at_bottom: sb.setValue(sb.maximum())
 
     def _confirm_plut(self):
         self._plut_event.set()
@@ -704,25 +746,38 @@ class _BaseInstallScreen(QWidget):
                 self._manual_dl_event.set()
                 return
 
-    def _on_done(self, _):
+    def _on_done(self, ok):
         self._stop_pulse()
-        self.cur.setText(self._DONE_MSG)
+        if ok:
+            self.cur.setText(self._DONE_MSG)
+        else:
+            self.cur.setText("Setup did not finish. Check the log above, then try again.")
+            self.cur.setStyleSheet(f"color:{C_TREY};background:transparent;")
+            if not self._from_manage:
+                try: self.cont_btn.clicked.disconnect()
+                except Exception: pass
+                self.cont_btn.setText("<< Back to Game Selection")
+                self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupScreen"))
         self.cont_btn.setVisible(True)
 
     def _go_management(self):
-        os.system("gtk-launch steam.desktop &")
-        root = find_steam_root()
-        get_screen(self.stack, "ManagementScreen").set_installed(find_all_games(root))
+        from wrapper import launch_steam
+        launch_steam()
         go_to(self.stack, "ManagementScreen")
 
     def showEvent(self, e):
         super().showEvent(e)
         self.bar.setValue(0); self.log.clear()
+        self.log.setMaximumHeight(16777215)
+        self.cur.setText("Preparing..."); self.cur.setStyleSheet("color:#CCC;background:transparent;")
+        self.stat.setText("")
         self.plut_btn.setVisible(False)
         self.plut_warn.setVisible(False)
         self.cod4r_btn.setVisible(False)
         self.iw5_dg_btn.setVisible(False)
         self.iw5_qr_box.setVisible(False)
+        self.zd_info.setVisible(False); self.zd_yes.setVisible(False); self.zd_skip.setVisible(False)
+        self._zd_event.clear(); self._zd_accept = False
         self.cont_btn.setVisible(False)
         self._plut_event.clear()
         self._cod4r_event.clear()
@@ -738,6 +793,7 @@ class _BaseInstallScreen(QWidget):
             self.cont_btn.clicked.disconnect()
         except Exception:
             pass
+        self._from_manage = self._return_to_management
         if self._return_to_management:
             self.cont_btn.setText("Back to My Games  >>")
             self.cont_btn.clicked.connect(self._go_management)
@@ -758,7 +814,7 @@ class _BaseInstallScreen(QWidget):
             try:
                 self._s.log.emit(f"✗ Install failed with error:\n{err}")
                 self._s.progress.emit(100, "Install failed — see log.")
-                self._s.done.emit(True)
+                self._s.done.emit(False)
             except Exception:
                 pass
 
@@ -1245,15 +1301,15 @@ class _BaseInstallScreen(QWidget):
                             self._manual_dl_event.wait()
                             if not self._manual_dl_ok:
                                 self._s.log.emit("  ✗  Skipped by user.")
-                                self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
+                                self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(False); return
                             self._s.log.emit(f"  ✓  {dl_ex.label} placed manually")
                             _dl_resolved = True
                         else:
                             self._s.log.emit("  ✗  Skipped by user.")
-                            self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
+                            self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(False); return
                 except Exception as ex:
                     self._s.log.emit(f"✗  Plutonium launch failed: {ex}")
-                    self._s.progress.emit(100, "Setup failed."); self._s.done.emit(True); return
+                    self._s.progress.emit(100, "Setup failed."); self._s.done.emit(False); return
 
                 if is_lcd:
                     self._s.log.emit(
@@ -1275,7 +1331,7 @@ class _BaseInstallScreen(QWidget):
                         "✗  Plutonium does not appear to be fully set up.\n"
                         "   Make sure you logged in and let it finish downloading."
                     )
-                    self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(True); return
+                    self._s.progress.emit(100, "Setup incomplete."); self._s.done.emit(False); return
 
                 self._s.log.emit("✓  Plutonium ready.")
             else:
@@ -1529,27 +1585,8 @@ class _BaseInstallScreen(QWidget):
                 if not _bo2_dir or not has_bo2_zm_dlc(_bo2_dir):
                     self._s.log.emit("Zombies Declassified skipped (requires all BO2 Zombies DLC)")
                 else:
-                    # Resolve Plutonium storage/t6 path
-                    _zd_storage = None
-                    if cfg.is_lcd():
-                        from plutonium_lcd import get_shared_plut_dir as _gsp
-                        _pd = _gsp()
-                        if _pd:
-                            _zd_storage = os.path.join(_pd, "storage", "t6")
-                    else:
-                        _zd_game = {k: g for k, gd, g in self.selected}.get("t6zm")
-                        if _zd_game:
-                            _zm_dir = _zd_game.get("install_dir", "")
-                            _zm_meta = os.path.join(_zm_dir, "deckops_plutonium.json") if _zm_dir else ""
-                            if _zm_meta and os.path.exists(_zm_meta):
-                                import json as _jn
-                                with open(_zm_meta) as _f:
-                                    _pd = _jn.load(_f).get("plut_dir", "")
-                                if _pd:
-                                    _zd_storage = os.path.join(_pd, "storage", "t6")
-                        if not _zd_storage:
-                            from plutonium_oled import get_dedicated_plut_dir as _gdp
-                            _zd_storage = os.path.join(_gdp(), "storage", "t6")
+                    from zombies_declassified import resolve_zd_storage
+                    _zd_storage = resolve_zd_storage({k: g for k, gd, g in self.selected}.get("t6zm"))
 
                     if _zd_storage and os.path.isdir(_zd_storage):
                         # Ask user before downloading ~9 GB

@@ -5,7 +5,7 @@ Slim shell: BootstrapScreen, DeckOpsWindow, and run().
 All screen classes are imported from split modules:
     ui_constants  — shared constants, helpers, navigation
     ui_setup      — first-run setup flow (OS → Device → Gyro → ...)
-    ui_install    — install pipeline (Welcome, Setup, Install, OwnScan)
+    ui_install    — install pipeline (Welcome, Setup, Install)
     ui_manage     — post-install (Management, Configure, SetupComplete, Update)
 """
 
@@ -15,7 +15,6 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QStackedWidget, QVBoxLayo
 from PyQt5.QtCore import Qt, QTimer
 
 import bootstrap as _bootstrap
-from detect_games import find_steam_root, find_all_games
 import config as cfg
 from identity import APP_TITLE
 
@@ -73,10 +72,6 @@ class BootstrapScreen(QWidget):
         if cfg.is_first_run():
             go_to(self.stack, "SetupFlowScreen")
         else:
-            root = find_steam_root()
-            get_screen(self.stack, "ManagementScreen").set_installed(
-                find_all_games(root)
-            )
             go_to(self.stack, "ManagementScreen")
 
 
@@ -114,6 +109,7 @@ class DeckOpsWindow(QMainWindow):
         self._dbg_label.setFont(font(9))
         self._dbg_label.setAttribute(Qt.WA_TransparentForMouseEvents)
         self._dbg_label.raise_()
+        self._dbg_label.setVisible(os.environ.get("DECKOPS_DEBUG") == "1")
         self.stack.currentChanged.connect(self._update_dbg_label)
         self._update_dbg_label(0)
 

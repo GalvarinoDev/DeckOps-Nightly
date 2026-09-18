@@ -1,29 +1,21 @@
 """
 ui_setup.py — First-run setup flow for DeckOps
 
-Replaces IntroScreen + SourceScreen from ui_qt.py with a unified flow:
-    OS → Device → Gyro → Name → Source → [Controller] → [Play Mode] → Done
+Flow: OS → Device → Gyro → Name → [Controller] → [Play Mode / Resolution] → Done
 
-Supports SteamOS, Bazzite, CachyOS, and General PC with per-OS controller
-template strategy.
+Supports SteamOS, Bazzite and CachyOS, plus a General PC device option,
+with per-OS controller template strategy.
 """
 
-import os, threading
-
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QLineEdit, QPlainTextEdit, QFrame,
-)
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLineEdit
+from PyQt5.QtCore import Qt
 
 import config as cfg
-from identity import GITHUB_USER, GITHUB_REPO
 
 from ui_constants import (
-    C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN, C_BLUE_BTN,
-    font, _btn, _lbl, _hdiv, _title_block, _Sigs,
-    go_to, get_screen,
-    PROJECT_ROOT,
+    C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN,
+    font, _btn, _lbl, _title_block, _back_row,
+    go_to,
 )
 
 
@@ -105,11 +97,7 @@ class SetupFlowScreen(QWidget):
         self._model_section = QWidget(); self._model_section.setVisible(False)
         ml = QVBoxLayout(self._model_section)
         ml.setContentsMargins(80, 60, 80, 60); ml.setSpacing(16)
-        self._back_os_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_os_btn.setFixedWidth(80)
-        self._back_os_btn.clicked.connect(self._back_to_os)
-        brow = QHBoxLayout(); brow.addWidget(self._back_os_btn); brow.addStretch()
-        ml.addLayout(brow)
+        self._back_os_btn = _back_row(ml, self._back_to_os)
         ml.addSpacing(40)
         _title_block(ml)
         ml.addStretch()
@@ -133,11 +121,7 @@ class SetupFlowScreen(QWidget):
         self._device_section = QWidget(); self._device_section.setVisible(False)
         dvl = QVBoxLayout(self._device_section)
         dvl.setContentsMargins(80, 60, 80, 60); dvl.setSpacing(16)
-        self._back_model_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_model_btn.setFixedWidth(80)
-        self._back_model_btn.clicked.connect(self._back_to_model)
-        brow2 = QHBoxLayout(); brow2.addWidget(self._back_model_btn); brow2.addStretch()
-        dvl.addLayout(brow2)
+        self._back_model_btn = _back_row(dvl, self._back_to_model)
         dvl.addSpacing(40)
         _title_block(dvl)
         dvl.addStretch()
@@ -190,11 +174,7 @@ class SetupFlowScreen(QWidget):
         self._gyro_section = QWidget(); self._gyro_section.setVisible(False)
         gl = QVBoxLayout(self._gyro_section)
         gl.setContentsMargins(80, 60, 80, 60); gl.setSpacing(16)
-        self._back_device_gyro_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_device_gyro_btn.setFixedWidth(80)
-        self._back_device_gyro_btn.clicked.connect(self._back_to_device_from_gyro)
-        brow3 = QHBoxLayout(); brow3.addWidget(self._back_device_gyro_btn); brow3.addStretch()
-        gl.addLayout(brow3)
+        self._back_device_gyro_btn = _back_row(gl, self._back_to_device_from_gyro)
         gl.addSpacing(40)
         _title_block(gl)
         gl.addStretch()
@@ -214,11 +194,7 @@ class SetupFlowScreen(QWidget):
         self._gyro_mode_section = QWidget(); self._gyro_mode_section.setVisible(False)
         gml = QVBoxLayout(self._gyro_mode_section)
         gml.setContentsMargins(80, 60, 80, 60); gml.setSpacing(16)
-        self._back_gyro_mode_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_gyro_mode_btn.setFixedWidth(80)
-        self._back_gyro_mode_btn.clicked.connect(self._back_to_gyro_from_mode)
-        brow3b = QHBoxLayout(); brow3b.addWidget(self._back_gyro_mode_btn); brow3b.addStretch()
-        gml.addLayout(brow3b)
+        self._back_gyro_mode_btn = _back_row(gml, self._back_to_gyro_from_mode)
         gml.addSpacing(40)
         _title_block(gml)
         gml.addStretch()
@@ -245,11 +221,7 @@ class SetupFlowScreen(QWidget):
         self._name_section = QWidget(); self._name_section.setVisible(False)
         nl = QVBoxLayout(self._name_section)
         nl.setContentsMargins(80, 60, 80, 60); nl.setSpacing(16)
-        self._back_gyro_name_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_gyro_name_btn.setFixedWidth(80)
-        self._back_gyro_name_btn.clicked.connect(self._back_to_gyro_from_name)
-        brow4 = QHBoxLayout(); brow4.addWidget(self._back_gyro_name_btn); brow4.addStretch()
-        nl.addLayout(brow4)
+        self._back_gyro_name_btn = _back_row(nl, self._back_to_gyro_from_name)
         nl.addSpacing(40)
         _title_block(nl)
         nl.addStretch()
@@ -289,11 +261,7 @@ class SetupFlowScreen(QWidget):
         self._primary_controller_section.setVisible(False)
         pcl = QVBoxLayout(self._primary_controller_section)
         pcl.setContentsMargins(80, 60, 80, 60); pcl.setSpacing(16)
-        self._back_source_ctrl_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_source_ctrl_btn.setFixedWidth(80)
-        self._back_source_ctrl_btn.clicked.connect(self._back_to_source_from_ctrl)
-        brow6 = QHBoxLayout(); brow6.addWidget(self._back_source_ctrl_btn); brow6.addStretch()
-        pcl.addLayout(brow6)
+        self._back_name_ctrl_btn = _back_row(pcl, self._back_to_name_from_ctrl)
         pcl.addSpacing(40)
         _title_block(pcl)
         pcl.addStretch()
@@ -317,15 +285,11 @@ class SetupFlowScreen(QWidget):
         pcl.addSpacing(40)
         main_lay.addWidget(self._primary_controller_section)
 
-        # ── 8. Resolution section (General PC, or docked) ─────────────────
+        # ── 7. Resolution section (General PC, or docked) ─────────────────
         self._resolution_section = QWidget(); self._resolution_section.setVisible(False)
         rl = QVBoxLayout(self._resolution_section)
         rl.setContentsMargins(80, 60, 80, 60); rl.setSpacing(16)
-        self._back_res_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_res_btn.setFixedWidth(80)
-        self._back_res_btn.clicked.connect(self._back_to_prev_from_res)
-        brow_res = QHBoxLayout(); brow_res.addWidget(self._back_res_btn); brow_res.addStretch()
-        rl.addLayout(brow_res)
+        self._back_res_btn = _back_row(rl, self._back_to_prev_from_res)
         rl.addSpacing(40)
         _title_block(rl)
         rl.addStretch()
@@ -365,15 +329,11 @@ class SetupFlowScreen(QWidget):
         rl.addSpacing(40)
         main_lay.addWidget(self._resolution_section)
 
-        # ── 9. Play mode section (handhelds only, not General PC) ─────────
+        # ── 8. Play mode section (handhelds only, not General PC) ─────────
         self._play_section = QWidget(); self._play_section.setVisible(False)
         pl = QVBoxLayout(self._play_section)
         pl.setContentsMargins(80, 60, 80, 60); pl.setSpacing(16)
-        self._back_play_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_play_btn.setFixedWidth(80)
-        self._back_play_btn.clicked.connect(self._back_to_prev_from_play)
-        brow_play = QHBoxLayout(); brow_play.addWidget(self._back_play_btn); brow_play.addStretch()
-        pl.addLayout(brow_play)
+        self._back_play_btn = _back_row(pl, self._back_to_prev_from_play)
         pl.addSpacing(40)
         _title_block(pl)
         pl.addStretch()
@@ -394,18 +354,14 @@ class SetupFlowScreen(QWidget):
         pl.addSpacing(40)
         main_lay.addWidget(self._play_section)
 
-        # ── 10. Docked external controller section ─────────────────────────
+        # ── 9. Docked external controller section ─────────────────────────
         # Only shown for docked users on SteamOS/CachyOS who haven't already
-        # picked a controller (Bazzite/PC users already picked in step 7).
+        # picked a controller (Bazzite/PC users already picked in step 6).
         self._docked_controller_section = QWidget()
         self._docked_controller_section.setVisible(False)
         dcl = QVBoxLayout(self._docked_controller_section)
         dcl.setContentsMargins(80, 60, 80, 60); dcl.setSpacing(16)
-        self._back_docked_ctrl_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_docked_ctrl_btn.setFixedWidth(80)
-        self._back_docked_ctrl_btn.clicked.connect(self._back_to_resolution_from_docked_ctrl)
-        brow_dc = QHBoxLayout(); brow_dc.addWidget(self._back_docked_ctrl_btn); brow_dc.addStretch()
-        dcl.addLayout(brow_dc)
+        self._back_docked_ctrl_btn = _back_row(dcl, self._back_to_resolution_from_docked_ctrl)
         dcl.addSpacing(40)
         _title_block(dcl)
         dcl.addStretch()
@@ -556,10 +512,6 @@ class SetupFlowScreen(QWidget):
         name = self._name_input.text().strip()
         cfg.set_player_name(name if name else "Player")
         cfg.set_game_source("both")
-        self._pick_source("both")
-
-    def _pick_source(self, source):
-        cfg.set_game_source(source)
         if self._needs_primary_controller():
             self._show("_primary_controller_section")
         elif self._is_steam_machine:
@@ -575,7 +527,7 @@ class SetupFlowScreen(QWidget):
         """Bazzite and General PC users need to pick their controller type."""
         return self._selected_os == "bazzite" or self._is_general_pc
 
-    def _back_to_source_from_ctrl(self):
+    def _back_to_name_from_ctrl(self):
         self._show("_name_section")
 
     def _pick_primary_controller(self, ctrl_type):
@@ -625,7 +577,7 @@ class SetupFlowScreen(QWidget):
         if self._is_general_pc:
             # PC already picked controller — done
             self._finish()
-        elif not cfg.get_external_controller():
+        elif not self._needs_primary_controller():
             # Docked SteamOS/CachyOS: need external controller
             self._show("_docked_controller_section")
         else:
