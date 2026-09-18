@@ -687,11 +687,10 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
     # instead of iw6mp64_ship.exe). The CRC must use the same exe path
     # that was written into the shortcut's Exe field.
     try:
-        import config as cfg
-        if cfg.get_game_source() == "own":
-            from detect_games import find_own_installed
-            from shortcut import OWN_SHORTCUTS
-            own_games = find_own_installed()
+        from detect_games import find_own_installed
+        from shortcut import OWN_SHORTCUTS
+        own_games = find_own_installed()
+        if own_games:
             for key, game in own_games.items():
                 if key not in OWN_SHORTCUTS:
                     continue
@@ -894,11 +893,10 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
 
     # ── "My Own" game external controller profiles ────────────────────────────
     try:
-        import config as cfg
-        if cfg.get_game_source() == "own":
-            from detect_games import find_own_installed
-            from shortcut import OWN_SHORTCUTS
-            own_games = find_own_installed()
+        from detect_games import find_own_installed
+        from shortcut import OWN_SHORTCUTS
+        own_games = find_own_installed()
+        if own_games:
             for key, game in own_games.items():
                 if key not in OWN_SHORTCUTS:
                     continue

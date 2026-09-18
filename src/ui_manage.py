@@ -17,7 +17,7 @@ from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QGraphicsOpacityEffect
 
-from detect_games import find_steam_root, parse_library_folders, find_installed_games, find_all_games
+from detect_games import find_steam_root, find_all_games
 import config as cfg
 
 from ui_constants import (
@@ -259,11 +259,7 @@ class ManagementScreen(QWidget):
 
     def showEvent(self, e):
         super().showEvent(e)
-        if cfg.get_game_source() == "own":
-            self.installed = find_all_games()
-        else:
-            root = find_steam_root()
-            self.installed = find_installed_games(parse_library_folders(root))
+        self.installed = find_all_games()
         self._rebuild()
 
     def _rebuild(self):
@@ -370,11 +366,7 @@ class ManagementScreen(QWidget):
 
     # ── Update all games (batch) ──────────────────────────────────────────
     def _update_all_games(self):
-        if cfg.get_game_source() == "own":
-            all_installed = find_all_games()
-        else:
-            root = find_steam_root()
-            all_installed = find_installed_games(parse_library_folders(root))
+        all_installed = find_all_games()
 
         # Build selected list: all set-up games with a mod client
         _gd_by_key = {}
@@ -449,24 +441,18 @@ class ManagementScreen(QWidget):
             self._status.setText("Game files not found.")
             return
 
-        source = cfg.get_game_source() or "steam"
-
-        # Build selected tuples for the install screen
         selected = [(k, gd, self.installed[k]) for k in present_keys]
 
         s = get_screen(self.stack, "InstallScreen")
-        if source == "own":
-            own_selected = {}
-            steam_selected = []
-            for k, g_gd, game in selected:
-                if game.get("source") == "own":
-                    own_selected[k] = game
-                else:
-                    steam_selected.append((k, g_gd, game))
-            s.own_selected = own_selected
-            s.steam_selected = steam_selected
-        else:
-            s.selected = selected
+        own_selected = {}
+        steam_selected = []
+        for k, g_gd, game in selected:
+            if game.get("source") == "own":
+                own_selected[k] = game
+            else:
+                steam_selected.append((k, g_gd, game))
+        s.own_selected = own_selected
+        s.steam_selected = steam_selected
         s.steam_root = root
         s._return_to_management = True
         s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
@@ -1081,8 +1067,7 @@ class SetupCompleteScreen(QWidget):
         self._lcd_div.setVisible(is_lcd)
         self._lcd_hdr.setVisible(is_lcd)
         self._lcd_body.setVisible(is_lcd)
-        show_mw2own = (cfg.get_game_source() == "own"
-                       and cfg.is_game_setup_for_source("iw4mp", "own"))
+        show_mw2own = cfg.is_game_setup_for_source("iw4mp", "own")
         self._mw2own_div.setVisible(show_mw2own)
         self._mw2own_hdr.setVisible(show_mw2own)
         self._mw2own_body.setVisible(show_mw2own)
@@ -1143,7 +1128,7 @@ class SetupCompleteScreen(QWidget):
         # Restart Steam so shortcuts and compat tool changes take effect.
         os.system("gtk-launch steam.desktop &")
         root = find_steam_root()
-        get_screen(self.stack, "ManagementScreen").set_installed(find_installed_games(parse_library_folders(root)))
+        get_screen(self.stack, "ManagementScreen").set_installed(find_all_games(root))
         go_to(self.stack, "ManagementScreen")
 
 
@@ -1301,8 +1286,7 @@ class ConfigureScreen(QWidget):
                      C_IW if self._music_on else C_DARK_BTN))
         # Refresh dynamic state
         model = cfg.get_deck_model() or "unknown"
-        source = cfg.get_game_source() or "steam"
-        source_label = "Steam" if source == "steam" else "Steam & Non-Steam"
+        source_label = "Steam & Non-Steam"
         player = cfg.get_player_name() or "Player"
         self._name_input.setText(player if player != "Player" else "")
 
@@ -1442,11 +1426,9 @@ class ConfigureScreen(QWidget):
         def _run():
             try:
                 from game_config import rename_player
-                from detect_games import find_installed_games, parse_library_folders
+                from detect_games import find_all_games as _find_all
                 steam_root = cfg.load().get("steam_root", "") or find_steam_root()
-                installed = {}
-                if steam_root:
-                    installed = find_installed_games(parse_library_folders(steam_root))
+                installed = _find_all(steam_root) if steam_root else {}
                 count = rename_player(
                     name, steam_root, installed_games=installed,
                     on_progress=lambda msg: s.log.emit(msg),
@@ -1976,7 +1958,7 @@ class UpdateScreen(QWidget):
 
     def _go_back(self):
         root = find_steam_root()
-        get_screen(self.stack, "ManagementScreen").set_installed(find_installed_games(parse_library_folders(root)))
+        get_screen(self.stack, "ManagementScreen").set_installed(find_all_games(root))
         go_to(self.stack, "ManagementScreen")
 
     def _run(self):
@@ -2013,12 +1995,7 @@ class UpdateScreen(QWidget):
         if has_plut:
             _PLUT_KEYS = {"t4sp","t4mp","t5sp","t5mp","t6mp","t6zm","iw5mp","iw5mp_ds"}
             already = {k for k, _, _ in self.selected}
-            # Re-detect installed games to find siblings
-            if cfg.get_game_source() == "own":
-                _all_installed = find_all_games(self.steam_root)
-            else:
-                _all_installed = find_installed_games(
-                    parse_library_folders(self.steam_root))
+            _all_installed = find_all_games(self.steam_root)
             # Find the right gd entry for each sibling key
             _gd_by_key = {}
             for gd_entry in ALL_GAMES:

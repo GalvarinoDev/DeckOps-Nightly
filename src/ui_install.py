@@ -1,7 +1,7 @@
 """
 ui_install.py — Install pipeline screens for DeckOps
 
-Screens: WelcomeScreen, SetupScreen, InstallScreen, OwnScanScreen
+Screens: WelcomeScreen, SetupScreen, InstallScreen
 Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
 """
 
@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer
 
-from detect_games import find_steam_root, parse_library_folders, find_installed_games, find_all_games
+from detect_games import find_steam_root, find_all_games
 import config as cfg
 from net import DownloadError
 
@@ -33,11 +33,10 @@ class WelcomeScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.installed={}; self.screen_name = "WelcomeScreen"
         self.steam_installed={}; self.own_installed={}; self.steam_root=""
-        self._steam_only = False  # set by OwnScanScreen skip or advanced flow
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(14)
         _title_block(lay)
         lay.addSpacing(12)
-        self.status = _lbl("Scanning for Steam...", 14, C_DIM)
+        self.status = _lbl("Scanning for games...", 14, C_DIM)
         lay.addWidget(self.status)
         self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
         self.bar.setFixedHeight(14)
@@ -71,17 +70,10 @@ class WelcomeScreen(QWidget):
 
     def _scan_games(self):
         self.status.setText("Scanning for games..."); self.bar.setValue(70)
-        source = cfg.get_game_source() or "steam"
-        if source == "own" and not self._steam_only:
-            merged = find_all_games(self.steam_root)
-            self.steam_installed = {k: v for k, v in merged.items() if v.get("source") != "own"}
-            self.own_installed = {k: v for k, v in merged.items() if v.get("source") == "own"}
-            self.installed = merged
-        else:
-            libs = parse_library_folders(self.steam_root)
-            self.steam_installed = find_installed_games(libs)
-            self.own_installed = {}
-            self.installed = self.steam_installed
+        merged = find_all_games(self.steam_root)
+        self.steam_installed = {k: v for k, v in merged.items() if v.get("source") != "own"}
+        self.own_installed = {k: v for k, v in merged.items() if v.get("source") == "own"}
+        self.installed = merged
         if cfg.is_lcd():
             lcd_allowed = set()
             for g in ALL_GAMES:
@@ -94,29 +86,18 @@ class WelcomeScreen(QWidget):
     def _show_results(self):
         self.bar.setValue(100)
         if not self.installed:
-            # Advanced flow with own games already parked: no Steam games is OK,
-            # skip straight to SetupScreen which will route to InstallScreen.
-            if self._steam_only and cfg.get_game_source() == "own":
-                own_screen = get_screen(self.stack, "InstallScreen")
-                if own_screen.own_selected:
-                    self.status.setText("No Steam games found — continuing with your non-Steam games.")
-                    self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
-                    self.cont.setVisible(True)
-                    return
             self.status.setText("No supported games found.")
             self.status.setStyleSheet(f"color:{C_TREY};background:transparent;"); return
         unique = len({g["name"].split(" - ")[0].split(" (")[0] for g in self.installed.values()})
         self.status.setText(f"Found {unique} supported game(s)!")
         self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
         lines = []
-        # Steam games
         seen_steam = set()
         for g in sorted(self.steam_installed.values(), key=lambda x: x.get("order",99)):
             base = g["name"].split(" - ")[0].split(" (")[0]
             if base not in seen_steam:
                 seen_steam.add(base)
                 lines.append(f'<span style="color:{C_IW}">{base} (Steam)</span>')
-        # Own games
         seen_own = set()
         for g in sorted(self.own_installed.values(), key=lambda x: x.get("order",99)):
             base = g["name"].split(" - ")[0].split(" (")[0]
@@ -127,24 +108,6 @@ class WelcomeScreen(QWidget):
 
     def _go_next(self):
         if cfg.is_first_run():
-            # Advanced flow with no Steam games: skip the blank SetupScreen
-            # and route straight to InstallScreen.
-            if self._steam_only and cfg.get_game_source() == "own" \
-                    and not self.steam_installed:
-                own_screen = get_screen(self.stack, "InstallScreen")
-                own_screen.steam_selected = []
-                own_screen.steam_root = self.steam_root
-                _own_sel = own_screen.own_selected or {}
-                _own_tmp = []
-                for _k, _g in _own_sel.items():
-                    for _gd in ALL_GAMES:
-                        if _k in _active_keys(_gd):
-                            _own_tmp.append((_k, _gd, _g)); break
-                own_screen.install_iw4x_dlc = _ask_iw4x_dlc(self, _own_tmp)
-                own_screen.bo3_client = _ask_bo3_client(self, _own_tmp)
-                own_screen.cod4_client = _ask_cod4_client(self, _own_tmp)
-                go_to(self.stack, "InstallScreen")
-                return
             s = get_screen(self.stack, "SetupScreen")
             s.steam_installed = self.steam_installed
             s.own_installed   = self.own_installed
@@ -158,14 +121,13 @@ class WelcomeScreen(QWidget):
 # ── SetupScreen ───────────────────────────────────────────────────────────────
 class SetupScreen(QWidget):
     """
-    Steam game selection. Shows detected Steam games with checkboxes.
-    In the advanced flow, sets steam_selected on InstallScreen so both
-    Steam and own games are handled in one pass.
+    Unified game selection. Shows Steam and non-Steam games in one list.
     """
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.screen_name = "SetupScreen"
         self.steam_installed={}; self.own_installed={}; self.steam_root=""
         self._checks={}
+        self._extra_paths = []
 
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
@@ -202,9 +164,13 @@ class SetupScreen(QWidget):
         brow = QHBoxLayout(); brow.setSpacing(16)
         back = _btn("<< Back", C_DARK_BTN, h=52); back.setFixedWidth(180)
         back.clicked.connect(lambda: go_to(self.stack, "WelcomeScreen"))
+        self._folder_btn = _btn("Choose Folder", C_DARK_BTN, h=52)
+        self._folder_btn.setFixedWidth(200)
+        self._folder_btn.clicked.connect(self._pick_folder)
         self.inst_btn = _btn("Install Selected >>", C_IW, h=52)
         self.inst_btn.clicked.connect(self._go_install)
-        brow.addWidget(back); brow.addWidget(self.inst_btn, stretch=1); clay.addLayout(brow)
+        brow.addWidget(back); brow.addWidget(self._folder_btn)
+        brow.addWidget(self.inst_btn, stretch=1); clay.addLayout(brow)
         lay.addWidget(content, stretch=1)
 
     def showEvent(self, e):
@@ -223,18 +189,18 @@ class SetupScreen(QWidget):
         SLOT_GAP   = 8
         CHECKS_W   = MAX_SLOTS * SLOT_W + (MAX_SLOTS - 1) * SLOT_GAP
 
+        all_installed = {**self.steam_installed, **self.own_installed}
+
         for gd in ALL_GAMES:
             keys = _active_keys(gd)
             if not keys: continue
-            ik = [k for k in keys if k in self.steam_installed]
-            # Priority: hide iw5mp_ds (free DS) when iw5mp (full game) is present
+            ik = [k for k in keys if k in all_installed]
             if "iw5mp" in ik and "iw5mp_ds" in ik:
                 ik = [k for k in ik if k != "iw5mp_ds"]
                 keys = [k for k in keys if k != "iw5mp_ds"]
             if not ik:
-                # MW3 not installed at all: show a "get it free" row
                 _iw5_keys = {"iw5mp", "iw5mp_ds"}
-                if _iw5_keys.intersection(keys) and not _iw5_keys.intersection(self.steam_installed):
+                if _iw5_keys.intersection(keys) and not _iw5_keys.intersection(all_installed):
                     self._add_mw3_free_row(gd, CHECKS_W)
                 continue
 
@@ -245,7 +211,6 @@ class SetupScreen(QWidget):
             row.setSpacing(12)
             row.setContentsMargins(8, 8, 8, 8)
 
-            # ── Per-key checkbox column ────────────────────────────────────
             checks_widget = QWidget()
             checks_widget.setFixedWidth(CHECKS_W)
             checks_layout = QHBoxLayout(checks_widget)
@@ -253,8 +218,11 @@ class SetupScreen(QWidget):
             checks_layout.setSpacing(SLOT_GAP)
 
             for key in keys:
-                installed   = key in self.steam_installed
-                already_done = cfg.is_game_setup_for_source(key, "steam")
+                is_steam = key in self.steam_installed
+                is_own   = key in self.own_installed
+                installed = is_steam or is_own
+                source = "own" if is_own and not is_steam else "steam"
+                already_done = cfg.is_game_setup_for_source(key, source)
 
                 slot = QWidget()
                 slot.setFixedWidth(SLOT_W)
@@ -265,8 +233,7 @@ class SetupScreen(QWidget):
 
                 cb = QCheckBox()
                 if not installed:
-                    cb.setChecked(False)
-                    cb.setEnabled(False)
+                    cb.setChecked(False); cb.setEnabled(False)
                 elif already_done:
                     cb.setChecked(False)
                 else:
@@ -279,10 +246,8 @@ class SetupScreen(QWidget):
                 slot_lay.addWidget(cb, alignment=Qt.AlignHCenter)
                 slot_lay.addWidget(mode_lbl)
                 checks_layout.addWidget(slot)
+                self._checks[key] = (cb, gd, source)
 
-                self._checks[key] = (cb, gd)
-
-            # Fill remaining slots with transparent spacers for alignment
             for _ in range(MAX_SLOTS - len(keys)):
                 spacer = QWidget()
                 spacer.setFixedSize(SLOT_W, 38)
@@ -291,32 +256,40 @@ class SetupScreen(QWidget):
 
             row.addWidget(checks_widget)
 
-            # ── Game name + optional offline note ──────────────────────────
             name_wrap = QWidget()
             name_wrap_lay = QVBoxLayout(name_wrap)
             name_wrap_lay.setContentsMargins(0, 0, 0, 0)
             name_wrap_lay.setSpacing(2)
-
-            any_installed = len(ik) > 0
-            name_color = "#FFF" if any_installed else "#555566"
-            name_lbl = _lbl(gd["base"], 14, name_color, align=Qt.AlignLeft, wrap=False)
+            name_lbl = _lbl(gd["base"], 14, "#FFF", align=Qt.AlignLeft, wrap=False)
             name_wrap_lay.addWidget(name_lbl)
-
             row.addWidget(name_wrap, stretch=1)
 
-            # ── Client badge ───────────────────────────────────────────────
+            # Source badge: show OWN if any key in this row is own-source
+            row_has_own = any(k in self.own_installed and k not in self.steam_installed for k in ik)
+            row_has_steam = any(k in self.steam_installed for k in ik)
+            if row_has_own and row_has_steam:
+                src_text, src_color = "BOTH", C_TREY
+            elif row_has_own:
+                src_text, src_color = "OWN", C_TREY
+            else:
+                src_text, src_color = "STEAM", C_IW
+            src_badge = QPushButton(src_text)
+            src_badge.setFont(font(8, True)); src_badge.setFixedSize(60, 22)
+            src_badge.setEnabled(False)
+            src_badge.setStyleSheet(
+                f"QPushButton{{background:{src_color};color:#FFF;border:none;border-radius:4px;}}"
+                f"QPushButton:disabled{{background:{src_color};color:#FFF;}}")
+            row.addWidget(src_badge)
+
             badge = QPushButton(client.upper())
-            badge.setFont(font(10, True))
-            badge.setFixedSize(160, 30)
+            badge.setFont(font(10, True)); badge.setFixedSize(160, 30)
             badge.setEnabled(False)
             badge.setStyleSheet(
                 f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:6px;}}"
-                f"QPushButton:disabled{{background:{color};color:#FFF;}}"
-            )
+                f"QPushButton:disabled{{background:{color};color:#FFF;}}")
             row.addWidget(badge)
 
-            cw = QWidget()
-            cw.setLayout(row)
+            cw = QWidget(); cw.setLayout(row)
             self._ll.insertWidget(self._ll.count() - 1, cw)
 
     def _add_mw3_free_row(self, gd, checks_w):
@@ -331,8 +304,7 @@ class SetupScreen(QWidget):
         badge.setFont(font(10, True)); badge.setFixedSize(160, 30); badge.setEnabled(False)
         badge.setStyleSheet(
             f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:6px;}}"
-            f"QPushButton:disabled{{background:{color};color:#FFF;}}"
-        )
+            f"QPushButton:disabled{{background:{color};color:#FFF;}}")
         row.addWidget(badge)
         cw = QWidget(); cw.setLayout(row)
         self._ll.insertWidget(self._ll.count() - 1, cw)
@@ -348,56 +320,44 @@ class SetupScreen(QWidget):
             "DeckOps. MW3 will appear as a detected game."
         )
 
+    def _pick_folder(self):
+        folder = QFileDialog.getExistingDirectory(
+            self, "Select your games folder", os.path.expanduser("~"),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
+        if not folder or folder in self._extra_paths:
+            return
+        self._extra_paths.append(folder)
+        from detect_games import find_own_installed
+        new_own = find_own_installed(extra_paths=self._extra_paths)
+        self.own_installed = new_own
+        self._build()
+
     def _go_install(self):
-        selected = []
-        for key, (cb, gd) in self._checks.items():
+        steam_selected = []
+        own_selected = {}
+        for key, (cb, gd, source) in self._checks.items():
             if not cb.isChecked(): continue
-            if key not in self.steam_installed: continue
-            selected.append((key, gd, self.steam_installed[key]))
-        if not selected:
-            # Advanced flow: own games are already queued on InstallScreen,
-            # so zero Steam games is valid. Route straight through.
-            if cfg.get_game_source() == "own":
-                s = get_screen(self.stack, "InstallScreen")
-                s.steam_selected = []
-                s.steam_root = self.steam_root
-                _own_sel = s.own_selected or {}
-                _own_tmp = []
-                for _k, _g in _own_sel.items():
-                    for _gd in ALL_GAMES:
-                        if _k in _active_keys(_gd):
-                            _own_tmp.append((_k, _gd, _g)); break
-                s.install_iw4x_dlc = _ask_iw4x_dlc(self, _own_tmp)
-                s.cod4_client = _ask_cod4_client(self, _own_tmp)
-                go_to(self.stack, "InstallScreen")
-                return
+            if source == "own" and key in self.own_installed:
+                own_selected[key] = self.own_installed[key]
+            elif key in self.steam_installed:
+                steam_selected.append((key, gd, self.steam_installed[key]))
+
+        if not steam_selected and not own_selected:
             self.warning.setText("Select at least one game to continue.")
             self.warning.setVisible(True); return
 
-        # Advanced flow: InstallScreen handles both Steam + own games
-        if cfg.get_game_source() == "own":
-            s = get_screen(self.stack, "InstallScreen")
-            s.steam_selected = selected
-            s.steam_root = self.steam_root
-            _own_sel = s.own_selected or {}
-            _own_tmp = []
-            for _k, _g in _own_sel.items():
-                for _gd in ALL_GAMES:
-                    if _k in _active_keys(_gd):
-                        _own_tmp.append((_k, _gd, _g)); break
-            s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected + _own_tmp)
-            s.bo3_client = _ask_bo3_client(self, selected + _own_tmp)
-            s.cod4_client = _ask_cod4_client(self, selected + _own_tmp)
-            go_to(self.stack, "InstallScreen")
-            return
-
-        # Standard flow: Steam games only
         s = get_screen(self.stack, "InstallScreen")
-        s.selected   = selected
+        s.steam_selected = steam_selected
+        s.own_selected = own_selected
         s.steam_root = self.steam_root
-        s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
-        s.bo3_client = _ask_bo3_client(self, selected)
-        s.cod4_client = _ask_cod4_client(self, selected)
+        all_tuples = list(steam_selected)
+        for _k, _g in own_selected.items():
+            for _gd in ALL_GAMES:
+                if _k in _active_keys(_gd):
+                    all_tuples.append((_k, _gd, _g)); break
+        s.install_iw4x_dlc = _ask_iw4x_dlc(self, all_tuples)
+        s.bo3_client = _ask_bo3_client(self, all_tuples)
+        s.cod4_client = _ask_cod4_client(self, all_tuples)
         go_to(self.stack, "InstallScreen")
 
 # --- _BaseInstallScreen ---
@@ -752,8 +712,7 @@ class _BaseInstallScreen(QWidget):
     def _go_management(self):
         os.system("gtk-launch steam.desktop &")
         root = find_steam_root()
-        get_screen(self.stack, "ManagementScreen").set_installed(
-            find_installed_games(parse_library_folders(root)))
+        get_screen(self.stack, "ManagementScreen").set_installed(find_all_games(root))
         go_to(self.stack, "ManagementScreen")
 
     def showEvent(self, e):
@@ -815,23 +774,16 @@ class _BaseInstallScreen(QWidget):
         from ge_proton import install_ge_proton, MANAGED_APPIDS
 
         # --- Source awareness setup
-        # Advanced flow: steam_selected is a list (set by caller).
-        # Standard flow: steam_selected is None, self.selected already set.
         own_selected = self.own_selected
         has_own = bool(own_selected)
 
-        if self.steam_selected is not None:
-            # Advanced flow: merge steam + own into self.selected
-            steam_sel = list(self.steam_selected)
-            own_as_tuples = []
-            for k, g in own_selected.items():
-                for gd in ALL_GAMES:
-                    if k in _active_keys(gd):
-                        own_as_tuples.append((k, gd, g)); break
-            self.selected = steam_sel + own_as_tuples
-        else:
-            # Standard flow: self.selected already set by SetupScreen
-            steam_sel = self.selected
+        steam_sel = list(self.steam_selected or [])
+        own_as_tuples = []
+        for k, g in own_selected.items():
+            for gd in ALL_GAMES:
+                if k in _active_keys(gd):
+                    own_as_tuples.append((k, gd, g)); break
+        self.selected = steam_sel + own_as_tuples
 
         if has_own:
             from shortcut import enrich_own_games, write_own_shortcuts
@@ -1780,216 +1732,3 @@ class InstallScreen(_BaseInstallScreen):
 
 
 
-# ── OwnScanScreen ────────────────────────────────────────────────────────────
-class OwnScanScreen(QWidget):
-    """
-    Shown in the advanced flow before WelcomeScreen. Scans for non-Steam
-    games (CD, GOG, MS Store, etc.) in default and user-chosen folders.
-    """
-    def __init__(self, stack):
-        super().__init__(); self.stack = stack; self.screen_name = "OwnScanScreen"
-        self._own_found = {}
-        self._checks = {}
-        self._extra_paths = []
-
-        lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
-
-        hdr = QWidget(); hdr.setFixedHeight(60)
-        hdr.setStyleSheet(f"background:{C_CARD};")
-        hl = QHBoxLayout(hdr); hl.setContentsMargins(20,0,20,0)
-        _ht = QLabel("DECKOPS"); _ht.setFont(font(22, display=True))
-        _ht.setStyleSheet("color:#FFF;background:transparent;"); hl.addWidget(_ht)
-        _nb = QLabel("NIGHTLY"); _nb.setFont(font(9, bold=True))
-        _nb.setStyleSheet(
-            "color:#F47B20;background:#2A1A08;border:1px solid #F47B20;"
-            "border-radius:4px;padding:1px 6px;"
-        )
-        hl.addWidget(_nb); hl.addStretch()
-        lay.addWidget(hdr)
-
-        content = QWidget()
-        clay = QVBoxLayout(content); clay.setContentsMargins(60,20,60,40); clay.setSpacing(14)
-        clay.addWidget(_lbl("NON-STEAM GAMES", 14, C_TREY, align=Qt.AlignCenter))
-        clay.addWidget(_lbl(
-            "Scanning for games installed outside Steam. "
-            "You can also choose a custom folder below.",
-            13, C_DIM))
-
-        self.status = _lbl("Scanning...", 14, C_DIM)
-        clay.addWidget(self.status)
-        self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(14)
-        bw = QHBoxLayout(); bw.addStretch(); bw.addWidget(self.bar, 6); bw.addStretch()
-        clay.addLayout(bw)
-
-        # Scrollable list of found games
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._list_widget = QWidget()
-        self._list_layout = QVBoxLayout(self._list_widget)
-        self._list_layout.setSpacing(0)
-        self._list_layout.addStretch()
-        scroll.setWidget(self._list_widget)
-        clay.addWidget(scroll, stretch=1)
-
-        self._no_games_msg = _lbl(
-            "No supported games found in the default locations.\n"
-            "Use \"Choose Folder\" to pick where your games are installed.",
-            13, C_TREY, align=Qt.AlignCenter)
-        self._no_games_msg.setVisible(False)
-        clay.addWidget(self._no_games_msg)
-
-        # Button row — matches SetupScreen pattern
-        self.warning = _lbl("", 12, C_TREY, align=Qt.AlignLeft)
-        self.warning.setVisible(False); clay.addWidget(self.warning)
-        btn_row = QHBoxLayout(); btn_row.setSpacing(16)
-
-        back = _btn("<< Back", C_DARK_BTN, h=52); back.setFixedWidth(180)
-        back.clicked.connect(lambda: go_to(self.stack, "SetupFlowScreen"))
-
-        self._folder_btn = _btn("Choose Folder", C_DARK_BTN, h=52)
-        self._folder_btn.setFixedWidth(200)
-        self._folder_btn.clicked.connect(self._pick_folder)
-
-        self._skip_btn = _btn("Skip >>", C_DARK_BTN, h=52)
-        self._skip_btn.setFixedWidth(140)
-        self._skip_btn.setVisible(False)
-        self._skip_btn.clicked.connect(self._skip)
-
-        self._cont_btn = _btn("Continue >>", C_IW, h=52)
-        self._cont_btn.setVisible(False)
-        self._cont_btn.clicked.connect(self._continue)
-
-        btn_row.addWidget(back)
-        btn_row.addWidget(self._folder_btn)
-        btn_row.addWidget(self._skip_btn)
-        btn_row.addWidget(self._cont_btn, stretch=1)
-        clay.addLayout(btn_row)
-        lay.addWidget(content, stretch=1)
-
-    def showEvent(self, e):
-        super().showEvent(e)
-        self._own_found.clear()
-        self._checks.clear()
-        self._extra_paths.clear()
-        self._no_games_msg.setVisible(False)
-        self._skip_btn.setVisible(False)
-        self._cont_btn.setVisible(False)
-        self.bar.setValue(0)
-        self.status.setText("Scanning for non-Steam games...")
-        # Clear previous game rows
-        while self._list_layout.count() > 1:
-            item = self._list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        QTimer.singleShot(200, self._scan)
-
-    def _scan(self):
-        self.bar.setValue(30)
-        self.status.setText("Scanning game folders...")
-        self._s = _Sigs()
-        self._s.progress.connect(lambda p, m: (self.bar.setValue(p), self.status.setText(m)))
-        self._s.done.connect(lambda _: self._show_results())
-        threading.Thread(target=self._do_scan, daemon=True).start()
-
-    def _do_scan(self):
-        from detect_games import find_own_installed
-        results = find_own_installed(
-            extra_paths=self._extra_paths if self._extra_paths else None,
-            on_progress=lambda msg: self._s.progress.emit(60, msg),
-        )
-        self._own_found = results
-        self._s.progress.emit(100, "Scan complete.")
-        self._s.done.emit(True)
-
-    def _show_results(self):
-        self.bar.setValue(100)
-        self._checks.clear()
-
-        # Clear previous game rows (keep the trailing stretch)
-        while self._list_layout.count() > 1:
-            item = self._list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        if not self._own_found:
-            self.status.setText("No supported games found.")
-            self.status.setStyleSheet(f"color:{C_TREY};background:transparent;")
-            self._no_games_msg.setVisible(True)
-            self._skip_btn.setVisible(True)
-            self._cont_btn.setVisible(False)
-            return
-
-        self._no_games_msg.setVisible(False)
-        self._skip_btn.setVisible(False)
-        count = len(self._own_found)
-        self.status.setText(f"Found {count} game(s)!")
-        self.status.setStyleSheet(f"color:{C_IW};background:transparent;")
-
-        # Build game rows sorted by order — matches SetupScreen row style
-        for key in sorted(self._own_found, key=lambda k: self._own_found[k].get("order", 99)):
-            game = self._own_found[key]
-            row = QHBoxLayout(); row.setSpacing(12); row.setContentsMargins(8, 8, 8, 8)
-
-            cb = QCheckBox()
-            cb.setChecked(True)
-            cb.toggled.connect(self._update_continue)
-            self._checks[key] = cb
-            row.addWidget(cb)
-
-            name_lbl = _lbl(game["name"], 14, "#FFF", align=Qt.AlignLeft, wrap=False)
-            row.addWidget(name_lbl, stretch=1)
-
-            path_lbl = _lbl(game["install_dir"], 10, C_DIM, align=Qt.AlignRight, wrap=False)
-            row.addWidget(path_lbl)
-
-            cw = QWidget(); cw.setLayout(row)
-            self._list_layout.insertWidget(self._list_layout.count() - 1, cw)
-
-        self._cont_btn.setVisible(True)
-
-    def _update_continue(self):
-        """Show Continue only if at least one game is checked."""
-        any_checked = any(cb.isChecked() for cb in self._checks.values())
-        self._cont_btn.setVisible(any_checked)
-        if not any_checked:
-            self._skip_btn.setVisible(True)
-        else:
-            self._skip_btn.setVisible(False)
-
-    def _pick_folder(self):
-        folder = QFileDialog.getExistingDirectory(
-            self, "Select your games folder", os.path.expanduser("~"),
-            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks)
-        if folder:
-            if folder not in self._extra_paths:
-                self._extra_paths.append(folder)
-            # Re-scan with the new path included
-            self.status.setText(f"Scanning {folder}...")
-            self.bar.setValue(0)
-            self._no_games_msg.setVisible(False)
-            self._skip_btn.setVisible(False)
-            self._cont_btn.setVisible(False)
-            QTimer.singleShot(200, self._scan)
-
-    def _skip(self):
-        """Skip own games, go straight to Steam detection."""
-        # Set a flag so WelcomeScreen knows to skip own scanning
-        ws = get_screen(self.stack, "WelcomeScreen")
-        ws._steam_only = True
-        go_to(self.stack, "WelcomeScreen")
-
-    def _continue(self):
-        """Store selected own games on InstallScreen and advance to WelcomeScreen."""
-        selected = {}
-        for key, cb in self._checks.items():
-            if cb.isChecked() and key in self._own_found:
-                selected[key] = self._own_found[key]
-        # Park own games on InstallScreen -- SetupScreen will route there
-        # after the user picks their Steam games
-        own_screen = get_screen(self.stack, "InstallScreen")
-        own_screen.own_selected = selected
-        # Advance to WelcomeScreen for Steam game detection
-        ws = get_screen(self.stack, "WelcomeScreen")
-        ws._steam_only = True
-        go_to(self.stack, "WelcomeScreen")
