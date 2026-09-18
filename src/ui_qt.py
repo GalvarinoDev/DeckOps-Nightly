@@ -15,7 +15,7 @@ from PyQt5.QtWidgets import QApplication, QMainWindow, QStackedWidget, QVBoxLayo
 from PyQt5.QtCore import Qt, QTimer
 
 import bootstrap as _bootstrap
-from detect_games import find_steam_root, parse_library_folders, find_installed_games
+from detect_games import find_steam_root, find_all_games
 import config as cfg
 from identity import APP_TITLE
 
@@ -27,7 +27,7 @@ from ui_constants import (
 )
 
 from ui_setup import SetupFlowScreen
-from ui_install import WelcomeScreen, SetupScreen, InstallScreen, OwnScanScreen
+from ui_install import WelcomeScreen, SetupScreen, InstallScreen
 from ui_manage import ManagementScreen, ConfigureScreen, SetupCompleteScreen, UpdateScreen
 
 
@@ -75,7 +75,7 @@ class BootstrapScreen(QWidget):
         else:
             root = find_steam_root()
             get_screen(self.stack, "ManagementScreen").set_installed(
-                find_installed_games(parse_library_folders(root))
+                find_all_games(root)
             )
             go_to(self.stack, "ManagementScreen")
 
@@ -97,7 +97,6 @@ class DeckOpsWindow(QMainWindow):
             WelcomeScreen,
             SetupScreen,
             InstallScreen,
-            OwnScanScreen,
             ManagementScreen,
             ConfigureScreen,
             SetupCompleteScreen,

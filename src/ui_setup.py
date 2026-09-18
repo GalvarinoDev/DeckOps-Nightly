@@ -281,76 +281,7 @@ class SetupFlowScreen(QWidget):
         nl.addSpacing(40)
         main_lay.addWidget(self._name_section)
 
-        # ── 6. Game source section (merged from SourceScreen) ─────────────
-        self._source_section = QWidget(); self._source_section.setVisible(False)
-        sl = QVBoxLayout(self._source_section)
-        sl.setContentsMargins(80, 60, 80, 60); sl.setSpacing(16)
-        self._back_name_source_btn = _btn("← Back", C_DARK_BTN, size=10, h=30)
-        self._back_name_source_btn.setFixedWidth(80)
-        self._back_name_source_btn.clicked.connect(self._back_to_name_from_source)
-        brow5 = QHBoxLayout(); brow5.addWidget(self._back_name_source_btn); brow5.addStretch()
-        sl.addLayout(brow5)
-        sl.addSpacing(40)
-        _title_block(sl)
-        sl.addStretch()
-        sl.addWidget(_lbl("How did you install your games?", 15, "#CCC"))
-        sl.addSpacing(8)
-
-        cards = QHBoxLayout(); cards.setSpacing(20)
-
-        steam_card = QFrame()
-        steam_card.setStyleSheet(
-            f"QFrame{{background:{C_CARD};border:2px solid #33333F;border-radius:10px;}}"
-            f"QLabel{{background:transparent;}}")
-        sc = QVBoxLayout(steam_card); sc.setContentsMargins(24, 24, 24, 24); sc.setSpacing(10)
-        rec = QPushButton("RECOMMENDED"); rec.setFont(font(9, True)); rec.setFixedHeight(24)
-        rec.setEnabled(False)
-        rec.setStyleSheet(
-            f"QPushButton{{background:{C_IW};color:#FFF;border:none;border-radius:5px;padding:0 10px;}}"
-            f"QPushButton:disabled{{background:{C_IW};color:#FFF;}}")
-        sc.addWidget(rec, alignment=Qt.AlignLeft)
-        sc.addWidget(_lbl("Steam", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
-        sc.addWidget(_lbl(
-            "Your games were purchased and installed through Steam. "
-            "DeckOps will detect them automatically.",
-            12, C_DIM, align=Qt.AlignLeft))
-        sc.addWidget(_lbl("Works with games on internal storage or SD card.",
-                          11, "#555568", align=Qt.AlignLeft))
-        sc.addStretch()
-        steam_btn = _btn("Select Steam >>", C_IW, h=44)
-        steam_btn.clicked.connect(lambda: self._pick_source("steam"))
-        sc.addWidget(steam_btn)
-        cards.addWidget(steam_card)
-
-        own_card = QFrame()
-        own_card.setStyleSheet(
-            f"QFrame{{background:{C_CARD};border:2px solid #33333F;border-radius:10px;}}"
-            f"QLabel{{background:transparent;}}")
-        oc = QVBoxLayout(own_card); oc.setContentsMargins(24, 24, 24, 24); oc.setSpacing(10)
-        adv = QPushButton("ADVANCED"); adv.setFont(font(9, True)); adv.setFixedHeight(24)
-        adv.setEnabled(False)
-        adv.setStyleSheet(
-            f"QPushButton{{background:{C_TREY};color:#FFF;border:none;border-radius:5px;padding:0 10px;}}"
-            f"QPushButton:disabled{{background:{C_TREY};color:#FFF;}}")
-        oc.addWidget(adv, alignment=Qt.AlignLeft)
-        oc.addWidget(_lbl("Steam & Non-Steam", 18, "#FFF", bold=True, align=Qt.AlignLeft, wrap=False))
-        oc.addWidget(_lbl(
-            "You have games from the Microsoft Store, CD, GOG, or other storefronts. "
-            "Steam games are also detected automatically.",
-            12, C_DIM, align=Qt.AlignLeft))
-        oc.addWidget(_lbl("Make sure your non-Steam games are in /home/deck/games before continuing.",
-                          11, "#555568", align=Qt.AlignLeft))
-        oc.addStretch()
-        own_btn = _btn("Select Steam & Non-Steam >>", C_TREY, h=44)
-        own_btn.clicked.connect(lambda: self._pick_source("own"))
-        oc.addWidget(own_btn)
-        cards.addWidget(own_card)
-
-        sl.addLayout(cards)
-        sl.addSpacing(40)
-        main_lay.addWidget(self._source_section)
-
-        # ── 7. Primary controller section (Bazzite + General PC) ──────────
+        # ── 6. Primary controller section (Bazzite + General PC) ──────────
         # Bazzite doesn't have InputPlumber wired up yet, so Neptune templates
         # won't work. User must pick their controller type for all modes.
         # General PC users also need to pick their controller.
@@ -624,40 +555,20 @@ class SetupFlowScreen(QWidget):
     def _save_player_name(self):
         name = self._name_input.text().strip()
         cfg.set_player_name(name if name else "Player")
-        if self._allows_source_choice():
-            self._show("_source_section")
-        else:
-            # Forced advanced — auto-set source and continue
-            cfg.set_game_source("own")
-            self._pick_source("own")
-
-    def _allows_source_choice(self):
-        """Only SteamOS users on LCD, OLED, or Steam Machine get the source picker."""
-        return (self._selected_os == "steamos"
-                and self._selected_device in ("sd_lcd", "sd_oled", "steam_machine"))
-
-    def _back_to_name_from_source(self):
-        self._show("_name_section")
+        cfg.set_game_source("both")
+        self._pick_source("both")
 
     def _pick_source(self, source):
         cfg.set_game_source(source)
-        # Routing depends on OS and device
         if self._needs_primary_controller():
             self._show("_primary_controller_section")
         elif self._is_steam_machine:
-            # Steam Machine: need resolution, no controller or play mode
             self._res_title_lbl.setText("What resolution is your display?")
             self._show("_resolution_section")
         elif self._is_general_pc:
-            # PC: go to resolution, then controller
             self._res_title_lbl.setText("What resolution is your display?")
             self._show("_resolution_section")
-        elif source == "steam":
-            # Recommended/Steam on handheld: default to handheld, skip question
-            cfg.set_play_mode("handheld")
-            self._finish()
         else:
-            # Own-files on handheld: ask play mode (user may dock)
             self._show("_play_section")
 
     def _needs_primary_controller(self):
@@ -665,11 +576,7 @@ class SetupFlowScreen(QWidget):
         return self._selected_os == "bazzite" or self._is_general_pc
 
     def _back_to_source_from_ctrl(self):
-        if self._allows_source_choice():
-            self._show("_source_section")
-        else:
-            # Forced advanced skipped the source screen — back to name
-            self._show("_name_section")
+        self._show("_name_section")
 
     def _pick_primary_controller(self, ctrl_type):
         cfg.set_external_controller(ctrl_type)
@@ -682,11 +589,9 @@ class SetupFlowScreen(QWidget):
             self._show("_play_section")
 
     def _back_to_prev_from_play(self):
-        """Back from play mode goes to controller (Bazzite), source (SteamOS with source choice), or name (forced advanced)."""
+        """Back from play mode goes to controller (Bazzite) or name."""
         if self._needs_primary_controller():
             self._show("_primary_controller_section")
-        elif self._allows_source_choice():
-            self._show("_source_section")
         else:
             self._show("_name_section")
 
@@ -702,10 +607,7 @@ class SetupFlowScreen(QWidget):
 
     def _back_to_prev_from_res(self):
         if self._is_steam_machine:
-            if self._allows_source_choice():
-                self._show("_source_section")
-            else:
-                self._show("_name_section")
+            self._show("_name_section")
         elif self._is_general_pc:
             # PC: back to controller
             self._show("_primary_controller_section")
@@ -742,9 +644,4 @@ class SetupFlowScreen(QWidget):
     # ── Finish ────────────────────────────────────────────────────────────
 
     def _finish(self):
-        """Route to the correct next screen based on game_source."""
-        source = cfg.get_game_source() or "steam"
-        if source == "own":
-            go_to(self.stack, "OwnScanScreen")
-        else:
-            go_to(self.stack, "WelcomeScreen")
+        go_to(self.stack, "WelcomeScreen")
