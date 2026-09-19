@@ -33,9 +33,10 @@ class WelcomeScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.installed={}; self.screen_name = "WelcomeScreen"
         self.steam_installed={}; self.own_installed={}; self.steam_root=""
-        lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(14)
-        _title_block(lay)
-        lay.addSpacing(12)
+        lay = QVBoxLayout(self); lay.setContentsMargins(60,30,60,30); lay.setSpacing(12)
+        # Smaller title than other screens: the results + notice need the vertical room at 800px
+        _title_block(lay, main_size=40)
+        lay.addSpacing(6)
         self.status = _lbl("Scanning for games...", 14, C_DIM)
         lay.addWidget(self.status)
         self.bar = QProgressBar(); self.bar.setMaximum(100); self.bar.setTextVisible(False)
@@ -45,7 +46,25 @@ class WelcomeScreen(QWidget):
         lay.addSpacing(10)
         self.results = _lbl("", 13, C_IW)
         self.results.setTextFormat(Qt.RichText)
-        lay.addWidget(self.results)
+        self.notice = _lbl(
+            "Before you continue:\n"
+            "•  Downgrading a game (MW2, MW3, Ghosts, AW) can take a very long time and needs "
+            "at least that game's full size free on the drive during the install.\n"
+            "•  On a handheld, plug it in. In Desktop Mode, click the battery icon and turn on "
+            "\"Manually block sleep and screen locking\" so it doesn't fall asleep mid-install.\n"
+            "•  Use a good, stable internet connection.\n"
+            "•  Keep your device somewhere it can breathe. Don't leave it on a blanket or "
+            "anywhere it could overheat.",
+            12, C_TREY, align=Qt.AlignLeft)
+        self.notice.setStyleSheet(
+            f"color:{C_TREY};background:#2A1A08;border:1px solid {C_TREY};"
+            "border-radius:8px;padding:10px 16px;")
+        self.notice.setVisible(False)
+        # Games list and notice side by side so neither gets squeezed
+        mid = QHBoxLayout(); mid.setSpacing(30)
+        mid.addWidget(self.results, 1, Qt.AlignTop)
+        mid.addWidget(self.notice, 1, Qt.AlignTop)
+        lay.addLayout(mid)
         lay.addStretch()
         self._scanning = False
         self.back = _btn("<< Back", C_DARK_BTN, h=52); self.back.setFixedWidth(180)
@@ -69,7 +88,7 @@ class WelcomeScreen(QWidget):
     def _start_scan(self):
         if self._scanning: return
         self._scanning = True
-        self.bar.setValue(20); self.results.setText("")
+        self.bar.setValue(20); self.results.setText(""); self.notice.setVisible(False)
         self.cont.setVisible(False); self.retry.setVisible(False); self.back.setVisible(False)
         self.status.setText("Scanning for Steam and games...")
         self.status.setStyleSheet(f"color:{C_DIM};background:transparent;")
@@ -140,6 +159,7 @@ class WelcomeScreen(QWidget):
                 seen_own.add(base)
                 lines.append(f'<span style="color:{C_TREY}">{base} (Non-Steam)</span>')
         self.results.setText("<br>".join(lines)); self.cont.setVisible(True)
+        self.notice.setVisible(cfg.is_first_run())
 
     def _go_next(self):
         if cfg.is_first_run():
@@ -179,8 +199,16 @@ class SetupScreen(QWidget):
             "DeckOps will create Proton prefixes automatically.", 13, C_DIM))
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self._lw = QWidget(); self._ll = QVBoxLayout(self._lw)
-        self._ll.setSpacing(0); self._ll.addStretch()
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        # Two columns (IW/SHG | Treyarch) so the whole list fits at 1280x800 without scrolling
+        self._lw = QWidget(); cols = QHBoxLayout(self._lw)
+        cols.setContentsMargins(0,0,0,0); cols.setSpacing(24)
+        self._cols = {}
+        for dev, title, color in (("iw", "INFINITY WARD / SLEDGEHAMMER", C_IW), ("trey", "TREYARCH", C_TREY)):
+            col = QVBoxLayout(); col.setSpacing(0)
+            col.addWidget(_lbl(title, 11, color, bold=True, align=Qt.AlignLeft, wrap=False))
+            col.addStretch()
+            cols.addLayout(col, 1); self._cols[dev] = col
         scroll.setWidget(self._lw); clay.addWidget(scroll, stretch=1)
 
         self.warning = _lbl("", 12, C_TREY, align=Qt.AlignLeft)
@@ -202,10 +230,20 @@ class SetupScreen(QWidget):
         self.warning.setVisible(False)
         self._build()
 
+    def _add_row(self, gd, widget):
+        col = self._cols["iw" if gd["dev"] == "iw" else "trey"]
+        col.insertWidget(col.count() - 1, widget)
+
+    @staticmethod
+    def _short_name(base):
+        return base.replace("Call of Duty 4: ", "CoD4: ").replace("Call of Duty: ", "")
+
     def _build(self):
-        while self._ll.count() > 1:
-            item = self._ll.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
+        for col in self._cols.values():
+            # keep the column title (first) and trailing stretch (last)
+            while col.count() > 2:
+                item = col.takeAt(1)
+                if item.widget(): item.widget().deleteLater()
         self._checks.clear()
         self._iw4x_dlc_cb = None; self._iw4x_dlc_present = False
         self._zd_cb = None
@@ -233,9 +271,9 @@ class SetupScreen(QWidget):
             color  = C_IW if gd["dev"] == "iw" else C_TREY
             client = _active_client(gd)
 
-            row = QHBoxLayout()
-            row.setSpacing(12)
-            row.setContentsMargins(8, 8, 8, 8)
+            cw = QWidget()
+            outer = QVBoxLayout(cw); outer.setContentsMargins(6, 6, 6, 6); outer.setSpacing(4)
+            row = QHBoxLayout(); row.setSpacing(10)
 
             checks_widget = QWidget()
             checks_widget.setFixedWidth(CHECKS_W)
@@ -281,17 +319,8 @@ class SetupScreen(QWidget):
                 checks_layout.addWidget(spacer)
 
             row.addWidget(checks_widget)
+            row.addWidget(_lbl(self._short_name(gd["base"]), 13, "#FFF", align=Qt.AlignLeft, wrap=False), stretch=1)
 
-            name_wrap = QWidget()
-            name_wrap_lay = QVBoxLayout(name_wrap)
-            name_wrap_lay.setContentsMargins(0, 0, 0, 0)
-            name_wrap_lay.setSpacing(2)
-            name_lbl = _lbl(gd["base"], 14, "#FFF", align=Qt.AlignLeft, wrap=False)
-            name_wrap_lay.addWidget(name_lbl)
-            self._row_options(name_wrap_lay, keys, all_installed)
-            row.addWidget(name_wrap, stretch=1)
-
-            # Source badge: show OWN if any key in this row is own-source
             row_has_own = any(k in self.own_installed and k not in self.steam_installed for k in ik)
             row_has_steam = any(k in self.steam_installed for k in ik)
             if row_has_own and row_has_steam:
@@ -300,27 +329,36 @@ class SetupScreen(QWidget):
                 src_text, src_color = "OWN", C_TREY
             else:
                 src_text, src_color = "STEAM", C_IW
-            row.addWidget(_badge(src_text, src_color, 72, h=26, size=10, radius=4))
-            row.addWidget(_badge(client.upper(), color, 160))
+            row.addWidget(_badge(src_text, src_color, 58, h=24, size=9, radius=4))
+            row.addWidget(_badge(client.upper(), color, 170, h=28, size=9))
+            outer.addLayout(row)
 
-            cw = QWidget(); cw.setLayout(row)
-            self._ll.insertWidget(self._ll.count() - 1, cw)
+            # Options sit under the row, indented past the checkbox column
+            opts = QVBoxLayout(); opts.setContentsMargins(CHECKS_W + 10, 0, 0, 0); opts.setSpacing(4)
+            self._row_options(opts, keys, all_installed)
+            outer.addLayout(opts)
+            self._add_row(gd, cw)
 
     def _row_options(self, lay, keys, all_installed):
-        """Per-game install choices shown under the name while that mode is ticked (replaces pop-ups)."""
+        """Per-game install choices shown under the row while that mode is ticked (replaces pop-ups)."""
         def _bind(key, w):
             cb = self._checks.get(key, (None,))[0]
             w.setVisible(bool(cb and cb.isChecked()))
             if cb: cb.toggled.connect(w.setVisible)
 
         def _opt_box():
-            w = QWidget(); v = QVBoxLayout(w); v.setContentsMargins(0, 4, 0, 0); v.setSpacing(4)
+            w = QWidget(); v = QVBoxLayout(w); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(4)
             return w, v
 
         if "cod4mp" in keys and "cod4mp" in all_installed:
+            notes = {
+                "cod4r": "Native controller support, server browser, bots and quality-of-life fixes. Built for handhelds.",
+                "cod4x": "Established community client. No native controller support, so you'll set up controls manually.",
+            }
             w, v = _opt_box()
             h = QHBoxLayout(); h.setSpacing(6)
-            h.addWidget(_lbl("Multiplayer client:", 11, C_DIM, wrap=False))
+            h.addWidget(_lbl("MP client:", 11, C_DIM, wrap=False))
+            note = _lbl(notes[self._cod4_choice], 10, "#777788", align=Qt.AlignLeft)
             grp = QButtonGroup(w)
             for val, text in (("cod4r", "CoD4R (recommended)"), ("cod4x", "CoD4x")):
                 b = QPushButton(text); b.setCheckable(True); b.setFont(font(10, True)); b.setFixedHeight(34)
@@ -328,11 +366,9 @@ class SetupScreen(QWidget):
                     f"QPushButton{{background:{C_DARK_BTN};color:#AAA;border:none;border-radius:6px;padding:0 12px;}}"
                     f"QPushButton:checked{{background:{C_IW};color:#FFF;}}")
                 grp.addButton(b); b.setChecked(self._cod4_choice == val)
-                b.toggled.connect(lambda on, v_=val: on and setattr(self, "_cod4_choice", v_))
+                b.toggled.connect(lambda on, v_=val: on and (setattr(self, "_cod4_choice", v_), note.setText(notes[v_])))
                 h.addWidget(b)
-            h.addStretch(); v.addLayout(h)
-            v.addWidget(_lbl("CoD4R has native controller support. CoD4x needs manual input setup.",
-                             10, "#666677", align=Qt.AlignLeft))
+            h.addStretch(); v.addLayout(h); v.addWidget(note)
             lay.addWidget(w); _bind("cod4mp", w)
 
         if "iw4mp" in keys and "iw4mp" in all_installed:
@@ -341,9 +377,9 @@ class SetupScreen(QWidget):
             idir = all_installed["iw4mp"].get("install_dir", "")
             self._iw4x_dlc_present = bool(idir) and is_iw4x_dlc_installed(idir)
             if self._iw4x_dlc_present:
-                v.addWidget(_lbl("Free IW4x DLC maps already installed.", 10, "#666677", align=Qt.AlignLeft))
+                v.addWidget(_lbl("Free IW4x DLC maps already installed.", 10, "#777788", align=Qt.AlignLeft))
             else:
-                self._iw4x_dlc_cb = QCheckBox("Install free DLC maps (~3 GB, recommended for most servers)")
+                self._iw4x_dlc_cb = QCheckBox("Free DLC maps (~3 GB, recommended)")
                 self._iw4x_dlc_cb.setFont(font(11)); self._iw4x_dlc_cb.setChecked(True)
                 self._iw4x_dlc_cb.setStyleSheet("color:#CCC;background:transparent;")
                 v.addWidget(self._iw4x_dlc_cb)
@@ -354,23 +390,22 @@ class SetupScreen(QWidget):
             bdir = all_installed["t6zm"].get("install_dir", "")
             if bdir and has_bo2_zm_dlc(bdir):
                 w, v = _opt_box()
-                self._zd_cb = QCheckBox("Zombies Declassified: 10 classic Zombies maps (~9 GB)")
+                self._zd_cb = QCheckBox("Zombies Declassified: 10 classic maps (~9 GB)")
                 self._zd_cb.setFont(font(11)); self._zd_cb.setChecked(False)
                 self._zd_cb.setStyleSheet("color:#CCC;background:transparent;")
                 v.addWidget(self._zd_cb)
                 lay.addWidget(w); _bind("t6zm", w)
 
     def _add_mw3_free_row(self, gd, checks_w):
-        row = QHBoxLayout(); row.setSpacing(12); row.setContentsMargins(8, 8, 8, 8)
+        cw = QWidget()
+        row = QHBoxLayout(cw); row.setSpacing(10); row.setContentsMargins(6, 6, 6, 6)
         btn = _btn("Get Free", C_BLUE_BTN, size=11, h=40); btn.setFixedWidth(checks_w)
         btn.clicked.connect(self._add_mw3_ds)
         row.addWidget(btn)
-        name_lbl = _lbl(gd["base"], 14, "#555566", align=Qt.AlignLeft, wrap=False)
-        row.addWidget(name_lbl, stretch=1)
+        row.addWidget(_lbl(self._short_name(gd["base"]), 13, "#555566", align=Qt.AlignLeft, wrap=False), stretch=1)
         color = C_IW if gd["dev"] == "iw" else C_TREY
-        row.addWidget(_badge(_active_client(gd).upper(), color, 160))
-        cw = QWidget(); cw.setLayout(row)
-        self._ll.insertWidget(self._ll.count() - 1, cw)
+        row.addWidget(_badge(_active_client(gd).upper(), color, 170, h=28, size=9))
+        self._add_row(gd, cw)
 
     def _add_mw3_ds(self):
         from depot_downgrade import open_steam_install
@@ -1548,6 +1583,7 @@ class _BaseInstallScreen(QWidget):
                         on_progress=lambda m: self._s.log.emit(f"  {m}"),
                     )
                     if ok:
+                        cfg.mark_game_setup(_sp_key, "sp_mod", source="steam")
                         _lo = build_sp_launch_option(_sp_key)
                         _appid = get_sp_mod_appid(_sp_key)
                         if _lo and _appid:
@@ -1789,7 +1825,8 @@ class _BaseInstallScreen(QWidget):
         for key, gd, game in self.selected:
             c = KEY_CLIENT.get(key, "")
             source = "own" if key in own_selected else "steam"
-            if c == "steam" and not cfg.is_game_setup_for_source(key, source):
+            # sp_mod keys land here when the AlterWare exe step failed or the game is non-Steam
+            if c in ("steam", "sp_mod") and not cfg.is_game_setup_for_source(key, source):
                 cfg.mark_game_setup(key, "steam", source=source)
                 self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
 
