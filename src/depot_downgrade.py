@@ -12,6 +12,7 @@ Only applies to Steam-sourced installs. Own-source installs are
 unaffected since users provide their own files.
 """
 
+import json
 import os
 import re
 import shutil
@@ -266,12 +267,100 @@ def is_pe_64bit(exe_path: str) -> bool | None:
         return None
 
 
+# --- Downgrade receipt
+#
+# After a merge, deckops_depot.json in the game folder records every file the
+# old depots put there and its size. That is the single source of truth for
+# "already downgraded" for all games: it survives a DeckOps config reset, and
+# a Steam update/verify shows up as missing or resized files.
+# Only data files are compared: mod clients and the DeckOps wrapper overwrite
+# exes/dlls (iw5mp.exe, iw5mp_server.exe, ...), which must not count as an upgrade.
+
+RECEIPT_NAME = "deckops_depot.json"
+_UNCHECKED_EXTS = (".exe", ".dll", ".asi", ".ini", ".cfg", ".txt", ".json", ".log")
+
+
+def _receipt_path(install_dir: str) -> str:
+    return os.path.join(install_dir, RECEIPT_NAME)
+
+
+def _write_receipt(game_id: str, install_dir: str, merged: dict):
+    from datetime import datetime
+    path = _receipt_path(install_dir)
+    data = {}
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        pass
+    if data.get("game_id") != game_id:
+        data = {"game_id": game_id, "files": {}}
+    data.setdefault("files", {}).update(merged)
+    data["manifests"] = {str(d["depot"]): d["manifest"] for d in GAME_CONFIGS[game_id]["depots"]}
+    data["updated_at"] = datetime.now().isoformat()
+    try:
+        with open(path, "w") as f:
+            json.dump(data, f, indent=1)
+        _log.info("Wrote downgrade receipt for %s (%d files)", game_id, len(data["files"]))
+    except OSError as ex:
+        _log.warning("Could not write downgrade receipt %s: %s", path, ex)
+
+
+def clear_receipt(install_dir: str):
+    try:
+        os.remove(_receipt_path(install_dir))
+    except FileNotFoundError:
+        pass
+    except OSError as ex:
+        _log.warning("Could not remove downgrade receipt: %s", ex)
+
+
+def _receipt_status(game_id: str, install_dir: str):
+    """True = receipt matches the files on disk, False = files changed since
+    (Steam update/verify), None = no usable receipt (install predates receipts)."""
+    try:
+        with open(_receipt_path(install_dir)) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as ex:
+        _log.warning("Unreadable downgrade receipt in %s: %s", install_dir, ex)
+        return None
+    if data.get("game_id") != game_id or not data.get("files"):
+        return None
+    files = {rf: sz for rf, sz in data["files"].items() if not rf.lower().endswith(_UNCHECKED_EXTS)}
+    if not files:
+        files = data["files"]
+    for rf, size in files.items():
+        p = os.path.join(install_dir, rf)
+        try:
+            if os.path.getsize(p) != size:
+                _log.info("%s receipt mismatch: %s size changed", game_id, rf)
+                return False
+        except OSError:
+            _log.info("%s receipt mismatch: %s missing", game_id, rf)
+            return False
+    return True
+
+
 def is_downgrade_needed(game_id: str, install_dir: str) -> bool:
     """
-    Check whether a game install needs older depot files.
-    Always-64bit games (Ghosts, AW) use config tracking since PE checks
-    are meaningless. MW2/MW3 use marker file or PE header detection.
+    Check whether a game install needs older depot files. The receipt written
+    by merge_depots decides for every game; installs from before receipts
+    fall back to the old per-game checks.
     """
+    if game_id not in GAME_CONFIGS:
+        return False
+    status = _receipt_status(game_id, install_dir)
+    if status is not None:
+        _log.debug("%s receipt check -> %s", GAME_CONFIGS[game_id]["name"],
+                   "downgraded" if status else "files changed, downgrade needed")
+        return not status
+    return _legacy_downgrade_needed(game_id, install_dir)
+
+
+def _legacy_downgrade_needed(game_id: str, install_dir: str) -> bool:
+    """Pre-receipt detection: config flag (Ghosts/AW), marker size (MW3), PE header (MW2)."""
     cfg = GAME_CONFIGS.get(game_id)
     if not cfg:
         return False
@@ -818,7 +907,7 @@ def _merge_tree(src: str, dst: str, prog):
 
     total = len(rel_files)
     if total == 0:
-        return
+        return {}
 
     deleted = 0
     for i, rf in enumerate(rel_files, 1):
@@ -840,6 +929,14 @@ def _merge_tree(src: str, dst: str, prog):
         shutil.move(src_file, dst_file)
         if i % 25 == 0 or i == total:
             prog(f"Moving files into place... {i}/{total}")
+
+    merged = {}
+    for rf in rel_files:
+        try:
+            merged[rf.replace(os.sep, "/")] = os.path.getsize(os.path.join(dst, rf))
+        except OSError:
+            pass
+    return merged
 
 
 def merge_depots(game_id: str, staging_dir: str, install_dir: str,
@@ -865,18 +962,23 @@ def merge_depots(game_id: str, staging_dir: str, install_dir: str,
         for d in depot_ids
     )
 
+    merged = {}
     if has_depot_subdirs:
         for depot_id in depot_ids:
             depot_path = os.path.join(staging_dir, f"depot_{depot_id}")
             if not os.path.isdir(depot_path):
                 continue
             prog(f"Merging depot {depot_id} into {cfg['name']} install...")
-            _merge_tree(depot_path, install_dir, prog)
+            merged.update(_merge_tree(depot_path, install_dir, prog))
             prog(f"Depot {depot_id} merged.")
     else:
         prog(f"Merging 32-bit files into {cfg['name']} install...")
-        _merge_tree(staging_dir, install_dir, prog)
+        merged.update(_merge_tree(staging_dir, install_dir, prog))
         prog("Merge complete.")
+
+    # Record the downgrade before any cleanup that could fail
+    if merged:
+        _write_receipt(game_id, install_dir, merged)
 
     _cleanup_dd_artifacts(install_dir)
 
@@ -887,17 +989,13 @@ def merge_depots(game_id: str, staging_dir: str, install_dir: str,
     except Exception as ex:
         prog(f"Could not remove staging dir: {ex}")
 
-    # Post-merge verification (only for games with marker detection)
-    if cfg.get("marker_file") and is_downgrade_needed(game_id, install_dir):
+    # Post-merge sanity check against the real file (receipt would always pass here)
+    if cfg.get("marker_file") and _legacy_downgrade_needed(game_id, install_dir):
+        clear_receipt(install_dir)
         prog(
             f"WARNING: {cfg['name']} still appears to be 64-bit after merge. "
             f"Try verifying game files in Steam, then run DeckOps again."
         )
         return False
-
-    if cfg.get("always_64bit"):
-        from config import mark_depot_patched
-        mark_depot_patched(game_id)
-        prog(f"{cfg['name']} marked as patched in config.")
 
     return True

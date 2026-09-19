@@ -38,7 +38,7 @@ DEFAULTS = {
     "steam_root": None,
     "setup_games": {},           # key: game key, value: { "client": ..., "source": "steam"|"own", "setup_at": timestamp,
                                  #   "lan_wrapper_path": path to -lan bash script for offline launcher (all sources) }
-    "depot_patched": {},         # key: game_id (e.g. "iw6", "s1"), value: ISO timestamp
+    "depot_patched": {},         # legacy (read-only): pre-receipt Ghosts/AW downgrade flag; receipts now live in the game folder
     "game_source": None,         # "steam" or "own"
     "music_enabled": True,       # background music on/off
     "music_volume":  0.4,        # 0.0 to 1.0
@@ -456,12 +456,6 @@ def is_game_setup_for_source(game_key: str, source: str) -> bool:
 def get_setup_games() -> dict:
     """Returns the full setup_games dict."""
     return load().get("setup_games", {})
-
-
-def mark_depot_patched(game_id: str):
-    config = load()
-    config.setdefault("depot_patched", {})[game_id] = datetime.now().isoformat()
-    save(config)
 
 
 def is_depot_patched(game_id: str) -> bool:
