@@ -48,7 +48,7 @@ class WelcomeScreen(QWidget):
         self.results.setTextFormat(Qt.RichText)
         self.notice = _lbl(
             "Before you continue:\n"
-            "•  Downgrading a game (MW2, MW3, Ghosts, AW) can take a very long time and needs "
+            "•  Downgrading a game (MW3, Ghosts, AW) can take a very long time and needs "
             "at least that game's full size free on the drive during the install.\n"
             "•  On a handheld, plug it in. In Desktop Mode, click the battery icon and turn on "
             "\"Manually block sleep and screen locking\" so it doesn't fall asleep mid-install.\n"
@@ -1290,7 +1290,6 @@ class _BaseInstallScreen(QWidget):
 
         _DG_KEY_MAP = {
             "iw5": ("iw5mp", "iw5mp_ds", "iw5sp"),
-            "iw4": ("iw4mp", "iw4sp"),
             "iw6": ("iw6mp", "iw6sp"),
             "s1":  ("s1mp", "s1sp"),
         }
@@ -1357,7 +1356,7 @@ class _BaseInstallScreen(QWidget):
 
                 _dg_jobs.append(("iw5", _gcfg["name"], _dir, _depots, _cmds))
             else:
-                # MW2, Ghosts, AW: PE/config check + appmanifest DLC detection
+                # Ghosts, AW: PE/config check + appmanifest DLC detection
                 if not _dg_needed(_dg_id, _dir):
                     self._s.log.emit(f"  {_gcfg['name']} depot files are up to date, skipped.")
                     continue
@@ -1562,10 +1561,10 @@ class _BaseInstallScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"  CompatToolMapping for Steam appids skipped: {ex}")
 
-        # --- SP mod install (MW2 SP / MW3 SP community exes)
-        # Downloads AlterWare community exes that bypass Steam CEG DRM.
+        # --- SP mod install (MW3 SP community exe)
+        # Downloads AlterWare community exe that bypasses Steam CEG DRM.
         # Only triggers when the user selected the SP key specifically.
-        _sp_mod_keys = [k for k in selected_keys if k in ("iw4sp", "iw5sp") and k not in own_selected]
+        _sp_mod_keys = [k for k in selected_keys if k == "iw5sp" and k not in own_selected]
         if _sp_mod_keys:
             from sp_mod import install_sp_mod, build_sp_launch_option, get_sp_mod_appid
             from wrapper import set_launch_options
@@ -1574,7 +1573,7 @@ class _BaseInstallScreen(QWidget):
                 if not _sp_game or not _sp_game.get("install_dir"):
                     continue
                 _sp_dir = _sp_game["install_dir"]
-                _sp_name = "MW2 SP" if _sp_key == "iw4sp" else "MW3 SP"
+                _sp_name = "MW3 SP"
                 self._s.progress.emit(16, f"Installing {_sp_name} community exe...")
                 self._s.log.emit(f"Installing {_sp_name} community exe...")
                 try:

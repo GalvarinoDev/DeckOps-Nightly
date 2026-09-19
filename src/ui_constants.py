@@ -130,7 +130,7 @@ ALL_GAMES = [
     # ── Row 1: Infinity Ward / Sledgehammer ──────────────────────────────
     {"base":"Call of Duty 4: Modern Warfare","keys":["cod4mp","cod4sp"],"appid":7940,"dev":"iw","client":"cod4r + iw3sp",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Modern Warfare 2","keys":["iw4mp","iw4sp"],"appid":10190,"dev":"iw","client":"iw4x + alterware",
+    {"base":"Call of Duty: Modern Warfare 2","keys":["iw4mp","iw4sp"],"appid":10190,"dev":"iw","client":"iw4x",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Modern Warfare 3","keys":["iw5mp","iw5sp","iw5mp_ds"],"appid":42690,"dev":"iw","client":"plutonium + alterware",
      "lcd_keys":["iw5mp","iw5sp","iw5mp_ds"],"lcd_client":"plutonium + alterware","lcd_appid":42680,
@@ -177,7 +177,7 @@ KEY_CLIENT = {
     "cod4mp": "cod4r",
     "cod4sp": "iw3sp",
     "iw4mp":  "iw4x",
-    "iw4sp":  "sp_mod",
+    "iw4sp":  "steam",
     "iw5mp":    "plutonium",
     "iw5mp_ds": "plutonium",
     "iw5sp":  "sp_mod",

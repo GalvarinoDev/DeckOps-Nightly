@@ -19,7 +19,7 @@
 | Game | Mode | Client | Online | Aim Assist | Gyro |
 |---|---|---|---|---|---|
 | Modern Warfare | SP/MP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) + [CoD4R](https://iw3x.com/) | ✅ | ✅ | ✅ |
-| Modern Warfare 2 | MP | [iw4x](https://iw4x.io) | ✅ | ✅ | ✅ |
+| Modern Warfare 2 | SP/MP | [iw4x](https://iw4x.io) | ✅ | ✅ | ✅ |
 | Modern Warfare 3 | MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
 | Ghosts | SP/MP | [IW6-Mod](https://github.com/alterware/client-files) | ✅ | ✅ | ✅ |
 | Advanced Warfare | SP/MP | [S1-Mod](https://github.com/alterware/client-files) | ✅ | ✅ | ✅ |
@@ -68,7 +68,6 @@ If Steam asks about cloud saves, choose **Keep Local**. If asked about safe mode
 
 - **MW1.** Use the main entry for SP and the DeckOps shortcut for MP. Select the "Player" profile on first SP launch. During install, DeckOps opens the CoD4R launcher. Wait for it to finish downloading and updating. Close the launcher when it is done, then press Continue in DeckOps.
 - **MW1 MP (Non-Steam).** Launch MW1 MP twice on first install. The first launch fails. Relaunch and it works.
-- **MW2 MP.** The first install takes a while if IW4x detects a downgrade is needed.
 - **MW3 MP.** If the downgrader fails with a depot access error, add the free MW3 Dedicated Server tool to your Steam account. Paste `steam://install/42750` in a browser or Steam's URL bar, then run the downgrader again.
 - **LCD Steam Deck.** Plutonium games may take a moment to launch during shader cache cleanup. Skip Vulkan shader compilation if prompted. Quit from the in-game menu for a faster exit.
 

@@ -1,17 +1,16 @@
 """
-sp_mod.py - Community SP exe installer for MW2 and MW3
+sp_mod.py - Community SP exe installer for MW3
 
 Downloads community SP client files from the AlterWare CDN
-(cdn.alterware.ovh). The 32-bit SP exes from DepotDownloader lack
-Steam CEG per-account personalization, causing them to silently exit
-on DRM check. AlterWare's community exes bypass this:
+(cdn.alterware.ovh). The 32-bit SP exe from DepotDownloader lacks
+Steam CEG per-account personalization, causing it to silently exit
+on DRM check. AlterWare's community exe bypasses this:
 
-  MW2: iw4x-sp.exe + data/iw4sp.exe
   MW3: iw5-mod.exe + iw5mp_server.exe + raw/scripts/sp/_cp.gsc
 
-These exes do NOT use DLL injection -- they are the host process
-and load original game code into themselves. Safe alongside
-Plutonium/IW4x (separate processes, never simultaneous).
+The exe does NOT use DLL injection -- it is the host process
+and loads original game code into itself. Safe alongside
+Plutonium (separate process, never simultaneous).
 """
 
 import os
@@ -23,16 +22,6 @@ _log = get_logger(__name__)
 _CDN_BASE = "https://cdn.alterware.ovh"
 
 _SP_MOD_CONFIG = {
-    "iw4sp": {
-        "cdn_files": [
-            ("iw4/iw4x-sp.exe", "iw4x-sp.exe"),
-            ("iw4/data/iw4sp.exe", "data/iw4sp.exe"),
-        ],
-        "client_exe": "iw4x-sp.exe",
-        "original_exe": "iw4sp.exe",
-        "appid": "10180",
-        "mode_flag": "",
-    },
     "iw5sp": {
         "cdn_files": [
             ("iw5/iw5-mod.exe", "iw5-mod.exe"),

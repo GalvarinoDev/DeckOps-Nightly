@@ -1,8 +1,8 @@
 """
 depot_downgrade.py - Unified 32-bit depot downgrade helper
 
-Activision pushed 64-bit updates for MW2, MW3, Ghosts, and Advanced
-Warfare that break community client compatibility (Plutonium, IW4x,
+Activision pushed 64-bit updates for MW3, Ghosts, and Advanced
+Warfare that break community client compatibility (Plutonium,
 AlterWare). This module detects 64-bit installs, assists the user
 through either an automated QR-code login flow (via DepotDownloader)
 or a manual Steam console paste flow, and merges the 32-bit depot
@@ -29,42 +29,11 @@ _log = get_logger(__name__)
 
 # Each game config defines the depots needed for a 32-bit downgrade.
 # Depot/manifest IDs from Josu-A's depot reference gists:
-#   MW2:    https://gist.github.com/Josu-A/6884449d33a517d02e9cfb088cbd883d
 #   MW3:    https://gist.github.com/Josu-A/b3698ee46b66225401a5583044f5789a
 #   Ghosts: https://gist.github.com/Josu-A/f5d57f82c6c11dd3e6cef51a5b750460
 #   AW:     https://gist.github.com/Josu-A/8e14b4993715aef6a272488a2e738bbd
 
 GAME_CONFIGS = {
-    "iw4": {
-        "name": "Modern Warfare 2",
-        "app_id": 10180,
-        "depots": (
-            {"depot": 10182, "manifest": "4063260329988186194"},
-            {"depot": 10183, "manifest": "8707803059832053468"},
-            {"depot": 10184, "manifest": "908433931108303658", "app": 10190},
-        ),
-        "depot_ids": (10182, 10183, 10184),
-        "depot_cmds": (
-            "download_depot 10180 10182 4063260329988186194",
-            "download_depot 10180 10183 8707803059832053468",
-            "download_depot 10190 10184 908433931108303658",
-        ),
-        "detection_exe": "iw4sp.exe",
-        "marker_file": None,
-        "marker_threshold": None,
-        "dlc": {
-            "stimulus": {
-                "name": "Stimulus Package",
-                "app": 10190, "depot": 10195,
-                "manifest": "4404426848645331640",
-            },
-            "resurgence": {
-                "name": "Resurgence Package",
-                "app": 10190, "depot": 10196,
-                "manifest": "1027296475802215551",
-            },
-        },
-    },
     "iw5": {
         "name": "Modern Warfare 3",
         "app_id": 42680,
