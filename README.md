@@ -18,7 +18,7 @@
 
 | Game | Mode | Client | Online | Aim Assist | Gyro |
 |---|---|---|---|---|---|
-| Modern Warfare | SP/MP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) + [CoD4R](https://github.com/Divity) | ✅ | ✅ | ✅ |
+| Modern Warfare | SP/MP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) + [CoD4R](https://iw3x.com/) | ✅ | ✅ | ✅ |
 | Modern Warfare 2 | MP | [iw4x](https://iw4x.io) | ✅ | ✅ | ✅ |
 | Modern Warfare 3 | MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
 | Ghosts | SP/MP | [IW6-Mod](https://github.com/alterware/client-files) | ✅ | ✅ | ✅ |
@@ -112,7 +112,7 @@ https://discord.gg/bkSQeq5Azk
 
 DeckOps is an installer. This project would not exist without years of foundational work from these teams:
 
-**[CoD4R](https://github.com/Divity)** - MW1 MP client (Call of Duty 4: Revived) by [k/divity](https://github.com/Divity). Native controller support, aim assist, server browser, and bot support. [Discord](https://discord.com/invite/uWAuFzru34) | 💰 [Ko-fi](https://ko-fi.com/divity)
+**[CoD4R](https://iw3x.com/)** - MW1 MP client (Call of Duty 4: Revived) by [k/divity](https://github.com/Divity). Native controller support, aim assist, server browser, and bot support. [Website](https://iw3x.com/) | [Discord](https://discord.com/invite/uWAuFzru34) | 💰 [Ko-fi](https://ko-fi.com/divity)
 
 **[CoD4x](https://cod4x.ovh)** - MW1 MP alternative client. [GitHub](https://github.com/callofduty4x)
 
