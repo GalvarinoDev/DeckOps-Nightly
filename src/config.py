@@ -38,6 +38,7 @@ DEFAULTS = {
     "steam_root": None,
     "setup_games": {},           # key: game key, value: { "client": ..., "source": "steam"|"own", "setup_at": timestamp,
                                  #   "lan_wrapper_path": path to -lan bash script for offline launcher (all sources) }
+    "depot_patched": {},         # key: game_id (e.g. "iw6", "s1"), value: ISO timestamp
     "game_source": None,         # "steam" or "own"
     "music_enabled": True,       # background music on/off
     "music_volume":  0.4,        # 0.0 to 1.0
@@ -455,6 +456,24 @@ def is_game_setup_for_source(game_key: str, source: str) -> bool:
 def get_setup_games() -> dict:
     """Returns the full setup_games dict."""
     return load().get("setup_games", {})
+
+
+def mark_depot_patched(game_id: str):
+    config = load()
+    config.setdefault("depot_patched", {})[game_id] = datetime.now().isoformat()
+    save(config)
+
+
+def is_depot_patched(game_id: str) -> bool:
+    return game_id in load().get("depot_patched", {})
+
+
+def clear_depot_patched(game_id: str):
+    config = load()
+    dp = config.get("depot_patched", {})
+    if game_id in dp:
+        del dp[game_id]
+        save(config)
 
 
 def get_cod4mp_profile_type(default: str = "other") -> str:

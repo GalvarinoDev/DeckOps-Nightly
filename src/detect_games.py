@@ -90,34 +90,35 @@ GAMES = {
     #     "exe": "BlackOps3.exe",
     #     "protocol": "t7x",
     # },
-    # "iw6mp": {
-    #     "name": "Call of Duty: Ghosts - Multiplayer",
-    #     "order": 8,
-    #     "appid": "209170",
-    #     "exe": "iw6mp64_ship.exe",
-    #     "protocol": "alterware",
-    # },
-    # "iw6sp": {
-    #     "name": "Call of Duty: Ghosts - Singleplayer",
-    #     "order": 8,
-    #     "appid": "209160",
-    #     "exe": "iw6sp64_ship.exe",
-    #     "protocol": "alterware",
-    # },
-    # "s1mp": {
-    #     "name": "Call of Duty: Advanced Warfare - Multiplayer",
-    #     "order": 9,
-    #     "appid": "209660",
-    #     "exe": "s1_mp64_ship.exe",
-    #     "protocol": "alterware",
-    # },
-    # "s1sp": {
-    #     "name": "Call of Duty: Advanced Warfare - Singleplayer",
-    #     "order": 9,
-    #     "appid": "209650",
-    #     "exe": "s1_sp64_ship.exe",
-    #     "protocol": "alterware",
-    # },
+    "iw6mp": {
+        "name": "Call of Duty: Ghosts - Multiplayer",
+        "order": 8,
+        "appid": "209170",
+        "exe": "iw6mp64_ship.exe",
+        "protocol": "alterware",
+    },
+    "iw6sp": {
+        "name": "Call of Duty: Ghosts - Singleplayer",
+        "order": 8,
+        "appid": "209160",
+        "exe": "iw6sp64_ship.exe",
+        "exe_alt": "iw6mp64_ship.exe",
+        "protocol": "alterware",
+    },
+    "s1mp": {
+        "name": "Call of Duty: Advanced Warfare - Multiplayer",
+        "order": 9,
+        "appid": "209660",
+        "exe": "s1_mp64_ship.exe",
+        "protocol": "alterware",
+    },
+    "s1sp": {
+        "name": "Call of Duty: Advanced Warfare - Singleplayer",
+        "order": 9,
+        "appid": "209650",
+        "exe": "s1_sp64_ship.exe",
+        "protocol": "alterware",
+    },
     "iw5mp": {
         "name": "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
         "order": 5,
@@ -287,6 +288,9 @@ def find_installed_games(library_folders, steam_root=None):
             install_dir = os.path.join(steamapps_dir, "common", install_name)
             exe_path    = os.path.join(install_dir, exe)
 
+            if not os.path.exists(exe_path) and meta.get("exe_alt"):
+                exe_path = os.path.join(install_dir, meta["exe_alt"])
+
             if os.path.exists(install_dir) and os.path.exists(exe_path):
                 installed[key] = {
                     **meta,
@@ -327,9 +331,8 @@ FOLDER_TO_KEYS = {
     "call of duty black ops":           ["t5sp",   "t5mp"],
     "call of duty black ops ii":        ["t6sp",   "t6mp",  "t6zm"],
     "call of duty black ops iii":       ["t7"],
-    # ── DISABLED 2026-09: AlterWare Ghosts/AW broken, dev discontinuing Dec 2026 ──
-    # "call of duty ghosts":              ["iw6sp",  "iw6mp"],
-    # "call of duty advanced warfare":    ["s1sp",   "s1mp"],
+    "call of duty ghosts":              ["iw6sp",  "iw6mp"],
+    "call of duty advanced warfare":    ["s1sp",   "s1mp"],
 }
 
 # Keyword rules checked in order when exact match fails.
@@ -350,11 +353,10 @@ _KEYWORD_RULES = [
     (re.compile(rf'{_WB}(black\s*ops\s*(ii|2)|bo2|t6){_WE}', re.IGNORECASE), ["t6sp", "t6mp", "t6zm"]),
     # BO1
     (re.compile(rf'{_WB}(black\s*ops|bo1|t5){_WE}', re.IGNORECASE),          ["t5sp", "t5mp"]),
-    # ── DISABLED 2026-09: AlterWare Ghosts/AW broken, dev discontinuing Dec 2026 ──
-    # # AW - check before MW3/MW2 since "advanced warfare" is unambiguous
-    # (re.compile(rf'{_WB}(advanced\s*warfare|aw|s1){_WE}', re.IGNORECASE),     ["s1sp", "s1mp"]),
-    # # Ghosts
-    # (re.compile(rf'{_WB}(ghosts|iw6){_WE}', re.IGNORECASE),                   ["iw6sp", "iw6mp"]),
+    # AW - check before MW3/MW2 since "advanced warfare" is unambiguous
+    (re.compile(rf'{_WB}(advanced\s*warfare|aw|s1){_WE}', re.IGNORECASE),     ["s1sp", "s1mp"]),
+    # Ghosts
+    (re.compile(rf'{_WB}(ghosts|iw6){_WE}', re.IGNORECASE),                   ["iw6sp", "iw6mp"]),
     # MW3 - check before MW2 so "modern warfare 3" doesn't fall through to MW2
     (re.compile(rf'{_WB}(modern\s*warfare\s*(3|iii)|mw3|iw5){_WE}', re.IGNORECASE), ["iw5sp", "iw5mp"]),
     # MW2
@@ -421,8 +423,8 @@ KEY_TO_SENTINEL = {
     "t7":     "bo3",
     # ── DISABLED 2026-09: AlterWare discontinuing Dec 2026 ──
     # "t7x":    "bo3",
-    # "iw6sp":  "ghosts", "iw6mp": "ghosts",
-    # "s1sp":   "aw",     "s1mp":  "aw",
+    "iw6sp":  "ghosts", "iw6mp": "ghosts",
+    "s1sp":   "aw",     "s1mp":  "aw",
 }
 
 

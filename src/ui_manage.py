@@ -466,7 +466,7 @@ class ManagementScreen(QWidget):
         via Steam and returns to DeckOps, showEvent rescans and the card
         picks up the normal Set Up flow.
         """
-        from iw5_downgrade import open_steam_install
+        from depot_downgrade import open_steam_install
         open_steam_install(42750)
         QMessageBox.information(
             self, gd["base"],
@@ -483,19 +483,29 @@ class ManagementScreen(QWidget):
         has_mods_support = any(KEY_CLIENT.get(k, "") in _MOD_CLIENTS for k in installed_keys)
         has_mod_client = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in installed_keys)
 
-        # IW5 downgrade option: shown for any Steam-sourced iw5mp/iw5mp_ds
-        # install.  Whether the downgrade is actually needed is checked on
-        # click, so users see the option even after a successful downgrade
-        # (in case Steam re-updates the game to 64-bit later).
-        has_iw5_dg = False
-        _iw5_keys = [k for k in installed_keys if k in ("iw5mp", "iw5mp_ds")]
-        if _iw5_keys:
-            setup_games = cfg.get_setup_games()
-            for k in _iw5_keys:
-                entry = setup_games.get(k, {})
-                if entry.get("source", "steam") == "steam":
-                    has_iw5_dg = True
-                    break
+        # Depot downgrade option: shown for any Steam-sourced game that
+        # can be downgraded (MW2, MW3, Ghosts, AW). Whether the downgrade
+        # is actually needed is checked on click.
+        _DG_KEY_MAP = {
+            "iw5": ("iw5mp", "iw5mp_ds", "iw5sp"),
+            "iw4": ("iw4mp", "iw4sp"),
+            "iw6": ("iw6mp", "iw6sp"),
+            "s1":  ("s1mp", "s1sp"),
+        }
+        _DG_LABELS = {"iw5": "Downgrade MW3", "iw4": "Downgrade MW2",
+                       "iw6": "Downgrade Ghosts", "s1": "Downgrade AW"}
+        has_depot_dg = None
+        for _dg_id, _dg_keys in _DG_KEY_MAP.items():
+            _matched = [k for k in installed_keys if k in _dg_keys]
+            if _matched:
+                setup_games = cfg.get_setup_games()
+                for k in _matched:
+                    entry = setup_games.get(k, {})
+                    if entry.get("source", "steam") == "steam":
+                        has_depot_dg = _dg_id
+                        break
+            if has_depot_dg:
+                break
 
         # Zombies Declassified: available when t6zm is installed via Plutonium
         # and user has all BO2 Zombies DLC
@@ -522,8 +532,8 @@ class ManagementScreen(QWidget):
         if has_mod_client:
             upd_btn = msg.addButton("Update", QMessageBox.AcceptRole)
         dg_btn = None
-        if has_iw5_dg:
-            dg_btn = msg.addButton("Downgrade MW3", QMessageBox.AcceptRole)
+        if has_depot_dg:
+            dg_btn = msg.addButton(_DG_LABELS[has_depot_dg], QMessageBox.AcceptRole)
         rei_btn = msg.addButton("Reinstall", QMessageBox.AcceptRole)
         msg.addButton("Cancel", QMessageBox.RejectRole)
         msg.exec_()
@@ -536,7 +546,7 @@ class ManagementScreen(QWidget):
         elif clicked == upd_btn:
             self._update(gd, installed_keys)
         elif clicked == dg_btn:
-            self._iw5_downgrade(gd, installed_keys)
+            self._depot_downgrade(has_depot_dg, gd, installed_keys)
         elif clicked == rei_btn:
             self._reinstall(gd)
 
@@ -657,38 +667,47 @@ class ManagementScreen(QWidget):
         # Route through the same path as "Set Up"
         self._setup(gd)
 
-    def _iw5_downgrade(self, gd, installed_keys):
-        """Downgrade MW3 from 64-bit to 32-bit and trigger Plutonium reinstall.
+    def _depot_downgrade(self, game_id, gd, installed_keys):
+        """Downgrade a game from 64-bit to 32-bit and trigger reinstall.
 
         Checks whether the downgrade is actually needed first; if the
         install is already 32-bit, informs the user and does nothing.
-        Otherwise unmarks iw5mp/iw5mp_ds setup state so the install flow
-        re-runs the depot downgrade gate and the Plutonium wrapper on
-        top of the freshly downgraded game data.
+        Otherwise unmarks the game's keys so the install flow re-runs
+        the depot downgrade gate.
         """
-        iw5_keys = [k for k in installed_keys if k in ("iw5mp", "iw5mp_ds")]
-        if not iw5_keys:
+        _DG_KEY_MAP = {
+            "iw5": ("iw5mp", "iw5mp_ds", "iw5sp"),
+            "iw4": ("iw4mp", "iw4sp"),
+            "iw6": ("iw6mp", "iw6sp"),
+            "s1":  ("s1mp", "s1sp"),
+        }
+        _dg_keys = [k for k in installed_keys if k in _DG_KEY_MAP.get(game_id, ())]
+        if not _dg_keys:
             return
 
-        from iw5_downgrade import is_iw5_downgrade_needed
+        from depot_downgrade import is_downgrade_needed, GAME_CONFIGS
+        gcfg = GAME_CONFIGS.get(game_id, {})
+        game_name = gcfg.get("name", gd["base"])
+
         idir = ""
-        for k in iw5_keys:
+        for k in _dg_keys:
             game = self.installed.get(k, {})
             if game.get("install_dir"):
                 idir = game["install_dir"]
                 break
 
-        if idir and not is_iw5_downgrade_needed(idir):
+        if idir and not is_downgrade_needed(game_id, idir):
             QMessageBox.information(
                 self, gd["base"],
-                "MW3 is already 32-bit, no downgrade is needed.\n"
-                "Plutonium should work with the current install.",
+                f"{game_name} already has the correct depot files.",
             )
             return
 
-        cfg.unmark_game_setup(iw5_keys)
+        if gcfg.get("always_64bit"):
+            cfg.clear_depot_patched(game_id)
+        cfg.unmark_game_setup(_dg_keys)
         self._status.setText(
-            "MW3 downgrade selected. Running depot download and Plutonium reinstall..."
+            f"{game_name} downgrade selected. Running depot download and reinstall..."
         )
         self._setup(gd)
 
