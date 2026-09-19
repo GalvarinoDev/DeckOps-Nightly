@@ -41,7 +41,10 @@ import subprocess
 import tarfile
 import tempfile
 
+from log import get_logger
 from net import download as _download
+
+_log = get_logger(__name__)
 
 # ── constants ─────────────────────────────────────────────────────────────────
 
@@ -50,6 +53,15 @@ _LAUNCHER_URL = (
     "https://github.com/alterware/alterware-launcher/releases/latest"
     "/download/alterware-launcher-x86_64-unknown-linux-gnu.tar.gz"
 )
+
+_CDN_BASE = "https://cdn.alterware.ovh"
+
+# Game exe replacements the launcher doesn't download on its own.
+# (cdn_path, local_filename) — downloaded after the launcher finishes.
+_CDN_GAME_EXES = {
+    "iw6mp": [("iw6/iw6mp64_ship.exe", "iw6mp64_ship.exe")],
+    "iw6sp": [("iw6/iw6mp64_ship.exe", "iw6mp64_ship.exe")],
+}
 
 METADATA_FILE = "deckops_alterware.json"
 
@@ -259,10 +271,15 @@ def install_alterware(game: dict, game_key: str,
             timeout=600,
             cwd=install_dir,
         )
+        stdout = result.stdout.decode("utf-8", errors="replace").strip()
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()
+        if stdout:
+            for line in stdout.splitlines():
+                _log.info("alterware-launcher: %s", line)
+        if stderr:
+            for line in stderr.splitlines():
+                _log.warning("alterware-launcher stderr: %s", line)
         if result.returncode != 0:
-            stderr = result.stderr.decode("utf-8", errors="replace").strip()
-            # Launcher may return non-zero but still succeed — check for
-            # the client exe before treating this as a hard failure.
             if not os.path.exists(os.path.join(install_dir, client_exe)):
                 shutil.rmtree(tmp_dir, ignore_errors=True)
                 raise RuntimeError(
@@ -275,6 +292,21 @@ def install_alterware(game: dict, game_key: str,
     except OSError as e:
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError(f"Failed to run AlterWare launcher: {e}")
+
+    # ── Step 3b: Download CDN game exe replacements ─────────────────────
+    cdn_files = _CDN_GAME_EXES.get(game_key, [])
+    for cdn_path, local_name in cdn_files:
+        dst = os.path.join(install_dir, local_name)
+        prog(75, f"Downloading {local_name} from CDN...")
+        try:
+            _download(
+                f"{_CDN_BASE}/{cdn_path}", dst,
+                label=local_name, timeout=120,
+            )
+            _log.info("CDN: placed %s", local_name)
+        except Exception as e:
+            _log.warning("CDN download failed for %s: %s", local_name, e)
+            prog(76, f"Warning: could not download {local_name}: {e}")
 
     prog(80, "Verifying client files...")
 

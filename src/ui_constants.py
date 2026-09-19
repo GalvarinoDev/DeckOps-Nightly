@@ -47,7 +47,7 @@ def _log_to_file(text: str):
 
 def _copy_log_to_clipboard(status_widget=None):
     """Read the last 200 lines of install.log and copy to clipboard."""
-    from iw5_downgrade import copy_to_clipboard
+    from depot_downgrade import copy_to_clipboard
     try:
         with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
@@ -149,11 +149,10 @@ ALL_GAMES = [
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Black Ops III","keys":["t7"],"appid":311210,"dev":"trey","client":"cleanops",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
-    # ── DISABLED 2026-09: AlterWare Ghosts/AW broken, dev discontinuing Dec 2026 ──
-    # {"base":"Call of Duty: Ghosts","keys":["iw6mp","iw6sp"],"appid":209160,"dev":"iw","client":"alterware",
-    #  "launch_note":"DeckOps creates Proton prefixes automatically."},
-    # {"base":"Call of Duty: Advanced Warfare","keys":["s1mp","s1sp"],"appid":209650,"dev":"iw","client":"alterware",
-    #  "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"Call of Duty: Ghosts","keys":["iw6mp","iw6sp"],"appid":209160,"dev":"iw","client":"alterware",
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"Call of Duty: Advanced Warfare","keys":["s1mp","s1sp"],"appid":209650,"dev":"iw","client":"alterware",
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
 ]
 
 def _active_keys(gd):
