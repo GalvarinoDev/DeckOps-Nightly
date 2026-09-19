@@ -485,15 +485,14 @@ class ManagementScreen(QWidget):
         has_mod_client = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in installed_keys)
 
         # Depot downgrade option: shown for any Steam-sourced game that
-        # can be downgraded (MW2, MW3, Ghosts, AW). Whether the downgrade
+        # can be downgraded (MW3, Ghosts, AW). Whether the downgrade
         # is actually needed is checked on click.
         _DG_KEY_MAP = {
             "iw5": ("iw5mp", "iw5mp_ds", "iw5sp"),
-            "iw4": ("iw4mp", "iw4sp"),
             "iw6": ("iw6mp", "iw6sp"),
             "s1":  ("s1mp", "s1sp"),
         }
-        _DG_LABELS = {"iw5": "Downgrade MW3", "iw4": "Downgrade MW2",
+        _DG_LABELS = {"iw5": "Downgrade MW3",
                        "iw6": "Downgrade Ghosts", "s1": "Downgrade AW"}
         has_depot_dg = None
         for _dg_id, _dg_keys in _DG_KEY_MAP.items():
@@ -678,7 +677,6 @@ class ManagementScreen(QWidget):
         """
         _DG_KEY_MAP = {
             "iw5": ("iw5mp", "iw5mp_ds", "iw5sp"),
-            "iw4": ("iw4mp", "iw4sp"),
             "iw6": ("iw6mp", "iw6sp"),
             "s1":  ("s1mp", "s1sp"),
         }
