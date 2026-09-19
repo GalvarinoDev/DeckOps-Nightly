@@ -21,6 +21,8 @@
 | Modern Warfare | SP/MP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) + [CoD4R](https://github.com/Divity) | ✅ | ✅ | ✅ |
 | Modern Warfare 2 | MP | [iw4x](https://iw4x.io) | ✅ | ✅ | ✅ |
 | Modern Warfare 3 | MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
+| Ghosts | SP/MP | [IW6-Mod](https://github.com/alterware/client-files) | ✅ | ✅ | ✅ |
+| Advanced Warfare | SP/MP | [S1-Mod](https://github.com/alterware/client-files) | ✅ | ✅ | ✅ |
 | World at War | SP/ZM/MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
 | Black Ops | SP/ZM/MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
 | Black Ops II | SP/ZM/MP | [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) + [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
@@ -29,6 +31,10 @@
 All titles use controller and gyro through Steam Input. You choose your gyro mode during setup (ADS, Hold, or Toggle). Aim assist is not available for MW2 SP and MW3 SP. CoD4x is available as an alternative MW1 MP client during setup.
 
 Supports Steam Deck (LCD and OLED), Steam Machine, Legion Go / Go S / Go 2, ROG Ally / Ally X, MSI Claw 8, and PC. SteamOS, Bazzite, and CachyOS supported.
+
+DeckOps can also install [Zombies Declassified](https://github.com/Logo-2K/zombies-declassified). This mod adds 10 Zombies maps to BO2 Zombies. You must have all the BO2 Zombies DLC.
+
+The AlterWare developer discontinued Ghosts and Advanced Warfare in September 2026. DeckOps will officially discontinue support for these games in January 2027.
 
 ---
 
@@ -114,7 +120,7 @@ DeckOps is an installer. This project would not exist without years of foundatio
 
 **[iw4x](https://iw4x.io)** - MW2 MP client. [GitHub](https://github.com/iw4x)
 
-**[AlterWare](https://github.com/alterware)** - Ghosts (IW6-Mod), Advanced Warfare (S1-Mod), and Black Ops III (T7x) clients. All three were discontinued by the developer in September 2026.
+**[AlterWare](https://github.com/alterware)** - Ghosts (IW6-Mod) and Advanced Warfare (S1-Mod) clients. Both were discontinued by the developer in September 2026. DeckOps will officially discontinue support in January 2027.
 
 **[CleanOps](https://github.com/notnightwolf/cleanopsT7)** - Black Ops III mod by [notnightwolf](https://github.com/notnightwolf).
 
