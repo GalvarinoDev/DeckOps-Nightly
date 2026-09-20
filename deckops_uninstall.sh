@@ -2499,6 +2499,37 @@ rm -f "$LCD_APPIDS_FILE" 2>/dev/null
 
 echo ""
 
+# ── Partial downloads ─────────────────────────────────────────────────────────
+# net.download() writes to <dest>.part and keeps the file on failure so a
+# retry can resume it. An abandoned install leaves those behind.
+info "Removing leftover partial downloads..."
+
+part_hits=0
+sweep_parts() {
+    local dir="$1"
+    [ -n "$dir" ] && [ -d "$dir" ] || return 0
+    local f
+    while IFS= read -r -d '' f; do
+        rm -f "$f" && part_hits=$((part_hits + 1))
+    done < <(find "$dir" -maxdepth 5 -type f -name '*.part' -print0 2>/dev/null)
+}
+
+if [ -n "$STEAM_ROOT" ]; then
+    for _appid in 7940 10190 202970 209160 209650 311210; do
+        sweep_parts "$(find_install_dir "$_appid" || true)"
+    done
+fi
+sweep_parts "$HOME/.local/share/deckops"
+sweep_parts "$HOME/Games/Heroic/deckops_plutonium"
+
+if [ "$part_hits" -eq 0 ]; then
+    skip "No partial downloads found."
+else
+    success "Removed $part_hits partial download(s)"
+fi
+
+echo ""
+
 # ── Decky plugin ──────────────────────────────────────────────────────────────
 info "Removing DeckOps Decky plugin..."
 

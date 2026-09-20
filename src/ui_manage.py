@@ -19,11 +19,13 @@ from PyQt5.QtWidgets import QGraphicsOpacityEffect
 
 from detect_games import find_steam_root, find_all_games
 import config as cfg
+import inhibit
 
 from ui_constants import (
     C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN, C_RED_BTN, C_BLUE_BTN,
-    font, _btn, _lbl, _hdiv, _title_block, _log_to_file, _copy_log_to_clipboard,
+    font, _btn, _lbl, _hdiv, _title_block, _log_to_file, _log_html, _copy_log_to_clipboard,
     _Sigs, _detached_open, _header_bar, _badge, _header_path, _ask_iw4x_dlc,
+    _show_preflight,
     ALL_GAMES, KEY_CLIENT, KEY_MODE_LABEL,
     _active_keys, _active_client, _active_appid,
     SP_IMAGE_URLS, IMG_RATIO, CARD_COLS, CARD_MAX_W,
@@ -212,9 +214,9 @@ class ManagementCard(QFrame):
         if not url:
             return
         try:
-            import urllib.request
+            from net import download
             dest = _header_path(appid)
-            urllib.request.urlretrieve(url, dest)
+            download(url, dest, timeout=10)
             self._img_sigs.log.emit(dest)
         except Exception:
             _log.debug("image load failed", exc_info=True)
@@ -445,6 +447,21 @@ class ManagementScreen(QWidget):
 
         selected = [(k, gd, self.installed[k]) for k in present_keys]
 
+        # Asked first so the DLC choice is part of the space check.
+        dlc = _ask_iw4x_dlc(self, selected)
+
+        import preflight
+        rows = [(k, KEY_CLIENT.get(k, ""), g.get("install_dir", ""))
+                for k, _gd, g in selected]
+        try:
+            checks = preflight.check(rows, iw4x_dlc=(dlc == "install"),
+                                     downgrade_keys=[k for k, _, _ in rows])
+        except Exception as ex:
+            _log_to_file(f"[ManagementScreen] preflight failed: {ex}")
+            checks = []
+        if not _show_preflight(self, checks):
+            return
+
         s = get_screen(self.stack, "InstallScreen")
         own_selected = {}
         steam_selected = []
@@ -457,7 +474,7 @@ class ManagementScreen(QWidget):
         s.steam_selected = steam_selected
         s.steam_root = root
         s._return_to_management = True
-        s.install_iw4x_dlc = _ask_iw4x_dlc(self, selected)
+        s.install_iw4x_dlc = dlc
         go_to(self.stack, "InstallScreen")
 
     def _add_mw3_ds(self, gd):
@@ -961,15 +978,18 @@ class SetupCompleteScreen(QWidget):
             11, C_DIM, align=Qt.AlignLeft))
 
         # ── MW1 / WaW shortcuts ───────────────────────────────────────────────
-        sl.addWidget(_hdiv())
-        sl.addWidget(_lbl("🎮  MW1 & WaW Multiplayer", 12, C_IW, bold=True, align=Qt.AlignLeft))
-        sl.addWidget(_lbl(
+        self._mw1waw_div = _hdiv()
+        self._mw1waw_hdr = _lbl("🎮  MW1 & WaW Multiplayer", 12, C_IW, bold=True, align=Qt.AlignLeft)
+        self._mw1waw_body = _lbl(
             "MW1 and WaW have separate DeckOps multiplayer shortcuts in your "
             "Steam library. Use the main game entry for singleplayer and the "
             "DeckOps shortcut for multiplayer.\n\n"
             "MW1 Singleplayer: on first launch, select the \"Player\" profile. "
             "This is the profile DeckOps created with your display settings.",
-            11, C_DIM, align=Qt.AlignLeft))
+            11, C_DIM, align=Qt.AlignLeft)
+        sl.addWidget(self._mw1waw_div)
+        sl.addWidget(self._mw1waw_hdr)
+        sl.addWidget(self._mw1waw_body)
 
         # ── First launch ─────────────────────────────────────────────────────
         sl.addWidget(_hdiv())
@@ -994,16 +1014,19 @@ class SetupCompleteScreen(QWidget):
         sl.addWidget(self._mw2own_body)
 
         # ── BO3 first launch ─────────────────────────────────────────────────
-        sl.addWidget(_hdiv())
-        sl.addWidget(_lbl("🎮  Black Ops III: First Launch", 12, C_TREY, bold=True, align=Qt.AlignLeft))
-        sl.addWidget(_lbl(
+        self._bo3_div = _hdiv()
+        self._bo3_hdr = _lbl("🎮  Black Ops III: First Launch", 12, C_TREY, bold=True, align=Qt.AlignLeft)
+        self._bo3_body = _lbl(
             "CleanOps finishes installing on its first run. Do the "
             "first launch in Desktop Mode:\n\n"
             "1. Launch Black Ops III (CleanOps). It will patch the game and "
             "may slow the Deck temporarily.\n"
             "2. If it does not launch, press the blue Stop button in Steam, "
             "then relaunch to verify it works.",
-            11, C_DIM, align=Qt.AlignLeft))
+            11, C_DIM, align=Qt.AlignLeft)
+        sl.addWidget(self._bo3_div)
+        sl.addWidget(self._bo3_hdr)
+        sl.addWidget(self._bo3_body)
 
         # ── LCD notes (LCD users only) ────────────────────────────────────────
         self._lcd_div = _hdiv()
@@ -1071,6 +1094,12 @@ class SetupCompleteScreen(QWidget):
         self._lcd_div.setVisible(is_lcd)
         self._lcd_hdr.setVisible(is_lcd)
         self._lcd_body.setVisible(is_lcd)
+        show_mw1waw = cfg.is_game_setup("cod4mp") or cfg.is_game_setup("t4mp")
+        for w in (self._mw1waw_div, self._mw1waw_hdr, self._mw1waw_body):
+            w.setVisible(show_mw1waw)
+        show_bo3 = cfg.is_game_setup("t7")
+        for w in (self._bo3_div, self._bo3_hdr, self._bo3_body):
+            w.setVisible(show_bo3)
         show_mw2own = cfg.is_game_setup_for_source("iw4mp", "own")
         self._mw2own_div.setVisible(show_mw2own)
         self._mw2own_hdr.setVisible(show_mw2own)
@@ -1917,7 +1946,7 @@ class UpdateScreen(QWidget):
         self._s.cod4r_go.connect(lambda: self.cod4r_btn.setVisible(False))
 
     def _append_log(self, text):
-        self.log.appendPlainText(text)
+        self.log.appendHtml(_log_html(text))
         self.log.verticalScrollBar().setValue(self.log.verticalScrollBar().maximum())
         _log_to_file(text)
 
@@ -1927,10 +1956,12 @@ class UpdateScreen(QWidget):
         self.steam_btn.setVisible(False); self.cod4r_btn.setVisible(False); self.back_btn.setVisible(False)
         self._steam_closed.clear()
         self._cod4r_event.clear()
+        inhibit.start("DeckOps is updating")
         _log_to_file("── Update started ──")
         QTimer.singleShot(400, lambda: threading.Thread(target=self._run, daemon=True).start())
 
     def _on_done(self, _):
+        inhibit.stop()
         self.cur.setText("Done! It is now safe to open Steam.")
         self.back_btn.setVisible(True)
 

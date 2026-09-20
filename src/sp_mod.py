@@ -46,10 +46,12 @@ def install_sp_mod(game_key: str, install_dir: str, on_progress=None) -> bool:
         _log.error("No SP mod config for key: %s", game_key)
         return False
 
-    def prog(msg):
+    def prog(pct_or_msg, msg=None):
+        if msg is None:
+            pct_or_msg, msg = 0, pct_or_msg
         _log.info(msg)
         if on_progress:
-            on_progress(msg)
+            on_progress(pct_or_msg, msg)
 
     from net import download
 
@@ -59,7 +61,8 @@ def install_sp_mod(game_key: str, install_dir: str, on_progress=None) -> bool:
             dst = os.path.join(install_dir, local_path)
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             prog(f"Downloading {os.path.basename(local_path)}...")
-            download(url, dst)
+            download(url, dst, on_progress=lambda p, m: prog(p, m),
+                     label=os.path.basename(local_path))
             _log.info("CDN: placed %s", local_path)
 
         prog(f"{cfg['client_exe']} installed.")
