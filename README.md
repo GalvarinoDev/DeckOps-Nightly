@@ -43,6 +43,7 @@ The AlterWare developer discontinued Ghosts and Advanced Warfare in September 20
 1. Install your games on Steam first. You do not need to launch them.
 2. Have a stable internet connection ready.
 3. Plutonium online play requires a [free account](https://forum.plutonium.pw/register). LCD users who only want offline play do not need one.
+4. MW3, Ghosts, and AW require a depot downgrade. DeckOps downloads [DepotDownloader](https://github.com/SteamRE/DepotDownloader) and uses your Steam account to get the correct game files. You log in through a QR code during the install.
 
 ---
 
@@ -128,6 +129,8 @@ DeckOps is an installer. This project would not exist without years of foundatio
 **[Plutonium](https://plutonium.pw)** - MW3, WaW, BO1, and BO2 client. 💰 [Donate](https://forum.plutonium.pw/donate)
 
 **[Zombies Declassified](https://github.com/Logo-2K/zombies-declassified)** - DLC5 map pack for BO2 Zombies (10 classic maps) by [Logo2K](https://github.com/Logo-2K). Files packaged and hosted by **[Littlegods](https://github.com/andr3xcl/littlegods-dlc-installer)**.
+
+**[DepotDownloader](https://github.com/SteamRE/DepotDownloader)** - Steam depot downloader by [SteamRE](https://github.com/SteamRE). Used to download the correct game files for MW3, Ghosts, and AW.
 
 Official Test Team: LeFinnaBust & Special Agent Dale Cooper
 
