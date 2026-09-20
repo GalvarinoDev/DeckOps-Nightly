@@ -1283,30 +1283,40 @@ class _BaseInstallScreen(QWidget):
                         compat = find_compatdata(self.steam_root, gd["appid"],
                                                   game_install_dir=game.get("install_dir"))
                         cod4_appid = gd["appid"]
-                    if c == "cod4r":
-                        self._s.progress.emit(12, "Installing CoD4R — close the launcher when done...")
-                        self._s.log.emit(
-                            "CoD4R is downloading and installing now.\n"
-                            "  1. Wait for the CoD4R launcher to finish downloading and updating\n"
-                            "  2. Close the launcher when it is done\n"
-                            "  3. Click the button below to continue"
-                        )
-                        self._s.cod4r_wait.emit()
-                        install_cod4r(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=cod4_appid, source=source)
-                        self._cod4r_event.wait()
-                        self._cod4r_event.clear()
-                        self._s.cod4r_go.emit()
-                    elif c == "cod4x":
-                        install_cod4x(game, self.steam_root, proton, compat, op_cod4,
-                                      appid=cod4_appid)
-                    elif c == "iw3sp":
-                        install_iw3sp(game, self.steam_root, proton, compat, op_cod4, source=source)
-                    cfg.mark_game_setup(key, c, source=source)
-                    self._mark(key, "ok")
-                    if base_name not in logged_bases:
-                        self._s.log.emit(f"✓  {base_name} done")
-                        logged_bases.add(base_name)
+
+                    # One dispatch for the first attempt and every recovery
+                    # path, so a retry keeps the CoD4R user gate and marks the
+                    # game the same way the first attempt would.
+                    def _attempt():
+                        if c == "cod4r":
+                            self._s.progress.emit(12, "Installing CoD4R — close the launcher when done...")
+                            self._s.log.emit(
+                                "CoD4R is downloading and installing now.\n"
+                                "  1. Wait for the CoD4R launcher to finish downloading and updating\n"
+                                "  2. Close the launcher when it is done\n"
+                                "  3. Click the button below to continue"
+                            )
+                            self._s.cod4r_wait.emit()
+                            install_cod4r(game, self.steam_root, proton, compat, op_cod4,
+                                          appid=cod4_appid, source=source)
+                            self._cod4r_event.wait()
+                            self._cod4r_event.clear()
+                            self._s.cod4r_go.emit()
+                        elif c == "cod4x":
+                            install_cod4x(game, self.steam_root, proton, compat, op_cod4,
+                                          appid=cod4_appid)
+                        elif c == "iw3sp":
+                            install_iw3sp(game, self.steam_root, proton, compat, op_cod4, source=source)
+
+                    def _succeeded(note=""):
+                        cfg.mark_game_setup(key, c, source=source)
+                        self._mark(key, "ok")
+                        if base_name not in logged_bases:
+                            self._s.log.emit(f"✓  {base_name} done{note}")
+                            logged_bases.add(base_name)
+
+                    _attempt()
+                    _succeeded()
                 except DownloadError as dl_ex:
                     _dl_resolved = False
                     while not _dl_resolved:
@@ -1314,22 +1324,12 @@ class _BaseInstallScreen(QWidget):
                         self._retry_dl_choice = ""
                         self._s.retry_dl.emit(dl_ex.label, str(dl_ex))
                         self._retry_dl_event.wait()
-                        if self._retry_dl_choice == "retry":
-                            try:
-                                if c == "cod4r":
-                                    install_cod4r(game, self.steam_root, proton, compat, op_cod4,
-                                                  appid=cod4_appid, source=source)
-                                elif c == "cod4x":
-                                    install_cod4x(game, self.steam_root, proton, compat, op_cod4,
-                                                  appid=cod4_appid)
-                                elif c == "iw3sp":
-                                    install_iw3sp(game, self.steam_root, proton, compat, op_cod4, source=source)
-                                self._s.log.emit(f"✓  {base_name} done (retry succeeded)")
-                                self._mark(key, "ok")
-                                _dl_resolved = True
-                            except DownloadError as dl_ex2:
-                                dl_ex = dl_ex2
-                        elif self._retry_dl_choice == "manual":
+                        if self._retry_dl_choice not in ("retry", "manual"):
+                            self._s.log.emit(f"  ✗  {base_name} skipped by user.")
+                            self._mark(key, "skipped", "skipped by user")
+                            _dl_resolved = True
+                            continue
+                        if self._retry_dl_choice == "manual":
                             self._s.log.emit(f"⚠  {dl_ex.label} — opening manual download dialog")
                             self._manual_dl_event.clear()
                             self._manual_dl_ok = False
@@ -1338,17 +1338,21 @@ class _BaseInstallScreen(QWidget):
                                 os.path.basename(dl_ex.dest), dl_ex.label,
                             )
                             self._manual_dl_event.wait()
-                            if self._manual_dl_ok:
-                                self._s.log.emit(f"  ✓  {dl_ex.label} placed manually")
-                                # file is in place but the install step never re-ran
-                                self._mark(key, "failed", "download recovered, install not run")
-                            else:
+                            if not self._manual_dl_ok:
                                 self._s.log.emit(f"  ✗  {base_name} skipped by user.")
                                 self._mark(key, "skipped", "skipped by user")
+                                _dl_resolved = True
+                                continue
+                            self._s.log.emit(f"  ✓  {dl_ex.label} placed manually")
+                        try:
+                            _attempt()
+                            _succeeded(" (recovered)")
                             _dl_resolved = True
-                        else:
-                            self._s.log.emit(f"  ✗  {base_name} skipped by user.")
-                            self._mark(key, "skipped", "skipped by user")
+                        except DownloadError as dl_ex2:
+                            dl_ex = dl_ex2
+                        except Exception as ex2:
+                            self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex2}")
+                            self._mark(key, "failed", str(ex2))
                             _dl_resolved = True
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
