@@ -5,7 +5,7 @@ Screens: WelcomeScreen, SetupScreen, InstallScreen
 Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
 """
 
-import os, subprocess, threading
+import html, os, subprocess, threading
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
@@ -534,6 +534,7 @@ class _BaseInstallScreen(QWidget):
         self._from_manage = False
         self.zd_choice = None
         self.bo3_client = "cleanops"
+        self._results = []
 
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
@@ -631,10 +632,23 @@ class _BaseInstallScreen(QWidget):
         zw = QHBoxLayout(); zw.addStretch(); zw.addWidget(self.zd_yes); zw.addSpacing(12); zw.addWidget(self.zd_skip); zw.addStretch()
         clay.addLayout(zw)
 
+        self.summary = _lbl("", 12, "#CCC", align=Qt.AlignLeft)
+        self.summary.setTextFormat(Qt.RichText); self.summary.setVisible(False)
+        self.summary.setStyleSheet(
+            f"color:#CCC;background:#1A1A2A;border:1px solid {C_DIM};"
+            "border-radius:8px;padding:10px 16px;")
+        sw = QHBoxLayout(); sw.addStretch(); sw.addWidget(self.summary, 3); sw.addStretch()
+        clay.addLayout(sw)
+
+        self.retry_btn = _btn("Retry Failed", C_TREY, size=13, h=52)
+        self.retry_btn.setFixedWidth(280); self.retry_btn.setVisible(False)
+        self.retry_btn.clicked.connect(self._retry_failed)
+
         self.cont_btn = _btn("Continue  >>", C_IW, size=13, h=52)
         self.cont_btn.setFixedWidth(320); self.cont_btn.setVisible(False)
         self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupCompleteScreen"))
-        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.cont_btn); cw.addStretch()
+        cw = QHBoxLayout(); cw.addStretch(); cw.addWidget(self.retry_btn)
+        cw.addSpacing(12); cw.addWidget(self.cont_btn); cw.addStretch()
         clay.addLayout(cw)
         clay.addStretch()
         lay.addWidget(content, stretch=1)
@@ -893,6 +907,49 @@ class _BaseInstallScreen(QWidget):
 
         return captured_user
 
+    def _seed_results(self):
+        """One record per selected key; phases overwrite status as they run."""
+        self._results = [{"key": k, "name": gd["base"], "status": "pending", "reason": ""}
+                         for k, gd, _g in self.selected]
+
+    def _mark(self, key, status, reason=""):
+        for r in self._results:
+            if r["key"] == key:
+                r["status"] = status; r["reason"] = reason; return
+
+    def _retryable(self):
+        return [r for r in self._results if r["status"] in ("failed", "pending")]
+
+    def _render_summary(self):
+        icons = {"ok": ("✓", C_IW), "failed": ("✗", C_TREY),
+                 "skipped": ("–", "#777788"), "pending": ("–", "#777788")}
+        rows = []
+        for r in self._results:
+            icon, col = icons.get(r["status"], icons["pending"])
+            label = html.escape(f"{r['name']} - {KEY_MODE_LABEL.get(r['key'], r['key'])}")
+            txt = f'<span style="color:{col}">{icon}&nbsp;&nbsp;{label}</span>'
+            if r["status"] == "failed" and r["reason"]:
+                txt += f'<span style="color:#777788"> - {html.escape(r["reason"][:120])}</span>'
+            elif r["status"] == "pending":
+                txt += '<span style="color:#777788"> - not attempted</span>'
+            elif r["status"] == "skipped":
+                txt += f'<span style="color:#777788"> - {html.escape(r["reason"] or "skipped")}</span>'
+            rows.append(txt)
+        self.summary.setText("<br>".join(rows))
+        self.summary.setVisible(True)
+
+    def _retry_failed(self):
+        keys = {r["key"] for r in self._retryable()}
+        if not keys: return
+        # t7x is injected from the t7 row, so it needs its parent key kept
+        if "t7x" in keys: keys.add("t7")
+        self.steam_selected = [(k, gd, g) for k, gd, g in (self.steam_selected or [])
+                               if k in keys]
+        self.own_selected = {k: g for k, g in self.own_selected.items() if k in keys}
+        # _return_to_management was consumed by the first run
+        self._return_to_management = self._from_manage
+        self._reset_and_run()
+
     def _append_log(self, text):
         _log_to_file(text)
         sb = self.log.verticalScrollBar()
@@ -979,8 +1036,17 @@ class _BaseInstallScreen(QWidget):
         if ok:
             self.cur.setText(self._DONE_MSG)
         else:
-            self.cur.setText("Setup did not finish. Check the log above, then try again.")
+            if self._results:
+                self._render_summary()
+            else:
+                self.summary.setVisible(False)
+            n = len([r for r in self._results if r["status"] == "failed"])
+            self.cur.setText(
+                f"Finished with {n} problem(s). See the summary below."
+                if n else "Setup did not finish. Check the log above, then try again.")
             self.cur.setStyleSheet(f"color:{C_TREY};background:transparent;")
+            self.retry_btn.setText(f"Retry Failed ({len(self._retryable())})")
+            self.retry_btn.setVisible(bool(self._retryable()))
             if not self._from_manage:
                 try: self.cont_btn.clicked.disconnect()
                 except Exception: pass
@@ -995,6 +1061,9 @@ class _BaseInstallScreen(QWidget):
 
     def showEvent(self, e):
         super().showEvent(e)
+        self._reset_and_run()
+
+    def _reset_and_run(self):
         self.bar.setValue(0); self.log.clear()
         self.log.setMaximumHeight(16777215)
         self.cur.setText("Preparing..."); self.cur.setStyleSheet("color:#CCC;background:transparent;")
@@ -1006,6 +1075,8 @@ class _BaseInstallScreen(QWidget):
         self.iw5_qr_box.setVisible(False)
         self.zd_info.setVisible(False); self.zd_yes.setVisible(False); self.zd_skip.setVisible(False)
         self._zd_event.clear(); self._zd_accept = False
+        self.summary.setVisible(False); self.retry_btn.setVisible(False)
+        self._results = []
         self.cont_btn.setVisible(False)
         self._plut_event.clear()
         self._cod4r_event.clear()
@@ -1128,6 +1199,8 @@ class _BaseInstallScreen(QWidget):
                     selected_keys.append("t7x")
                     break
 
+        self._seed_results()
+
         # --- Enrich own game dicts (shortcut_appid, compatdata_path)
         # enrich_own_games computes CRC-based appids, prefix paths, and
         # resolved exe/launch options WITHOUT writing any VDF entries.
@@ -1230,6 +1303,7 @@ class _BaseInstallScreen(QWidget):
                     elif c == "iw3sp":
                         install_iw3sp(game, self.steam_root, proton, compat, op_cod4, source=source)
                     cfg.mark_game_setup(key, c, source=source)
+                    self._mark(key, "ok")
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
@@ -1251,6 +1325,7 @@ class _BaseInstallScreen(QWidget):
                                 elif c == "iw3sp":
                                     install_iw3sp(game, self.steam_root, proton, compat, op_cod4, source=source)
                                 self._s.log.emit(f"✓  {base_name} done (retry succeeded)")
+                                self._mark(key, "ok")
                                 _dl_resolved = True
                             except DownloadError as dl_ex2:
                                 dl_ex = dl_ex2
@@ -1265,14 +1340,19 @@ class _BaseInstallScreen(QWidget):
                             self._manual_dl_event.wait()
                             if self._manual_dl_ok:
                                 self._s.log.emit(f"  ✓  {dl_ex.label} placed manually")
+                                # file is in place but the install step never re-ran
+                                self._mark(key, "failed", "download recovered, install not run")
                             else:
                                 self._s.log.emit(f"  ✗  {base_name} skipped by user.")
+                                self._mark(key, "skipped", "skipped by user")
                             _dl_resolved = True
                         else:
                             self._s.log.emit(f"  ✗  {base_name} skipped by user.")
+                            self._mark(key, "skipped", "skipped by user")
                             _dl_resolved = True
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+                    self._mark(key, "failed", str(ex))
 
         # --- Depot downgrades (Steam still running)
         # Detect ALL games that need downgrading, show ONE dialog,
@@ -1643,11 +1723,13 @@ class _BaseInstallScreen(QWidget):
                                      on_progress=op_plut,
                                      installed_games=installed_for_plut,
                                      source=source)
+                    self._mark(key, "ok")
                     if base_name not in logged_bases:
                         self._s.log.emit(f"✓  {base_name} done")
                         logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+                    self._mark(key, "failed", str(ex))
 
         # --- T6SP-MOD (BO2 Singleplayer)
         _log_to_file("[BREADCRUMB] starting t6sp_mod install phase")
@@ -1665,10 +1747,12 @@ class _BaseInstallScreen(QWidget):
                                                   game_install_dir=game.get("install_dir"))
                     install_t6sp_mod(game, self.steam_root, proton, compat, op_t6sp, source=source)
                     cfg.mark_game_setup(key, "t6sp_mod", source=source)
+                    self._mark(key, "ok")
                     self._s.log.emit(f"✓  {base_name} (T6SP-MOD) done")
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+                    self._mark(key, "failed", str(ex))
 
         # --- IW4x
         _log_to_file("[BREADCRUMB] starting iw4x install phase")
@@ -1690,10 +1774,12 @@ class _BaseInstallScreen(QWidget):
                                  install_dlc=(_dlc_action == "install"),
                                  remove_dlc=(_dlc_action == "remove"))
                     cfg.mark_game_setup(key, "iw4x", source=source)
+                    self._mark(key, "ok")
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+                    self._mark(key, "failed", str(ex))
 
         # --- T7X (BO3 AlterWare client)
         # Must run BEFORE CleanOps: CleanOps drops d3d11.dll into the
@@ -1711,10 +1797,12 @@ class _BaseInstallScreen(QWidget):
                     t7x_dir = install_t7x(game, on_progress=op_t7x)
                     game["install_dir"] = t7x_dir
                     cfg.mark_game_setup(key, "t7x", source=source)
+                    self._mark(key, "ok")
                     self._s.log.emit(f"✓  {base_name} (T7x) done")
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} (T7x) failed: {ex}")
+                    self._mark(key, "failed", str(ex))
 
         # --- CleanOps (BO3)
         _log_to_file("[BREADCRUMB] starting cleanops install phase")
@@ -1732,10 +1820,12 @@ class _BaseInstallScreen(QWidget):
                                                   game_install_dir=game.get("install_dir"))
                     install_cleanops(game, self.steam_root, proton, compat, op_cleanops, source=source)
                     cfg.mark_game_setup(key, "cleanops", source=source)
+                    self._mark(key, "ok")
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+                    self._mark(key, "failed", str(ex))
 
         # --- AlterWare (Ghosts / Advanced Warfare)
         _log_to_file("[BREADCRUMB] starting alterware install phase")
@@ -1764,10 +1854,12 @@ class _BaseInstallScreen(QWidget):
                     install_alterware(game, key, self.steam_root, proton, compat, op_alterware,
                                      source=source)
                     cfg.mark_game_setup(key, "alterware", source=source)
+                    self._mark(key, "ok")
                     self._s.log.emit(f"✓  {base_name} done")
                     logged_bases.add(base_name)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
+                    self._mark(key, "failed", str(ex))
 
         # --- Zombies Declassified (optional DLC5 for BO2 Zombies via Plutonium)
         if has_plut and "t6zm" in selected_keys:
@@ -1825,9 +1917,11 @@ class _BaseInstallScreen(QWidget):
             c = KEY_CLIENT.get(key, "")
             source = "own" if key in own_selected else "steam"
             # sp_mod keys land here when the AlterWare exe step failed or the game is non-Steam
-            if c in ("steam", "sp_mod") and not cfg.is_game_setup_for_source(key, source):
-                cfg.mark_game_setup(key, "steam", source=source)
-                self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
+            if c in ("steam", "sp_mod"):
+                if not cfg.is_game_setup_for_source(key, source):
+                    cfg.mark_game_setup(key, "steam", source=source)
+                    self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
+                self._mark(key, "ok")
 
         # --- Game display configs
         self._s.progress.emit(78, "Applying game configs...")
@@ -1956,8 +2050,9 @@ class _BaseInstallScreen(QWidget):
                 "Installation complete!\n\n"
                 "If you enjoy these mods, please consider starring "
                 "the original creators' GitHub repositories!")
-        self._s.progress.emit(100, "All done!")
-        self._s.done.emit(True)
+        _failed = [r for r in self._results if r["status"] == "failed"]
+        self._s.progress.emit(100, "All done!" if not _failed else "Finished with errors.")
+        self._s.done.emit(not _failed)
 
 
 
