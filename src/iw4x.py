@@ -42,6 +42,8 @@ ZIP_URL = "https://github.com/iw4x/iw4x-rawfiles/releases/latest/download/releas
 LAUNCHER_API_URL = "https://api.github.com/repos/iw4x/launcher/releases/latest"
 
 # CDN manifest for free DLC content (maps from CoD4, BO1, MW3, CoD Online, MW2 DLC)
+# Approximate; the UI labels quote it as "~3 GB" and preflight budgets for it.
+DLC_SIZE_GB      = 3
 DLC_MANIFEST_URL = "https://cdn.iw4x.io/update.json"
 DLC_CDN_BASE     = "https://cdn.iw4x.io/"
 

@@ -5,6 +5,7 @@ Extracted from ui_qt.py so that ui_setup.py, ui_install.py, ui_manage.py,
 and ui_qt.py can all import from a single source without circular deps.
 """
 
+import html
 import os
 
 from PyQt5.QtWidgets import (
@@ -351,6 +352,13 @@ def _back_row(lay, slot):
     row = QHBoxLayout(); row.addWidget(b); row.addStretch(); lay.addLayout(row)
     return b
 
+def _log_html(text: str) -> str:
+    """Colorize a log line by its leading marker. Everything else stays dim."""
+    color = {"✓": C_IW, "✗": C_TREY, "⚠": C_TREY}.get(text.lstrip()[:1], "#666677")
+    body = html.escape(text).replace("\n", "<br>").replace("  ", "&nbsp;&nbsp;")
+    return f'<span style="color:{color};white-space:pre-wrap">{body}</span>'
+
+
 def _hdiv():
     d = QFrame(); d.setFrameShape(QFrame.HLine); d.setFixedHeight(1)
     d.setStyleSheet("background:#252530;border:none;"); return d
@@ -466,6 +474,45 @@ def _ask_bo3_client(parent, selected) -> str:
     # return "cleanops"
 
 # ── Title block ───────────────────────────────────────────────────────────────
+
+def _show_preflight(parent, checks) -> bool:
+    """
+    Show the pre-install checks. Returns True to go ahead.
+
+    Nothing here is a hard stop: the space figures are estimates, so a
+    wrong one must not wall off a valid install. The recommendation is
+    plain and the choice stays with the user.
+    """
+    import preflight as _pf
+    if not checks:
+        return True
+    level = _pf.worst(checks)
+    if level == _pf.OK:
+        return True
+
+    icons = {_pf.OK: "\u2713", _pf.WARN: "\u26a0", _pf.BLOCK: "\u2717"}
+    colors = {_pf.OK: C_IW, _pf.WARN: C_TREY, _pf.BLOCK: C_TREY}
+    rows = []
+    for c in checks:
+        rows.append(
+            f'<div style="color:{colors[c.level]}"><b>{icons[c.level]}&nbsp;&nbsp;'
+            f'{html.escape(c.title)}</b></div>'
+            f'<div style="color:#999999;margin-bottom:6px">'
+            f'&nbsp;&nbsp;&nbsp;&nbsp;{html.escape(c.detail)}</div>')
+
+    msg = QMessageBox(parent)
+    msg.setWindowTitle("Before installing")
+    msg.setTextFormat(Qt.RichText)
+    msg.setText(
+        ("<b>Some checks did not pass.</b><br><br>" if level == _pf.BLOCK
+         else "<b>Worth knowing before you start.</b><br><br>")
+        + "".join(rows))
+    go = msg.addButton("Install Anyway", QMessageBox.AcceptRole)
+    back = msg.addButton("Go Back", QMessageBox.RejectRole)
+    msg.setDefaultButton(back if level == _pf.BLOCK else go)
+    msg.exec_()
+    return msg.clickedButton() is go
+
 
 def _title_block(lay, main_size=56):
     t = QLabel("DECKOPS")

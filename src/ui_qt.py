@@ -16,6 +16,7 @@ from PyQt5.QtCore import Qt, QTimer
 
 import bootstrap as _bootstrap
 import config as cfg
+import inhibit
 from identity import APP_TITLE
 
 from ui_constants import (
@@ -152,6 +153,7 @@ class DeckOpsWindow(QMainWindow):
 
     def closeEvent(self, e):
         _kill_audio()
+        inhibit.stop()
         super().closeEvent(e)
 
 

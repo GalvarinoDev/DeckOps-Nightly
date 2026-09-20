@@ -301,6 +301,7 @@ def install_alterware(game: dict, game_key: str,
         try:
             _download(
                 f"{_CDN_BASE}/{cdn_path}", dst,
+                on_progress=lambda p, m: prog(75 + int(p * 0.04), m),
                 label=local_name, timeout=120,
             )
             _log.info("CDN: placed %s", local_name)

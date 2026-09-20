@@ -5,7 +5,7 @@ Screens: WelcomeScreen, SetupScreen, InstallScreen
 Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
 """
 
-import html, os, subprocess, threading
+import html, os, subprocess, threading, time
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
@@ -16,14 +16,15 @@ from PyQt5.QtCore import Qt, QTimer, QStorageInfo, QUrl
 
 from detect_games import find_steam_root, find_all_games
 import config as cfg
+import inhibit
 from net import DownloadError
 
 from ui_constants import (
     C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN, C_BLUE_BTN,
-    font, _btn, _lbl, _title_block, _header_bar, _badge, _log_to_file, _copy_log_to_clipboard, _Sigs,
+    font, _btn, _lbl, _title_block, _header_bar, _badge, _log_to_file, _log_html, _copy_log_to_clipboard, _Sigs,
     ALL_GAMES, KEY_CLIENT, KEY_EXES, KEY_MODE_LABEL,
     _active_keys, _active_client, _active_appid,
-    _ask_bo3_client,
+    _ask_bo3_client, _show_preflight,
     go_to, get_screen,
 )
 
@@ -50,8 +51,8 @@ class WelcomeScreen(QWidget):
             "Before you continue:\n"
             "•  Downgrading a game (MW3, Ghosts, AW) can take a very long time and needs "
             "at least that game's full size free on the drive during the install.\n"
-            "•  On a handheld, plug it in. In Desktop Mode, click the battery icon and turn on "
-            "\"Manually block sleep and screen locking\" so it doesn't fall asleep mid-install.\n"
+            "•  On a handheld, plug it in. DeckOps keeps the device awake while it "
+            "installs, so you don't need to block sleep yourself.\n"
             "•  Use a good, stable internet connection.\n"
             "•  Keep your device somewhere it can breathe. Don't leave it on a blanket or "
             "anywhere it could overheat.",
@@ -197,6 +198,12 @@ class SetupScreen(QWidget):
         clay.addWidget(_lbl(
             "Choose which games to set up. "
             "DeckOps will create Proton prefixes automatically.", 13, C_DIM))
+        selrow = QHBoxLayout(); selrow.setSpacing(8); selrow.addStretch()
+        for _txt, _on in (("Select All", True), ("Select None", False)):
+            _b = _btn(_txt, C_DARK_BTN, size=10, h=30); _b.setFixedWidth(110)
+            _b.clicked.connect(lambda _c, v=_on: self._set_all(v))
+            selrow.addWidget(_b)
+        clay.addLayout(selrow)
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setFrameShape(QScrollArea.NoFrame)
@@ -229,6 +236,12 @@ class SetupScreen(QWidget):
         super().showEvent(e)
         self.warning.setVisible(False)
         self._build()
+
+    def _set_all(self, on):
+        """Only touches rows the user could tick anyway."""
+        for cb, _gd, _src in self._checks.values():
+            if cb.isEnabled():
+                cb.setChecked(on)
 
     def _add_row(self, gd, widget):
         col = self._cols["iw" if gd["dev"] == "iw" else "trey"]
@@ -476,6 +489,24 @@ class SetupScreen(QWidget):
         self.warning.setStyleSheet(f"color:{C_IW if added else C_TREY};background:transparent;")
         self.warning.setVisible(True)
 
+    def _preflight_ok(self, steam_selected, own_selected):
+        """Disk space and power. Fast enough to run inline; never blocks the install."""
+        import preflight
+        rows = [(k, KEY_CLIENT.get(k, ""), g.get("install_dir", ""))
+                for k, _gd, g in steam_selected]
+        rows += [(k, KEY_CLIENT.get(k, ""), g.get("install_dir", ""))
+                 for k, g in own_selected.items()]
+        try:
+            checks = preflight.check(
+                rows,
+                iw4x_dlc=bool(self._iw4x_dlc_cb and self._iw4x_dlc_cb.isChecked()),
+                zd=bool(self._zd_cb and self._zd_cb.isChecked()),
+                downgrade_keys=[k for k, _, _ in rows])
+        except Exception as ex:
+            _log_to_file(f"[SetupScreen] preflight failed: {ex}")
+            return True
+        return _show_preflight(self, checks)
+
     def _go_install(self):
         steam_selected = []
         own_selected = {}
@@ -490,6 +521,9 @@ class SetupScreen(QWidget):
             self.warning.setText("Select at least one game to continue.")
             self.warning.setStyleSheet(f"color:{C_TREY};background:transparent;")
             self.warning.setVisible(True); return
+
+        if not self._preflight_ok(steam_selected, own_selected):
+            return
 
         s = get_screen(self.stack, "InstallScreen")
         s.steam_selected = steam_selected
@@ -535,6 +569,9 @@ class _BaseInstallScreen(QWidget):
         self.zd_choice = None
         self.bo3_client = "cleanops"
         self._results = []
+        self._plan = []; self._bands = {}
+        self._phase_i = -1; self._phase_id = None
+        self._last_pct = 0; self._t0 = 0.0
 
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
@@ -654,7 +691,7 @@ class _BaseInstallScreen(QWidget):
         lay.addWidget(content, stretch=1)
 
         self._s = _Sigs()
-        self._s.progress.connect(lambda p, m: (self.bar.setValue(p), self.cur.setText(m)))
+        self._s.progress.connect(self._on_progress)
         self._s.log.connect(self._append_log)
         self._s.done.connect(self._on_done)
         self._s.plut_wait.connect(self._show_plut_wait)
@@ -673,10 +710,60 @@ class _BaseInstallScreen(QWidget):
         self._s.zd_ask.connect(self._show_zd_ask)
         self._s.zd_go.connect(self._hide_zd_ask)
 
+        self._tick = QTimer()
+        self._tick.timeout.connect(self._update_stat)
+
         self._pulse_timer = QTimer()
         self._pulse_timer.timeout.connect(self._do_pulse)
         self._pulse_msg   = ""
         self._pulse_count = 0
+
+    def _on_progress(self, p, m):
+        # Clamp. Phases are ordered, but a stray low value from an installer
+        # that reports its own 0-100 must not rewind the bar.
+        self._last_pct = min(max(int(p), self._last_pct), 100)
+        self.bar.setValue(self._last_pct)
+        if m: self.cur.setText(m)
+
+    def _update_stat(self):
+        if not self._plan: return
+        el = int(time.time() - self._t0)
+        i = min(max(self._phase_i, 0), len(self._plan) - 1)
+        self.stat.setText(
+            f"Step {i + 1} of {len(self._plan)}  \u00b7  {self._plan[i][1]}"
+            f"  \u00b7  {el // 60}:{el % 60:02d} elapsed")
+
+    # Install phases. The pipeline varies with the selection, so the bar's
+    # bands are built from the phases that will actually run. Weights are
+    # relative cost estimates, not measured times, and are safe to retune.
+    # A phase that ends up not running needs no handling: the next _phase()
+    # emits its own band start, which is already past the skipped one.
+    def _plan_set(self, entries):
+        self._plan = [e for e in entries if e[2] > 0]
+        total = sum(e[2] for e in self._plan) or 1
+        self._bands = {}; acc = 0
+        for pid, label, w in self._plan:
+            lo = 2 + int(acc / total * 96); acc += w
+            self._bands[pid] = (lo, 2 + int(acc / total * 96), label)
+        self._phase_i = -1; self._phase_id = None
+
+    def _phase(self, pid):
+        """Enter a phase and move the bar to the start of its band."""
+        if pid not in self._bands: return
+        self._phase_id = pid
+        self._phase_i = [p for p, _, _ in self._plan].index(pid)
+        lo, _hi, label = self._bands[pid]
+        self._s.progress.emit(lo, f"{label}...")
+
+    def _ppct(self, sub, i=0, n=1):
+        """Map an installer's 0-100 into the current band, split n ways."""
+        if self._phase_id is None: return 0
+        lo, hi, _ = self._bands[self._phase_id]
+        span = (hi - lo) / max(n, 1)
+        return int(lo + span * i + span * min(max(sub, 0), 100) / 100.0)
+
+    def _pmsg(self, msg):
+        self._s.progress.emit(self._last_pct, msg)
 
     def _start_pulse(self, base_msg):
         self._pulse_msg   = base_msg
@@ -808,7 +895,7 @@ class _BaseInstallScreen(QWidget):
                 "  The code will refresh if it expires.\n"
                 "  Your login credentials will be deleted after the download."
             )
-            self._s.progress.emit(11, "Setting up DepotDownloader...")
+            self._s.progress.emit(self._ppct(2), "Setting up DepotDownloader...")
             try:
                 ensure_depotdownloader(
                     on_progress=lambda m: self._s.log.emit(f"  {m}"))
@@ -822,15 +909,16 @@ class _BaseInstallScreen(QWidget):
                     )
                     for depot in depots:
                         depot_num += 1
+                        _dp = int(5 + 80 * (depot_num - 1) / max(total_depots, 1))
                         self._s.progress.emit(
-                            11, f"Downloading depot {depot_num} of {total_depots}...")
+                            self._ppct(_dp), f"Downloading depot {depot_num} of {total_depots}...")
                         result = run_depot_download_qr(
                             staging_dir=staging,
                             depot_info=depot,
                             app_id=gcfg["app_id"],
                             on_qr=lambda qr: self._s.iw5_qr_show.emit(qr),
                             on_auth_success=lambda u: self._s.iw5_qr_hide.emit(),
-                            on_progress=lambda m: self._s.progress.emit(11, m),
+                            on_progress=lambda m, _p=_dp: self._s.progress.emit(self._ppct(_p), m),
                             on_log=lambda m: self._s.log.emit(f"  {m}"),
                             username=captured_user,
                         )
@@ -846,7 +934,7 @@ class _BaseInstallScreen(QWidget):
                         break
                     if not os.path.isdir(staging):
                         continue
-                    self._s.progress.emit(12, f"Merging {game_name} files...")
+                    self._s.progress.emit(self._ppct(90), f"Merging {game_name} files...")
                     self._s.pulse_start.emit(f"Merging {game_name} files")
                     try:
                         merge_depots(
@@ -869,7 +957,7 @@ class _BaseInstallScreen(QWidget):
                 "  when prompted and wait for \"Depot download complete\"\n"
                 "  before clicking continue."
             )
-            self._s.progress.emit(11, "Depot download...")
+            self._s.progress.emit(self._ppct(2), "Depot download...")
             open_steam_console()
 
             for game_id, game_name, install_dir, _, cmds in dg_jobs:
@@ -892,7 +980,7 @@ class _BaseInstallScreen(QWidget):
                     self._s.log.emit(
                         f"✗  Could not find staging directory for {game_name}.")
                     continue
-                self._s.progress.emit(12, f"Merging {game_name} files...")
+                self._s.progress.emit(self._ppct(90), f"Merging {game_name} files...")
                 self._s.pulse_start.emit(f"Merging {game_name} files")
                 try:
                     merge_depots(
@@ -954,7 +1042,7 @@ class _BaseInstallScreen(QWidget):
         _log_to_file(text)
         sb = self.log.verticalScrollBar()
         at_bottom = sb.value() >= sb.maximum() - 4
-        self.log.appendPlainText(text)
+        self.log.appendHtml(_log_html(text))
         if at_bottom: sb.setValue(sb.maximum())
 
     def _confirm_plut(self):
@@ -1032,6 +1120,10 @@ class _BaseInstallScreen(QWidget):
 
     def _on_done(self, ok):
         self._stop_pulse()
+        self._tick.stop()
+        inhibit.stop()
+        el = int(time.time() - self._t0)
+        self.stat.setText(f"Finished in {el // 60}:{el % 60:02d}")
         self.zd_choice = None
         if ok:
             self.cur.setText(self._DONE_MSG)
@@ -1077,6 +1169,11 @@ class _BaseInstallScreen(QWidget):
         self._zd_event.clear(); self._zd_accept = False
         self.summary.setVisible(False); self.retry_btn.setVisible(False)
         self._results = []
+        self._plan = []; self._bands = {}
+        self._phase_i = -1; self._phase_id = None
+        self._last_pct = 0; self._t0 = time.time()
+        self._tick.start(1000)
+        inhibit.start("DeckOps is installing")
         self.cont_btn.setVisible(False)
         self._plut_event.clear()
         self._cod4r_event.clear()
@@ -1153,10 +1250,41 @@ class _BaseInstallScreen(QWidget):
         _cod4_client = getattr(self, "cod4_client", "cod4r")
         _steam_killed = False
 
+        # --- BO3 client selection: cleanops, t7x, or both
+        _bo3_choice = getattr(self, "bo3_client", "cleanops")
+        _has_bo3 = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
+        has_cleanops = _has_bo3 and _bo3_choice in ("cleanops", "both")
+        has_t7x      = _has_bo3 and _bo3_choice in ("t7x", "both")
+
+        # --- Progress plan, built from the phases this selection will run
+        def _nk(*clients):
+            return len([k for k in selected_keys if KEY_CLIENT.get(k) in clients])
+        _DG_CANDIDATES = {"iw5mp", "iw5mp_ds", "iw5sp", "iw6mp", "iw6sp", "s1mp", "s1sp"}
+        _may_downgrade = any(k in _DG_CANDIDATES and k not in own_selected
+                             for k in selected_keys)
+        _has_sp_mod = any(k == "iw5sp" and k not in own_selected for k in selected_keys)
+        self._plan_set([
+            ("ge",        "Installing GE-Proton",         4),
+            ("own",       "Preparing non-Steam games",    2 if has_own else 0),
+            ("prefix",    "Creating Proton prefixes",     8),
+            ("cod4",      "Setting up CoD4",              6 * _nk("cod4r", "cod4x", "iw3sp")),
+            ("depot",     "Downgrading game files",       24 if _may_downgrade else 0),
+            ("plutboot",  "Setting up Plutonium",         10 if has_plut else 0),
+            ("sp_mod",    "Installing MW3 SP exe",        2 if _has_sp_mod else 0),
+            ("plut",      "Installing Plutonium games",   7 * _nk("plutonium")),
+            ("t6sp",      "Installing T6SP-MOD",          4 if has_t6sp_mod else 0),
+            ("iw4x",      "Installing IW4x",              12 * _nk("iw4x")),
+            ("t7x",       "Installing T7x",               6 if has_t7x else 0),
+            ("cleanops",  "Installing CleanOps",          3 if has_cleanops else 0),
+            ("alterware", "Installing AlterWare",         8 * _nk("alterware")),
+            ("zd",        "Zombies Declassified",         8 if has_plut and "t6zm" in selected_keys else 0),
+            ("finalize",  "Finishing up",                 8),
+        ])
+
         def _kill_steam_once():
             nonlocal _steam_killed
             if not _steam_killed:
-                self._s.progress.emit(18, "Closing Steam...")
+                self._pmsg("Closing Steam...")
                 self._s.log.emit("Closing Steam...")
                 try:
                     kill_steam(on_progress=lambda msg: self._s.log.emit(f"  {msg}"))
@@ -1167,11 +1295,12 @@ class _BaseInstallScreen(QWidget):
 
         # --- GE-Proton download (Steam still running)
         ge_version = None
+        self._phase("ge")
         try:
             self._s.pulse_start.emit("Installing GE-Proton")
             self._s.log.emit("Installing GE-Proton...")
             ge_version = install_ge_proton(
-                on_progress=lambda pct, msg: self._s.progress.emit(2 + int(pct * 0.06), msg)
+                on_progress=lambda pct, msg: self._s.progress.emit(self._ppct(pct), msg)
             )
             self._s.pulse_stop.emit()
             self._s.log.emit(f"✓  {ge_version} downloaded")
@@ -1182,14 +1311,10 @@ class _BaseInstallScreen(QWidget):
 
         proton = get_proton_path(self.steam_root)
 
-        # --- BO3 client selection: cleanops, t7x, or both
-        # Injection must happen early so t7x is included in prefix init,
-        # shortcuts, and selected_keys. Actual install runs later (after
-        # CleanOps) to match the original phase order.
-        _bo3_choice = getattr(self, "bo3_client", "cleanops")
-        _has_bo3 = any(KEY_CLIENT.get(k) == "cleanops" for k in selected_keys)
-        has_cleanops = _has_bo3 and _bo3_choice in ("cleanops", "both")
-        has_t7x      = _has_bo3 and _bo3_choice in ("t7x", "both")
+        # --- BO3 client injection
+        # Must happen early so t7x is included in prefix init, shortcuts,
+        # and selected_keys. Actual install runs later (after CleanOps)
+        # to match the original phase order.
         if has_t7x:
             for k, gd, g in list(self.selected):
                 if k == "t7":
@@ -1208,7 +1333,7 @@ class _BaseInstallScreen(QWidget):
         # is deferred to write_own_shortcuts() after all mod clients are
         # installed so every target exe exists on disk.
         if has_own:
-            self._s.progress.emit(8, "Computing own game shortcuts...")
+            self._phase("own")
             self._s.log.emit("Enriching own game data...")
             own_games_dict = dict(own_selected)
             own_games_dict = enrich_own_games(
@@ -1228,7 +1353,7 @@ class _BaseInstallScreen(QWidget):
         # CRC-based prefix (set by enrich_own_games). Steam games use their
         # Steam appid prefix. ensure_all_prefix_deps handles deduplication
         # and skips prefixes that are already initialized.
-        self._s.progress.emit(9, "Creating Proton prefixes...")
+        self._phase("prefix")
         self._s.log.emit("Creating Proton prefixes and installing dependencies...")
         self._s.pulse_start.emit("Installing prefix dependencies")
         from ge_proton import ensure_all_prefix_deps
@@ -1267,10 +1392,13 @@ class _BaseInstallScreen(QWidget):
         _log_to_file("[BREADCRUMB] starting cod4 install phase")
         if has_cod4:
             cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp")]
-            for key, gd, game in cod4_selected:
+            self._phase("cod4")
+            _n_c4 = len(cod4_selected)
+            for _i_c4, (key, gd, game) in enumerate(cod4_selected):
                 base_name = gd["base"]
-                self._s.progress.emit(9, f"Setting up {base_name}...")
-                def op_cod4(pct, msg): self._s.progress.emit(9 + int(pct / 100 * 4), msg)
+                self._s.progress.emit(self._ppct(0, _i_c4, _n_c4), f"Setting up {base_name}...")
+                def op_cod4(pct, msg, _i=_i_c4):
+                    self._s.progress.emit(self._ppct(pct, _i, _n_c4), msg)
                 try:
                     source = "own" if key in own_selected else "steam"
                     c = KEY_CLIENT.get(key, gd["client"])
@@ -1289,7 +1417,9 @@ class _BaseInstallScreen(QWidget):
                     # game the same way the first attempt would.
                     def _attempt():
                         if c == "cod4r":
-                            self._s.progress.emit(12, "Installing CoD4R — close the launcher when done...")
+                            self._s.progress.emit(
+                                self._ppct(20, _i_c4, _n_c4),
+                                "Installing CoD4R — close the launcher when done...")
                             self._s.log.emit(
                                 "CoD4R is downloading and installing now.\n"
                                 "  1. Wait for the CoD4R launcher to finish downloading and updating\n"
@@ -1465,6 +1595,7 @@ class _BaseInstallScreen(QWidget):
 
         _dg_user = None
         if _dg_jobs:
+            self._phase("depot")
             _dg_user = self._run_batch_depot_downgrade(_dg_jobs)
 
         if _dg_user:
@@ -1481,6 +1612,7 @@ class _BaseInstallScreen(QWidget):
                                    install_plutonium)
             from plutonium_oled import GAME_META as _PLUT_META
             is_lcd = cfg.is_lcd()
+            self._phase("plutboot")
 
             if is_lcd:
                 from plutonium_lcd import (launch_bootstrapper_lcd,
@@ -1491,7 +1623,7 @@ class _BaseInstallScreen(QWidget):
 
             if not plut_ready:
                 if is_lcd:
-                    self._s.progress.emit(14, "Setting up Plutonium through HGL...")
+                    self._s.progress.emit(self._ppct(0), "Setting up Plutonium through HGL...")
                     self._s.log.emit(
                         "Setting up Plutonium through HGL...\n"
                         "  1. HGL will download and launch Plutonium (this may take a few minutes)\n"
@@ -1500,7 +1632,7 @@ class _BaseInstallScreen(QWidget):
                         "  4. Click the button below to continue"
                     )
                 else:
-                    self._s.progress.emit(14, "Launching Plutonium — please log in...")
+                    self._s.progress.emit(self._ppct(0), "Launching Plutonium — please log in...")
                     self._s.log.emit(
                         "Plutonium is launching now.\n"
                         "  1. Wait for it to finish downloading\n"
@@ -1511,12 +1643,12 @@ class _BaseInstallScreen(QWidget):
                 try:
                     if is_lcd:
                         launch_bootstrapper_lcd(
-                            on_progress=lambda p, m: self._s.progress.emit(p, m)
+                            on_progress=lambda p, m: self._s.progress.emit(self._ppct(p), m)
                         )
                     else:
                         launch_bootstrapper(
                             proton,
-                            on_progress=lambda p, m: self._s.progress.emit(p, m),
+                            on_progress=lambda p, m: self._s.progress.emit(self._ppct(p), m),
                             steam_root=self.steam_root,
                         )
                 except DownloadError as dl_ex:
@@ -1530,11 +1662,11 @@ class _BaseInstallScreen(QWidget):
                             try:
                                 if is_lcd:
                                     launch_bootstrapper_lcd(
-                                        on_progress=lambda p, m: self._s.progress.emit(p, m))
+                                        on_progress=lambda p, m: self._s.progress.emit(self._ppct(p), m))
                                 else:
                                     launch_bootstrapper(
                                         proton,
-                                        on_progress=lambda p, m: self._s.progress.emit(p, m),
+                                        on_progress=lambda p, m: self._s.progress.emit(self._ppct(p), m),
                                         steam_root=self.steam_root)
                                 _dl_resolved = True
                             except DownloadError as dl_ex2:
@@ -1583,7 +1715,7 @@ class _BaseInstallScreen(QWidget):
 
                 self._s.log.emit("✓  Plutonium ready.")
             else:
-                self._s.progress.emit(14, "Launching Plutonium to check for updates...")
+                self._s.progress.emit(self._ppct(0), "Launching Plutonium to check for updates...")
                 self._s.log.emit(
                     "Plutonium is launching now.\n"
                     "  1. Wait for it to finish updating\n"
@@ -1594,12 +1726,12 @@ class _BaseInstallScreen(QWidget):
                 try:
                     if is_lcd:
                         launch_bootstrapper_lcd(
-                            on_progress=lambda p, m: self._s.progress.emit(p, m)
+                            on_progress=lambda p, m: self._s.progress.emit(self._ppct(p), m)
                         )
                     else:
                         launch_bootstrapper(
                             proton,
-                            on_progress=lambda p, m: self._s.progress.emit(p, m),
+                            on_progress=lambda p, m: self._s.progress.emit(self._ppct(p), m),
                             steam_root=self.steam_root,
                         )
                 except Exception as ex:
@@ -1650,6 +1782,7 @@ class _BaseInstallScreen(QWidget):
         # Only triggers when the user selected the SP key specifically.
         _sp_mod_keys = [k for k in selected_keys if k == "iw5sp" and k not in own_selected]
         if _sp_mod_keys:
+            self._phase("sp_mod")
             from sp_mod import install_sp_mod, build_sp_launch_option, get_sp_mod_appid
             from wrapper import set_launch_options
             for _sp_key in _sp_mod_keys:
@@ -1658,12 +1791,14 @@ class _BaseInstallScreen(QWidget):
                     continue
                 _sp_dir = _sp_game["install_dir"]
                 _sp_name = "MW3 SP"
-                self._s.progress.emit(16, f"Installing {_sp_name} community exe...")
+                self._s.progress.emit(self._ppct(0), f"Installing {_sp_name} community exe...")
                 self._s.log.emit(f"Installing {_sp_name} community exe...")
                 try:
                     ok = install_sp_mod(
                         _sp_key, _sp_dir,
-                        on_progress=lambda m: self._s.log.emit(f"  {m}"),
+                        on_progress=lambda p, m: (
+                            self._s.progress.emit(self._ppct(p), m),
+                            self._s.log.emit(f"  {m}")),
                     )
                     if ok:
                         cfg.mark_game_setup(_sp_key, "sp_mod", source="steam")
@@ -1709,12 +1844,13 @@ class _BaseInstallScreen(QWidget):
                              if KEY_CLIENT.get(k) == "plutonium"]
             installed_for_plut = {k: g for k, gd, g in self.selected if g}
             total_plut = len(plut_selected)
+            self._phase("plut")
             for idx, (key, gd, game) in enumerate(plut_selected):
-                bp = 40 + int(idx / max(total_plut, 1) * 12)
                 base_name = gd["base"]
                 if base_name not in logged_bases:
-                    self._s.progress.emit(bp, f"Setting up {base_name}...")
-                def op_plut(pct, msg, _b=bp): self._s.progress.emit(_b + int(pct / 100 * 6), msg)
+                    self._s.progress.emit(self._ppct(0, idx, total_plut), f"Setting up {base_name}...")
+                def op_plut(pct, msg, _i=idx):
+                    self._s.progress.emit(self._ppct(pct, _i, total_plut), msg)
                 try:
                     source = "own" if key in own_selected else "steam"
                     if source == "own":
@@ -1738,10 +1874,11 @@ class _BaseInstallScreen(QWidget):
         # --- T6SP-MOD (BO2 Singleplayer)
         _log_to_file("[BREADCRUMB] starting t6sp_mod install phase")
         if has_t6sp_mod:
+            self._phase("t6sp")
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t6sp_mod"]:
                 base_name = gd["base"]
-                self._s.progress.emit(52, f"Installing Rattpak's T6SP-MOD (Beta)...")
-                def op_t6sp(pct, msg): self._s.progress.emit(52 + int(pct / 100 * 4), msg)
+                self._s.progress.emit(self._ppct(0), f"Installing Rattpak's T6SP-MOD (Beta)...")
+                def op_t6sp(pct, msg): self._s.progress.emit(self._ppct(pct), msg)
                 try:
                     source = "own" if key in own_selected else "steam"
                     if source == "own":
@@ -1762,10 +1899,14 @@ class _BaseInstallScreen(QWidget):
         _log_to_file("[BREADCRUMB] starting iw4x install phase")
         has_iw4x = any(KEY_CLIENT.get(k) == "iw4x" for k in selected_keys)
         if has_iw4x:
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "iw4x"]:
+            _iw4x_sel = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "iw4x"]
+            self._phase("iw4x")
+            _n_i4 = len(_iw4x_sel)
+            for _i_i4, (key, gd, game) in enumerate(_iw4x_sel):
                 base_name = gd["base"]
-                self._s.progress.emit(56, f"Setting up {base_name}...")
-                def op_iw4x(pct, msg): self._s.progress.emit(56 + int(pct / 100 * 7), msg)
+                self._s.progress.emit(self._ppct(0, _i_i4, _n_i4), f"Setting up {base_name}...")
+                def op_iw4x(pct, msg, _i=_i_i4):
+                    self._s.progress.emit(self._ppct(pct, _i, _n_i4), msg)
                 try:
                     source = "own" if key in own_selected else "steam"
                     if source == "own":
@@ -1792,10 +1933,11 @@ class _BaseInstallScreen(QWidget):
         # stock dir, then CleanOps only touches the stock dir afterward.
         _log_to_file("[BREADCRUMB] starting t7x install phase")
         if has_t7x:
+            self._phase("t7x")
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "t7x"]:
                 base_name = gd["base"]
-                self._s.progress.emit(70, f"Setting up T7x...")
-                def op_t7x(pct, msg): self._s.progress.emit(70 + int(pct / 100 * 2), msg)
+                self._s.progress.emit(self._ppct(0), f"Setting up T7x...")
+                def op_t7x(pct, msg): self._s.progress.emit(self._ppct(pct), msg)
                 try:
                     source = "own" if key in own_selected else "steam"
                     t7x_dir = install_t7x(game, on_progress=op_t7x)
@@ -1811,10 +1953,11 @@ class _BaseInstallScreen(QWidget):
         # --- CleanOps (BO3)
         _log_to_file("[BREADCRUMB] starting cleanops install phase")
         if has_cleanops:
+            self._phase("cleanops")
             for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "cleanops"]:
                 base_name = gd["base"]
-                self._s.progress.emit(72, f"Setting up {base_name}...")
-                def op_cleanops(pct, msg): self._s.progress.emit(72 + int(pct / 100 * 4), msg)
+                self._s.progress.emit(self._ppct(0), f"Setting up {base_name}...")
+                def op_cleanops(pct, msg): self._s.progress.emit(self._ppct(pct), msg)
                 try:
                     source = "own" if key in own_selected else "steam"
                     if source == "own":
@@ -1836,10 +1979,14 @@ class _BaseInstallScreen(QWidget):
         has_alterware = any(KEY_CLIENT.get(k) == "alterware" for k in selected_keys)
         if has_alterware:
             from alterware import install_alterware
-            for key, gd, game in [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "alterware"]:
+            _aw_sel = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) == "alterware"]
+            self._phase("alterware")
+            _n_aw = len(_aw_sel)
+            for _i_aw, (key, gd, game) in enumerate(_aw_sel):
                 base_name = gd["base"]
-                self._s.progress.emit(76, f"Setting up {base_name}...")
-                def op_alterware(pct, msg): self._s.progress.emit(76 + int(pct / 100 * 4), msg)
+                self._s.progress.emit(self._ppct(0, _i_aw, _n_aw), f"Setting up {base_name}...")
+                def op_alterware(pct, msg, _i=_i_aw):
+                    self._s.progress.emit(self._ppct(pct, _i, _n_aw), msg)
                 try:
                     source = "own" if key in own_selected else "steam"
                     _appid = _GAMES_MAP[key]["appid"] if key in _GAMES_MAP else gd["appid"]
@@ -1867,6 +2014,7 @@ class _BaseInstallScreen(QWidget):
 
         # --- Zombies Declassified (optional DLC5 for BO2 Zombies via Plutonium)
         if has_plut and "t6zm" in selected_keys:
+            self._phase("zd")
             try:
                 # Check BO2 Zombies DLC prerequisite
                 _bo2_dir = None
@@ -1886,7 +2034,7 @@ class _BaseInstallScreen(QWidget):
                         # Choice comes from the game-selection row; None means ask now (~9 GB)
                         _zd_yes = self.zd_choice
                         if _zd_yes is None:
-                            self._s.progress.emit(76, "Zombies Declassified available")
+                            self._s.progress.emit(self._ppct(0), "Zombies Declassified available")
                             self._s.log.emit("Zombies Declassified (DLC5) is available for BO2 Zombies.")
                             self._zd_event.clear()
                             self._zd_accept = False
@@ -1896,10 +2044,10 @@ class _BaseInstallScreen(QWidget):
                             _zd_yes = self._zd_accept
 
                         if _zd_yes:
-                            self._s.progress.emit(76, "Installing Zombies Declassified...")
+                            self._s.progress.emit(self._ppct(5), "Installing Zombies Declassified...")
                             self._s.log.emit("Installing Zombies Declassified (DLC5 map pack)...")
                             from zombies_declassified import install_zd
-                            def op_zd(pct, msg): self._s.progress.emit(76 + int(pct / 100 * 2), msg)
+                            def op_zd(pct, msg): self._s.progress.emit(self._ppct(pct), msg)
                             errors = install_zd(_zd_storage, op_zd)
                             from zombies_declassified import get_zd_info as _zd_info
                             info = _zd_info(_zd_storage)
@@ -1928,7 +2076,8 @@ class _BaseInstallScreen(QWidget):
                 self._mark(key, "ok")
 
         # --- Game display configs
-        self._s.progress.emit(78, "Applying game configs...")
+        self._phase("finalize")
+        self._s.progress.emit(self._ppct(0), "Applying game configs...")
         try:
             from game_config import apply_game_configs
             applied, skipped, failed = apply_game_configs(
@@ -1950,7 +2099,7 @@ class _BaseInstallScreen(QWidget):
             self._s.log.emit(f"  Game configs skipped: {ex}")
 
         # --- Controller templates
-        self._s.progress.emit(88, "Installing controller templates...")
+        self._s.progress.emit(self._ppct(30), "Installing controller templates...")
         try:
             from controller_profiles import install_controller_templates, assign_controller_profiles, assign_external_controller_profiles
             install_controller_templates(
@@ -1987,7 +2136,7 @@ class _BaseInstallScreen(QWidget):
         # configs, and sets GE-Proton compat tool per shortcut.
         if has_own:
             gyro_mode = cfg.get_gyro_mode() or "on"
-            self._s.progress.emit(90, "Writing own game shortcuts...")
+            self._s.progress.emit(self._ppct(60), "Writing own game shortcuts...")
             try:
                 write_own_shortcuts(
                     own_games=own_games,
@@ -2035,7 +2184,7 @@ class _BaseInstallScreen(QWidget):
 
         # --- Steam artwork
         if steam_sel:
-            self._s.progress.emit(95, "Applying Steam artwork...")
+            self._s.progress.emit(self._ppct(85), "Applying Steam artwork...")
             try:
                 from shortcut import apply_steam_artwork
                 self._s.log.emit("Applying custom artwork for multiplayer games...")

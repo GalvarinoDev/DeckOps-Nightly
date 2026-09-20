@@ -20,6 +20,8 @@ from net import download as _download, DownloadError, BROWSER_UA
 
 _log = get_logger(__name__)
 
+# Approximate; the UI labels quote it as "~9 GB" and preflight budgets for it.
+PACK_SIZE_GB    = 9
 ZD_MANIFEST_URL = "https://files.littlegods.space/manifest.txt"
 ZD_CDN_BASE     = "https://files.littlegods.space/"
 ZD_METADATA     = "deckops_zd.json"
@@ -147,8 +149,13 @@ def install_zd(plut_storage_t6: str, on_progress=None):
         pct = 2 + int(idx / total * 96)
         prog(pct, f"Downloading {idx + 1}/{total}: {relpath}")
 
+        _span = 96.0 / total
         try:
-            _download(url, dest, label=relpath, timeout=300)
+            _download(
+                url, dest,
+                on_progress=lambda p, m, _i=idx: prog(
+                    2 + int(_i * _span + p * _span / 100), m),
+                label=f"{idx + 1}/{total}: {relpath}", timeout=300)
         except DownloadError:
             errors.append(relpath)
             continue
