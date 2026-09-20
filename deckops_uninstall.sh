@@ -331,12 +331,22 @@ info "Removing iw4x / cod4x / cod4r client files..."
 if [ -n "$STEAM_ROOT" ]; then
     mw2_dir=$(find_install_dir 10190) || true
     if [ -n "$mw2_dir" ]; then
-        for f in "iw4x.dll" "iw4x.exe"; do
+        for f in "iw4x.dll" "iw4x.exe" "iw4x-launcher.exe" "Unlinker.exe" \
+                 "steam_appid.txt" "zone-conversion.log" "zonebuilder.exe"; do
             [ -f "$mw2_dir/$f" ] && rm -f "$mw2_dir/$f" && success "Removed $f" || skip "$f not found"
         done
+        # Launcher cache
+        [ -d "$mw2_dir/cache" ] && rm -rf "$mw2_dir/cache" && success "Removed cache/" || true
         # Ask before removing DLC (~3 GB of free maps)
         _remove_mw2_dlc=false
-        if [ -d "$mw2_dir/iw4x" ] && ls "$mw2_dir/iw4x/"*.iwd >/dev/null 2>&1; then
+        _has_dlc_iwds=false
+        # Check new layout (main/iw4x/x86/) and legacy layout (iw4x/)
+        if [ -d "$mw2_dir/main/iw4x/x86" ] && ls "$mw2_dir/main/iw4x/x86/"*.iwd >/dev/null 2>&1; then
+            _has_dlc_iwds=true
+        elif [ -d "$mw2_dir/iw4x" ] && ls "$mw2_dir/iw4x/"*.iwd >/dev/null 2>&1; then
+            _has_dlc_iwds=true
+        fi
+        if $_has_dlc_iwds; then
             zenity --question \
                 --title="$APP_TITLE Uninstaller" \
                 --text="Remove free MW2 DLC maps (~3 GB)?\n\nThese can be re-downloaded if you reinstall later." \
@@ -345,18 +355,27 @@ if [ -n "$STEAM_ROOT" ]; then
             [ $? -eq 0 ] && _remove_mw2_dlc=true
         fi
         if $_remove_mw2_dlc; then
-            for d in "iw4x" "iw4x-updoot"; do
+            for d in "main/iw4x/x86" "iw4x" "iw4x-updoot"; do
                 [ -d "$mw2_dir/$d" ] && rm -rf "$mw2_dir/$d" && success "Removed $d/" || skip "$d/ not found"
             done
+            # Remove DLC .ff files (new path and legacy path)
+            [ -d "$mw2_dir/zone/iw4x" ] && rm -rf "$mw2_dir/zone/iw4x" && success "Removed zone/iw4x/" || true
+            [ -d "$mw2_dir/zone/dlc" ] && rm -rf "$mw2_dir/zone/dlc" && success "Removed zone/dlc/" || true
         else
-            # Remove iw4x subdirs and non-iwd files, keep DLC .iwd files
-            if [ -d "$mw2_dir/iw4x" ]; then
-                find "$mw2_dir/iw4x" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
-                find "$mw2_dir/iw4x" -maxdepth 1 -type f ! -name "*.iwd" -delete
-                success "Removed iw4x/ client files (kept DLC maps)"
-            fi
+            # Remove subdirs and non-iwd files, keep DLC .iwd files
+            for _iw4x_iwd_dir in "$mw2_dir/main/iw4x/x86" "$mw2_dir/iw4x"; do
+                if [ -d "$_iw4x_iwd_dir" ]; then
+                    find "$_iw4x_iwd_dir" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
+                    find "$_iw4x_iwd_dir" -maxdepth 1 -type f ! -name "*.iwd" -delete
+                    success "Removed ${_iw4x_iwd_dir##*/}/ client files (kept DLC maps)"
+                fi
+            done
             [ -d "$mw2_dir/iw4x-updoot" ] && rm -rf "$mw2_dir/iw4x-updoot" && success "Removed iw4x-updoot/" || true
         fi
+        # Zone directories (new + legacy)
+        for _zd in "zone/iw4x/x86/patch" "zone/iw4x/x86/zonebuilder" "zone/patch" "zone/zonebuilder"; do
+            [ -d "$mw2_dir/$_zd" ] && rm -rf "$mw2_dir/$_zd" && success "Removed $_zd/" || true
+        done
     fi
 
     cod4_dir=$(find_install_dir 7940) || true
@@ -521,15 +540,27 @@ USERDATA_DIR = os.path.join(STEAM_DIR, "userdata")
 # Must match what iw4x.py, cod4x.py, cod4r.py, and iw3sp.py install.
 OWN_CLEANUP = {
     "iw4mp.exe": {
-        "files": ["iw4x.dll", "iw4x.exe"],
-        "dirs":  ["iw4x-updoot"],
-        "dlc_dir": "iw4x",
+        "files": ["iw4x.dll", "iw4x.exe", "iw4x-launcher.exe",
+                  "Unlinker.exe", "steam_appid.txt", "zone-conversion.log",
+                  "zonebuilder.exe"],
+        "dirs":  ["iw4x-updoot", "cache"],
+        "dlc_dir": "main/iw4x/x86",
+        "legacy_dlc_dir": "iw4x",
+        "ff_dlc_dirs": ["zone/iw4x", "zone/dlc"],
+        "zone_dirs": ["zone/iw4x/x86/patch", "zone/iw4x/x86/zonebuilder",
+                      "zone/patch", "zone/zonebuilder"],
     },
     # Own shortcuts point at iw4x.exe, not iw4mp.exe
     "iw4x.exe": {
-        "files": ["iw4x.dll", "iw4x.exe"],
-        "dirs":  ["iw4x-updoot"],
-        "dlc_dir": "iw4x",
+        "files": ["iw4x.dll", "iw4x.exe", "iw4x-launcher.exe",
+                  "Unlinker.exe", "steam_appid.txt", "zone-conversion.log",
+                  "zonebuilder.exe"],
+        "dirs":  ["iw4x-updoot", "cache"],
+        "dlc_dir": "main/iw4x/x86",
+        "legacy_dlc_dir": "iw4x",
+        "ff_dlc_dirs": ["zone/iw4x", "zone/dlc"],
+        "zone_dirs": ["zone/iw4x/x86/patch", "zone/iw4x/x86/zonebuilder",
+                      "zone/patch", "zone/zonebuilder"],
     },
     "iw3mp.exe": {
         "files": ["cod4x_021.dll", "cod4x_loader.exe", "cod4x.exe",
@@ -689,30 +720,58 @@ for uid in os.listdir(USERDATA_DIR):
                 except Exception as ex:
                     print(f"    Failed to remove {dname}/: {ex}")
 
-        # DLC directory: ask before removing .iwd files
-        dlc_dir_name = cleanup.get("dlc_dir")
-        if dlc_dir_name:
-            dlc_path = os.path.join(install_dir, dlc_dir_name)
-            if os.path.isdir(dlc_path):
-                has_iwds = any(f.endswith(".iwd") for f in os.listdir(dlc_path))
-                remove_all = True
-                if has_iwds:
-                    try:
-                        ans = input(f"    Remove free MW2 DLC maps (~3 GB)? [y/N] ").strip()
-                        remove_all = ans.lower().startswith("y")
-                    except EOFError:
-                        remove_all = False
-                if remove_all:
-                    shutil.rmtree(dlc_path)
-                    print(f"    Removed {dlc_dir_name}/")
-                else:
-                    for entry in os.listdir(dlc_path):
-                        p = os.path.join(dlc_path, entry)
-                        if os.path.isdir(p):
-                            shutil.rmtree(p)
-                        elif not entry.endswith(".iwd"):
-                            os.remove(p)
-                    print(f"    Removed {dlc_dir_name}/ client files (kept DLC maps)")
+        # DLC directories: ask before removing .iwd and .ff files
+        # Check both new (main/iw4x/x86) and legacy (iw4x) paths
+        dlc_dirs = []
+        for key in ("dlc_dir", "legacy_dlc_dir"):
+            dn = cleanup.get(key)
+            if dn:
+                dp = os.path.join(install_dir, dn)
+                if os.path.isdir(dp):
+                    dlc_dirs.append((dn, dp))
+
+        remove_dlc = False
+        has_iwds = any(
+            any(f.endswith(".iwd") for f in os.listdir(dp))
+            for _, dp in dlc_dirs
+        ) if dlc_dirs else False
+
+        if has_iwds:
+            try:
+                ans = input(f"    Remove free MW2 DLC maps (~3 GB)? [y/N] ").strip()
+                remove_dlc = ans.lower().startswith("y")
+            except EOFError:
+                remove_dlc = False
+        elif dlc_dirs:
+            remove_dlc = True
+
+        for dn, dp in dlc_dirs:
+            if remove_dlc:
+                shutil.rmtree(dp)
+                print(f"    Removed {dn}/")
+            else:
+                for entry in os.listdir(dp):
+                    p = os.path.join(dp, entry)
+                    if os.path.isdir(p):
+                        shutil.rmtree(p)
+                    elif not entry.endswith(".iwd"):
+                        os.remove(p)
+                print(f"    Removed {dn}/ client files (kept DLC maps)")
+
+        # DLC .ff directories (zone/iw4x/ and legacy zone/dlc/)
+        if remove_dlc:
+            for ff_dir in cleanup.get("ff_dlc_dirs", []):
+                ff_path = os.path.join(install_dir, ff_dir)
+                if os.path.isdir(ff_path):
+                    shutil.rmtree(ff_path)
+                    print(f"    Removed {ff_dir}/")
+
+        # Zone directories (patch, zonebuilder — new + legacy paths)
+        for zd in cleanup.get("zone_dirs", []):
+            zd_path = os.path.join(install_dir, zd)
+            if os.path.isdir(zd_path):
+                shutil.rmtree(zd_path)
+                print(f"    Removed {zd}/")
 
         # Remove files in subdirectories (e.g. main/*.iwd, zone/english/*.ff)
         for subdir, fnames in cleanup.get("subdirs", {}).items():
