@@ -71,16 +71,19 @@ def _get_latest_release():
     checksum_url = None
     tarball_asset = None
 
+    from detect_hw import detect_arch
+    arch = detect_arch()
+
     for asset in data.get("assets", []):
         name = asset["name"]
-        if name.endswith("-x86_64.tar.gz"):
+        if name.endswith(f"-{arch}.tar.gz"):
             tarball_url = asset["browser_download_url"]
             tarball_asset = name
-        elif name.endswith("-x86_64.sha512sum"):
+        elif name.endswith(f"-{arch}.sha512sum"):
             checksum_url = asset["browser_download_url"]
 
     if not tarball_url:
-        raise RuntimeError(f"No x86_64 .tar.gz asset found for {version}")
+        raise RuntimeError(f"No {arch} .tar.gz asset found for {version}")
 
     # GE-Proton 11+ tarballs extract to a directory matching the asset
     # name minus .tar.gz (e.g. "GE-Proton11-7-x86_64"), not the tag.

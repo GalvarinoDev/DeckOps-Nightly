@@ -1,16 +1,19 @@
 """
 ui_setup.py — First-run setup flow for DeckOps
 
-Flow: OS → Device → Gyro → Name → [Controller] → [Play Mode / Resolution] → Done
+Flow: [Autodetect Confirm] → OS → Device → Gyro → Name → [Controller] → [Play Mode / Resolution] → Done
 
-Supports SteamOS, Bazzite and CachyOS, plus a General PC device option,
-with per-OS controller template strategy.
+When both OS and device are detected from DMI and os-release, a confirm
+screen lets the user accept with one click or fall through to the manual
+flow. All OS paths now go through the model screen so a Deck on Bazzite
+or CachyOS can still pick LCD/OLED.
 """
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLineEdit
 from PyQt5.QtCore import Qt
 
 import config as cfg
+from detect_hw import detect_os, detect_device
 
 from ui_constants import (
     C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN,
@@ -54,8 +57,50 @@ class SetupFlowScreen(QWidget):
         self._is_general_pc = False
         self._is_steam_machine = False
 
+        self._autodetected = False
+
         main_lay = QVBoxLayout(self)
         main_lay.setContentsMargins(0, 0, 0, 0)
+
+        # ── 0. Autodetect confirm section ─────────────────────────────────
+        self._detected_os = detect_os()
+        self._detected_device = detect_device()
+
+        self._confirm_section = QWidget(); self._confirm_section.setVisible(False)
+        cl = QVBoxLayout(self._confirm_section)
+        cl.setContentsMargins(80, 60, 80, 60); cl.setSpacing(16)
+        _title_block(cl)
+        cl.addSpacing(8)
+        cl.addWidget(_lbl(
+            "DeckOps sets up community multiplayer clients for your Call of Duty games, "
+            "so you can play online with the best possible performance.",
+            14, "#CCCCCC"))
+        cl.addSpacing(6)
+        for warn in [
+            "⚠   DeckOps will automatically create Proton prefixes for your games. "
+            "You do NOT need to launch each game through Steam first.",
+            "⚠   If you plan to play Plutonium titles online (WaW, BO1, BO2, MW3), "
+            "create a free Plutonium account at plutonium.pw before continuing.",
+            "⚠   Make sure you have a stable internet connection before installing. "
+            "If the install fails, don't re-run it repeatedly, join the Discord for help instead.",
+        ]:
+            cl.addWidget(_lbl(warn, 13, C_TREY, align=Qt.AlignLeft))
+        cl.addSpacing(16)
+        os_label = {"steamos": "SteamOS", "bazzite": "Bazzite", "cachyos": "CachyOS"}.get(
+            self._detected_os, self._detected_os or "Unknown")
+        dev_label = DEVICES.get(self._detected_device, {}).get("label", self._detected_device or "Unknown")
+        self._confirm_lbl = _lbl(f"Detected {os_label} on {dev_label}. Is this correct?", 15, "#CCC")
+        cl.addWidget(self._confirm_lbl)
+        cl.addSpacing(12)
+        crow = QHBoxLayout(); crow.setSpacing(20)
+        yes_btn = _btn("Yes", C_IW, h=56)
+        change_btn = _btn("Change", C_DARK_BTN, h=56)
+        yes_btn.clicked.connect(self._accept_autodetect)
+        change_btn.clicked.connect(self._reject_autodetect)
+        crow.addWidget(yes_btn); crow.addWidget(change_btn)
+        cl.addLayout(crow)
+        cl.addSpacing(40)
+        main_lay.addWidget(self._confirm_section)
 
         # ── 1. OS section ─────────────────────────────────────────────────
         self._os_section = QWidget()
@@ -383,6 +428,11 @@ class SetupFlowScreen(QWidget):
         dcl.addSpacing(40)
         main_lay.addWidget(self._docked_controller_section)
 
+        # Show confirm screen if we detected both, otherwise start at OS
+        if self._detected_os and self._detected_device:
+            self._os_section.setVisible(False)
+            self._confirm_section.setVisible(True)
+
     # ── Section visibility helpers ────────────────────────────────────────
 
     def _hide_all(self):
@@ -396,14 +446,19 @@ class SetupFlowScreen(QWidget):
 
     # ── Navigation logic ─────────────────────────────────────────────────
 
+    def _accept_autodetect(self):
+        self._autodetected = True
+        self._pick_os(self._detected_os)
+        self._pick_device(self._detected_device)
+
+    def _reject_autodetect(self):
+        self._autodetected = False
+        self._show("_os_section")
+
     def _pick_os(self, os_key):
         self._selected_os = os_key
         cfg.set_os_type(os_key)
-        if os_key in ("bazzite", "cachyos"):
-            # Non-SteamOS users are always on Other devices — skip model screen
-            self._show("_device_section")
-        else:
-            self._show("_model_section")
+        self._show("_model_section")
 
     def _back_to_os(self):
         self._show("_os_section")
@@ -432,22 +487,18 @@ class SetupFlowScreen(QWidget):
         self._show("_device_section")
 
     def _back_to_model(self):
-        if self._selected_os in ("bazzite", "cachyos"):
-            # Non-SteamOS users skipped the model screen — go back to OS
-            self._show("_os_section")
-        else:
-            self._show("_model_section")
+        self._show("_model_section")
 
     def _show_gyro_section(self, dev_key):
         """Show the Yes/No gyro question."""
         self._show("_gyro_section")
 
     def _back_to_device_from_gyro(self):
+        if self._autodetected:
+            self._show("_confirm_section")
+            return
         dev = DEVICES.get(self._selected_device, {})
-        if self._selected_os in ("bazzite", "cachyos"):
-            # Non-SteamOS users always came from the device picker
-            self._show("_device_section")
-        elif dev.get("deck_model") in ("lcd", "oled", "steam_machine"):
+        if dev.get("deck_model") in ("lcd", "oled", "steam_machine"):
             self._show("_model_section")
         else:
             self._show("_device_section")
