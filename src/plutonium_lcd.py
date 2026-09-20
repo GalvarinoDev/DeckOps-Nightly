@@ -1387,7 +1387,10 @@ def launch_bootstrapper_lcd(on_progress=None):
     except Exception:
         ge_version = None
     if not ge_version:
-        ge_version = "GE-Proton10-34"  # reasonable fallback
+        from ge_proton import _get_local_version
+        ge_version = _get_local_version()
+    if not ge_version:
+        raise RuntimeError("No GE-Proton version found in config or on disk")
 
     # 5. Write the bootstrap sideload entry + its GamesConfig
     prog(20, "Registering bootstrap entry with HGL...")
@@ -1511,7 +1514,10 @@ def install_plutonium_lcd(game: dict, game_key: str,
     except Exception:
         ge_version = None
     if not ge_version:
-        ge_version = "GE-Proton10-34"
+        from ge_proton import _get_local_version
+        ge_version = _get_local_version()
+    if not ge_version:
+        raise RuntimeError("No GE-Proton version found in config or on disk")
 
     setup_heroic_game(
         game_key, game, ge_version,

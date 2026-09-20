@@ -271,6 +271,7 @@ def install_iw4x_dlc(install_dir: str, on_progress=None):
     on_progress — optional callback(percent: int, status: str)
     """
     _migrate_dlc_ff(install_dir)
+    _migrate_old_layout(install_dir)
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     def prog(pct, msg):
