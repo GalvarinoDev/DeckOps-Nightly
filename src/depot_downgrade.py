@@ -578,13 +578,15 @@ def ensure_depotdownloader(on_progress=None) -> str:
             capture_output=True, text=True, timeout=30,
         )
         release_data = json.loads(result.stdout)
+        from detect_hw import is_arm
+        _dd_arch = "linux-arm64" if is_arm() else "linux-x64"
         dl_url = None
         for asset in release_data.get("assets", []):
-            if "linux-x64" in asset.get("name", ""):
+            if _dd_arch in asset.get("name", ""):
                 dl_url = asset["browser_download_url"]
                 break
         if not dl_url:
-            raise RuntimeError("Could not find linux-x64 asset in release")
+            raise RuntimeError(f"Could not find {_dd_arch} asset in release")
     except Exception as ex:
         raise RuntimeError(f"Failed to get DepotDownloader release: {ex}")
 
