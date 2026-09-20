@@ -696,11 +696,14 @@ class ManagementScreen(QWidget):
                 break
 
         if idir and not is_downgrade_needed(game_id, idir):
-            QMessageBox.information(
-                self, gd["base"],
-                f"{game_name} already has the correct depot files.",
-            )
-            return
+            msg = QMessageBox(self)
+            msg.setWindowTitle(gd["base"])
+            msg.setText(f"{game_name} already has the correct depot files.")
+            msg.addButton(QMessageBox.Ok)
+            force_btn = msg.addButton("Force Downgrade", QMessageBox.AcceptRole)
+            msg.exec_()
+            if msg.clickedButton() != force_btn:
+                return
 
         # Force a fresh downgrade: drop both the receipt and the legacy flag
         from depot_downgrade import clear_receipt
