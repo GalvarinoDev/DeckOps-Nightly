@@ -1,29 +1,21 @@
 """
 iw4x.py - DeckOps installer for IW4x (Modern Warfare 2)
 
-Downloads iw4x.dll and release.zip from the latest GitHub releases.
-release.zip contains iw4x.exe, all iwd files, zone patches, and other
-rawfile assets. Everything extracts directly into the game install folder.
+Downloads iw4x.dll, release.zip, and the IW4x launcher from GitHub.
+release.zip contents are relocated to the launcher-compatible layout:
+  iw4x/           → main/iw4x/x86/
+  zone/patch/      → zone/iw4x/x86/patch/
+  zone/zonebuilder/→ zone/iw4x/x86/zonebuilder/
+
+The launcher (iw4x-launcher.exe) handles self-updating on each launch.
+Steam games use a launch option to redirect iw4mp.exe to the launcher.
 
 Optionally downloads free DLC content from cdn.iw4x.io, including:
-  - MW2 DLC map packs (iw4x/*.iwd)
-  - CoD4 ported maps → zone/dlc/*.ff
-  - Black Ops maps   → zone/dlc/*.ff
-  - MW3 maps         → zone/dlc/*.ff
-  - CoD Online maps  → zone/dlc/*.ff
-
-All .ff files from the CDN (regardless of their manifest prefix) are
-placed into zone/dlc/ to match the correct IW4x install layout.
-All .iwd files from the CDN go into iw4x/ as the manifest specifies.
-
-For Steam games:
-  - Renames iw4mp.exe -> iw4mp.exe.bak
-  - Copies iw4x.exe -> iw4mp.exe
-  This lets Steam launch IW4x transparently via the existing shortcut.
-
-For own games:
-  - Downloads all files but skips the exe rename
-  - The non-Steam shortcut already points at iw4x.exe directly
+  - MW2 DLC map packs (main/iw4x/x86/*.iwd)
+  - CoD4 ported maps → zone/iw4x/x86/dlc/*.ff
+  - Black Ops maps   → zone/iw4x/x86/dlc/*.ff
+  - MW3 maps         → zone/iw4x/x86/dlc/*.ff
+  - CoD Online maps  → zone/iw4x/x86/dlc/*.ff
 
 Progress is reported via a callback:
     on_progress(percent: int, status: str)
@@ -47,12 +39,15 @@ _log = get_logger(__name__)
 # and other assets. No separate downloads needed.
 DLL_URL = "https://github.com/iw4x/iw4x-client/releases/latest/download/iw4x.dll"
 ZIP_URL = "https://github.com/iw4x/iw4x-rawfiles/releases/latest/download/release.zip"
+LAUNCHER_API_URL = "https://api.github.com/repos/iw4x/launcher/releases/latest"
 
 # CDN manifest for free DLC content (maps from CoD4, BO1, MW3, CoD Online, MW2 DLC)
 DLC_MANIFEST_URL = "https://cdn.iw4x.io/update.json"
 DLC_CDN_BASE     = "https://cdn.iw4x.io/"
 
-# Manifest path prefixes that contain .ff files, all remapped to zone/dlc/.
+MW2_MP_APPID = "10190"
+
+# Manifest path prefixes that contain .ff files, all remapped to zone/iw4x/x86/dlc/.
 _FF_PREFIXES = (
     "iw3/zone/dlc/",
     "t5/zone/dlc/",
@@ -66,19 +61,36 @@ _FF_PREFIXES = (
 # _download imported from net.py; call sites pass timeout=120 for large files.
 
 
+def _get_launcher_url():
+    """Get the latest launcher zip URL from GitHub releases API."""
+    import urllib.request
+    req = urllib.request.Request(
+        LAUNCHER_API_URL,
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "DeckOps"}
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read())
+    for asset in data.get("assets", []):
+        if asset["name"].endswith("x86_64-windows.zip"):
+            return asset["browser_download_url"]
+    raise RuntimeError("No launcher zip found in latest GitHub release")
+
+
 def _remap_dlc_path(manifest_path: str, install_dir: str) -> str:
     """
     Remap a CDN manifest path to the correct local destination.
 
     .ff files from any game-prefixed subdirectory (iw3/, t5/, iw5/, codo/)
-    are all placed into zone/dlc/ to match the correct IW4x layout.
-    .iwd files under iw4x/ are kept in iw4x/ as-is.
+    are all placed into zone/iw4x/x86/dlc/ to match the correct IW4x layout.
+    .iwd files under iw4x/ go to main/iw4x/x86/ (launcher layout).
     """
     for prefix in _FF_PREFIXES:
         if manifest_path.startswith(prefix):
             filename = manifest_path[len(prefix):]
-            return os.path.join(install_dir, "zone", "dlc", filename)
-    # iw4x/*.iwd and anything else — use the manifest path directly
+            return os.path.join(install_dir, "zone", "iw4x", "x86", "dlc", filename)
+    # iw4x/*.iwd → main/iw4x/x86/ to match launcher layout
+    if manifest_path.startswith("iw4x/"):
+        return os.path.join(install_dir, "main", "iw4x", "x86", manifest_path[5:])
     return os.path.join(install_dir, manifest_path)
 
 
@@ -116,34 +128,133 @@ _DLC_FF_FILENAMES = {
 
 
 def _remove_dlc_ff(install_dir: str):
-    """Remove DLC .ff files from zone/dlc/, preserving base game files."""
-    zone_dlc = os.path.join(install_dir, "zone", "dlc")
-    if not os.path.isdir(zone_dlc):
-        return
-    for fname in _DLC_FF_FILENAMES:
-        p = os.path.join(zone_dlc, fname)
-        if os.path.exists(p):
-            os.remove(p)
-    if not os.listdir(zone_dlc):
-        os.rmdir(zone_dlc)
-        zone_dir = os.path.join(install_dir, "zone")
-        if os.path.isdir(zone_dir) and not os.listdir(zone_dir):
-            os.rmdir(zone_dir)
+    """Remove DLC .ff files from zone/iw4x/x86/dlc/ (and legacy zone/dlc/)."""
+    for dlc_dir in (
+        os.path.join(install_dir, "zone", "iw4x", "x86", "dlc"),
+        os.path.join(install_dir, "zone", "dlc"),
+    ):
+        if not os.path.isdir(dlc_dir):
+            continue
+        for fname in _DLC_FF_FILENAMES:
+            p = os.path.join(dlc_dir, fname)
+            if os.path.exists(p):
+                os.remove(p)
+        # Clean up empty parent directories
+        d = dlc_dir
+        while d != install_dir and os.path.isdir(d) and not os.listdir(d):
+            os.rmdir(d)
+            d = os.path.dirname(d)
 
 
 def is_iw4x_installed(install_dir: str) -> bool:
-    """Returns True if iw4mp.exe.bak exists (meaning the mod rename is active)."""
-    return os.path.exists(os.path.join(install_dir, "iw4mp.exe.bak"))
+    """Returns True if iw4x.exe and iw4x.dll are present."""
+    return (os.path.exists(os.path.join(install_dir, "iw4x.exe")) and
+            os.path.exists(os.path.join(install_dir, "iw4x.dll")))
 
 
 def is_iw4x_dlc_installed(install_dir: str) -> bool:
     """Returns True if DLC content appears to be present."""
     markers = [
-        os.path.join(install_dir, "iw4x", "iw_dlc3_00.iwd"),       # MW2 DLC iwd
-        os.path.join(install_dir, "zone", "dlc", "mp_backlot.ff"),  # CoD4 ff
-        os.path.join(install_dir, "zone", "dlc", "mp_nuked.ff"),    # BO1 ff
+        os.path.join(install_dir, "main", "iw4x", "x86", "iw_dlc3_00.iwd"),       # MW2 DLC iwd
+        os.path.join(install_dir, "zone", "iw4x", "x86", "dlc", "mp_backlot.ff"),  # CoD4 ff
+        os.path.join(install_dir, "zone", "iw4x", "x86", "dlc", "mp_nuked.ff"),    # BO1 ff
     ]
-    return all(os.path.exists(m) for m in markers)
+    if all(os.path.exists(m) for m in markers):
+        return True
+    # Check legacy paths for installs that haven't been migrated yet
+    legacy = [
+        os.path.join(install_dir, "iw4x", "iw_dlc3_00.iwd"),
+        os.path.join(install_dir, "zone", "dlc", "mp_backlot.ff"),
+        os.path.join(install_dir, "zone", "dlc", "mp_nuked.ff"),
+    ]
+    return all(os.path.exists(m) for m in legacy)
+
+
+# ── DLC migration ────────────────────────────────────────────────────────────
+
+def _migrate_dlc_ff(install_dir: str):
+    """Move .ff files from legacy zone/dlc/ to zone/iw4x/x86/dlc/."""
+    old_dir = os.path.join(install_dir, "zone", "dlc")
+    if not os.path.isdir(old_dir):
+        return
+    new_dir = os.path.join(install_dir, "zone", "iw4x", "x86", "dlc")
+    moved = 0
+    for fname in _DLC_FF_FILENAMES:
+        old = os.path.join(old_dir, fname)
+        if os.path.isfile(old):
+            os.makedirs(new_dir, exist_ok=True)
+            shutil.move(old, os.path.join(new_dir, fname))
+            moved += 1
+    if moved:
+        _log.info("Migrated %d DLC .ff files from zone/dlc/ to zone/iw4x/x86/dlc/", moved)
+    # Clean up empty legacy directory
+    d = old_dir
+    while d != install_dir and os.path.isdir(d) and not os.listdir(d):
+        os.rmdir(d)
+        d = os.path.dirname(d)
+
+
+def _migrate_old_layout(install_dir: str):
+    """Migrate from old DeckOps layout to launcher-compatible layout."""
+    # Restore iw4mp.exe from backup if the old exe-swap is present
+    iw4mp_bak = os.path.join(install_dir, "iw4mp.exe.bak")
+    if os.path.exists(iw4mp_bak):
+        iw4mp = os.path.join(install_dir, "iw4mp.exe")
+        if os.path.exists(iw4mp):
+            os.remove(iw4mp)
+        os.rename(iw4mp_bak, iw4mp)
+        _log.info("Restored iw4mp.exe from backup")
+
+    _moves = [
+        ("iw4x", os.path.join("main", "iw4x", "x86")),
+        (os.path.join("zone", "patch"), os.path.join("zone", "iw4x", "x86", "patch")),
+        (os.path.join("zone", "zonebuilder"), os.path.join("zone", "iw4x", "x86", "zonebuilder")),
+    ]
+    for old_rel, new_rel in _moves:
+        old_abs = os.path.join(install_dir, old_rel)
+        new_abs = os.path.join(install_dir, new_rel)
+        if not os.path.isdir(old_abs):
+            continue
+        os.makedirs(os.path.dirname(new_abs), exist_ok=True)
+        if os.path.isdir(new_abs):
+            for item in os.listdir(old_abs):
+                shutil.move(os.path.join(old_abs, item), os.path.join(new_abs, item))
+            shutil.rmtree(old_abs)
+        else:
+            shutil.move(old_abs, new_abs)
+        _log.info("Migrated %s → %s", old_rel, new_rel)
+
+
+def _relocate_extracted(install_dir: str):
+    """Move release.zip dirs from flat layout to launcher-compatible layout."""
+    _moves = [
+        ("iw4x", os.path.join("main", "iw4x", "x86")),
+        (os.path.join("zone", "patch"), os.path.join("zone", "iw4x", "x86", "patch")),
+        (os.path.join("zone", "zonebuilder"), os.path.join("zone", "iw4x", "x86", "zonebuilder")),
+    ]
+    for old_rel, new_rel in _moves:
+        old_abs = os.path.join(install_dir, old_rel)
+        new_abs = os.path.join(install_dir, new_rel)
+        if not os.path.isdir(old_abs):
+            continue
+        os.makedirs(os.path.dirname(new_abs), exist_ok=True)
+        if os.path.isdir(new_abs):
+            for item in os.listdir(old_abs):
+                src = os.path.join(old_abs, item)
+                dst = os.path.join(new_abs, item)
+                if os.path.exists(dst):
+                    if os.path.isdir(dst):
+                        shutil.rmtree(dst)
+                    else:
+                        os.remove(dst)
+                shutil.move(src, dst)
+            shutil.rmtree(old_abs)
+        else:
+            shutil.move(old_abs, new_abs)
+
+
+def _build_iw4x_launch_option() -> str:
+    return "bash -c 'exec \"${@/iw4mp.exe/iw4x-launcher.exe}\"' -- %command%"
 
 
 # ── DLC install ──────────────────────────────────────────────────────────────
@@ -154,11 +265,12 @@ def install_iw4x_dlc(install_dir: str, on_progress=None):
 
     Fetches the manifest (update.json), then downloads every file listed
     in it to the correct relative path under install_dir. All .ff files
-    are remapped into zone/dlc/ regardless of their manifest prefix.
+    are remapped into zone/iw4x/x86/dlc/ regardless of their manifest prefix.
     Files are downloaded with up to 4 concurrent workers.
 
     on_progress — optional callback(percent: int, status: str)
     """
+    _migrate_dlc_ff(install_dir)
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     def prog(pct, msg):
@@ -247,30 +359,19 @@ def install_iw4x(game: dict, steam_root: str,
     """
     Install or reinstall IW4x for Modern Warfare 2.
 
-    Downloads iw4x.dll and release.zip concurrently. release.zip contains
-    iw4x.exe, all iwd files, zone patches, and other rawfile assets.
-    For Steam games, renames iw4mp.exe -> iw4mp.exe.bak and copies
-    iw4x.exe -> iw4mp.exe so Steam launches IW4x transparently.
-    For own games, skips the rename -- the shortcut points at iw4x.exe directly.
-
-    game            -- entry from detect_games
-    steam_root      -- path to Steam root (kept for API consistency)
-    proton_path     -- path to the proton executable (kept for API consistency)
-    compatdata_path -- path to the MW2 compatdata prefix (kept for API consistency)
-    on_progress     -- optional callback(percent: int, status: str)
-    source          -- "steam" or "own", controls whether exe rename happens
-    install_dlc     -- if True, download free DLC maps after base install
-    remove_dlc      -- if True, remove existing DLC before reinstall
+    Downloads iw4x.dll, release.zip, and the IW4x launcher concurrently.
+    release.zip contents are relocated to the launcher-compatible layout.
+    For Steam games, sets a launch option to redirect to iw4x-launcher.exe.
     """
     install_dir = game["install_dir"]
-    iw4x_dir    = os.path.join(install_dir, "iw4x")
+    _migrate_dlc_ff(install_dir)
+    _migrate_old_layout(install_dir)
+
+    iw4x_dir = os.path.join(install_dir, "main", "iw4x", "x86")
     if os.path.exists(iw4x_dir):
         if remove_dlc:
             shutil.rmtree(iw4x_dir)
         else:
-            # Preserve DLC .iwd files across reinstall so users don't
-            # re-download ~3 GB every time.  Remove everything else
-            # (subdirs, non-iwd files) so release.zip extracts cleanly.
             for entry in os.listdir(iw4x_dir):
                 p = os.path.join(iw4x_dir, entry)
                 if os.path.isdir(p):
@@ -283,8 +384,6 @@ def install_iw4x(game: dict, steam_root: str,
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    # When DLC is enabled, base install uses 0-50%, DLC uses 50-100%.
-    # When DLC is disabled, base install uses 0-100%.
     base_end = 50 if install_dlc else 100
 
     def prog(pct, msg):
@@ -292,12 +391,18 @@ def install_iw4x(game: dict, steam_root: str,
             scaled = int(pct / 100 * base_end)
             on_progress(scaled, msg)
 
-    # ── Download iw4x.dll and release.zip concurrently ────────────────────
+    # ── Resolve launcher URL ─────────────────────────────────────────────
+    prog(2, "Checking latest launcher version...")
+    launcher_url = _get_launcher_url()
+
+    # ── Download iw4x.dll, release.zip, and launcher concurrently ────────
     prog(5, "Downloading iw4x files...")
 
+    launcher_zip = os.path.join(install_dir, "launcher.zip")
     dl_tasks = [
-        (DLL_URL, os.path.join(install_dir, "iw4x.dll"),    "iw4x.dll"),
-        (ZIP_URL, os.path.join(install_dir, "release.zip"), "release.zip"),
+        (DLL_URL,       os.path.join(install_dir, "iw4x.dll"), "iw4x.dll"),
+        (ZIP_URL,       os.path.join(install_dir, "release.zip"), "release.zip"),
+        (launcher_url,  launcher_zip, "iw4x-launcher"),
     ]
     dl_errors = []
     dl_done   = [0]
@@ -307,9 +412,9 @@ def install_iw4x(game: dict, steam_root: str,
         _download(url, dest, None, f"Downloading {label}...", timeout=120)
         with dl_lock:
             dl_done[0] += 1
-            prog(5 + int(dl_done[0] / len(dl_tasks) * 45), f"Downloaded {label}")
+            prog(5 + int(dl_done[0] / len(dl_tasks) * 40), f"Downloaded {label}")
 
-    with ThreadPoolExecutor(max_workers=2) as ex:
+    with ThreadPoolExecutor(max_workers=3) as ex:
         futs = {ex.submit(_dl, url, dest, label): label for url, dest, label in dl_tasks}
         for fut in as_completed(futs):
             try:
@@ -320,37 +425,30 @@ def install_iw4x(game: dict, steam_root: str,
     if dl_errors:
         raise RuntimeError("Download failed:\n" + "\n".join(dl_errors))
 
-    # ── Extract release.zip ───────────────────────────────────────────────
-    # release.zip contains:
-    #   iw4x.exe          (root)
-    #   iw4x/*.iwd        (iwd files)
-    #   iw4x/html/        (server browser assets)
-    #   iw4x/images/      (branding)
-    #   iw4x/video/       (intro video)
-    #   zone/patch/       (fastfile patches)
-    #   zonebuilder.exe   (modding tool)
-    prog(55, "Extracting release.zip...")
+    # ── Extract release.zip and relocate to launcher layout ──────────────
+    prog(50, "Extracting release.zip...")
     zip_dest = os.path.join(install_dir, "release.zip")
     with zipfile.ZipFile(zip_dest) as zf:
         zf.extractall(install_dir)
     os.remove(zip_dest)
 
-    # ── Rename iw4mp.exe -> iw4mp.exe.bak, copy iw4x.exe -> iw4mp.exe ───
-    # Steam games: swap in iw4x.exe so Steam launches it transparently.
-    # Own games: skip -- the shortcut points at iw4x.exe directly and the
-    # original exe may not even exist (MS Store copies, old installs, etc).
-    if source != "own":
-        iw4mp     = os.path.join(install_dir, "iw4mp.exe")
-        iw4mp_bak = os.path.join(install_dir, "iw4mp.exe.bak")
-        iw4x_exe  = os.path.join(install_dir, "iw4x.exe")
+    prog(60, "Relocating files to launcher layout...")
+    _relocate_extracted(install_dir)
 
-        prog(80, "Replacing iw4mp.exe...")
-        if os.path.exists(iw4mp) and not os.path.exists(iw4mp_bak):
-            os.rename(iw4mp, iw4mp_bak)
-        if os.path.exists(iw4x_exe):
-            shutil.copy2(iw4x_exe, iw4mp)
-    else:
-        prog(80, "Own game -- skipping exe rename")
+    # ── Extract launcher ─────────────────────────────────────────────────
+    prog(70, "Extracting iw4x-launcher...")
+    with zipfile.ZipFile(launcher_zip) as zf:
+        zf.extractall(install_dir)
+    os.remove(launcher_zip)
+
+    # ── Set launch option (Steam only) ───────────────────────────────────
+    if source != "own":
+        prog(80, "Setting launch options...")
+        try:
+            from wrapper import set_launch_options
+            set_launch_options(steam_root, MW2_MP_APPID, _build_iw4x_launch_option())
+        except Exception as ex:
+            prog(80, f"Could not set launch options: {ex}")
 
     prog(100, "IW4x base installation complete!")
 
@@ -362,33 +460,41 @@ def install_iw4x(game: dict, steam_root: str,
         install_iw4x_dlc(install_dir, on_progress=dlc_prog)
 
 
-def uninstall_iw4x(game: dict, remove_dlc: bool = False):
+def uninstall_iw4x(game: dict, steam_root: str = "",
+                   remove_dlc: bool = False):
     """
-    Restore iw4mp.exe from iw4mp.exe.bak and remove IW4x client files.
-    DLC content (~3 GB) is preserved by default; pass remove_dlc=True
-    to delete it as well.
+    Remove IW4x client files and launcher. Restores iw4mp.exe from
+    backup if an old exe-swap install is present. DLC content (~3 GB)
+    is preserved by default; pass remove_dlc=True to delete it.
     """
     install_dir = game["install_dir"]
 
-    # Restore iw4mp.exe from backup
-    iw4mp     = os.path.join(install_dir, "iw4mp.exe")
+    # Restore iw4mp.exe from legacy backup if present
     iw4mp_bak = os.path.join(install_dir, "iw4mp.exe.bak")
     if os.path.exists(iw4mp_bak):
+        iw4mp = os.path.join(install_dir, "iw4mp.exe")
         if os.path.exists(iw4mp):
             os.remove(iw4mp)
         os.rename(iw4mp_bak, iw4mp)
 
-    for fname in ["iw4x.dll", "iw4x.exe", "zonebuilder.exe"]:
+    for fname in ["iw4x.dll", "iw4x.exe", "iw4x-launcher.exe",
+                   "zonebuilder.exe", "Unlinker.exe", "steam_appid.txt",
+                   "zone-conversion.log"]:
         p = os.path.join(install_dir, fname)
         if os.path.exists(p):
             os.remove(p)
 
-    iw4x_dir = os.path.join(install_dir, "iw4x")
+    # Launcher cache
+    cache_dir = os.path.join(install_dir, "cache")
+    if os.path.exists(cache_dir):
+        shutil.rmtree(cache_dir)
+
+    # New layout: main/iw4x/x86/
+    iw4x_dir = os.path.join(install_dir, "main", "iw4x", "x86")
     if os.path.exists(iw4x_dir):
         if remove_dlc:
             shutil.rmtree(iw4x_dir)
         else:
-            # Remove subdirs and non-iwd files, keep DLC .iwd files
             for entry in os.listdir(iw4x_dir):
                 p = os.path.join(iw4x_dir, entry)
                 if os.path.isdir(p):
@@ -396,15 +502,42 @@ def uninstall_iw4x(game: dict, remove_dlc: bool = False):
                 elif not entry.endswith(".iwd"):
                     os.remove(p)
 
-    # Clean up zone/patch directory added by release.zip
-    zone_patch = os.path.join(install_dir, "zone", "patch")
-    if os.path.exists(zone_patch):
-        shutil.rmtree(zone_patch)
+    # Legacy layout: iw4x/
+    old_iw4x = os.path.join(install_dir, "iw4x")
+    if os.path.exists(old_iw4x):
+        if remove_dlc:
+            shutil.rmtree(old_iw4x)
+        else:
+            for entry in os.listdir(old_iw4x):
+                p = os.path.join(old_iw4x, entry)
+                if os.path.isdir(p):
+                    shutil.rmtree(p)
+                elif not entry.endswith(".iwd"):
+                    os.remove(p)
+
+    # Zone directories (new + legacy)
+    for zone_sub in [
+        os.path.join("zone", "iw4x", "x86", "patch"),
+        os.path.join("zone", "iw4x", "x86", "zonebuilder"),
+        os.path.join("zone", "patch"),
+        os.path.join("zone", "zonebuilder"),
+    ]:
+        d = os.path.join(install_dir, zone_sub)
+        if os.path.exists(d):
+            shutil.rmtree(d)
 
     if remove_dlc:
         _remove_dlc_ff(install_dir)
 
-    # Clean up old DeckOps metadata if upgrading from a previous install
+    # Clear launch option
+    if steam_root:
+        try:
+            from wrapper import clear_launch_options
+            clear_launch_options(steam_root, MW2_MP_APPID)
+        except Exception:
+            pass
+
+    # Clean up old DeckOps metadata
     old_meta = os.path.join(install_dir, "iw4x-updoot")
     if os.path.exists(old_meta):
         shutil.rmtree(old_meta)
