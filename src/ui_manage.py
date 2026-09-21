@@ -435,7 +435,7 @@ class ManagementScreen(QWidget):
 
         threading.Thread(target=_run, daemon=True).start()
 
-    def _setup(self, gd):
+    def _setup(self, gd, force_downgrade_ids=None):
         """Route a single card's keys through the install flow."""
         root = find_steam_root()
         keys = _active_keys(gd)
@@ -475,6 +475,7 @@ class ManagementScreen(QWidget):
         s.steam_root = root
         s._return_to_management = True
         s.install_iw4x_dlc = dlc
+        s.force_downgrade_ids = set(force_downgrade_ids or ())
         go_to(self.stack, "InstallScreen")
 
     def _add_mw3_ds(self, gd):
@@ -731,7 +732,7 @@ class ManagementScreen(QWidget):
         self._status.setText(
             f"{game_name} downgrade selected. Running depot download and reinstall..."
         )
-        self._setup(gd)
+        self._setup(gd, force_downgrade_ids={game_id})
 
     def _mods(self, gd, installed_keys):
         """Open the mod folder for a game. Shows a chooser for games with
@@ -2280,6 +2281,19 @@ class UpdateScreen(QWidget):
                     self._s.log.emit(f"✓  Cleaned ZD files from {n} prefix(es)")
             except Exception as ex:
                 self._s.log.emit(f"  ZD cleanup skipped: {ex}")
+
+        # Clean up Plutonium dirs leaked into non-Plutonium prefixes by older versions
+        if has_plut and not is_lcd:
+            try:
+                from plutonium_oled import cleanup_plut_from_non_plut_prefixes
+                n = cleanup_plut_from_non_plut_prefixes(
+                    self.steam_root,
+                    on_progress=lambda msg: self._s.log.emit(msg),
+                )
+                if n:
+                    self._s.log.emit(f"✓  Cleaned Plutonium from {n} non-Plutonium prefix(es)")
+            except Exception as ex:
+                self._s.log.emit(f"  Plutonium cleanup skipped: {ex}")
 
         self._s.progress.emit(100, "All done!")
         self._s.done.emit(True)
