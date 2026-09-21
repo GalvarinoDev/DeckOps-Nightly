@@ -1523,11 +1523,13 @@ class _BaseInstallScreen(QWidget):
             _dir = _matched[0][2]["install_dir"]
             _sel = {k for k, _, _ in _matched}
 
+            _forced = _dg_id in self.force_downgrade_ids
+
             if _dg_id == "iw5":
                 # MW3 has special SP/DS depot filtering and DLC markers
                 _is_ds = _sel == {"iw5mp_ds"}
                 _has_sp = "iw5sp" in _sel
-                _needs_base = _dg_needed("iw5", _dir)
+                _needs_base = _forced or _dg_needed("iw5", _dir)
                 _needs_sp = _has_sp and not _needs_base and _sp_64("iw5", _dir)
                 _dlc_st = _dg_dlc_status("iw5", _dir)
                 _dlc_bad = sorted(k for k, v in _dlc_st.items() if v == "wrong")
@@ -1540,7 +1542,7 @@ class _BaseInstallScreen(QWidget):
                     self._s.log.emit("  MW3 is already 32-bit, downgrade skipped.")
                     continue
 
-                self._s.log.emit("Checking MW3... 64-bit detected, downgrade needed.")
+                self._s.log.emit("Checking MW3... downgrade needed.")
                 if not _dg_space(_dir):
                     self._s.log.emit(f"✗  MW3 downgrade requires at least {_DG_SPACE_GB} GB of free space.")
                     continue
@@ -1571,7 +1573,7 @@ class _BaseInstallScreen(QWidget):
                 _dg_jobs.append(("iw5", _gcfg["name"], _dir, _depots, _cmds))
             else:
                 # Ghosts, AW: PE/config check + appmanifest DLC detection
-                if not _dg_needed(_dg_id, _dir):
+                if not _forced and not _dg_needed(_dg_id, _dir):
                     self._s.log.emit(f"  {_gcfg['name']} depot files are up to date, skipped.")
                     continue
                 if _gcfg.get("always_64bit"):
@@ -1592,6 +1594,8 @@ class _BaseInstallScreen(QWidget):
                     _dlc_names = ", ".join(_gcfg["dlc"][k]["name"] for k in _owned_dlc)
                     self._s.log.emit(f"  DLC to downgrade: {_dlc_names}")
                 _dg_jobs.append((_dg_id, _gcfg["name"], _dir, _depots, _cmds))
+
+        self.force_downgrade_ids = set()
 
         _dg_user = None
         if _dg_jobs:
@@ -2078,6 +2082,19 @@ class _BaseInstallScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"  ZD cleanup skipped: {ex}")
 
+        # --- Clean up Plutonium dirs leaked into non-Plutonium prefixes
+        if has_plut and not cfg.is_lcd():
+            try:
+                from plutonium_oled import cleanup_plut_from_non_plut_prefixes
+                n = cleanup_plut_from_non_plut_prefixes(
+                    self.steam_root,
+                    on_progress=lambda msg: self._s.log.emit(msg),
+                )
+                if n:
+                    self._s.log.emit(f"✓  Cleaned Plutonium from {n} non-Plutonium prefix(es)")
+            except Exception as ex:
+                self._s.log.emit(f"  Plutonium cleanup skipped: {ex}")
+
         # --- Mark vanilla games
         for key, gd, game in self.selected:
             c = KEY_CLIENT.get(key, "")
@@ -2230,6 +2247,7 @@ class InstallScreen(_BaseInstallScreen):
         self.selected = []
         self.own_selected = {}
         self.steam_selected = None
+        self.force_downgrade_ids = set()
 
 
 
