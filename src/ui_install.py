@@ -2064,6 +2064,20 @@ class _BaseInstallScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"⚠  Zombies Declassified skipped: {ex}")
 
+        # --- Clean up ZD files leaked into non-t6zm prefixes
+        if has_plut and not cfg.is_lcd():
+            try:
+                from plutonium_oled import cleanup_zd_from_other_prefixes
+                n = cleanup_zd_from_other_prefixes(
+                    {k: g for k, gd, g in self.selected if g},
+                    self.steam_root,
+                    on_progress=lambda msg: self._s.log.emit(msg),
+                )
+                if n:
+                    self._s.log.emit(f"✓  Cleaned ZD files from {n} prefix(es)")
+            except Exception as ex:
+                self._s.log.emit(f"  ZD cleanup skipped: {ex}")
+
         # --- Mark vanilla games
         for key, gd, game in self.selected:
             c = KEY_CLIENT.get(key, "")
