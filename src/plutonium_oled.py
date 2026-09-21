@@ -339,14 +339,24 @@ def _ensure_shared_plutonium(src_plut_dir: str, on_progress=None) -> bool:
         return False
 
 
+_STORAGE_SUBDIRS = {
+    "t4sp": "t4", "t4mp": "t4",
+    "t5sp": "t5", "t5mp": "t5",
+    "t6zm": "t6", "t6mp": "t6",
+    "iw5mp": "iw5", "iw5mp_ds": "iw5",
+}
+
+
 def _copy_plut_to_prefix(src_plut_dir: str, dest_plut_dir: str,
-                          on_progress=None):
+                          game_key: str = "", on_progress=None):
     """
     Set up Plutonium in a game prefix using symlinks for shared dirs.
 
     bin/, launcher/, and games/ are symlinked to the shared copy at
-    ~/.local/share/deckops/plutonium_shared/. Only storage/ (per-game
-    configs and caches) is copied as real files.
+    ~/.local/share/deckops/plutonium_shared/. Only the relevant storage/
+    subdirectory for game_key is copied as real files, so large mods
+    (e.g. Zombies Declassified ~9GB in storage/t6/) don't leak into
+    unrelated prefixes.
 
     Falls back to full copy if shared dirs aren't available.
     """
@@ -380,11 +390,19 @@ def _copy_plut_to_prefix(src_plut_dir: str, dest_plut_dir: str,
             if os.path.isdir(shared_src):
                 os.symlink(shared_src, dest_sub)
 
-        # Copy storage/ as real files (per-game data)
+        # Copy only the storage subdirectory for this game
         storage_src = os.path.join(src_plut_dir, "storage")
         if os.path.isdir(storage_src):
-            storage_dst = os.path.join(dest_plut_dir, "storage")
-            shutil.copytree(storage_src, storage_dst)
+            storage_name = _STORAGE_SUBDIRS.get(game_key)
+            if storage_name:
+                sub_src = os.path.join(storage_src, storage_name)
+                if os.path.isdir(sub_src):
+                    sub_dst = os.path.join(dest_plut_dir, "storage", storage_name)
+                    os.makedirs(os.path.join(dest_plut_dir, "storage"), exist_ok=True)
+                    shutil.copytree(sub_src, sub_dst)
+            else:
+                storage_dst = os.path.join(dest_plut_dir, "storage")
+                shutil.copytree(storage_src, storage_dst)
 
         # Copy any remaining top-level files (config, etc.)
         for item in os.listdir(src_plut_dir):
@@ -398,8 +416,25 @@ def _copy_plut_to_prefix(src_plut_dir: str, dest_plut_dir: str,
         elapsed = time.time() - start
         prog(f"  Copied Plutonium with symlinks ({elapsed:.1f}s)")
     else:
-        # Fallback: full copy if shared dirs not available
-        shutil.copytree(src_plut_dir, dest_plut_dir)
+        # Fallback: full copy — still filter storage if game_key is known
+        storage_name = _STORAGE_SUBDIRS.get(game_key) if game_key else ""
+        if storage_name:
+            os.makedirs(dest_plut_dir, exist_ok=True)
+            for item in os.listdir(src_plut_dir):
+                src_item = os.path.join(src_plut_dir, item)
+                dst_item = os.path.join(dest_plut_dir, item)
+                if item == "storage":
+                    sub_src = os.path.join(src_item, storage_name)
+                    if os.path.isdir(sub_src):
+                        sub_dst = os.path.join(dst_item, storage_name)
+                        os.makedirs(dst_item, exist_ok=True)
+                        shutil.copytree(sub_src, sub_dst)
+                elif os.path.isdir(src_item):
+                    shutil.copytree(src_item, dst_item)
+                else:
+                    shutil.copy2(src_item, dst_item)
+        else:
+            shutil.copytree(src_plut_dir, dest_plut_dir)
         elapsed = time.time() - start
         prog(f"  Copied Plutonium ({elapsed:.1f}s)")
 
@@ -522,13 +557,6 @@ def _copy_plut_to_launcher_prefix(src_plut_dir: str, game_prefix_plut_dir: str,
                 os.symlink(shared_src, dest_sub)
 
     # Merge storage/ — copy per-game storage subdirs without wiping others.
-    # Map game keys to their Plutonium storage subfolder names.
-    _STORAGE_SUBDIRS = {
-        "t4sp": "t4", "t4mp": "t4",
-        "t5sp": "t5", "t5mp": "t5",
-        "t6zm": "t6", "t6mp": "t6",
-        "iw5mp": "iw5", "iw5mp_ds": "iw5",
-    }
     storage_name = _STORAGE_SUBDIRS.get(game_key)
     if storage_name:
         src_storage = os.path.join(game_prefix_plut_dir, "storage", storage_name)
@@ -834,6 +862,106 @@ def _read_metadata(install_dir: str) -> dict:
     return {}
 
 
+def cleanup_zd_from_other_prefixes(installed_games: dict, steam_root: str,
+                                    on_progress=None):
+    """
+    Remove leaked Zombies Declassified files from non-t6zm prefixes.
+
+    Earlier versions copied the entire storage/ tree (including ZD's ~9GB)
+    into every Plutonium game prefix. This finds and removes those copies
+    from prefixes that don't need them.
+
+    Returns the number of prefixes cleaned.
+    """
+    from zombies_declassified import _ZD_USERMAPS
+
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    cleaned = 0
+    for key in GAME_META:
+        if key == "t6zm" or key not in installed_games:
+            continue
+        game = installed_games[key]
+        install_dir = game.get("install_dir", "")
+        if not install_dir:
+            continue
+
+        meta = _read_metadata(install_dir)
+        plut_dir = meta.get("plut_dir", "")
+        if not plut_dir:
+            appid = GAME_META[key][0]
+            plut_dir = _plut_dir_in_compatdata(steam_root, appid)
+
+        storage_t6 = os.path.join(plut_dir, "storage", "t6")
+        dlc5_dir = os.path.join(storage_t6, "mods", "dlc5")
+        if not os.path.isdir(dlc5_dir):
+            continue
+
+        prog(f"  Cleaning ZD files from {key} prefix...")
+
+        shutil.rmtree(dlc5_dir, ignore_errors=True)
+
+        um_dir = os.path.join(storage_t6, "usermaps")
+        for mapname in _ZD_USERMAPS:
+            mp = os.path.join(um_dir, mapname)
+            if os.path.isdir(mp):
+                shutil.rmtree(mp, ignore_errors=True)
+
+        for subpath in [
+            "raw/maps/mp/animscripts/zm_dog_combat.gsc",
+            "raw/maps/mp/animscripts/zm_dog_stop.gsc",
+            "raw/scripts/zm/zzz_zm_dogfog.csc",
+            "raw/scripts/zm/zzz_zm_factoryfog.csc",
+            "raw/scripts/zm/zzz_zm_factorypower.csc",
+            "raw/scripts/zm/zzz_zm_gglow.csc",
+            "raw/scripts/zm/zzz_zm_location.gsc",
+            "raw/scripts/zm/zzz_zm_moonsky.csc",
+            "raw/scripts/zm/zzz_zm_sumpffog.csc",
+        ]:
+            fp = os.path.join(storage_t6, subpath)
+            if os.path.isfile(fp):
+                os.remove(fp)
+
+        cleaned += 1
+        prog(f"  ✓ Removed ZD files from {key} prefix")
+
+    # Also clean the launcher prefix
+    try:
+        from shortcut import get_launcher_plut_dir
+        launcher_t6 = os.path.join(get_launcher_plut_dir(), "storage", "t6")
+        dlc5_dir = os.path.join(launcher_t6, "mods", "dlc5")
+        if os.path.isdir(dlc5_dir):
+            prog("  Cleaning ZD files from launcher prefix...")
+            shutil.rmtree(dlc5_dir, ignore_errors=True)
+            um_dir = os.path.join(launcher_t6, "usermaps")
+            for mapname in _ZD_USERMAPS:
+                mp = os.path.join(um_dir, mapname)
+                if os.path.isdir(mp):
+                    shutil.rmtree(mp, ignore_errors=True)
+            for subpath in [
+                "raw/maps/mp/animscripts/zm_dog_combat.gsc",
+                "raw/maps/mp/animscripts/zm_dog_stop.gsc",
+                "raw/scripts/zm/zzz_zm_dogfog.csc",
+                "raw/scripts/zm/zzz_zm_factoryfog.csc",
+                "raw/scripts/zm/zzz_zm_factorypower.csc",
+                "raw/scripts/zm/zzz_zm_gglow.csc",
+                "raw/scripts/zm/zzz_zm_location.gsc",
+                "raw/scripts/zm/zzz_zm_moonsky.csc",
+                "raw/scripts/zm/zzz_zm_sumpffog.csc",
+            ]:
+                fp = os.path.join(launcher_t6, subpath)
+                if os.path.isfile(fp):
+                    os.remove(fp)
+            cleaned += 1
+            prog("  ✓ Removed ZD files from launcher prefix")
+    except Exception:
+        pass
+
+    return cleaned
+
+
 # ── public API ────────────────────────────────────────────────────────────────
 
 def install_plutonium(game: dict, game_key: str, steam_root: str,
@@ -902,7 +1030,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
 
     prog(10, f"Copying Plutonium into prefix for {game['name']}...")
     _copy_plut_to_prefix(
-        src_plut_dir, dest_plut_dir,
+        src_plut_dir, dest_plut_dir, game_key=game_key,
         on_progress=lambda msg: prog(40, msg),
     )
 
