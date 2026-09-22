@@ -1009,3 +1009,52 @@ def merge_depots(game_id: str, staging_dir: str, install_dir: str,
         return False
 
     return True
+
+
+def trim_iw5_duplicates(install_dir: str, on_progress=None) -> int:
+    """
+    Delete files from the MW3 game root that also exist in downgrade/.
+    Saves disk by removing duplicate 64-bit copies that Plutonium no
+    longer reads. Steam Verify restores them if the user wants vanilla
+    SP back. Returns the number of files removed.
+    """
+    dg_dir = _merge_dir("iw5", install_dir)
+    if not os.path.isdir(dg_dir):
+        return 0
+
+    def prog(msg):
+        _log.info(msg)
+        if on_progress:
+            on_progress(msg)
+
+    removed = 0
+    for dirpath, _, filenames in os.walk(dg_dir):
+        rel = os.path.relpath(dirpath, dg_dir)
+        for fname in filenames:
+            if fname == RECEIPT_NAME:
+                continue
+            rf = fname if rel == "." else os.path.join(rel, fname)
+            root_file = os.path.join(install_dir, rf)
+            if os.path.isfile(root_file):
+                try:
+                    os.remove(root_file)
+                    removed += 1
+                except OSError:
+                    pass
+        if removed and removed % 25 == 0:
+            prog(f"Trimming duplicate files... {removed} removed")
+
+    # Clean empty dirs left behind in the game root
+    for dirpath, dirnames, filenames in os.walk(install_dir, topdown=False):
+        if dirpath == install_dir:
+            continue
+        if os.path.basename(dirpath) == _IW5_SUBDIR:
+            continue
+        if not filenames and not dirnames:
+            try:
+                os.rmdir(dirpath)
+            except OSError:
+                pass
+
+    prog(f"Trimmed {removed} duplicate files from MW3 install")
+    return removed
