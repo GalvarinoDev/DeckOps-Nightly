@@ -1184,8 +1184,6 @@ class _BaseInstallScreen(QWidget):
         self.cont_btn.setVisible(True)
 
     def _go_management(self):
-        from wrapper import launch_steam
-        launch_steam()
         go_to(self.stack, "ManagementScreen")
 
     def showEvent(self, e):
