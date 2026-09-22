@@ -465,6 +465,10 @@ def _write_config(plut_dir: str, game_keys: list, installed_games: dict):
         game = installed_games.get(key, {})
         install_dir = game.get("install_dir", "")
         if install_dir:
+            # MW3 Steam: point at the downgrade/ subfolder where 32-bit
+            # depot files live, keeping the 64-bit install untouched.
+            if path_key == "iw5Path" and game.get("source") != "own":
+                install_dir = os.path.join(install_dir, "downgrade")
             data[path_key] = _wine_path(install_dir)
 
     with open(config_path, "w") as f:

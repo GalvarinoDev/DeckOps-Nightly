@@ -248,14 +248,25 @@ def is_pe_64bit(exe_path: str) -> bool | None:
 RECEIPT_NAME = "deckops_depot.json"
 _UNCHECKED_EXTS = (".exe", ".dll", ".asi", ".ini", ".cfg", ".txt", ".json", ".log")
 
+# MW3 depot files live in a downgrade/ subfolder so the 64-bit
+# Steam install stays intact and Steam Verify never re-corrupts it.
+_IW5_SUBDIR = "downgrade"
 
-def _receipt_path(install_dir: str) -> str:
-    return os.path.join(install_dir, RECEIPT_NAME)
+
+def _merge_dir(game_id: str, install_dir: str) -> str:
+    if game_id == "iw5":
+        return os.path.join(install_dir, _IW5_SUBDIR)
+    return install_dir
+
+
+def _receipt_path(game_id: str, install_dir: str) -> str:
+    return os.path.join(_merge_dir(game_id, install_dir), RECEIPT_NAME)
 
 
 def _write_receipt(game_id: str, install_dir: str, merged: dict):
     from datetime import datetime
-    path = _receipt_path(install_dir)
+    target = _merge_dir(game_id, install_dir)
+    path = _receipt_path(game_id, install_dir)
     data = {}
     try:
         with open(path) as f:
@@ -268,6 +279,7 @@ def _write_receipt(game_id: str, install_dir: str, merged: dict):
     data["manifests"] = {str(d["depot"]): d["manifest"] for d in GAME_CONFIGS[game_id]["depots"]}
     data["updated_at"] = datetime.now().isoformat()
     try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w") as f:
             json.dump(data, f, indent=1)
         _log.info("Wrote downgrade receipt for %s (%d files)", game_id, len(data["files"]))
@@ -275,9 +287,9 @@ def _write_receipt(game_id: str, install_dir: str, merged: dict):
         _log.warning("Could not write downgrade receipt %s: %s", path, ex)
 
 
-def clear_receipt(install_dir: str):
+def clear_receipt(game_id: str, install_dir: str):
     try:
-        os.remove(_receipt_path(install_dir))
+        os.remove(_receipt_path(game_id, install_dir))
     except FileNotFoundError:
         pass
     except OSError as ex:
@@ -287,13 +299,14 @@ def clear_receipt(install_dir: str):
 def _receipt_status(game_id: str, install_dir: str):
     """True = receipt matches the files on disk, False = files changed since
     (Steam update/verify), None = no usable receipt (install predates receipts)."""
+    target = _merge_dir(game_id, install_dir)
     try:
-        with open(_receipt_path(install_dir)) as f:
+        with open(_receipt_path(game_id, install_dir)) as f:
             data = json.load(f)
     except FileNotFoundError:
         return None
     except (OSError, ValueError) as ex:
-        _log.warning("Unreadable downgrade receipt in %s: %s", install_dir, ex)
+        _log.warning("Unreadable downgrade receipt in %s: %s", target, ex)
         return None
     if data.get("game_id") != game_id or not data.get("files"):
         return None
@@ -301,7 +314,7 @@ def _receipt_status(game_id: str, install_dir: str):
     if not files:
         files = data["files"]
     for rf, size in files.items():
-        p = os.path.join(install_dir, rf)
+        p = os.path.join(target, rf)
         try:
             if os.path.getsize(p) != size:
                 _log.info("%s receipt mismatch: %s size changed", game_id, rf)
@@ -341,7 +354,26 @@ def _legacy_downgrade_needed(game_id: str, install_dir: str) -> bool:
                    cfg["name"], not needed, needed)
         return needed
 
-    # Marker file check (MW3: iw_00.iwd size)
+    # MW3: depot files live in downgrade/ subfolder. If the folder
+    # doesn't exist yet, the downgrade hasn't been done.
+    if game_id == "iw5":
+        dg_dir = _merge_dir("iw5", install_dir)
+        if not os.path.isdir(dg_dir):
+            _log.debug("MW3 downgrade/ folder missing -> needed")
+            return True
+        marker = os.path.join(dg_dir, cfg["marker_file"])
+        if os.path.isfile(marker):
+            try:
+                size = os.path.getsize(marker)
+                is_64 = size > cfg["marker_threshold"]
+                _log.debug("MW3 downgrade/ marker size: %d -> %s",
+                           size, "64-bit" if is_64 else "32-bit")
+                return is_64
+            except OSError as ex:
+                _log.warning("Failed to stat marker %s: %s", marker, ex)
+        return True
+
+    # Marker file check (other games with markers)
     if cfg.get("marker_file") and cfg.get("marker_threshold"):
         marker = os.path.join(install_dir, cfg["marker_file"])
         if os.path.isfile(marker):
@@ -403,7 +435,8 @@ def detect_dlc_status(game_id: str, install_dir: str) -> dict:
         marker = dlc.get("marker")
         if not marker:
             continue
-        marker_path = os.path.join(install_dir, marker)
+        target = _merge_dir(game_id, install_dir)
+        marker_path = os.path.join(target, marker)
         if not os.path.isfile(marker_path):
             status[key] = "missing"
         else:
@@ -913,7 +946,10 @@ def _merge_tree(src: str, dst: str, prog):
 def merge_depots(game_id: str, staging_dir: str, install_dir: str,
                  on_progress=None):
     """
-    Merge 32-bit depot files over the game install directory.
+    Merge 32-bit depot files into the game directory.
+
+    MW3 (iw5) merges into a downgrade/ subfolder so the 64-bit Steam
+    install stays intact. All other games merge directly into install_dir.
 
     Handles both manual path (depot_XXXXX subdirs) and QR path
     (files directly in staging_dir).
@@ -926,6 +962,9 @@ def merge_depots(game_id: str, staging_dir: str, install_dir: str,
         _log.info(msg)
         if on_progress:
             on_progress(msg)
+
+    target = _merge_dir(game_id, install_dir)
+    os.makedirs(target, exist_ok=True)
 
     depot_ids = cfg["depot_ids"]
     has_depot_subdirs = any(
@@ -940,18 +979,17 @@ def merge_depots(game_id: str, staging_dir: str, install_dir: str,
             if not os.path.isdir(depot_path):
                 continue
             prog(f"Merging depot {depot_id} into {cfg['name']} install...")
-            merged.update(_merge_tree(depot_path, install_dir, prog))
+            merged.update(_merge_tree(depot_path, target, prog))
             prog(f"Depot {depot_id} merged.")
     else:
         prog(f"Merging 32-bit files into {cfg['name']} install...")
-        merged.update(_merge_tree(staging_dir, install_dir, prog))
+        merged.update(_merge_tree(staging_dir, target, prog))
         prog("Merge complete.")
 
-    # Record the downgrade before any cleanup that could fail
     if merged:
         _write_receipt(game_id, install_dir, merged)
 
-    _cleanup_dd_artifacts(install_dir)
+    _cleanup_dd_artifacts(target)
 
     prog("Cleaning up depot staging files...")
     try:
@@ -960,9 +998,10 @@ def merge_depots(game_id: str, staging_dir: str, install_dir: str,
     except Exception as ex:
         prog(f"Could not remove staging dir: {ex}")
 
-    # Post-merge sanity check against the real file (receipt would always pass here)
-    if cfg.get("marker_file") and _legacy_downgrade_needed(game_id, install_dir):
-        clear_receipt(install_dir)
+    # Post-merge sanity: MW3 skips this since the game root stays 64-bit
+    # by design. Other games check their marker files.
+    if game_id != "iw5" and cfg.get("marker_file") and _legacy_downgrade_needed(game_id, install_dir):
+        clear_receipt(game_id, install_dir)
         prog(
             f"WARNING: {cfg['name']} still appears to be 64-bit after merge. "
             f"Try verifying game files in Steam, then run DeckOps again."

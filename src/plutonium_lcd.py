@@ -783,7 +783,11 @@ def _write_plutonium_config_lcd(plut_dir: str, selected_keys: list,
             continue
         install_dir = game.get("install_dir", "")
         if install_dir:
-            data[PLUT_CONFIG_KEYS[key]] = _wine_path_lcd(install_dir)
+            path_key = PLUT_CONFIG_KEYS[key]
+            # MW3 Steam: point at the downgrade/ subfolder
+            if path_key == "iw5Path" and game.get("source") != "own":
+                install_dir = os.path.join(install_dir, "downgrade")
+            data[path_key] = _wine_path_lcd(install_dir)
 
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
     with open(config_path, "w") as f:

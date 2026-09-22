@@ -725,7 +725,7 @@ class ManagementScreen(QWidget):
 
         # Force a fresh downgrade: drop both the receipt and the legacy flag
         from depot_downgrade import clear_receipt
-        if idir: clear_receipt(idir)
+        if idir: clear_receipt(game_id, idir)
         if gcfg.get("always_64bit"):
             cfg.clear_depot_patched(game_id)
         cfg.unmark_game_setup(_dg_keys)

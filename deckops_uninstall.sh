@@ -1368,6 +1368,10 @@ if [ -n "$STEAM_ROOT" ]; then
         if [ -n "$game_dir" ] && [ -f "$game_dir/deckops_plutonium.json" ]; then
             rm -f "$game_dir/deckops_plutonium.json" && success "Removed DeckOps metadata for appid $appid" || warn "Failed to remove metadata for appid $appid"
         fi
+        # MW3: remove the downgrade/ subfolder that holds 32-bit depot files
+        if [ -n "$game_dir" ] && [ -d "$game_dir/downgrade" ]; then
+            rm -rf "$game_dir/downgrade" && success "Removed MW3 downgrade folder for appid $appid" || warn "Failed to remove downgrade folder for appid $appid"
+        fi
     done
 fi
 echo ""
