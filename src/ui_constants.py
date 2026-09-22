@@ -181,7 +181,7 @@ KEY_CLIENT = {
     "iw4sp":  "steam",
     "iw5mp":    "plutonium",
     "iw5mp_ds": "plutonium",
-    "iw5sp":  "sp_mod",
+    "iw5sp":  "steam",
     "t4sp":   "plutonium",
     "t4mp":   "plutonium",
     "t5sp":   "plutonium",
@@ -566,6 +566,7 @@ class _Sigs(QObject):
     iw5_qr_show   = pyqtSignal(str)        # QR path: display/refresh QR text
     iw5_qr_hide   = pyqtSignal()           # QR path: dismiss QR display
     iw5_dg_choose = pyqtSignal()           # show method chooser dialog
+    iw5_trim_ask  = pyqtSignal()           # offer to trim duplicate 64-bit files
     # Zombies Declassified opt-in prompt
     zd_ask        = pyqtSignal()           # show install/skip buttons
     zd_go         = pyqtSignal()           # dismiss buttons

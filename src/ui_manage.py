@@ -376,8 +376,7 @@ class ManagementScreen(QWidget):
         selected = []
         for key, game in all_installed.items():
             c = KEY_CLIENT.get(key, "")
-            # sp_mod: AlterWare SP exes are final, nothing to update
-            if c in ("steam", "sp_mod", "", None):
+            if c in ("steam", "", None):
                 continue
             if not cfg.is_game_setup(key):
                 continue
@@ -2147,10 +2146,6 @@ class UpdateScreen(QWidget):
             # Prefer the client from the original install if available
             if key == "cod4mp" and entry.get("client"):
                 c = entry["client"]
-            if c == "sp_mod":
-                self._s.log.emit(f"  {base_name} ({key}): AlterWare SP client has no updates, skipped")
-                continue
-
             try:
                 from plutonium_oled import GAME_META as _PLUT_META
                 from detect_games import GAMES as _GAMES_MAP

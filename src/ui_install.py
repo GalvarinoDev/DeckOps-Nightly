@@ -558,6 +558,8 @@ class _BaseInstallScreen(QWidget):
         self._iw5_dg_event = threading.Event()
         self._iw5_method = ""
         self._dg_game_title = ""
+        self._iw5_trim_event = threading.Event()
+        self._iw5_trim_accept = False
         self._manual_dl_event = threading.Event()
         self._manual_dl_ok = False
         self._retry_dl_event = threading.Event()
@@ -703,6 +705,7 @@ class _BaseInstallScreen(QWidget):
         self._s.iw5_qr_show.connect(self._show_iw5_qr)
         self._s.iw5_qr_hide.connect(self._hide_iw5_qr)
         self._s.iw5_dg_choose.connect(self._ask_iw5_dg_method)
+        self._s.iw5_trim_ask.connect(self._ask_iw5_trim)
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
         self._s.manual_dl.connect(self._show_manual_dl_dialog)
@@ -860,6 +863,24 @@ class _BaseInstallScreen(QWidget):
             self._iw5_method = ""
         self._iw5_dg_event.set()
 
+    def _ask_iw5_trim(self):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("MW3 Install")
+        msg.setText(
+            "Would you like to trim your MW3 install?\n\n"
+            "This removes duplicate 64-bit files that are\n"
+            "already replaced by the 32-bit downgrade,\n"
+            "saving approximately 5-6 GB of disk space.\n\n"
+            "Only choose this if you do not plan on\n"
+            "playing Single Player through Steam.\n"
+            "(Steam's Verify Integrity restores them.)"
+        )
+        trim_btn = msg.addButton("Trim Install", QMessageBox.AcceptRole)
+        msg.addButton("Keep Both", QMessageBox.RejectRole)
+        msg.exec_()
+        self._iw5_trim_accept = msg.clickedButton() == trim_btn
+        self._iw5_trim_event.set()
+
     def _run_batch_depot_downgrade(self, dg_jobs):
         """
         Run depot downgrade for multiple games in one session.
@@ -871,7 +892,7 @@ class _BaseInstallScreen(QWidget):
         from depot_downgrade import (
             ensure_depotdownloader, run_depot_download_qr,
             find_depot_staging, merge_depots, open_steam_console,
-            GAME_CONFIGS,
+            trim_iw5_duplicates, GAME_CONFIGS,
         )
 
         game_names = ", ".join(j[1] for j in dg_jobs)
@@ -942,6 +963,14 @@ class _BaseInstallScreen(QWidget):
                             on_progress=lambda m: self._s.log.emit(f"  {m}"),
                         )
                         self._s.log.emit(f"✓  {game_name} depot files updated")
+                        if game_id == "iw5" and not any(k == "iw5sp" for k, _, _ in self.selected):
+                            self._iw5_trim_event.clear()
+                            self._s.iw5_trim_ask.emit()
+                            self._iw5_trim_event.wait()
+                            if self._iw5_trim_accept:
+                                self._s.log.emit("Trimming duplicate 64-bit files...")
+                                freed = trim_iw5_duplicates(install_dir, on_progress=lambda m: self._s.log.emit(f"  {m}"))
+                                self._s.log.emit(f"✓  Trimmed {freed} duplicate files")
                     except Exception as ex:
                         self._s.log.emit(f"✗  {game_name} merge failed: {ex}")
                     finally:
@@ -988,6 +1017,14 @@ class _BaseInstallScreen(QWidget):
                         on_progress=lambda m: self._s.log.emit(f"  {m}"),
                     )
                     self._s.log.emit(f"✓  {game_name} depot files updated")
+                    if game_id == "iw5" and not any(k == "iw5sp" for k, _, _ in self.selected):
+                        self._iw5_trim_event.clear()
+                        self._s.iw5_trim_ask.emit()
+                        self._iw5_trim_event.wait()
+                        if self._iw5_trim_accept:
+                            self._s.log.emit("Trimming duplicate 64-bit files...")
+                            freed = trim_iw5_duplicates(install_dir, on_progress=lambda m: self._s.log.emit(f"  {m}"))
+                            self._s.log.emit(f"✓  Trimmed {freed} duplicate files")
                 except Exception as ex:
                     self._s.log.emit(f"✗  {game_name} merge failed: {ex}")
                 finally:
@@ -1262,9 +1299,6 @@ class _BaseInstallScreen(QWidget):
         _DG_CANDIDATES = {"iw5mp", "iw5mp_ds", "iw5sp", "iw6mp", "iw6sp", "s1mp", "s1sp"}
         _may_downgrade = any(k in _DG_CANDIDATES and k not in own_selected
                              for k in selected_keys)
-        # MW3 SP no longer needs AlterWare's exe: the 64-bit Steam install
-        # stays intact (downgrade only touches the MP/DS subfolder).
-        _has_sp_mod = False
         self._plan_set([
             ("ge",        "Installing GE-Proton",         4),
             ("own",       "Preparing non-Steam games",    2 if has_own else 0),
@@ -1272,7 +1306,6 @@ class _BaseInstallScreen(QWidget):
             ("cod4",      "Setting up CoD4",              6 * _nk("cod4r", "cod4x", "iw3sp")),
             ("depot",     "Downgrading game files",       24 if _may_downgrade else 0),
             ("plutboot",  "Setting up Plutonium",         10 if has_plut else 0),
-            ("sp_mod",    "Installing MW3 SP exe",        2 if _has_sp_mod else 0),
             ("plut",      "Installing Plutonium games",   7 * _nk("plutonium")),
             ("t6sp",      "Installing T6SP-MOD",          4 if has_t6sp_mod else 0),
             ("iw4x",      "Installing IW4x",              12 * _nk("iw4x")),
@@ -1778,44 +1811,6 @@ class _BaseInstallScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"  CompatToolMapping for Steam appids skipped: {ex}")
 
-        # --- SP mod install (MW3 SP community exe)
-        # MW3 SP: AlterWare exe no longer needed. The 64-bit Steam install
-        # stays intact (downgrade only touches the MP/DS subfolder), so
-        # the vanilla iw5sp.exe works without a CEG bypass.
-        _sp_mod_keys = []
-        if _sp_mod_keys:
-            self._phase("sp_mod")
-            from sp_mod import install_sp_mod, build_sp_launch_option, get_sp_mod_appid
-            from wrapper import set_launch_options
-            for _sp_key in _sp_mod_keys:
-                _sp_game = next((g for k, gd, g in self.selected if k == _sp_key and g), None)
-                if not _sp_game or not _sp_game.get("install_dir"):
-                    continue
-                _sp_dir = _sp_game["install_dir"]
-                _sp_name = "MW3 SP"
-                self._s.progress.emit(self._ppct(0), f"Installing {_sp_name} community exe...")
-                self._s.log.emit(f"Installing {_sp_name} community exe...")
-                try:
-                    ok = install_sp_mod(
-                        _sp_key, _sp_dir,
-                        on_progress=lambda p, m: (
-                            self._s.progress.emit(self._ppct(p), m),
-                            self._s.log.emit(f"  {m}")),
-                    )
-                    if ok:
-                        cfg.mark_game_setup(_sp_key, "sp_mod", source="steam")
-                        _lo = build_sp_launch_option(_sp_key)
-                        _appid = get_sp_mod_appid(_sp_key)
-                        if _lo and _appid:
-                            set_launch_options(self.steam_root, _appid, _lo)
-                            self._s.log.emit(f"✓  {_sp_name} community exe installed, launch options set")
-                        else:
-                            self._s.log.emit(f"✓  {_sp_name} community exe installed")
-                    else:
-                        self._s.log.emit(f"⚠  {_sp_name} community exe install failed")
-                except Exception as ex:
-                    self._s.log.emit(f"⚠  {_sp_name} SP mod skipped: {ex}")
-
         # --- Plutonium games
         if has_plut:
             try:
@@ -2097,8 +2092,7 @@ class _BaseInstallScreen(QWidget):
         for key, gd, game in self.selected:
             c = KEY_CLIENT.get(key, "")
             source = "own" if key in own_selected else "steam"
-            # sp_mod keys land here when the AlterWare exe step failed or the game is non-Steam
-            if c in ("steam", "sp_mod"):
+            if c == "steam":
                 if not cfg.is_game_setup_for_source(key, source):
                     cfg.mark_game_setup(key, "steam", source=source)
                     self._s.log.emit(f"✓  {gd['base']} ({key}) ready")
