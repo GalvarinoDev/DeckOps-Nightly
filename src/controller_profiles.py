@@ -18,7 +18,7 @@ Universal templates (always installed — 28 total):
     XboxElite: controller_xboxelite_deckops{,_other}.vdf
     Generic:   controller_generic_deckops{,_other}.vdf
 Per-device Neptune templates (only the matching variant is installed):
-    Standard (SD LCD/OLED, Steam Machine, Legion Go S, generic):
+    Standard (SD LCD/OLED, Legion Go S, generic):
         controller_neptune_deckops_{ads,off,hold,toggle}.vdf
         controller_neptune_deckops_other_{ads,off,hold,toggle}.vdf
     Legion (Go 1 — 4 paddles, no left touchpad):
@@ -32,9 +32,9 @@ Per-device SteamOS Handheld templates (Legion Go 2 only):
     controller_steamos_handheld_deckops_legion_{ads,off}.vdf
     controller_steamos_handheld_deckops_legion_other_{ads,off}.vdf
 
-Steam Machine uses Neptune Standard (same as Steam Deck). The Steam
-    Controller 2 (Triton) maps to Neptune; Valve has not shipped
-    Triton-specific templates as of Sep 2026.
+Per-device Triton templates (Steam Machine only):
+    controller_triton_deckops_{ads,off,hold,toggle}.vdf
+    controller_triton_deckops_other_{ads,off,hold,toggle}.vdf
 
 Must be called while Steam is closed.
 """
@@ -114,8 +114,6 @@ TEMPLATES = [
 
 # ── Per-device Neptune templates ──────────────────────────────────────────────
 # Only the variant matching the user's device is installed.
-# Steam Machine and Steam Controller 2 use Neptune Standard (Valve has not
-# shipped Triton-specific controller templates as of Sep 2026).
 
 NEPTUNE_STANDARD = [
     # Standard (SD LCD/OLED, Legion Go S, generic fallback)
@@ -151,6 +149,18 @@ NEPTUNE_2BTN = [
     "controller_neptune_deckops_2btn_off.vdf",
     "controller_neptune_deckops_2btn_other_ads.vdf",
     "controller_neptune_deckops_2btn_other_off.vdf",
+]
+
+TRITON_STANDARD = [
+    # Triton (Steam Machine — Steam Controller 2)
+    "controller_triton_deckops_ads.vdf",
+    "controller_triton_deckops_off.vdf",
+    "controller_triton_deckops_hold.vdf",
+    "controller_triton_deckops_toggle.vdf",
+    "controller_triton_deckops_other_ads.vdf",
+    "controller_triton_deckops_other_off.vdf",
+    "controller_triton_deckops_other_hold.vdf",
+    "controller_triton_deckops_other_toggle.vdf",
 ]
 
 # ── Per-game profile assignment map ───────────────────────────────────────────
@@ -233,6 +243,7 @@ EXTERNAL_CONFIGSET_NAMES = {
     ],
     "steamcontroller": [
         "configset_controller_neptune.vdf",
+        "configset_controller_triton.vdf",
     ],
 }
 
@@ -274,12 +285,13 @@ SHORTCUT_DEFS = {
 def _primary_configset_name() -> tuple[str, str]:
     """Return (canonical_vdf_basename, configset_filename) for the primary controller.
 
-    Legion Go 2 uses controller_steamos_handheld; everything else uses
-    controller_neptune.  The canonical VDF basename is what gets written
-    into the numbered appid folder (e.g. controller_neptune.vdf).
-    The configset filename is the configset file that gets patched.
+    Steam Machine uses controller_triton; Legion Go 2 uses
+    controller_steamos_handheld; everything else uses controller_neptune.
     """
     import config as cfg
+    if cfg.is_steam_machine():
+        return ("controller_triton.vdf",
+                "configset_controller_triton.vdf")
     if cfg.is_other() and cfg.get_other_device_type() == "legion_go_2":
         return ("controller_steamos_handheld.vdf",
                 "configset_controller_steamos_handheld.vdf")
@@ -290,7 +302,7 @@ def _primary_configset_name() -> tuple[str, str]:
 def _profile_filename(profile_type: str, gyro_mode: str) -> list[str]:
     """Return the list of primary controller VDF filenames for a profile type and gyro mode.
 
-    Steam Machine uses Neptune Standard (same as Steam Deck).
+    Steam Machine uses Triton Standard (Steam Controller 2).
 
     Checks other_device_type when the device is "other" (non-Steam Deck):
         legion_go    -> Neptune Legion templates (no left touchpad)
@@ -317,13 +329,11 @@ def _profile_filename(profile_type: str, gyro_mode: str) -> list[str]:
 
     import config as cfg
 
-    # Steam Machine: uses Neptune Standard (same as Steam Deck)
-    # Steam Controller 2 (Triton) maps to Neptune; Valve has not shipped
-    # Triton-specific templates.
+    # Steam Machine: Triton (Steam Controller 2)
     if cfg.is_steam_machine():
         if profile_type == "other":
-            return [f"controller_neptune_deckops_other_{suffix}.vdf"]
-        return [f"controller_neptune_deckops_{suffix}.vdf"]
+            return [f"controller_triton_deckops_other_{suffix}.vdf"]
+        return [f"controller_triton_deckops_{suffix}.vdf"]
 
     # Check if this is a non-Deck device with a specific controller variant
     if cfg.is_other():
@@ -410,9 +420,10 @@ def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mo
         elif gyro_mode == "off":
             suffix = "_other_off" if profile_type == "other" else "_off"
         else:
-            # "on" → ads variant
             suffix = "_other_ads" if profile_type == "other" else "_ads"
-        return [f"controller_neptune_deckops{suffix}.vdf"]
+        import config as cfg
+        prefix = "controller_triton" if cfg.is_steam_machine() else "controller_neptune"
+        return [f"{prefix}_deckops{suffix}.vdf"]
 
     return []
 
@@ -423,11 +434,12 @@ def install_controller_templates(on_progress=None):
     Copy DeckOps controller templates into Steam's global templates directory.
 
     Always installs universal templates (PS5, PS4, Xbox, Generic).
-    Only installs the Neptune/SteamOS Handheld variant matching the user's device:
-        Steam Deck LCD/OLED, Steam Machine, Legion Go S, generic -> Neptune standard
-        Legion Go 1                                              -> Neptune Legion
-        Legion Go 2                                              -> SteamOS Handheld Legion
-        ROG Ally, MSI Claw                                       -> Neptune 2btn
+    Only installs the Neptune/Triton/SteamOS Handheld variant matching the user's device:
+        Steam Deck LCD/OLED, Legion Go S, generic -> Neptune standard
+        Steam Machine                             -> Triton standard
+        Legion Go 1                               -> Neptune Legion
+        Legion Go 2                               -> SteamOS Handheld Legion
+        ROG Ally, MSI Claw                        -> Neptune 2btn
 
     Safe to call multiple times -- existing files are overwritten.
     Must be called while Steam is closed.
@@ -443,7 +455,7 @@ def install_controller_templates(on_progress=None):
 
     model = cfg.get_deck_model() or "oled"
     if model == "steam_machine":
-        to_install += NEPTUNE_STANDARD
+        to_install += TRITON_STANDARD
     elif model == "other":
         device_type = cfg.get_other_device_type()
         if device_type == "legion_go":
@@ -477,7 +489,7 @@ def install_controller_templates(on_progress=None):
 
 def assign_controller_profiles(gyro_mode: str, on_progress=None):
     """
-    Assign DeckOps Neptune controller profiles for all managed games.
+    Assign DeckOps controller profiles for all managed games.
 
     gyro_mode -- "on", "off", "hold", or "toggle"
     Must be called while Steam is closed.
