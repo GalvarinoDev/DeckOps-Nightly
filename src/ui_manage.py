@@ -1155,10 +1155,6 @@ class SetupCompleteScreen(QWidget):
         self._restore_status.setVisible(False)
 
     def _go_management(self):
-        # Restart Steam so shortcuts and compat tool changes take effect.
-        if not self._from_guide:
-            from wrapper import launch_steam
-            launch_steam()
         self._from_guide = False
         go_to(self.stack, "ManagementScreen")
 
