@@ -1262,7 +1262,9 @@ class _BaseInstallScreen(QWidget):
         _DG_CANDIDATES = {"iw5mp", "iw5mp_ds", "iw5sp", "iw6mp", "iw6sp", "s1mp", "s1sp"}
         _may_downgrade = any(k in _DG_CANDIDATES and k not in own_selected
                              for k in selected_keys)
-        _has_sp_mod = any(k == "iw5sp" and k not in own_selected for k in selected_keys)
+        # MW3 SP no longer needs AlterWare's exe: the 64-bit Steam install
+        # stays intact (downgrade only touches the MP/DS subfolder).
+        _has_sp_mod = False
         self._plan_set([
             ("ge",        "Installing GE-Proton",         4),
             ("own",       "Preparing non-Steam games",    2 if has_own else 0),
@@ -1494,7 +1496,6 @@ class _BaseInstallScreen(QWidget):
         from depot_downgrade import (
             GAME_CONFIGS as _DG_CONFIGS,
             is_downgrade_needed as _dg_needed,
-            is_sp_exe_64bit as _sp_64,
             detect_dlc_status as _dg_dlc_status,
             has_enough_space as _dg_space,
             REQUIRED_FREE_SPACE_GB as _DG_SPACE_GB,
@@ -1526,11 +1527,16 @@ class _BaseInstallScreen(QWidget):
             _forced = _dg_id in self.force_downgrade_ids
 
             if _dg_id == "iw5":
-                # MW3 has special SP/DS depot filtering and DLC markers
+                # MW3 depot files go into a downgrade/ subfolder so the
+                # 64-bit Steam install stays intact. SP never needs
+                # downgrade (vanilla 64-bit exe works as-is).
+                _has_mp = _sel & {"iw5mp", "iw5mp_ds"}
+                if not _has_mp:
+                    self._s.log.emit("  MW3 SP does not need downgrade, skipped.")
+                    continue
+
                 _is_ds = _sel == {"iw5mp_ds"}
-                _has_sp = "iw5sp" in _sel
                 _needs_base = _forced or _dg_needed("iw5", _dir)
-                _needs_sp = _has_sp and not _needs_base and _sp_64("iw5", _dir)
                 _dlc_st = _dg_dlc_status("iw5", _dir)
                 _dlc_bad = sorted(k for k, v in _dlc_st.items() if v == "wrong")
 
@@ -1538,7 +1544,7 @@ class _BaseInstallScreen(QWidget):
                     _dlc_names = ", ".join(_gcfg["dlc"][k]["name"] for k in _dlc_bad)
                     self._s.log.emit(f"  MW3 DLC needs 32-bit update: {_dlc_names}")
 
-                if not (_needs_base or _needs_sp or _dlc_bad):
+                if not (_needs_base or _dlc_bad):
                     self._s.log.emit("  MW3 is already 32-bit, downgrade skipped.")
                     continue
 
@@ -1550,20 +1556,11 @@ class _BaseInstallScreen(QWidget):
                 _depots = list(_gcfg["depots"])
                 _cmds = list(_gcfg["depot_cmds"])
                 _sp_depot = _gcfg.get("sp_depot_id", 42681)
-                if _needs_base:
-                    _skip = set()
-                    if not _has_sp:
-                        _skip.add(_sp_depot)
-                    if _is_ds:
-                        _skip.update((42682, 42691))
-                    _depots = [d for d in _depots if d["depot"] not in _skip]
-                    _cmds = [c for c in _cmds if not any(f" {d} " in c for d in _skip)]
-                elif _needs_sp:
-                    _depots = [d for d in _depots if d["depot"] == _sp_depot]
-                    _cmds = [c for c in _cmds if f" {_sp_depot} " in c]
-                else:
-                    _depots = []
-                    _cmds = []
+                _skip = {_sp_depot}
+                if _is_ds:
+                    _skip.update((42682, 42691))
+                _depots = [d for d in _depots if d["depot"] not in _skip]
+                _cmds = [c for c in _cmds if not any(f" {d} " in c for d in _skip)]
 
                 for dk in _dlc_bad:
                     dlc = _gcfg["dlc"][dk]
@@ -1782,9 +1779,10 @@ class _BaseInstallScreen(QWidget):
                 self._s.log.emit(f"  CompatToolMapping for Steam appids skipped: {ex}")
 
         # --- SP mod install (MW3 SP community exe)
-        # Downloads AlterWare community exe that bypasses Steam CEG DRM.
-        # Only triggers when the user selected the SP key specifically.
-        _sp_mod_keys = [k for k in selected_keys if k == "iw5sp" and k not in own_selected]
+        # MW3 SP: AlterWare exe no longer needed. The 64-bit Steam install
+        # stays intact (downgrade only touches the MP/DS subfolder), so
+        # the vanilla iw5sp.exe works without a CEG bypass.
+        _sp_mod_keys = []
         if _sp_mod_keys:
             self._phase("sp_mod")
             from sp_mod import install_sp_mod, build_sp_launch_option, get_sp_mod_appid

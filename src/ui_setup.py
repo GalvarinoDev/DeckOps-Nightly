@@ -64,7 +64,7 @@ class SetupFlowScreen(QWidget):
 
         # ── 0. Autodetect confirm section ─────────────────────────────────
         self._detected_os = detect_os()
-        self._detected_device = detect_device()
+        self._detected_device = detect_device() or ("general_pc" if self._detected_os else None)
 
         self._confirm_section = QWidget(); self._confirm_section.setVisible(False)
         cl = QVBoxLayout(self._confirm_section)
