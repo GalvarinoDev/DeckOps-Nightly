@@ -928,7 +928,11 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
     heroic_plut_dir = get_shared_plut_dir()
     bootstrapper = os.path.join(heroic_plut_dir, "bin",
                                 "plutonium-bootstrapper-win32.exe")
-    game_dir_wine = _wine_path_lcd(install_dir)
+    # MW3 Steam: point at downgrade/ where the 32-bit files live
+    gd = install_dir
+    if game_key in ("iw5mp", "iw5mp_ds"):
+        gd = os.path.join(install_dir, "downgrade")
+    game_dir_wine = _wine_path_lcd(gd)
 
     script = (
         "#!/bin/bash\n"
@@ -951,7 +955,7 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
 
 def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
                             proton_path: str, compatdata_path: str,
-                            plut_dir: str) -> str | None:
+                            plut_dir: str, source: str = "steam") -> str | None:
     """
     Write a sidecar -lan bash script for LCD offline mode.
 
@@ -990,7 +994,11 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
     heroic_plut_dir = get_shared_plut_dir()
     bootstrapper = os.path.join(heroic_plut_dir, "bin",
                                  "plutonium-bootstrapper-win32.exe")
-    game_dir_wine = _wine_path_lcd(install_dir)
+    # MW3 Steam: point at downgrade/ where the 32-bit files live
+    gd = install_dir
+    if game_key in ("iw5mp", "iw5mp_ds") and source != "own":
+        gd = os.path.join(install_dir, "downgrade")
+    game_dir_wine = _wine_path_lcd(gd)
 
     script = (
         "#!/bin/bash\n"
@@ -1243,6 +1251,12 @@ def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
     install_dir = game.get("install_dir", "")
     game_def = HEROIC_PLUT_GAMES[game_key]
 
+    # MW3 Steam: Heroic needs to see the downgrade/ subfolder where
+    # the 32-bit depot files live, not the 64-bit game root.
+    heroic_dir = install_dir
+    if game_key in ("iw5mp", "iw5mp_ds") and source != "own" and install_dir:
+        heroic_dir = os.path.join(install_dir, "downgrade")
+
     # Shape A: the launcher exe always lives inside the shared default
     # Heroic prefix. plut_dir (if passed) is ignored for compatibility.
     shared_plut_dir = get_shared_plut_dir()
@@ -1255,7 +1269,7 @@ def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
     _grant_heroic_filesystem_access([install_dir], on_progress=on_progress)
 
     # 2. Write sideload entry in library.json
-    _add_heroic_sideload_entry(game_key, launcher_exe, install_dir,
+    _add_heroic_sideload_entry(game_key, launcher_exe, heroic_dir,
                                 on_progress=on_progress)
 
     # 3. Write per-game config (GE-Proton, shared prefix, launcherArgs)
@@ -1576,7 +1590,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
         prog(60, "Own game — writing offline LAN wrapper...")
         lan_wrapper_path = _write_lcd_lan_wrapper(
             game, game_key, steam_root, proton_path,
-            compatdata_path, shared_plut_dir,
+            compatdata_path, shared_plut_dir, source="own",
         )
     elif proton_path and steam_root:
         prog(60, "Writing offline launcher wrapper...")
@@ -1591,7 +1605,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
         prog(70, "Writing offline LAN wrapper...")
         lan_wrapper_path = _write_lcd_lan_wrapper(
             game, game_key, steam_root, proton_path,
-            compatdata_path, shared_plut_dir,
+            compatdata_path, shared_plut_dir, source="steam",
         )
     else:
         prog(60, "Skipping wrapper -- missing proton_path or steam_root")
