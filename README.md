@@ -20,7 +20,7 @@
 |---|---|---|---|---|---|
 | Modern Warfare | SP/MP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) + [CoD4R](https://iw3x.com/) | ✅ | ✅ | ✅ |
 | Modern Warfare 2 | SP/MP | [iw4x](https://iw4x.io) | ✅ | ✅ | ✅ |
-| Modern Warfare 3 | MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
+| Modern Warfare 3 | SP/MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
 | Ghosts | SP/MP | [IW6-Mod](https://github.com/alterware/client-files) | ✅ | ✅ | ✅ |
 | Advanced Warfare | SP/MP | [S1-Mod](https://github.com/alterware/client-files) | ✅ | ✅ | ✅ |
 | World at War | SP/ZM/MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
