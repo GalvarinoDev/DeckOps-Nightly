@@ -650,8 +650,10 @@ def _assign_controller_config(uid: str, appid: int, shortcut_def: dict,
     """
     Assign controller template for a non-Steam shortcut.
 
-    Writes configset_controller_neptune.vdf (verified on hardware as the
-    file Game Mode resolves templates from) and, best-effort, a
+    Writes the device's primary configset (configset_controller_neptune.vdf
+    on Deck, verified on hardware as the file Game Mode resolves templates
+    from; triton on Steam Machine, steamos_handheld on Legion Go 2) and,
+    best-effort, a
     serial-specific configset. Note: the serial write usually skips in
     practice because "SteamDeckRegisteredSerialNumber" is often absent
     from config.vdf (see _get_deck_serial), and hardware testing shows
@@ -673,12 +675,20 @@ def _assign_controller_config(uid: str, appid: int, shortcut_def: dict,
         STEAM_ROOT, "steamapps", "common",
         "Steam Controller Configs", uid, "config"
     )
+    try:
+        from controller_profiles import _primary_configset_name
+        canonical_vdf, configset_name = _primary_configset_name()
+    except Exception:
+        _log.debug("primary configset lookup failed", exc_info=True)
+        canonical_vdf, configset_name = ("controller_neptune.vdf",
+                                         "configset_controller_neptune.vdf")
+
     cfg_dir = os.path.join(steam_cfg_root, appid_str)
     os.makedirs(cfg_dir, exist_ok=True)
-    shutil.copy2(src_template, os.path.join(cfg_dir, "controller_neptune.vdf"))
+    shutil.copy2(src_template, os.path.join(cfg_dir, canonical_vdf))
     
-    # Patch configset_controller_neptune.vdf
-    configset_path = os.path.join(steam_cfg_root, "configset_controller_neptune.vdf")
+    # Patch the primary configset
+    configset_path = os.path.join(steam_cfg_root, configset_name)
     _patch_configset(configset_path, appid_str, template_filename)
     
     # Patch configset_{serial}.vdf, best-effort. Usually skipped: the
