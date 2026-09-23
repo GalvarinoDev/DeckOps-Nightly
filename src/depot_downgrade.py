@@ -1087,5 +1087,11 @@ def migrate_legacy_iw5(install_dir: str) -> bool:
             except OSError as ex:
                 _log.warning("Could not remove %s: %s", p, ex)
 
+    return iw5sp_needs_verify(install_dir)
+
+
+def iw5sp_needs_verify(install_dir: str) -> bool:
+    """True if the root iw5sp.exe is the CEG-less 32-bit depot exe left by
+    an old in-place downgrade. Read-only; a Steam Verify of 42680 fixes it."""
     exe = os.path.join(install_dir, GAME_CONFIGS["iw5"]["detection_exe"])
     return os.path.isfile(exe) and is_pe_64bit(exe) is False
