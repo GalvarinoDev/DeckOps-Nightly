@@ -253,6 +253,13 @@ _UNCHECKED_EXTS = (".exe", ".dll", ".asi", ".ini", ".cfg", ".txt", ".json", ".lo
 _IW5_SUBDIR = "downgrade"
 
 
+def plut_game_dir(game_key: str, install_dir: str, source: str = "steam") -> str:
+    """Game dir Plutonium should load. Steam MW3 plays from downgrade/."""
+    if game_key in ("iw5mp", "iw5mp_ds") and source != "own" and install_dir:
+        return os.path.join(install_dir, _IW5_SUBDIR)
+    return install_dir
+
+
 def _merge_dir(game_id: str, install_dir: str) -> str:
     if game_id == "iw5":
         return os.path.join(install_dir, _IW5_SUBDIR)
@@ -1062,3 +1069,38 @@ def trim_iw5_duplicates(install_dir: str, on_progress=None) -> int:
 
     prog(f"Trimmed {removed} duplicate files from MW3 install")
     return removed
+
+
+# Files the removed AlterWare SP mod (sp_mod.py) placed in the MW3 root
+_IW5_SP_MOD_FILES = ("iw5-mod.exe", os.path.join("raw", "scripts", "sp", "_cp.gsc"))
+
+
+def migrate_legacy_iw5(install_dir: str) -> bool:
+    """
+    Clean up an MW3 install downgraded in place by older DeckOps versions.
+    Removes the stale root receipt and SP mod leftovers. Returns True if
+    the root iw5sp.exe is still the CEG-less 32-bit depot exe, which only
+    a Steam Verify of appid 42680 can fix.
+    """
+    receipt = os.path.join(install_dir, RECEIPT_NAME)
+    try:
+        with open(receipt) as f:
+            if json.load(f).get("game_id") == "iw5":
+                os.remove(receipt)
+                _log.info("Removed legacy MW3 root receipt %s", receipt)
+    except FileNotFoundError:
+        pass
+    except (OSError, ValueError) as ex:
+        _log.warning("Could not read legacy MW3 receipt %s: %s", receipt, ex)
+
+    for rf in _IW5_SP_MOD_FILES:
+        p = os.path.join(install_dir, rf)
+        if os.path.isfile(p):
+            try:
+                os.remove(p)
+                _log.info("Removed MW3 SP mod leftover %s", p)
+            except OSError as ex:
+                _log.warning("Could not remove %s: %s", p, ex)
+
+    exe = os.path.join(install_dir, GAME_CONFIGS["iw5"]["detection_exe"])
+    return os.path.isfile(exe) and is_pe_64bit(exe) is False

@@ -43,6 +43,7 @@ import time
 import urllib.request
 
 from identity import VENV_PYTHON
+from depot_downgrade import plut_game_dir
 from log import get_logger
 from net import BROWSER_UA as _BROWSER_UA, DownloadError
 
@@ -783,11 +784,9 @@ def _write_plutonium_config_lcd(plut_dir: str, selected_keys: list,
             continue
         install_dir = game.get("install_dir", "")
         if install_dir:
-            path_key = PLUT_CONFIG_KEYS[key]
             # MW3 Steam: point at the downgrade/ subfolder
-            if path_key == "iw5Path" and game.get("source") != "own":
-                install_dir = os.path.join(install_dir, "downgrade")
-            data[path_key] = _wine_path_lcd(install_dir)
+            install_dir = plut_game_dir(key, install_dir, game.get("source", "steam"))
+            data[PLUT_CONFIG_KEYS[key]] = _wine_path_lcd(install_dir)
 
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
     with open(config_path, "w") as f:
@@ -929,10 +928,7 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
     bootstrapper = os.path.join(heroic_plut_dir, "bin",
                                 "plutonium-bootstrapper-win32.exe")
     # MW3 Steam: point at downgrade/ where the 32-bit files live
-    gd = install_dir
-    if game_key in ("iw5mp", "iw5mp_ds"):
-        gd = os.path.join(install_dir, "downgrade")
-    game_dir_wine = _wine_path_lcd(gd)
+    game_dir_wine = _wine_path_lcd(plut_game_dir(game_key, install_dir))
 
     script = (
         "#!/bin/bash\n"
@@ -995,10 +991,7 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
     bootstrapper = os.path.join(heroic_plut_dir, "bin",
                                  "plutonium-bootstrapper-win32.exe")
     # MW3 Steam: point at downgrade/ where the 32-bit files live
-    gd = install_dir
-    if game_key in ("iw5mp", "iw5mp_ds") and source != "own":
-        gd = os.path.join(install_dir, "downgrade")
-    game_dir_wine = _wine_path_lcd(gd)
+    game_dir_wine = _wine_path_lcd(plut_game_dir(game_key, install_dir, source))
 
     script = (
         "#!/bin/bash\n"
@@ -1253,9 +1246,7 @@ def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
 
     # MW3 Steam: Heroic needs to see the downgrade/ subfolder where
     # the 32-bit depot files live, not the 64-bit game root.
-    heroic_dir = install_dir
-    if game_key in ("iw5mp", "iw5mp_ds") and source != "own" and install_dir:
-        heroic_dir = os.path.join(install_dir, "downgrade")
+    heroic_dir = plut_game_dir(game_key, install_dir, source)
 
     # Shape A: the launcher exe always lives inside the shared default
     # Heroic prefix. plut_dir (if passed) is ignored for compatibility.

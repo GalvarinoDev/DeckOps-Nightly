@@ -32,6 +32,7 @@ import urllib.request
 
 from log import get_logger
 from net import BROWSER_UA, DownloadError
+from depot_downgrade import plut_game_dir
 
 _log = get_logger(__name__)
 
@@ -467,8 +468,7 @@ def _write_config(plut_dir: str, game_keys: list, installed_games: dict):
         if install_dir:
             # MW3 Steam: point at the downgrade/ subfolder where 32-bit
             # depot files live, keeping the 64-bit install untouched.
-            if path_key == "iw5Path" and game.get("source") != "own":
-                install_dir = os.path.join(install_dir, "downgrade")
+            install_dir = plut_game_dir(key, install_dir, game.get("source", "steam"))
             data[path_key] = _wine_path(install_dir)
 
     with open(config_path, "w") as f:
@@ -718,7 +718,7 @@ def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
 
 def _write_oled_lan_wrapper(game: dict, game_key: str, steam_root: str,
                              proton_path: str, compatdata_path: str,
-                             plut_dir: str) -> str | None:
+                             plut_dir: str, source: str = "steam") -> str | None:
     """
     Write a sidecar -lan bash script for OLED offline mode.
 
@@ -763,7 +763,8 @@ def _write_oled_lan_wrapper(game: dict, game_key: str, steam_root: str,
 
     bootstrapper  = os.path.join(plut_dir, "bin",
                                   "plutonium-bootstrapper-win32.exe")
-    game_dir_wine = "Z:" + install_dir.replace("/", "\\")
+    # MW3 Steam: point at downgrade/ where the 32-bit files live
+    game_dir_wine = "Z:" + plut_game_dir(game_key, install_dir, source).replace("/", "\\")
 
     linger = _LAN_LINGER_S.get(game_key, _LAN_LINGER_S_DEFAULT)
     script = (
@@ -1150,7 +1151,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         # from config and bash-runs this script for offline play.
         lan_wrapper_path = _write_oled_lan_wrapper(
             game, game_key, steam_root, proton_path,
-            compatdata_path, dest_plut_dir,
+            compatdata_path, dest_plut_dir, source="own",
         )
 
         prog(95, "Saving metadata...")
@@ -1176,7 +1177,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         # from config and bash-runs this script for offline play.
         lan_wrapper_path = _write_oled_lan_wrapper(
             game, game_key, steam_root, proton_path,
-            compatdata_path, dest_plut_dir,
+            compatdata_path, dest_plut_dir, source="steam",
         )
 
         prog(95, "Saving metadata...")
