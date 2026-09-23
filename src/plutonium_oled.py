@@ -867,6 +867,20 @@ def _read_metadata(install_dir: str) -> dict:
     return {}
 
 
+# ZD script files dropped into storage/t6/raw/ alongside dlc5 + usermaps
+_ZD_RAW_FILES = (
+    "raw/maps/mp/animscripts/zm_dog_combat.gsc",
+    "raw/maps/mp/animscripts/zm_dog_stop.gsc",
+    "raw/scripts/zm/zzz_zm_dogfog.csc",
+    "raw/scripts/zm/zzz_zm_factoryfog.csc",
+    "raw/scripts/zm/zzz_zm_factorypower.csc",
+    "raw/scripts/zm/zzz_zm_gglow.csc",
+    "raw/scripts/zm/zzz_zm_location.gsc",
+    "raw/scripts/zm/zzz_zm_moonsky.csc",
+    "raw/scripts/zm/zzz_zm_sumpffog.csc",
+)
+
+
 def cleanup_zd_from_other_prefixes(installed_games: dict, steam_root: str,
                                     on_progress=None):
     """
@@ -914,17 +928,7 @@ def cleanup_zd_from_other_prefixes(installed_games: dict, steam_root: str,
             if os.path.isdir(mp):
                 shutil.rmtree(mp, ignore_errors=True)
 
-        for subpath in [
-            "raw/maps/mp/animscripts/zm_dog_combat.gsc",
-            "raw/maps/mp/animscripts/zm_dog_stop.gsc",
-            "raw/scripts/zm/zzz_zm_dogfog.csc",
-            "raw/scripts/zm/zzz_zm_factoryfog.csc",
-            "raw/scripts/zm/zzz_zm_factorypower.csc",
-            "raw/scripts/zm/zzz_zm_gglow.csc",
-            "raw/scripts/zm/zzz_zm_location.gsc",
-            "raw/scripts/zm/zzz_zm_moonsky.csc",
-            "raw/scripts/zm/zzz_zm_sumpffog.csc",
-        ]:
+        for subpath in _ZD_RAW_FILES:
             fp = os.path.join(storage_t6, subpath)
             if os.path.isfile(fp):
                 os.remove(fp)
@@ -945,17 +949,7 @@ def cleanup_zd_from_other_prefixes(installed_games: dict, steam_root: str,
                 mp = os.path.join(um_dir, mapname)
                 if os.path.isdir(mp):
                     shutil.rmtree(mp, ignore_errors=True)
-            for subpath in [
-                "raw/maps/mp/animscripts/zm_dog_combat.gsc",
-                "raw/maps/mp/animscripts/zm_dog_stop.gsc",
-                "raw/scripts/zm/zzz_zm_dogfog.csc",
-                "raw/scripts/zm/zzz_zm_factoryfog.csc",
-                "raw/scripts/zm/zzz_zm_factorypower.csc",
-                "raw/scripts/zm/zzz_zm_gglow.csc",
-                "raw/scripts/zm/zzz_zm_location.gsc",
-                "raw/scripts/zm/zzz_zm_moonsky.csc",
-                "raw/scripts/zm/zzz_zm_sumpffog.csc",
-            ]:
+            for subpath in _ZD_RAW_FILES:
                 fp = os.path.join(launcher_t6, subpath)
                 if os.path.isfile(fp):
                     os.remove(fp)
