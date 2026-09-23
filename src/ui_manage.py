@@ -535,6 +535,14 @@ class ManagementScreen(QWidget):
                 from zombies_declassified import has_bo2_zm_dlc
                 has_zd = has_bo2_zm_dlc(_bo2)
 
+        # MW3 SP: old in-place downgrades left a 32-bit iw5sp.exe that
+        # won't launch through Steam until a Verify restores it
+        sp_verify = False
+        _sp = self.installed.get("iw5sp", {}) if "iw5sp" in installed_keys else {}
+        if _sp.get("install_dir") and _sp.get("source", "steam") != "own":
+            from depot_downgrade import iw5sp_needs_verify
+            sp_verify = iw5sp_needs_verify(_sp["install_dir"])
+
         msg = QMessageBox(self)
         msg.setWindowTitle(gd["base"])
         msg.setText("What would you like to do?")
@@ -551,6 +559,9 @@ class ManagementScreen(QWidget):
         dg_btn = None
         if has_depot_dg:
             dg_btn = msg.addButton(_DG_LABELS[has_depot_dg], QMessageBox.AcceptRole)
+        sp_btn = None
+        if sp_verify:
+            sp_btn = msg.addButton("Verify SP Files", QMessageBox.AcceptRole)
         rei_btn = msg.addButton("Reinstall", QMessageBox.AcceptRole)
         msg.addButton("Cancel", QMessageBox.RejectRole)
         msg.exec_()
@@ -564,6 +575,10 @@ class ManagementScreen(QWidget):
             self._update(gd, installed_keys)
         elif clicked == dg_btn:
             self._depot_downgrade(has_depot_dg, gd, installed_keys)
+        elif clicked == sp_btn:
+            from wrapper import launch_steam
+            launch_steam("steam://validate/42680")
+            self._status.setText("Steam is verifying MW3 Single Player files...")
         elif clicked == rei_btn:
             self._reinstall(gd)
 
@@ -959,7 +974,7 @@ class SetupCompleteScreen(QWidget):
         t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
         lay.addWidget(_lbl(
             "Your games are configured with controller profiles, GE-Proton, "
-            "and display settings. You're ready to play.",
+            "and display settings. Open Steam (or return to Game Mode) to start playing.",
             12, C_DIM))
 
         # ── Scrollable content area ───────────────────────────────────────────
