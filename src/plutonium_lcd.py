@@ -1618,7 +1618,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
     if source == "steam" and steam_root:
         prog(80, "Setting HGL launch options...")
         _set_heroic_steam_launch_options(
-            game_key, steam_root,
+            game_key, steam_root, ge_version,
             on_progress=lambda m: prog(82, m),
         )
 
@@ -1655,6 +1655,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
 
 
 def _set_heroic_steam_launch_options(game_key: str, steam_root: str,
+                                      ge_proton_version: str,
                                       on_progress=None):
     """
     Set launch options on a Steam library entry so it launches through
@@ -1694,22 +1695,21 @@ def _set_heroic_steam_launch_options(game_key: str, steam_root: str,
     )
 
     try:
-        from wrapper import set_launch_options, clear_compat_tool
+        from wrapper import set_launch_options, clear_compat_tool, set_compat_tool
         set_launch_options(steam_root, appid, launch_opts)
         prog(f"  HGL launch options set for appid {appid}")
-        # Steam wraps any launch with a CompatToolMapping entry inside Steam
-        # Linux Runtime (sniper). From inside that container the host's
-        # flatpak binary is invisible, so the flatpak invocation in the
-        # launch options above fails and the launch flash-closes. Heroic
-        # owns the Proton invocation downstream, so the Steam-side compat
-        # tool must be cleared. _apply_compat() in ui_qt earlier in the
-        # install set GE-Proton on every MANAGED_APPID including this one;
-        # this undoes it for the LCD flatpak-launching games.
+        # The launch options use #%command% to suppress the default Proton
+        # launch and run cache_cleanup.py natively instead. Steam only
+        # resolves %command% when a compat tool is set, so the game must
+        # keep a GE-Proton compat tool entry even though Heroic (not Steam)
+        # owns the actual Proton invocation downstream. Clear any stale
+        # entry first, then re-set to the correct GE-Proton version.
         try:
             clear_compat_tool([appid])
-            prog(f"  Compat tool cleared for appid {appid} (LCD flatpak path)")
+            set_compat_tool([appid], ge_proton_version)
+            prog(f"  Compat tool set to {ge_proton_version} for appid {appid}")
         except Exception as ex:
-            prog(f"  Could not clear compat tool for appid {appid}: {ex}")
+            prog(f"  Could not set compat tool for appid {appid}: {ex}")
     except Exception as ex:
         prog(f"  Could not set HGL launch options for appid {appid}: {ex}")
 
