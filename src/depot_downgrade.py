@@ -409,21 +409,6 @@ def _legacy_downgrade_needed(game_id: str, install_dir: str) -> bool:
     return False
 
 
-def is_sp_exe_64bit(game_id: str, install_dir: str) -> bool:
-    """
-    Check whether the SP exe is 64-bit. Used when base game data is
-    already 32-bit but the SP exe depot was never fetched.
-    """
-    cfg = GAME_CONFIGS.get(game_id)
-    if not cfg or not cfg.get("detection_exe"):
-        return False
-    exe = os.path.join(install_dir, cfg["detection_exe"])
-    if not os.path.isfile(exe):
-        return False
-    result = is_pe_64bit(exe)
-    return result is True
-
-
 def detect_dlc_status(game_id: str, install_dir: str) -> dict:
     """
     Check DLC marker files for a game. Returns dict keyed by DLC key:

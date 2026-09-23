@@ -9,7 +9,7 @@ Also patches the appropriate configset VDFs to set our template as the
 active default for each managed game, overriding any community config or
 workshop ID that Steam would otherwise use.
 
-Universal templates (always installed — 28 total):
+Universal templates (always installed — 26 total):
     PS5:       controller_ps5_deckops{,_ads,_other,_other_ads}.vdf
     PS5 Edge:  controller_ps5_edge_deckops{,_ads,_other,_other_ads}.vdf
     PS4:       controller_ps4_deckops{,_ads,_other,_other_ads}.vdf
