@@ -560,6 +560,7 @@ class _BaseInstallScreen(QWidget):
         self._dg_game_title = ""
         self._iw5_trim_event = threading.Event()
         self._iw5_trim_accept = False
+        self._iw5_needs_verify = False
         self._manual_dl_event = threading.Event()
         self._manual_dl_ok = False
         self._retry_dl_event = threading.Event()
@@ -881,6 +882,23 @@ class _BaseInstallScreen(QWidget):
         self._iw5_trim_accept = msg.clickedButton() == trim_btn
         self._iw5_trim_event.set()
 
+    def _ask_iw5_verify(self):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("MW3 Single Player")
+        msg.setText(
+            "MW3 Single Player needs a quick file check.\n\n"
+            "An older DeckOps version replaced the SP exe with\n"
+            "a 32-bit copy that won't launch through Steam.\n"
+            "Steam's Verify Integrity restores the original.\n\n"
+            "Multiplayer is not affected."
+        )
+        verify_btn = msg.addButton("Verify MW3 Now", QMessageBox.AcceptRole)
+        msg.addButton("Later", QMessageBox.RejectRole)
+        msg.exec_()
+        if msg.clickedButton() == verify_btn:
+            from wrapper import launch_steam
+            launch_steam("steam://validate/42680")
+
     def _run_batch_depot_downgrade(self, dg_jobs):
         """
         Run depot downgrade for multiple games in one session.
@@ -1182,6 +1200,10 @@ class _BaseInstallScreen(QWidget):
                 self.cont_btn.setText("<< Back to Game Selection")
                 self.cont_btn.clicked.connect(lambda: go_to(self.stack, "SetupScreen"))
         self.cont_btn.setVisible(True)
+        # Deferred to the end so Steam isn't killed mid-verify by the install
+        if self._iw5_needs_verify:
+            self._iw5_needs_verify = False
+            self._ask_iw5_verify()
 
     def _go_management(self):
         go_to(self.stack, "ManagementScreen")
@@ -1215,6 +1237,7 @@ class _BaseInstallScreen(QWidget):
         self._iw5_dg_event.clear()
         self._iw5_method = ""
         self._dg_game_title = ""
+        self._iw5_needs_verify = False
         self._manual_dl_event.clear()
         self._manual_dl_ok = False
         self._retry_dl_event.clear()
@@ -1532,6 +1555,7 @@ class _BaseInstallScreen(QWidget):
             REQUIRED_FREE_SPACE_GB as _DG_SPACE_GB,
             cleanup_depotdownloader,
             detect_installed_dlc as _dg_installed_dlc,
+            migrate_legacy_iw5 as _dg_migrate_iw5,
         )
 
         _DG_KEY_MAP = {
@@ -1558,6 +1582,13 @@ class _BaseInstallScreen(QWidget):
             _forced = _dg_id in self.force_downgrade_ids
 
             if _dg_id == "iw5":
+                # Old in-place downgrades left a 32-bit SP exe in the root
+                if _dg_migrate_iw5(_dir):
+                    self._iw5_needs_verify = True
+                    self._s.log.emit("⚠  MW3 SP still has an old 32-bit exe. Verify MW3 in Steam after install.")
+                if cfg.get_setup_games().get("iw5sp", {}).get("client") == "sp_mod":
+                    cfg.mark_game_setup("iw5sp", "steam", source="steam")
+
                 # MW3 depot files go into a downgrade/ subfolder so the
                 # 64-bit Steam install stays intact. SP never needs
                 # downgrade (vanilla 64-bit exe works as-is).

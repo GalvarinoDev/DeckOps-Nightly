@@ -1373,6 +1373,16 @@ if [ -n "$STEAM_ROOT" ]; then
             rm -rf "$game_dir/downgrade" && success "Removed MW3 downgrade folder for appid $appid" || warn "Failed to remove downgrade folder for appid $appid"
         fi
     done
+
+    # MW3 SP: leftovers from the removed AlterWare SP mod (sp_mod.py)
+    game_dir=$(find_install_dir 42680) || true
+    if [ -n "$game_dir" ]; then
+        for f in "iw5-mod.exe" "raw/scripts/sp/_cp.gsc"; do
+            if [ -f "$game_dir/$f" ]; then
+                rm -f "$game_dir/$f" && success "Removed MW3 SP mod file $f" || warn "Failed to remove MW3 SP mod file $f"
+            fi
+        done
+    fi
 fi
 echo ""
 
