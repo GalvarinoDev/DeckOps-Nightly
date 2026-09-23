@@ -899,6 +899,19 @@ class _BaseInstallScreen(QWidget):
             from wrapper import launch_steam
             launch_steam("steam://validate/42680")
 
+    def _maybe_trim_iw5(self, game_id, install_dir):
+        # MP-only MW3: offer to drop the root files duplicated in downgrade/
+        if game_id != "iw5" or any(k == "iw5sp" for k, _, _ in self.selected):
+            return
+        self._iw5_trim_event.clear()
+        self._s.iw5_trim_ask.emit()
+        self._iw5_trim_event.wait()
+        if self._iw5_trim_accept:
+            from depot_downgrade import trim_iw5_duplicates
+            self._s.log.emit("Trimming duplicate 64-bit files...")
+            freed = trim_iw5_duplicates(install_dir, on_progress=lambda m: self._s.log.emit(f"  {m}"))
+            self._s.log.emit(f"✓  Trimmed {freed} duplicate files")
+
     def _run_batch_depot_downgrade(self, dg_jobs):
         """
         Run depot downgrade for multiple games in one session.
@@ -910,7 +923,7 @@ class _BaseInstallScreen(QWidget):
         from depot_downgrade import (
             ensure_depotdownloader, run_depot_download_qr,
             find_depot_staging, merge_depots, open_steam_console,
-            trim_iw5_duplicates, GAME_CONFIGS,
+            GAME_CONFIGS,
         )
 
         game_names = ", ".join(j[1] for j in dg_jobs)
@@ -981,14 +994,7 @@ class _BaseInstallScreen(QWidget):
                             on_progress=lambda m: self._s.log.emit(f"  {m}"),
                         )
                         self._s.log.emit(f"✓  {game_name} depot files updated")
-                        if game_id == "iw5" and not any(k == "iw5sp" for k, _, _ in self.selected):
-                            self._iw5_trim_event.clear()
-                            self._s.iw5_trim_ask.emit()
-                            self._iw5_trim_event.wait()
-                            if self._iw5_trim_accept:
-                                self._s.log.emit("Trimming duplicate 64-bit files...")
-                                freed = trim_iw5_duplicates(install_dir, on_progress=lambda m: self._s.log.emit(f"  {m}"))
-                                self._s.log.emit(f"✓  Trimmed {freed} duplicate files")
+                        self._maybe_trim_iw5(game_id, install_dir)
                     except Exception as ex:
                         self._s.log.emit(f"✗  {game_name} merge failed: {ex}")
                     finally:
@@ -1035,14 +1041,7 @@ class _BaseInstallScreen(QWidget):
                         on_progress=lambda m: self._s.log.emit(f"  {m}"),
                     )
                     self._s.log.emit(f"✓  {game_name} depot files updated")
-                    if game_id == "iw5" and not any(k == "iw5sp" for k, _, _ in self.selected):
-                        self._iw5_trim_event.clear()
-                        self._s.iw5_trim_ask.emit()
-                        self._iw5_trim_event.wait()
-                        if self._iw5_trim_accept:
-                            self._s.log.emit("Trimming duplicate 64-bit files...")
-                            freed = trim_iw5_duplicates(install_dir, on_progress=lambda m: self._s.log.emit(f"  {m}"))
-                            self._s.log.emit(f"✓  Trimmed {freed} duplicate files")
+                    self._maybe_trim_iw5(game_id, install_dir)
                 except Exception as ex:
                     self._s.log.emit(f"✗  {game_name} merge failed: {ex}")
                 finally:
