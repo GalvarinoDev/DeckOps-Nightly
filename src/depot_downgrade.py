@@ -1017,6 +1017,10 @@ def trim_iw5_duplicates(install_dir: str, on_progress=None) -> int:
     Saves disk by removing duplicate 64-bit copies that Plutonium no
     longer reads. Steam Verify restores them if the user wants vanilla
     SP back. Returns the number of files removed.
+
+    Root .exe files are always kept: the Plutonium Steam wrapper replaces
+    iw5mp.exe / iw5mp_server.exe in the root, and trim runs before the
+    Plutonium install. Deleting them leaves nothing to wrap.
     """
     dg_dir = _merge_dir("iw5", install_dir)
     if not os.path.isdir(dg_dir):
@@ -1031,7 +1035,7 @@ def trim_iw5_duplicates(install_dir: str, on_progress=None) -> int:
     for dirpath, _, filenames in os.walk(dg_dir):
         rel = os.path.relpath(dirpath, dg_dir)
         for fname in filenames:
-            if fname == RECEIPT_NAME:
+            if fname == RECEIPT_NAME or fname.lower().endswith(".exe"):
                 continue
             rf = fname if rel == "." else os.path.join(rel, fname)
             root_file = os.path.join(install_dir, rf)
