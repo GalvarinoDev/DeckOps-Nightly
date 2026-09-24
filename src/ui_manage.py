@@ -2198,6 +2198,11 @@ class UpdateScreen(QWidget):
                 # Resolve compatdata - own games may have CRC-based prefix
                 if source == "own":
                     compat = game.get("compatdata_path", "")
+                    # Scanned games are not enriched here; use the same
+                    # prefix the install flow gave this own-copy game
+                    if not compat and c == "plutonium" and not cfg.is_lcd():
+                        from shortcut import own_plut_prefix
+                        compat = own_plut_prefix(key, game)
                     if not compat:
                         compat = find_compatdata(self.steam_root, _appid,
                                                   game_install_dir=game.get("install_dir"))

@@ -168,16 +168,12 @@ def _plut_storage(prefix: str, plut_store: str) -> str:
 
 
 def _own_prefix(steam_root: str, key: str, game: dict) -> str | None:
-    """Own-copy prefix, keyed on the shortcut appid the same way
-    shortcut.enrich_own_games computes it for Plutonium keys."""
+    """Own-copy prefix, the same one shortcut.enrich_own_games uses."""
     try:
-        from shortcut import OWN_SHORTCUTS
-        from steam_common import calc_shortcut_appid
-        name = OWN_SHORTCUTS[key]["name"]
+        from shortcut import own_plut_prefix
+        return own_plut_prefix(key, game)
     except (ImportError, KeyError):
         return None
-    appid = calc_shortcut_appid(f'"{game["exe_path"]}"', name)
-    return os.path.join(steam_root, "steamapps", "compatdata", str(appid))
 
 
 def _find_plutonium_storages(steam_root: str, group: dict, setup_games: dict) -> dict:
@@ -203,7 +199,22 @@ def _find_plutonium_storages(steam_root: str, group: dict, setup_games: dict) ->
             prefix = _own_prefix(steam_root, k, own[k]) if k in own else None
             if prefix:
                 _add(f"own_{k}", _plut_storage(prefix, group["plut_store"]))
+            # WaW MP had its own prefix before it moved into the shared one
+            if k == "t4mp" and k in own:
+                old = _legacy_waw_mp_prefix(steam_root, own[k])
+                if old:
+                    _add("own_old_t4mp", _plut_storage(old, group["plut_store"]))
     return found
+
+
+def _legacy_waw_mp_prefix(steam_root: str, game: dict) -> str | None:
+    try:
+        from shortcut import OWN_SHORTCUTS, COMPAT_ROOT
+        from steam_common import calc_shortcut_appid
+    except ImportError:
+        return None
+    appid = calc_shortcut_appid(f'"{game["exe_path"]}"', OWN_SHORTCUTS["t4mp"]["name"])
+    return os.path.join(COMPAT_ROOT, str(appid))
 
 
 def _plut_restore_dst(steam_root: str, group: dict, tag: str) -> str | None:
@@ -211,7 +222,8 @@ def _plut_restore_dst(steam_root: str, group: dict, tag: str) -> str | None:
     if tag == "heroic":
         return _plut_storage(HEROIC_PREFIX, group["plut_store"])
     if tag.startswith("own_"):
-        k = tag[4:]
+        # own_old_t4mp restores into the shared WaW prefix like own_t4mp
+        k = tag[4:].removeprefix("old_")
         own = _detected_games()[1]
         prefix = _own_prefix(steam_root, k, own[k]) if k in own else None
         return _plut_storage(prefix, group["plut_store"]) if prefix else None
@@ -482,7 +494,9 @@ def restore_saves(steam_root: str = None, installed_games: dict = None,
             is_tagged = all(e.isdigit() or e == "heroic" or e.startswith("own_")
                             for e in entries)
             if is_tagged:
-                sources = {tag: os.path.join(backup_dir, tag) for tag in entries}
+                # Sorted so own_old_t4mp restores before own_t4mp and the
+                # current shared-prefix data wins
+                sources = {tag: os.path.join(backup_dir, tag) for tag in sorted(entries)}
             else:
                 sources = {group["appids"][0]: backup_dir}
             dsts = []
@@ -495,7 +509,8 @@ def restore_saves(steam_root: str = None, installed_games: dict = None,
                     src = os.path.join(src_root, p)
                     if not os.path.isdir(src):
                         continue
-                    if p == "players":
+                    # Once per destination: shared WaW gets two sources
+                    if p == "players" and tdst not in dsts:
                         _keep_pre_restore(os.path.join(tdst, p))
                     if _copytree_safe(src, os.path.join(tdst, p), group_name, on_progress):
                         dsts.append(tdst)

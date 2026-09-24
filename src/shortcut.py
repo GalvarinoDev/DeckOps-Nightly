@@ -1507,6 +1507,48 @@ def apply_steam_artwork(selected_keys: list, on_progress=None):
     prog(f"✓ Steam artwork applied for {len(to_apply)} game(s).")
 
 
+def own_plut_prefix(key: str, game: dict) -> str:
+    """Prefix for an own-copy Plutonium game. WaW is one game, so t4mp uses
+    the t4sp prefix, same as Steam WaW sharing 10090: one Plutonium copy,
+    one storage/t4 (stats, mods) for SP, ZM and MP. The MP shortcut keeps
+    its own appid and points here through STEAM_COMPAT_DATA_PATH."""
+    if key == "t4mp":
+        from detect_games import GAMES
+        key = "t4sp"
+        exe = os.path.join(game["install_dir"], GAMES["t4sp"]["exe"])
+    else:
+        exe = game["exe_path"]
+    appid = _calc_shortcut_appid(f'"{exe}"', OWN_SHORTCUTS[key]["name"])
+    return os.path.join(COMPAT_ROOT, str(appid))
+
+
+def _migrate_waw_mp_prefix(old_compat: str, new_compat: str, prog):
+    """Copy WaW MP stats and mods from the old separate MP prefix into the
+    shared WaW prefix. Copy only, newer file wins; the old prefix is left
+    untouched so nothing can be lost."""
+    rel = os.path.join("pfx", "drive_c", "users", "steamuser", "AppData",
+                       "Local", "Plutonium", "storage", "t4")
+    copied = 0
+    for part in ("players", "mods"):
+        src_root = os.path.join(old_compat, rel, part)
+        for dirpath, _, files in os.walk(src_root):
+            for f in files:
+                src = os.path.join(dirpath, f)
+                dst = os.path.join(new_compat, rel, part, os.path.relpath(src, src_root))
+                try:
+                    if os.path.exists(dst) and os.path.getmtime(dst) >= os.path.getmtime(src):
+                        continue
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.copy2(src, dst)
+                    copied += 1
+                except OSError as ex:
+                    _log.warning("WaW MP migrate: %s: %s", src, ex)
+                    prog(f"  ⚠ Could not copy {src}: {ex}")
+    if copied:
+        prog(f"  WaW MP now shares the WaW prefix: copied {copied} stats/mod file(s).")
+        prog(f"  Old MP prefix kept at {old_compat}; delete it to free space.")
+
+
 def enrich_own_games(own_games: dict, selected_keys: list,
                      on_progress=None):
     """
@@ -1552,9 +1594,15 @@ def enrich_own_games(own_games: dict, selected_keys: list,
         quoted_exe     = f'"{exe_path}"'
         shortcut_appid = _calc_shortcut_appid(quoted_exe, name)
 
-        # Own games always get their own CRC-based prefix keyed on the
-        # shortcut appid.
+        # Own games get a CRC-based prefix keyed on the shortcut appid,
+        # except WaW MP which shares the WaW SP prefix (see own_plut_prefix).
         compatdata_path = os.path.join(COMPAT_ROOT, str(shortcut_appid))
+        if key == "t4mp":
+            import config as _cfg
+            compatdata_path = own_plut_prefix(key, game)
+            if not _cfg.is_lcd():
+                _migrate_waw_mp_prefix(
+                    os.path.join(COMPAT_ROOT, str(shortcut_appid)), compatdata_path, prog)
 
         # Enrich the game dict so downstream code has the appid and paths
         game["shortcut_appid"]  = shortcut_appid
