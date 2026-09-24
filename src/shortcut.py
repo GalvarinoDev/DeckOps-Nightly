@@ -2159,6 +2159,94 @@ def remove_launcher_shortcut(on_progress=None):
                         _log.debug("file removal failed", exc_info=True)
 
 
+# --- Repair: re-add any DeckOps shortcut missing from shortcuts.vdf
+# Steam must already be closed; it rewrites shortcuts.vdf on exit.
+
+def repair_shortcuts(steam_root: str = None, on_progress=None) -> list:
+    """Re-add shortcuts for set-up games that are missing for any Steam
+    user. Returns the names that were re-added."""
+    import config as cfg
+    from detect_games import parse_library_folders, find_installed_games, find_own_installed
+
+    def prog(msg):
+        if on_progress:
+            on_progress(msg)
+
+    sr = steam_root or STEAM_ROOT
+    setup = cfg.get_setup_games()
+    lcd = cfg.is_lcd()
+    from plutonium_lcd import HEROIC_PLUT_GAMES
+
+    # key -> (kind, name). kind picks the writer below.
+    expected = {}
+    for key, entry in setup.items():
+        src = entry.get("source", "steam")
+        if src == "steam" and key in SHORTCUTS and key != "t7x":
+            expected[key] = ("steam", SHORTCUTS[key]["name"])
+        elif src == "own" and lcd and key in HEROIC_PLUT_GAMES:
+            expected[key] = ("heroic", HEROIC_PLUT_GAMES[key]["title"])
+        elif src == "own" and key in OWN_SHORTCUTS:
+            expected[key] = ("own", OWN_SHORTCUTS[key]["name"])
+    has_plut = any(e.get("client") == "plutonium" for e in setup.values())
+
+    uids = _find_all_steam_uids()
+    if not uids:
+        prog("⚠ No Steam user accounts found.")
+        return []
+
+    present = None
+    for uid in uids:
+        names = set(_read_existing_shortcuts(
+            os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")))
+        present = names if present is None else present & names
+
+    missing = {k: v for k, v in expected.items() if v[1] not in present}
+    launcher_missing = has_plut and LAUNCHER_TITLE not in present
+    total = len(expected) + (1 if has_plut else 0)
+
+    if not missing and not launcher_missing:
+        prog(f"All DeckOps shortcuts present ({total}).")
+        return []
+
+    readded = []
+    gyro = cfg.get_gyro_mode() or "on"
+    by_kind = lambda kind: [k for k, (kd, _) in missing.items() if kd == kind]
+
+    steam_keys = by_kind("steam")
+    if steam_keys:
+        steam_games = find_installed_games(parse_library_folders(sr), sr)
+        found = [k for k in steam_keys if k in steam_games]
+        for k in set(steam_keys) - set(found):
+            prog(f"  ⚠ {missing[k][1]}: game not found in Steam, skipped")
+        if found:
+            create_shortcuts(steam_games, found, gyro, on_progress, steam_root=sr)
+            readded += [missing[k][1] for k in found]
+
+    own_keys = by_kind("own")
+    if own_keys:
+        own_games = find_own_installed()
+        found = [k for k in own_keys if k in own_games]
+        for k in set(own_keys) - set(found):
+            prog(f"  ⚠ {missing[k][1]}: game folder not found, skipped")
+        if found:
+            own_games = enrich_own_games(own_games, found, on_progress)
+            write_own_shortcuts(own_games, found, gyro, on_progress)
+            readded += [missing[k][1] for k in found]
+
+    heroic_keys = by_kind("heroic")
+    if heroic_keys:
+        from plutonium_lcd import _create_heroic_steam_shortcut
+        for k in heroic_keys:
+            _create_heroic_steam_shortcut(k, on_progress=on_progress, source="own")
+            readded.append(missing[k][1])
+
+    if launcher_missing:
+        create_launcher_shortcut(on_progress=on_progress)
+        readded.append(LAUNCHER_TITLE)
+
+    return readded
+
+
 # ── CLI for testing ───────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
