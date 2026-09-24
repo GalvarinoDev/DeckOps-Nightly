@@ -368,6 +368,57 @@ def _copy_plut_to_prefix(src_plut_dir: str, dest_plut_dir: str,
 
     prog(f"  Copying Plutonium: {src_plut_dir} -> {dest_plut_dir}")
 
+    # The fresh copy below wipes dest_plut_dir, which also holds the user's
+    # stats (players/, e.g. WaW mpdata) and mods. Move those aside first and
+    # put them back after, so reinstall/update never resets progress.
+    keep_root = dest_plut_dir.rstrip(os.sep) + ".deckops_keep"
+    _stash_user_storage(dest_plut_dir, keep_root, prog)
+    try:
+        _copy_plut_fresh(src_plut_dir, dest_plut_dir, game_key, prog)
+    finally:
+        _restore_user_storage(dest_plut_dir, keep_root, prog)
+
+
+# storage/<game>/ parts that belong to the user, not to Plutonium
+_PLUT_USER_PARTS = ("players", "mods")
+
+
+def _stash_user_storage(plut_dir: str, keep_root: str, prog):
+    storage = os.path.join(plut_dir, "storage")
+    if not os.path.isdir(storage):
+        return
+    for store in os.listdir(storage):
+        for part in _PLUT_USER_PARTS:
+            src = os.path.join(storage, store, part)
+            dst = os.path.join(keep_root, store, part)
+            # A keep dir left by an earlier failed run already holds the
+            # user's data; what's in the prefix now is a fresh copy.
+            if not os.path.isdir(src) or os.path.lexists(dst):
+                continue
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.move(src, dst)
+            prog(f"  Kept storage/{store}/{part}")
+
+
+def _restore_user_storage(plut_dir: str, keep_root: str, prog):
+    if not os.path.isdir(keep_root):
+        return
+    try:
+        for store in os.listdir(keep_root):
+            for part in os.listdir(os.path.join(keep_root, store)):
+                src = os.path.join(keep_root, store, part)
+                dst = os.path.join(plut_dir, "storage", store, part)
+                if os.path.lexists(dst):
+                    shutil.rmtree(dst)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                shutil.move(src, dst)
+        shutil.rmtree(keep_root)
+    except OSError as ex:
+        _log.error("Could not restore Plutonium user data from %s: %s", keep_root, ex)
+        prog(f"  ⚠ Your Plutonium stats/mods are safe in {keep_root} but could not be moved back: {ex}")
+
+
+def _copy_plut_fresh(src_plut_dir: str, dest_plut_dir: str, game_key: str, prog):
     if os.path.exists(dest_plut_dir):
         prog(f"  Removing existing Plutonium at {dest_plut_dir}...")
         shutil.rmtree(dest_plut_dir)
