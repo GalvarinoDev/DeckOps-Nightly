@@ -44,6 +44,8 @@ DEFAULTS = {
     "music_volume":  0.4,        # 0.0 to 1.0
     "player_name": None,         # in-game player name for configs and LCD Plutonium
     "zd_installed": None,        # Zombies Declassified: { "manifest_hash": ..., "installed_at": ... } or None
+    "manifest_mods": {},         # manifest_mods.py: { mod_id: { "option" (component mods: "a+b"), "games_root", "option_hash", "complete", "installed_at" } }
+    "manifest_cdn":  None,       # manifest_mods.py: CDN base shared by all manifest mods, typed by the user
 }
 
 
