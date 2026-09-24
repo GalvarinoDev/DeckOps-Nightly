@@ -256,7 +256,9 @@ def _relocate_extracted(install_dir: str):
 
 
 def _build_iw4x_launch_option() -> str:
-    return "bash -c 'exec \"${@/iw4mp.exe/iw4x-launcher.exe}\"' -- %command%"
+    # Launcher ships x86 and x64 (mm) clients since v1.1.8-b.20; without
+    # --arch it may show a terminal picker nobody can answer in Game Mode.
+    return "bash -c 'exec \"${@/iw4mp.exe/iw4x-launcher.exe}\" --arch x86' -- %command%"
 
 
 # ── DLC install ──────────────────────────────────────────────────────────────
@@ -448,7 +450,10 @@ def install_iw4x(game: dict, steam_root: str,
     if source != "own":
         prog(80, "Setting launch options...")
         try:
-            from wrapper import set_launch_options
+            from wrapper import set_launch_options, clear_launch_options
+            # Clear first: set_launch_options appends when the old option differs,
+            # which would leave two %command% tokens after an upgrade.
+            clear_launch_options(steam_root, MW2_MP_APPID)
             set_launch_options(steam_root, MW2_MP_APPID, _build_iw4x_launch_option())
         except Exception as ex:
             prog(80, f"Could not set launch options: {ex}")
