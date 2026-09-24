@@ -1368,9 +1368,19 @@ if [ -n "$STEAM_ROOT" ]; then
         if [ -n "$game_dir" ] && [ -f "$game_dir/deckops_plutonium.json" ]; then
             rm -f "$game_dir/deckops_plutonium.json" && success "Removed DeckOps metadata for appid $appid" || warn "Failed to remove metadata for appid $appid"
         fi
-        # MW3: remove the downgrade/ subfolder that holds 32-bit depot files
+        # MW3: downgrade/ holds the 32-bit depot files. Keeping it (with its
+        # receipt) lets a reinstall skip the depot download entirely.
         if [ -n "$game_dir" ] && [ -d "$game_dir/downgrade" ]; then
-            rm -rf "$game_dir/downgrade" && success "Removed MW3 downgrade folder for appid $appid" || warn "Failed to remove downgrade folder for appid $appid"
+            zenity --question \
+                --title="$APP_TITLE Uninstaller" \
+                --text="Remove MW3 32-bit depot files (~10 GB)?\n\nKeeping them lets a reinstall skip the depot download.\nThey do not affect the normal Steam version of MW3." \
+                --ok-label="Remove" \
+                --cancel-label="Keep" 2>/dev/null
+            if [ $? -eq 0 ]; then
+                rm -rf "$game_dir/downgrade" && success "Removed MW3 downgrade folder for appid $appid" || warn "Failed to remove downgrade folder for appid $appid"
+            else
+                skip "Kept MW3 downgrade folder for appid $appid"
+            fi
         fi
     done
 
