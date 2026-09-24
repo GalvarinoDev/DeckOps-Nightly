@@ -1524,36 +1524,6 @@ else
 fi
 echo ""
 
-info "Stopping any leftover DeckOps audio..."
-pkill -f "mpv" 2>/dev/null && success "mpv stopped" || skip "No audio process found"
-echo ""
-
-info "Removing DeckOps install directory and config..."
-
-DECKOPS_DIRS=(
-    "$HOME/DeckOps-Nightly"
-    "$HOME/DeckOps"
-    "$HOME/.local/share/deckops-nightly"
-    "$HOME/.config/deckops-nightly"
-    "$HOME/.local/share/deckops-nightly/plutonium_prefix"
-    "$HOME/.local/share/deckops/plutonium_prefix"
-    "$HOME/.local/share/deckops"
-    "$HOME/.config/deckops"
-)
-
-for d in "${DECKOPS_DIRS[@]}"; do
-    # save_backup.py writes here; keep it so a reinstall can restore saves
-    if [ -d "$d/save_backup" ]; then
-        find "$d" -mindepth 1 -maxdepth 1 ! -name save_backup -exec rm -rf {} + \
-            && success "Removed $d (kept save_backup/)" || warn "Failed to clean $d"
-    elif [ -d "$d" ]; then
-        rm -rf "$d" && success "Removed $d" || warn "Failed to remove $d"
-    else
-        skip "$d -- not found"
-    fi
-done
-echo ""
-
 info "Removing DeckOps non-Steam shortcuts from Steam library..."
 
 # Mirrors: shortcut.py SHORTCUTS and the binary VDF format from _make_shortcut_entry()
@@ -2491,9 +2461,9 @@ fi
 echo ""
 
 # ── Remove LCD wrapper dir (safety catch) ────────────────────────────────────
-# The main DeckOps dir removal earlier (rm -rf ~/.local/share/deckops) should
-# already have caught this dir. This is a safety net in case that dir was
-# recreated or the earlier removal was skipped.
+# The main DeckOps dir removal at the end (rm -rf ~/.local/share/deckops)
+# also catches this dir. Removing it here keeps LCD cleanup in one place in
+# case that final removal fails or is skipped.
 
 info "Removing DeckOps LCD wrapper directory..."
 WRAPPER_DIR="$HOME/.local/share/deckops/lcd_wrappers"
@@ -2608,6 +2578,38 @@ done
 command -v update-desktop-database &>/dev/null && \
     update-desktop-database "$HOME/.local/share/applications" 2>/dev/null && \
     success "Desktop database refreshed" || true
+echo ""
+
+# Last on purpose: if any step above fails, DeckOps and its config are
+# still on disk and the uninstaller can simply be run again.
+info "Stopping any leftover DeckOps audio..."
+pkill -f "mpv" 2>/dev/null && success "mpv stopped" || skip "No audio process found"
+echo ""
+
+info "Removing DeckOps install directory and config..."
+
+DECKOPS_DIRS=(
+    "$HOME/DeckOps-Nightly"
+    "$HOME/DeckOps"
+    "$HOME/.local/share/deckops-nightly"
+    "$HOME/.config/deckops-nightly"
+    "$HOME/.local/share/deckops-nightly/plutonium_prefix"
+    "$HOME/.local/share/deckops/plutonium_prefix"
+    "$HOME/.local/share/deckops"
+    "$HOME/.config/deckops"
+)
+
+for d in "${DECKOPS_DIRS[@]}"; do
+    # save_backup.py writes here; keep it so a reinstall can restore saves
+    if [ -d "$d/save_backup" ]; then
+        find "$d" -mindepth 1 -maxdepth 1 ! -name save_backup -exec rm -rf {} + \
+            && success "Removed $d (kept save_backup/)" || warn "Failed to clean $d"
+    elif [ -d "$d" ]; then
+        rm -rf "$d" && success "Removed $d" || warn "Failed to remove $d"
+    else
+        skip "$d -- not found"
+    fi
+done
 echo ""
 
 echo -e "${GREEN}${BOLD}  DeckOps fully uninstalled.${CLEAR}"
