@@ -72,7 +72,7 @@ def _detail(label: str, done: int, total: int, rate: float) -> str:
 
 
 def download(url: str, dest: str, on_progress=None, label: str = "",
-             timeout: int = 60):
+             timeout: int = 60, headers: dict = None):
     """
     Download a URL to a local file with resume, progress and retry.
 
@@ -91,6 +91,7 @@ def download(url: str, dest: str, on_progress=None, label: str = "",
     on_progress — optional callback(percent: int, status: str)
     label       — human-readable name shown in progress messages
     timeout     — socket timeout in seconds (default 60)
+    headers     — request headers, default BROWSER_UA
     """
     part = dest + ".part"
     for attempt in range(3):
@@ -101,10 +102,10 @@ def download(url: str, dest: str, on_progress=None, label: str = "",
             except OSError:
                 resume = 0
         try:
-            headers = dict(BROWSER_UA)
+            hdrs = dict(headers or BROWSER_UA)
             if resume:
-                headers["Range"] = f"bytes={resume}-"
-            req = urllib.request.Request(url, headers=headers)
+                hdrs["Range"] = f"bytes={resume}-"
+            req = urllib.request.Request(url, headers=hdrs)
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 # 206 means the range was honored. Anything else (including
                 # a plain 200) means the server sent the whole file, so the

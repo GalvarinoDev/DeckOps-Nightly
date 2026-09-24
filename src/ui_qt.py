@@ -28,6 +28,7 @@ from ui_constants import (
 
 from ui_setup import SetupFlowScreen
 from ui_install import WelcomeScreen, SetupScreen, InstallScreen
+from ui_manifest import ManifestModsScreen
 from ui_manage import ManagementScreen, ConfigureScreen, SetupCompleteScreen, UpdateScreen
 
 
@@ -90,6 +91,7 @@ class DeckOpsWindow(QMainWindow):
         for cls in [
             BootstrapScreen,
             SetupFlowScreen,
+            ManifestModsScreen,
             WelcomeScreen,
             SetupScreen,
             InstallScreen,
