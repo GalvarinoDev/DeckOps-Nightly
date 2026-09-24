@@ -1241,6 +1241,14 @@ class ConfigureScreen(QWidget):
         ctrl_btn.clicked.connect(self._apply_controller_profiles)
         left.addWidget(ctrl_btn)
 
+        # ── Left: Shortcuts ───────────────────────────────────────────────
+        _head(left, "Shortcuts")
+        left.addWidget(_lbl("Closes Steam, then re-adds any missing DeckOps shortcuts.",
+                            11, C_DIM, align=Qt.AlignLeft))
+        sc_fix_btn = _btn("Repair Shortcuts", C_DARK_BTN, size=12, h=40)
+        sc_fix_btn.setFixedWidth(220); sc_fix_btn.clicked.connect(self._repair_shortcuts)
+        left.addWidget(sc_fix_btn)
+
         # ── Left: Player Name ─────────────────────────────────────────────
         _head(left, "Player Name")
         nr = QHBoxLayout(); nr.setSpacing(12)
@@ -1471,6 +1479,26 @@ class ConfigureScreen(QWidget):
             except Exception as ex:
                 s.log.emit(f"✗  Failed: {ex}")
                 s.done.emit(False)
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _repair_shortcuts(self):
+        self.status.setText("Checking shortcuts...")
+        s = _Sigs()
+        s.log.connect(lambda msg: self.status.setText(msg))
+        def _run():
+            try:
+                from shortcut import repair_shortcuts
+                from wrapper import kill_steam
+                s.log.emit("Closing Steam...")
+                kill_steam(on_progress=lambda msg: s.log.emit(f"  {msg}"))
+                sr = cfg.load().get("steam_root", "") or None
+                readded = repair_shortcuts(sr, on_progress=s.log.emit)
+                if readded:
+                    s.log.emit(f"✓  Re-added: {', '.join(readded)}. It is now safe to reopen Steam.")
+                else:
+                    s.log.emit("✓  All shortcuts present. It is now safe to reopen Steam.")
+            except Exception as ex:
+                s.log.emit(f"✗  Repair failed: {ex}")
         threading.Thread(target=_run, daemon=True).start()
 
     def _save_name(self):
