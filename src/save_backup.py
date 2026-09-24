@@ -156,38 +156,94 @@ def _find_all_compatdata_dirs(steam_root: str) -> list:
     return dirs
 
 
-def _find_plutonium_storage(steam_root: str, appids: list, plut_store: str) -> str | None:
-    """Find the Plutonium storage directory for a game across all prefixes.
+# Only these parts of Plutonium storage/<game>/ are user data. Everything
+# else (zone/, map .iwd files, video/, ...) is Plutonium's and comes back
+# on reinstall, so backing it up would cost hundreds of MB per game.
+_PLUT_USER_PARTS = ("players", "mods")
 
-    Searches Steam compatdata prefixes and the Heroic shared prefix.
-    Returns the first existing path, or None.
-    """
-    compat_dirs = _find_all_compatdata_dirs(steam_root)
 
-    # Also search Heroic shared prefix (LCD)
-    if os.path.isdir(HEROIC_PREFIX):
-        compat_dirs.append(HEROIC_PREFIX)
+def _plut_storage(prefix: str, plut_store: str) -> str:
+    return os.path.join(prefix, "pfx", "drive_c", "users", "steamuser",
+                        "AppData", "Local", "Plutonium", "storage", plut_store)
 
-    for compat_root in compat_dirs:
-        for appid in appids:
-            storage = os.path.join(
-                compat_root, appid,
-                "pfx", "drive_c", "users", "steamuser",
-                "AppData", "Local", "Plutonium", "storage", plut_store,
-            )
-            if os.path.isdir(storage):
-                return storage
 
-    # Also check Heroic directly (it's not appid-based)
-    heroic_storage = os.path.join(
-        HEROIC_PREFIX,
-        "pfx", "drive_c", "users", "steamuser",
-        "AppData", "Local", "Plutonium", "storage", plut_store,
-    )
-    if os.path.isdir(heroic_storage):
-        return heroic_storage
+def _own_prefix(steam_root: str, key: str, game: dict) -> str | None:
+    """Own-copy prefix, keyed on the shortcut appid the same way
+    shortcut.enrich_own_games computes it for Plutonium keys."""
+    try:
+        from shortcut import OWN_SHORTCUTS
+        from steam_common import calc_shortcut_appid
+        name = OWN_SHORTCUTS[key]["name"]
+    except (ImportError, KeyError):
+        return None
+    appid = calc_shortcut_appid(f'"{game["exe_path"]}"', name)
+    return os.path.join(steam_root, "steamapps", "compatdata", str(appid))
 
-    return None
+
+def _find_plutonium_storages(steam_root: str, group: dict, setup_games: dict) -> dict:
+    """Every Plutonium storage dir for a group, as {tag: path}. Tags are the
+    Steam appid, "heroic", or "own_<key>". SP and MP can live in different
+    prefixes (BO1/BO2 Steam appids, own copies), so all of them are saved."""
+    found, seen = {}, set()
+
+    def _add(tag, path):
+        real = os.path.realpath(path)
+        if os.path.isdir(path) and real not in seen:
+            seen.add(real); found[tag] = path
+
+    for compat_root in _find_all_compatdata_dirs(steam_root):
+        for appid in group["appids"]:
+            _add(appid, _plut_storage(os.path.join(compat_root, appid), group["plut_store"]))
+    _add("heroic", _plut_storage(HEROIC_PREFIX, group["plut_store"]))
+
+    own_keys = [k for k in group["keys"] if setup_games.get(k, {}).get("source") == "own"]
+    if own_keys:
+        own = _detected_games()[1]
+        for k in own_keys:
+            prefix = _own_prefix(steam_root, k, own[k]) if k in own else None
+            if prefix:
+                _add(f"own_{k}", _plut_storage(prefix, group["plut_store"]))
+    return found
+
+
+def _plut_restore_dst(steam_root: str, group: dict, tag: str) -> str | None:
+    """Where a tagged Plutonium backup goes back to."""
+    if tag == "heroic":
+        return _plut_storage(HEROIC_PREFIX, group["plut_store"])
+    if tag.startswith("own_"):
+        k = tag[4:]
+        own = _detected_games()[1]
+        prefix = _own_prefix(steam_root, k, own[k]) if k in own else None
+        return _plut_storage(prefix, group["plut_store"]) if prefix else None
+    # Steam appid: prefer an existing prefix on any library, else internal
+    # (DeckOps always creates Steam prefixes on internal storage)
+    for compat_root in _find_all_compatdata_dirs(steam_root):
+        path = _plut_storage(os.path.join(compat_root, tag), group["plut_store"])
+        if os.path.isdir(path):
+            return path
+    return _plut_storage(os.path.join(steam_root, "steamapps", "compatdata", tag),
+                         group["plut_store"])
+
+
+_DETECTED = None
+
+def _detected_games() -> tuple:
+    """(steam, own) game dicts from detect_games, scanned once per run.
+    deckops.json does not store install dirs, so backup/restore outside the
+    install flow (uninstaller, Restore button) has to find the games itself."""
+    global _DETECTED
+    if _DETECTED is None:
+        steam, own = {}, {}
+        try:
+            from detect_games import (find_steam_root, parse_library_folders,
+                                      find_installed_games, find_own_installed)
+            sr = find_steam_root() or STEAM_ROOT_DEFAULT
+            steam = find_installed_games(parse_library_folders(sr), sr)
+            own = find_own_installed()
+        except Exception:
+            _log.warning("save backup: game detection failed", exc_info=True)
+        _DETECTED = (steam, own)
+    return _DETECTED
 
 
 def _find_install_dir(keys: list, setup_games: dict, installed_games: dict = None) -> str | None:
@@ -200,10 +256,11 @@ def _find_install_dir(keys: list, setup_games: dict, installed_games: dict = Non
                 if d and os.path.isdir(d):
                     return d
 
-    # Fall back to setup_games from config (used during uninstall)
+    # Otherwise detect, using the source each key was set up from
+    steam, own = _detected_games()
     for key in keys:
-        entry = setup_games.get(key, {})
-        d = entry.get("install_dir")
+        src = own if setup_games.get(key, {}).get("source") == "own" else steam
+        d = src.get(key, {}).get("install_dir")
         if d and os.path.isdir(d):
             return d
 
@@ -237,6 +294,19 @@ def _copytree_safe(src: str, dst: str, group: str, prog):
         _log.warning("save backup copy failed for %s: %s", group, ex)
         prog(f"  ⚠ {group}: copy failed: {ex}")
         return False
+
+
+def _keep_pre_restore(path: str):
+    """Copy the current save dir to <path>.pre-restore before a restore
+    overwrites it, so stats earned since the backup aren't lost for good."""
+    try:
+        if not os.path.isdir(path) or not any(True for _ in os.scandir(path)):
+            return
+        keep = path.rstrip(os.sep) + ".pre-restore"
+        shutil.rmtree(keep, ignore_errors=True)
+        shutil.copytree(path, keep)
+    except OSError as ex:
+        _log.warning("save restore: could not keep %s: %s", path, ex)
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -278,6 +348,25 @@ def backup_saves(steam_root: str = None, on_progress=None,
 
         src = None
 
+        if group["type"] == "plutonium_prefix":
+            dst = os.path.join(BACKUP_ROOT, group_name)
+            storages = _find_plutonium_storages(steam_root, group, setup_games)
+            parts = {(tag, p): os.path.join(path, p) for tag, path in storages.items()
+                     for p in _PLUT_USER_PARTS if os.path.isdir(os.path.join(path, p))}
+            if not parts:
+                _log.debug("save backup: %s — no players/ or mods/ found", group_name)
+                continue
+            if os.path.isdir(dst):
+                shutil.rmtree(dst, ignore_errors=True)
+            ok = [_copytree_safe(s, os.path.join(dst, tag, p), group_name, on_progress)
+                  for (tag, p), s in parts.items()]
+            if any(ok):
+                backed_up[group_name] = dst
+                on_progress(f"  ✓ {group_name}: backed up players/ and mods/ "
+                            f"from {len(storages)} prefix(es), other Plutonium files skipped")
+                _log.info("save backup: %s -> %s (%s)", group_name, dst, sorted(storages))
+            continue
+
         if group["type"] == "install_dir":
             install_dir = _find_install_dir(keys, setup_games, installed_games)
             if install_dir:
@@ -285,13 +374,6 @@ def backup_saves(steam_root: str = None, on_progress=None,
 
         elif group["type"] == "t7x_sibling":
             src = _find_t7x_players(keys, setup_games, installed_games)
-
-        elif group["type"] == "plutonium_prefix":
-            src = _find_plutonium_storage(
-                steam_root,
-                group["appids"],
-                group["plut_store"],
-            )
 
         if not src or not os.path.isdir(src):
             _log.debug("save backup: %s — source not found", group_name)
@@ -394,6 +476,35 @@ def restore_saves(steam_root: str = None, installed_games: dict = None,
 
         dst = None
 
+        if group["type"] == "plutonium_prefix":
+            # Backups made before per-prefix tags hold storage/<game>/ flat
+            entries = os.listdir(backup_dir)
+            is_tagged = all(e.isdigit() or e == "heroic" or e.startswith("own_")
+                            for e in entries)
+            if is_tagged:
+                sources = {tag: os.path.join(backup_dir, tag) for tag in entries}
+            else:
+                sources = {group["appids"][0]: backup_dir}
+            dsts = []
+            for tag, src_root in sources.items():
+                tdst = _plut_restore_dst(steam_root, group, tag)
+                if not tdst:
+                    on_progress(f"  ⚠ {group_name}: {tag} game not found, skipped")
+                    continue
+                for p in _PLUT_USER_PARTS:
+                    src = os.path.join(src_root, p)
+                    if not os.path.isdir(src):
+                        continue
+                    if p == "players":
+                        _keep_pre_restore(os.path.join(tdst, p))
+                    if _copytree_safe(src, os.path.join(tdst, p), group_name, on_progress):
+                        dsts.append(tdst)
+            if dsts:
+                restored[group_name] = dsts[0]
+                on_progress(f"  ✓ {group_name}: saves restored")
+                _log.info("save restore: %s -> %s", group_name, sorted(set(dsts)))
+            continue
+
         if group["type"] == "install_dir":
             install_dir = _find_install_dir(keys, setup_games, installed_games)
             if install_dir:
@@ -405,24 +516,8 @@ def restore_saves(steam_root: str = None, installed_games: dict = None,
             if bo3_dir:
                 dst = os.path.join(os.path.dirname(bo3_dir), "DeckOps-T7X", "players")
 
-        elif group["type"] == "plutonium_prefix":
-            # Restore to the first prefix that has a Plutonium dir
-            dst = _find_plutonium_storage(
-                steam_root,
-                group["appids"],
-                group["plut_store"],
-            )
-            # If prefix doesn't exist yet (fresh install), build the path
-            # from the first appid — the installer will create it
-            if dst is None:
-                main_compat = os.path.join(
-                    steam_root, "steamapps", "compatdata",
-                    group["appids"][0],
-                    "pfx", "drive_c", "users", "steamuser",
-                    "AppData", "Local", "Plutonium", "storage",
-                    group["plut_store"],
-                )
-                dst = main_compat
+        if dst:
+            _keep_pre_restore(dst)
 
         if not dst:
             _log.debug("save restore: %s — dest not found, skipping", group_name)
