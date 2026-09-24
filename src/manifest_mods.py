@@ -540,9 +540,9 @@ def install_manifest(m: dict, option_id: str, cdn_text: str, games_root: str,
             on_log(msg)
 
     opt = get_option(m, option_id)
-    cdn = normalize_cdn(cdn_text)
+    base = normalize_cdn(cdn_text); cdn = base
     if m.get("cdn_path"):
-        cdn = cdn + quote(m["cdn_path"]) + "/"
+        cdn = base + quote(m["cdn_path"]) + "/"
     if not games_root:
         raise ManifestError("no Games folder chosen")
     dest_root = install_root(games_root, m)
@@ -556,7 +556,8 @@ def install_manifest(m: dict, option_id: str, cdn_text: str, games_root: str,
     log(f"CDN: {cdn}")
     log(f"Target: {dest_root}")
     log(f"{len(plan)} files, {total_size(opt) >> 20} MB total")
-    save_cdn(cdn)
+    # Remember the base only; cdn_path differs per manifest.
+    save_cdn(base)
     old = get_receipt(dest_root, m["id"])
     ours = old.get("files") or {}
     overwritten = [p for p in old.get("overwritten", []) if p in {f["path"] for f in opt["files"]}]
