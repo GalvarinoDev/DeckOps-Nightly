@@ -1350,13 +1350,29 @@ if [ -n "$STEAM_ROOT" ]; then
     # below catches it without special-casing.
     [ -d "$HOME/Games/Heroic/Prefixes" ] && COMPAT_DIRS+=("$HOME/Games/Heroic/Prefixes")
 
+    # storage/ holds user mods, usermaps and players (configs, stats, classes)
+    KEEP_PLUT_STORAGE=true
+    zenity --question \
+        --title="$APP_TITLE Uninstaller" \
+        --text="Remove Plutonium mods, custom maps and player data?\n\nKeeping them lets a reinstall pick up where you left off.\nPlutonium itself is removed either way." \
+        --ok-label="Remove" \
+        --cancel-label="Keep" 2>/dev/null
+    [ $? -eq 0 ] && KEEP_PLUT_STORAGE=false
+
     found_any=0
     for COMPATDATA in "${COMPAT_DIRS[@]}"; do
         for prefix_dir in "$COMPATDATA"/*/; do
             plut_dir="$prefix_dir/pfx/drive_c/users/steamuser/AppData/Local/Plutonium"
             if [ -d "$plut_dir" ]; then
                 prefix_id=$(basename "$prefix_dir")
-                rm -rf "$plut_dir" && success "Removed Plutonium from prefix $prefix_id" || warn "Failed to remove Plutonium from prefix $prefix_id"
+                if $KEEP_PLUT_STORAGE && [ -d "$plut_dir/storage" ]; then
+                    find "$plut_dir" -mindepth 1 -maxdepth 1 ! -name storage -exec rm -rf {} + \
+                        && success "Removed Plutonium from prefix $prefix_id (kept storage/)" \
+                        || warn "Failed to remove Plutonium from prefix $prefix_id"
+                    skip "Kept: $plut_dir/storage"
+                else
+                    rm -rf "$plut_dir" && success "Removed Plutonium from prefix $prefix_id" || warn "Failed to remove Plutonium from prefix $prefix_id"
+                fi
                 found_any=1
             fi
         done
@@ -1526,7 +1542,11 @@ DECKOPS_DIRS=(
 )
 
 for d in "${DECKOPS_DIRS[@]}"; do
-    if [ -d "$d" ]; then
+    # save_backup.py writes here; keep it so a reinstall can restore saves
+    if [ -d "$d/save_backup" ]; then
+        find "$d" -mindepth 1 -maxdepth 1 ! -name save_backup -exec rm -rf {} + \
+            && success "Removed $d (kept save_backup/)" || warn "Failed to clean $d"
+    elif [ -d "$d" ]; then
         rm -rf "$d" && success "Removed $d" || warn "Failed to remove $d"
     else
         skip "$d -- not found"
@@ -2500,7 +2520,10 @@ SWEEP_ROOTS=(
 
 sweep_hits=0
 for path in "${SWEEP_ROOTS[@]}"; do
-    if [ -e "$path" ]; then
+    if ${KEEP_PLUT_STORAGE:-false} && [ -d "$path/storage" ]; then
+        find "$path" -mindepth 1 -maxdepth 1 ! -name storage -exec rm -rf {} + \
+            && success "Removed $path (kept storage/)" && sweep_hits=$((sweep_hits + 1))
+    elif [ -e "$path" ]; then
         rm -rf "$path" && success "Removed $path" && sweep_hits=$((sweep_hits + 1))
     fi
 done
