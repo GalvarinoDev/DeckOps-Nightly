@@ -1634,7 +1634,9 @@ def enrich_own_games(own_games: dict, selected_keys: list,
 
         elif key == "iw4mp":
             actual_exe = os.path.join(install_dir, "iw4x.exe")
-            launch_options = ""
+            # Run the launcher first so own installs self-update like Steam
+            # copies; --arch x86 skips its x86/x64 picker.
+            launch_options = "bash -c 'exec \"${@/iw4x.exe/iw4x-launcher.exe}\" --arch x86' -- %command%"
 
         elif key == "cod4sp":
             actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
@@ -2230,6 +2232,9 @@ def repair_shortcuts(steam_root: str = None, on_progress=None) -> list:
     for key, entry in setup.items():
         src = entry.get("source", "steam")
         if src == "steam" and key in SHORTCUTS and key != "t7x":
+            # OLED/Other WaW MP shortcut is opt-in (the Steam launch menu has MP)
+            if key == "t4mp" and not lcd and not cfg.load().get("waw_mp_shortcut", True):
+                continue
             expected[key] = ("steam", SHORTCUTS[key]["name"])
         elif src == "own" and lcd and key in HEROIC_PLUT_GAMES:
             expected[key] = ("heroic", HEROIC_PLUT_GAMES[key]["title"])

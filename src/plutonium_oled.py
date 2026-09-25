@@ -79,6 +79,29 @@ OLED_OWN_WRAPPER_EXES = {
     "iw5mp": "iw5plutmp.exe",
 }
 
+# OLED Steam games: (online, offline) wrapper files written next to the
+# untouched game exe. Steam launch menu entries point at these (see
+# steam_appinfo.py). Offline is a copy of the -lan .sh under an exe name.
+# Keys sharing an appid (WaW) appear in this order.
+STEAM_MENU_EXES = {
+    "t4sp":  ("t4plutsp.exe",  "t4plutsp_lan.exe"),
+    "t4mp":  ("t4plutmp.exe",  "t4plutmp_lan.exe"),
+    "t5sp":  ("t5plutsp.exe",  "t5plutsp_lan.exe"),
+    "t5mp":  ("t5plutmp.exe",  "t5plutmp_lan.exe"),
+    "t6mp":  ("t6plutmp.exe",  "t6plutmp_lan.exe"),
+    "t6zm":  ("t6plutzm.exe",  "t6plutzm_lan.exe"),
+    "iw5mp": ("iw5plutmp.exe", "iw5plutmp_lan.exe"),
+    # DS shares MW3's folder, so its files need their own names
+    "iw5mp_ds": ("iw5plutds.exe", "iw5plutds_lan.exe"),
+}
+
+# Menu labels where one appid holds two modes; others get the defaults.
+STEAM_MENU_LABELS = {
+    "t4sp": ("Play Plutonium SP/ZM Online", "Play Plutonium SP/ZM Offline"),
+    "t4mp": ("Play Plutonium Multiplayer Online", "Play Plutonium Multiplayer Offline"),
+}
+_DEFAULT_MENU_LABELS = ("Play Plutonium Online", "Play Plutonium Offline")
+
 # Sidecar -lan wrapper script names for OLED offline mode.
 # These are written alongside the game files (never replacing anything)
 # and launched by DeckOps_Offline.exe for offline play. Shell scripts rather
@@ -722,7 +745,7 @@ def _plut_key(game_key: str) -> str:
 
 def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
                              proton_path: str, compatdata_path: str,
-                             plut_dir: str) -> str | None:
+                             plut_dir: str, wrapper_name: str = None) -> str | None:
     """
     Write a standalone wrapper exe for OLED own games.
 
@@ -730,15 +753,17 @@ def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
     launches the Plutonium launcher with a protocol URL. The original game
     exe is left untouched. shortcut.py points the non-Steam shortcut at
     this wrapper, and the launcher uses the stored wrapper_path to launch it.
+    Steam games reuse it for their Online launch menu entry (wrapper_name
+    from STEAM_MENU_EXES).
 
     Returns the full path to the written wrapper, or None if game_key
     is not in OLED_OWN_WRAPPER_EXES.
     """
-    if game_key not in OLED_OWN_WRAPPER_EXES:
+    if not wrapper_name and game_key not in OLED_OWN_WRAPPER_EXES:
         return None
 
     install_dir  = game["install_dir"]
-    wrapper_name = OLED_OWN_WRAPPER_EXES[game_key]
+    wrapper_name = wrapper_name or OLED_OWN_WRAPPER_EXES[game_key]
     wrapper_path = os.path.join(install_dir, wrapper_name)
 
     launcher = os.path.join(plut_dir, "bin",
@@ -900,6 +925,68 @@ def _write_wrapper(game: dict, game_key: str, steam_root: str,
 
     os.chmod(exe_path, os.stat(exe_path).st_mode |
              stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def _is_script(path: str) -> bool:
+    try:
+        with open(path, "rb") as f:
+            return f.read(2) == b"#!"
+    except OSError:
+        return False
+
+
+def _restore_original_exe(game: dict, game_key: str):
+    """
+    Undo the old exe replacement: put <exe>.bak back over our wrapper.
+    If Steam already restored the real exe (e.g. Verify), drop the stale .bak.
+    """
+    exe_path = os.path.join(game["install_dir"], GAME_META[game_key][2])
+    bak_path = exe_path + ".bak"
+    if not os.path.exists(bak_path):
+        return
+    if not os.path.exists(exe_path) or _is_script(exe_path):
+        os.replace(bak_path, exe_path)
+    else:
+        os.remove(bak_path)
+
+
+def _setup_steam_menu(game: dict, game_key: str, steam_root: str,
+                      proton_path: str, compatdata_path: str, plut_dir: str,
+                      lan_wrapper_path: str, prog) -> str | None:
+    """
+    OLED Steam games: keep the original exe and add Plutonium Online /
+    Offline entries to the game's Steam launch menu, each pointing at its
+    own wrapper file. Steam runs the chosen file through its Proton, the
+    same way it ran the old replaced exe. Returns the online wrapper path.
+    """
+    online_name, offline_name = STEAM_MENU_EXES[game_key]
+    _restore_original_exe(game, game_key)
+
+    online_path = _write_oled_own_wrapper(
+        game, game_key, steam_root, proton_path,
+        compatdata_path, plut_dir, wrapper_name=online_name,
+    )
+    if lan_wrapper_path and os.path.exists(lan_wrapper_path):
+        shutil.copy2(lan_wrapper_path, os.path.join(game["install_dir"], offline_name))
+
+    # Rebuild our entries for this appid in STEAM_MENU_EXES order (Online
+    # before Offline, WaW SP before MP) whatever order keys were installed in.
+    # Sibling keys count once their online wrapper is on disk.
+    appid = GAME_META[game_key][0]
+    keys = [k for k in STEAM_MENU_EXES if GAME_META[k][0] == appid and (
+            k == game_key or os.path.exists(os.path.join(game["install_dir"], STEAM_MENU_EXES[k][0])))]
+    entries = []
+    for k in keys:
+        on, off = STEAM_MENU_LABELS.get(k, _DEFAULT_MENU_LABELS)
+        entries += [{"executable": STEAM_MENU_EXES[k][0], "description": on},
+                    {"executable": STEAM_MENU_EXES[k][1], "description": off}]
+
+    from steam_appinfo import add_launch_entries, remove_launch_entries
+    remove_launch_entries(steam_root, appid, [e["executable"] for e in entries])
+    added = add_launch_entries(steam_root, appid, entries)
+    prog(92, "  ✓ Launch menu: " + " / ".join(e["description"] for e in entries) if added
+             else "  ⚠ Launch menu not added yet, will retry next time Steam is closed")
+    return online_path
 
 
 # ── metadata ──────────────────────────────────────────────────────────────────
@@ -1211,26 +1298,34 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
             lan_wrapper_path=lan_wrapper_path,
         )
     else:
-        # OLED Steam games: replace the original exe with a bash wrapper
-        prog(80, "Writing launcher wrapper...")
-        _write_wrapper(game, game_key, steam_root, proton_path,
-                       compatdata_path, dest_plut_dir)
+        wrapper_exe = os.path.join(game["install_dir"], GAME_META[game_key][2])
+        if game_key not in STEAM_MENU_EXES:
+            # Fallback for a key without a menu mapping: replace the exe
+            prog(80, "Writing launcher wrapper...")
+            _write_wrapper(game, game_key, steam_root, proton_path,
+                           compatdata_path, dest_plut_dir)
 
         prog(85, "Writing offline LAN wrapper...")
-        # Sidecar -lan script alongside the game files. Does not touch the
-        # replaced exe above. DeckOps_Offline.exe reads lan_wrapper_path
-        # from config and bash-runs this script for offline play.
+        # Sidecar -lan script alongside the game files. DeckOps_Offline.exe
+        # reads lan_wrapper_path from config and bash-runs this script for
+        # offline play.
         lan_wrapper_path = _write_oled_lan_wrapper(
             game, game_key, steam_root, proton_path,
             compatdata_path, dest_plut_dir, source="steam",
         )
 
+        if game_key in STEAM_MENU_EXES:
+            prog(88, "Adding Plutonium to the Steam launch menu...")
+            wrapper_exe = _setup_steam_menu(
+                game, game_key, steam_root, proton_path, compatdata_path,
+                dest_plut_dir, lan_wrapper_path, prog,
+            ) or wrapper_exe
+
         prog(95, "Saving metadata...")
         _write_metadata(game["install_dir"], {
             "game_key":    game_key,
             "plut_dir":    dest_plut_dir,
-            "wrapper_exe": os.path.join(game["install_dir"],
-                                        GAME_META[game_key][2]),
+            "wrapper_exe": wrapper_exe,
         })
         import config as _cfg_steam
         _cfg_steam.mark_game_setup(
@@ -1255,6 +1350,21 @@ def uninstall_plutonium(game: dict, game_key: str):
 
     if os.path.exists(backup_path):
         shutil.move(backup_path, exe_path)
+
+    # Launch menu wrappers and entries (OLED Steam games)
+    names = list(STEAM_MENU_EXES.get(game_key, ()))
+    if names:
+        for n in names:
+            p = os.path.join(install_dir, n)
+            if os.path.exists(p):
+                os.remove(p)
+        try:
+            import config as _cfg
+            from steam_appinfo import remove_launch_entries
+            steam_root = _cfg.load().get("steam_root") or os.path.expanduser("~/.local/share/Steam")
+            remove_launch_entries(steam_root, GAME_META[game_key][0], names)
+        except Exception:
+            _log.debug("launch menu removal failed", exc_info=True)
 
     meta     = _read_metadata(install_dir)
     plut_dir = meta.get("plut_dir", "")

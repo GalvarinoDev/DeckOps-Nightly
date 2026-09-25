@@ -523,6 +523,19 @@ def clear_launch_options(steam_root, appid):
         _record_localconfig(uid, appid, "LaunchOptions", "")
 
 
+def _reapply_launch_menus():
+    # Steam refreshes appinfo.vdf from Valve's servers now and then, which
+    # drops our launch menu entries. Put them back whenever Steam is closed.
+    try:
+        import config as _cfg
+        c = _cfg.load()
+        if c.get("launch_menus"):
+            from steam_appinfo import reapply_all
+            reapply_all(c.get("steam_root") or os.path.expanduser("~/.local/share/Steam"))
+    except Exception:
+        _log.debug("launch menu reapply failed", exc_info=True)
+
+
 def kill_steam(on_progress=None):
     """
     Gracefully close the Steam desktop client without triggering the
@@ -545,6 +558,7 @@ def kill_steam(on_progress=None):
         capture_output=True
     )
     if r.returncode != 0:
+        _reapply_launch_menus()
         return  # Steam is not running
 
     # SIGTERM to the main Steam process triggers graceful shutdown + config write
@@ -569,6 +583,7 @@ def kill_steam(on_progress=None):
             # any VDF files.
             time.sleep(3)
             subprocess.run(["sync"], capture_output=True)
+            _reapply_launch_menus()
             return
         time.sleep(1)
         elapsed += 1
@@ -967,3 +982,45 @@ def set_default_launch_option(steam_root, appids_config):
                     uid, appid, "DefaultLaunchOption",
                     json.dumps({"hash_key": hash_key, "index": index})
                 )
+
+
+def clear_default_launch_option(steam_root, appids):
+    """
+    Remove DeckOps' DefaultLaunchOption for these appids from the Deck
+    configurator "apps" block (see set_default_launch_option), so Steam
+    shows the launch menu again. Must be called while Steam is closed.
+    """
+    userdata = os.path.join(steam_root, "userdata")
+    if not os.path.exists(userdata):
+        return
+    interstitial_pattern = re.compile(
+        r'"Deck_ConfiguratorInterstitialApps_AppLauncherInteractionIssues"\s*"[^"]*"\s*"apps"\s*\{',
+        re.IGNORECASE
+    )
+    for uid in os.listdir(userdata):
+        vdf_path = os.path.join(userdata, uid, "config", "localconfig.vdf")
+        if not os.path.exists(vdf_path):
+            continue
+        with open(vdf_path, "r", errors="replace") as f:
+            content = f.read()
+        m = interstitial_pattern.search(content)
+        if not m:
+            continue
+        apps_open = m.end() - 1
+        apps_close = _find_block_end(content, apps_open)
+        if apps_close == -1:
+            continue
+        block = content[apps_open + 1:apps_close]
+        changed = False
+        for appid in appids:
+            am = re.search(r'\s*"' + re.escape(str(appid)) + r'"\s*\{', block)
+            if not am:
+                continue
+            end = _find_block_end(block, am.end() - 1)
+            if end == -1:
+                continue
+            block = block[:am.start()] + block[end + 1:]
+            changed = True
+        if changed:
+            _write_and_validate_vdf(vdf_path, content[:apps_open + 1] + block + content[apps_close:],
+                                    errors="replace")

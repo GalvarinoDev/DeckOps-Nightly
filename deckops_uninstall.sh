@@ -1324,6 +1324,148 @@ if [ -n "$STEAM_ROOT" ]; then
     fi
     echo ""
 
+    # --- Steam launch menu wrappers (OLED/Other)
+    # Mirrors: plutonium_oled.STEAM_MENU_EXES. Online/Offline files written
+    # next to the untouched game exe for the Steam launch menu entries.
+    info "Removing Plutonium launch menu wrappers..."
+    MENU_EXES=(
+        t4plutsp.exe t4plutsp_lan.exe t4plutmp.exe t4plutmp_lan.exe
+        t5plutsp.exe t5plutsp_lan.exe t5plutmp.exe t5plutmp_lan.exe
+        t6plutmp.exe t6plutmp_lan.exe t6plutzm.exe t6plutzm_lan.exe
+        iw5plutmp.exe iw5plutmp_lan.exe iw5plutds.exe iw5plutds_lan.exe
+    )
+    menu_removed=0
+    for common_dir in "${LAN_SWEEP_DIRS[@]}"; do
+        for game_dir in "$common_dir"/*/; do
+            for f in "${MENU_EXES[@]}"; do
+                if [ -f "$game_dir$f" ] && rm -f "$game_dir$f" 2>/dev/null; then
+                    info "  Removed: $game_dir$f"
+                    menu_removed=$((menu_removed + 1))
+                fi
+            done
+        done
+    done
+    if [ "$menu_removed" -gt 0 ]; then
+        success "Removed $menu_removed launch menu wrapper(s)."
+    else
+        skip "No launch menu wrappers found."
+    fi
+    echo ""
+
+    # --- Steam launch menu entries (appinfo.vdf)
+    # Mirrors: steam_appinfo.py (src/ is gone by now). Removes only entries
+    # whose executable is one DeckOps adds; stock entries are never touched.
+    info "Removing DeckOps entries from Steam launch menus..."
+    python3 - "$STEAM_ROOT" << 'PYEOF'
+import hashlib, os, shutil, struct, sys
+
+OURS = {b"iw4x-launcher.exe"} | {
+    f"{g}plut{m}{s}.exe".encode()
+    for g, ms in (("t4", ("sp", "mp")), ("t5", ("sp", "mp")), ("t6", ("mp", "zm")), ("iw5", ("mp", "ds")))
+    for m in ms for s in ("", "_lan")}
+APPIDS = {10090, 42700, 42710, 202990, 212910, 42690, 42750, 10190}
+
+path = os.path.join(sys.argv[1], "appcache", "appinfo.vdf")
+try:
+    data = bytearray(open(path, "rb").read())
+except OSError:
+    print("  appinfo.vdf not found -- nothing to clean."); sys.exit(0)
+magic = struct.unpack_from("<I", data, 0)[0]
+if magic not in (0x07564428, 0x07564429):
+    print(f"  Unknown appinfo.vdf version {magic:#x} -- skipped."); sys.exit(0)
+v29 = magic == 0x07564429
+strings = []
+if v29:
+    str_off = struct.unpack_from("<q", data, 8)[0]
+    pos = str_off + 4
+    for _ in range(struct.unpack_from("<I", data, str_off)[0]):
+        end = data.index(b"\x00", pos); strings.append(data[pos:end].decode("utf-8", "surrogateescape")); pos = end + 1
+index = {s: i for i, s in enumerate(strings)}
+FIXED = {2: 4, 3: 4, 4: 4, 6: 4, 7: 8, 10: 8}
+
+def parse(buf, pos=0):
+    node = []
+    while True:
+        t = buf[pos]; pos += 1
+        if t == 8: return node, pos
+        if v29:
+            key = strings[struct.unpack_from("<I", buf, pos)[0]]; pos += 4
+        else:
+            end = buf.index(b"\x00", pos); key = buf[pos:end].decode("utf-8", "surrogateescape"); pos = end + 1
+        if t == 0: val, pos = parse(buf, pos)
+        elif t == 1: end = buf.index(b"\x00", pos); val = bytes(buf[pos:end]); pos = end + 1
+        elif t == 5:
+            end = pos
+            while buf[end:end + 2] != b"\x00\x00": end += 2
+            val = bytes(buf[pos:end]); pos = end + 2
+        elif t in FIXED: val = bytes(buf[pos:pos + FIXED[t]]); pos += FIXED[t]
+        else: raise ValueError(t)
+        node.append([t, key, val])
+
+def encode(node):
+    out = bytearray()
+    for t, key, val in node:
+        out.append(t)
+        out += struct.pack("<I", index[key]) if v29 else key.encode("utf-8", "surrogateescape") + b"\x00"
+        out += encode(val) if t == 0 else val + (b"\x00" if t == 1 else b"\x00\x00" if t == 5 else b"")
+    out.append(8); return bytes(out)
+
+def text(node, d=0):
+    tabs, out = b"\t" * d, b""
+    for t, key, val in node:
+        k = key.encode("utf-8", "surrogateescape").replace(b"\\", b"\\\\")
+        if t == 0: out += tabs + b'"' + k + b'"\n' + tabs + b"{\n" + text(val, d + 1) + tabs + b"}\n"; continue
+        v = val.replace(b"\\", b"\\\\") if t == 1 else str(struct.unpack("<I", val)[0]).encode() if t == 2 else \
+            str(struct.unpack("<Q" if t == 7 else "<q", val)[0]).encode() if t in (7, 10) else \
+            repr(struct.unpack("<f", val)[0]).encode() if t == 3 else val
+        out += tabs + b'"' + k + b'"\t\t"' + v + b'"\n'
+    return out
+
+def child(node, key):
+    return next((v for t, k, v in node if k == key and t == 0), None)
+
+HDR = struct.Struct("<IIQ20sI20s")
+removed, pos = 0, 16 if v29 else 8
+while pos + 8 <= len(data):
+    appid, size = struct.unpack_from("<II", data, pos)
+    if appid == 0: break
+    start, end = pos, pos + 8 + size
+    pos = end
+    if appid not in APPIDS: continue
+    kv = bytes(data[start + 8 + HDR.size:end])
+    try:
+        node, used = parse(kv)
+    except Exception:
+        continue
+    if used != len(kv) or encode(node) != kv: continue
+    launch = child(child(child(node, "appinfo") or [], "config") or [], "launch")
+    if launch is None: continue
+    keep = [e for e in launch if not (e[0] == 0 and any(k == "executable" and v in OURS for _, k, v in e[2]))]
+    if len(keep) == len(launch): continue
+    removed += len(launch) - len(keep); launch[:] = keep
+    kv = encode(node)
+    state, last, token, _, change, _ = HDR.unpack_from(data, start + 8)
+    body = HDR.pack(state, last, token, hashlib.sha1(text(node)).digest(), change, hashlib.sha1(kv).digest()) + kv
+    blob = struct.pack("<II", appid, len(body)) + body
+    delta = len(blob) - (end - start)
+    data[start:end] = blob; pos += delta
+    if v29:
+        str_off += delta; struct.pack_into("<q", data, 8, str_off)
+
+if removed:
+    shutil.copy2(path, path + ".deckops_uninstall.bak")
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f: f.write(data)
+    os.replace(tmp, path)
+    print(f"  Removed {removed} launch menu entr{'y' if removed == 1 else 'ies'}.")
+else:
+    print("  No DeckOps launch menu entries found.")
+for leftover in (path + ".bak",):
+    if os.path.exists(leftover):
+        os.remove(leftover); print("  Removed appinfo.vdf.bak left by DeckOps.")
+PYEOF
+    echo ""
+
     info "Removing Plutonium data from all Wine prefixes..."
 
     # Build list of all compatdata dirs (internal + SD card + any extra libraries)
