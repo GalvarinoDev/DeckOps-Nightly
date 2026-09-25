@@ -2281,6 +2281,17 @@ class UpdateScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Steam Input setup skipped: {ex}")
 
+        # OLED/Other Steam WaW now has Plutonium entries in its launch menu;
+        # a Deck default from older installs would auto-pick Campaign and hide it.
+        _setup = cfg.get_setup_games()
+        if not is_lcd and any(k in ("t4sp", "t4mp") and _setup.get(k, {}).get("source", "steam") == "steam"
+                              for k, _, _ in self.selected):
+            try:
+                from wrapper import clear_default_launch_option
+                clear_default_launch_option(self.steam_root, ["10090"])
+            except Exception as ex:
+                self._s.log.emit(f"  WaW launch picker reset skipped: {ex}")
+
         # Zombies Declassified: only when the user opted in on the Update Games prompt
         _do_zd = self.update_zd; self.update_zd = False
         if _do_zd and cfg.is_zd_installed() and any(k == "t6zm" for k, _, _ in self.selected):
