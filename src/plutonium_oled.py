@@ -840,18 +840,21 @@ def _write_oled_lan_wrapper(game: dict, game_key: str, steam_root: str,
     bootstrapper  = os.path.join(plut_dir, "bin",
                                   "plutonium-bootstrapper-win32.exe")
     # MW3 Steam: point at downgrade/ where the 32-bit files live
-    game_dir_wine = "Z:" + plut_game_dir(game_key, install_dir, source).replace("/", "\\")
+    from steam_common import wine_path_for_prefix
+    game_dir_wine = wine_path_for_prefix(plut_game_dir(game_key, install_dir, source), compatdata_path)
 
     linger = _LAN_LINGER_S.get(game_key, _LAN_LINGER_S_DEFAULT)
     script = (
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
+        # Plutonium's own launcher passes a fresh random -token even in LAN mode
+        "TOKEN=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \\n')\n"
         f"cd \"{plut_dir}\"\n"
         # No exec: the shell must survive the bootstrapper returning so it
         # can hold the session open below.
         f"\"{proton_path}\" run \"{bootstrapper}\" "
-        f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+        f"{_plut_key(game_key)} \"{game_dir_wine}\" -token \"$TOKEN\" -lan +name \"{player_name}\"\n"
         "# The bootstrapper exits as soon as it has spawned the game. Stay\n"
         "# alive so the Steam shortcut session is not torn down while the\n"
         "# game is still initializing (T6 loads much slower than IW games).\n"

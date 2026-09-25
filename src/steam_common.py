@@ -153,3 +153,60 @@ def patch_configset(configset_path: str, key: str, template_name: str):
     with open(configset_path, "w", encoding="utf-8") as f:
         f.write(content)
     record_configset_edit(configset_path, key, template_name)
+
+
+# --- Wine drive letters
+
+def wine_path_for_prefix(linux_path: str, compatdata_path: str) -> str:
+    """
+    Windows path for linux_path as seen inside the Proton prefix at
+    compatdata_path. Uses the prefix drive letter that maps the path's
+    Steam library (Proton/Wine give an SD card library its own letter,
+    usually D:), creating one if missing, and falls back to Z:.
+
+    Plutonium's own launcher passes SD card games as D:\\steamapps\\...;
+    the same folder as Z:\\run\\media\\<card>\\... made BO2 Zombies offline
+    fail with "Black Ops II server is not available" (Deck, 2026-09-25).
+    Internal drive paths keep Z:, which works.
+    """
+    z_path = "Z:" + os.path.normpath(linux_path).replace("/", "\\")
+    path = os.path.realpath(linux_path)
+    dosdevices = os.path.join(compatdata_path, "pfx", "dosdevices")
+    if not os.path.isdir(dosdevices):
+        return z_path
+
+    drives = {}
+    for name in os.listdir(dosdevices):
+        if not re.fullmatch(r"[a-y]:", name) or name == "c:":
+            continue
+        target = os.path.realpath(os.path.join(dosdevices, name))
+        drives[name] = target
+
+    hits = [(len(t), n) for n, t in drives.items()
+            if t != "/" and (path == t or path.startswith(t + "/"))]
+    if hits:
+        letter = sorted(hits, key=lambda h: (-h[0], h[1]))[0][1]
+    else:
+        # Only give a letter to a Steam library outside home (SD card or
+        # other mount); internal paths stay on Z:.
+        parts = path.split("/")
+        if "steamapps" not in parts:
+            return z_path
+        root = "/".join(parts[:parts.index("steamapps")]) or "/"
+        home = os.path.realpath(os.path.expanduser("~"))
+        if root == "/" or root == home or root.startswith(home + "/"):
+            return z_path
+        free = [f"{c}:" for c in "defghijklmnopqrstuvwxy" if f"{c}:" not in drives]
+        if not free:
+            return z_path
+        letter = free[0]
+        try:
+            os.symlink(root, os.path.join(dosdevices, letter))
+        except OSError:
+            _log.debug("drive letter create failed", exc_info=True)
+            return z_path
+        drives[letter] = root
+
+    rel = os.path.relpath(path, drives[letter])
+    rel = "" if rel == "." else rel.replace("/", "\\")
+    return f"{letter.upper()}\\{rel}"
