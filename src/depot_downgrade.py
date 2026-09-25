@@ -42,14 +42,20 @@ GAME_CONFIGS = {
             {"depot": 42682, "manifest": "2661317971072643596", "app": 42690},
             {"depot": 42683, "manifest": "1595601894688570808", "app": 42690},
             {"depot": 42691, "manifest": "4104640605720756125", "app": 42690},
+            # Dedicated Server only; app 42750 also lists 42682/42683, so a
+            # DS-only install fetches its whole set under the DS license.
+            {"depot": 42751, "manifest": "9089183337461621316", "app": 42750},
         ),
-        "depot_ids": (42681, 42682, 42683, 42691),
+        "depot_ids": (42681, 42682, 42683, 42691, 42751),
         "depot_cmds": (
             "download_depot 42680 42681 5651167211650965131",
             "download_depot 42690 42682 2661317971072643596",
             "download_depot 42690 42683 1595601894688570808",
             "download_depot 42690 42691 4104640605720756125",
+            "download_depot 42750 42751 9089183337461621316",
         ),
+        "ds_app_id": 42750,
+        "ds_depot_ids": (42682, 42751, 42683),
         "detection_exe": "iw5sp.exe",
         "marker_file": os.path.join("main", "iw_00.iwd"),
         "marker_threshold": 380 * 1024 * 1024,

@@ -186,7 +186,7 @@ class SetupScreen(QWidget):
         self._extra_paths = []
         self._cod4_choice = "cod4r"
         self._iw4x_dlc_cb = None; self._iw4x_dlc_present = False
-        self._zd_cb = None
+        self._zd_cb = None; self._waw_mp_cb = None
 
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
@@ -259,7 +259,7 @@ class SetupScreen(QWidget):
                 if item.widget(): item.widget().deleteLater()
         self._checks.clear()
         self._iw4x_dlc_cb = None; self._iw4x_dlc_present = False
-        self._zd_cb = None
+        self._zd_cb = None; self._waw_mp_cb = None
 
         MAX_SLOTS  = 3
         SLOT_W     = 28
@@ -409,6 +409,16 @@ class SetupScreen(QWidget):
                 v.addWidget(self._zd_cb)
                 lay.addWidget(w); _bind("t6zm", w)
 
+        # OLED/Other Steam WaW: Plutonium MP is in the Steam launch menu now,
+        # so its separate shortcut is opt-in. LCD still always gets it.
+        if "t4mp" in keys and "t4mp" in self.steam_installed and cfg.uses_oled_path():
+            w, v = _opt_box()
+            self._waw_mp_cb = QCheckBox("Also add Plutonium MP as its own shortcut")
+            self._waw_mp_cb.setFont(font(11)); self._waw_mp_cb.setChecked(False)
+            self._waw_mp_cb.setStyleSheet("color:#CCC;background:transparent;")
+            v.addWidget(self._waw_mp_cb)
+            lay.addWidget(w); _bind("t4mp", w)
+
     def _add_mw3_free_row(self, gd, checks_w):
         cw = QWidget()
         row = QHBoxLayout(cw); row.setSpacing(10); row.setContentsMargins(6, 6, 6, 6)
@@ -543,6 +553,7 @@ class SetupScreen(QWidget):
             s.install_iw4x_dlc = "install" if self._iw4x_dlc_cb and self._iw4x_dlc_cb.isChecked() else ""
         s.cod4_client = self._cod4_choice if "cod4mp" in sel else "cod4r"
         s.zd_choice = bool(self._zd_cb and self._zd_cb.isChecked())
+        s.waw_mp_shortcut = bool(self._waw_mp_cb and self._waw_mp_cb.isChecked())
         s.bo3_client = _ask_bo3_client(self, all_tuples)
         go_to(self.stack, "InstallScreen")
 
@@ -570,6 +581,7 @@ class _BaseInstallScreen(QWidget):
         self._return_to_management = False
         self._from_manage = False
         self.zd_choice = None
+        self.waw_mp_shortcut = False
         self.bo3_client = "cleanops"
         self._results = []
         self._plan = []; self._bands = {}
@@ -1179,6 +1191,7 @@ class _BaseInstallScreen(QWidget):
         el = int(time.time() - self._t0)
         self.stat.setText(f"Finished in {el // 60}:{el % 60:02d}")
         self.zd_choice = None
+        self.waw_mp_shortcut = False
         if ok:
             self.cur.setText(self._DONE_MSG)
         else:
@@ -1614,14 +1627,19 @@ class _BaseInstallScreen(QWidget):
                     self._s.log.emit(f"✗  MW3 downgrade requires at least {_DG_SPACE_GB} GB of free space.")
                     continue
 
-                _depots = list(_gcfg["depots"])
-                _cmds = list(_gcfg["depot_cmds"])
-                _sp_depot = _gcfg.get("sp_depot_id", 42681)
-                _skip = {_sp_depot}
+                # MP: base + MP client + language. DS: base + server +
+                # language, all requested under the DS app (42750) so a
+                # DS-only owner never leans on the MP license.
                 if _is_ds:
-                    _skip.update((42682, 42691))
-                _depots = [d for d in _depots if d["depot"] not in _skip]
-                _cmds = [c for c in _cmds if not any(f" {d} " in c for d in _skip)]
+                    _ds_app = _gcfg["ds_app_id"]
+                    _depots = [dict(d, app=_ds_app) for d in _gcfg["depots"]
+                               if d["depot"] in _gcfg["ds_depot_ids"]]
+                    _dlc_bad = []  # DLC depots only exist under the MP app
+                else:
+                    _skip = {_gcfg.get("sp_depot_id", 42681), 42751}
+                    _depots = [d for d in _gcfg["depots"] if d["depot"] not in _skip]
+                _cmds = [f"download_depot {d.get('app', _gcfg['app_id'])} {d['depot']} {d['manifest']}"
+                         for d in _depots]
 
                 for dk in _dlc_bad:
                     dlc = _gcfg["dlc"][dk]
@@ -2206,9 +2224,15 @@ class _BaseInstallScreen(QWidget):
                 self._s.log.emit("Creating non-Steam shortcuts...")
                 steam_installed = {k: g for k, gd, g in steam_sel if g}
                 gyro_mode = cfg.get_gyro_mode() or "on"
+                # OLED/Other: WaW MP is in the Steam launch menu, so its own
+                # shortcut is only made when the user ticked the box.
+                _sc_keys = [k for k in steam_keys if not (
+                    k == "t4mp" and cfg.uses_oled_path() and not self.waw_mp_shortcut)]
+                if "t4mp" in steam_keys and cfg.uses_oled_path():
+                    _c = cfg.load(); _c["waw_mp_shortcut"] = bool(self.waw_mp_shortcut); cfg.save(_c)
                 create_shortcuts(
                     installed_games=steam_installed,
-                    selected_keys=steam_keys,
+                    selected_keys=_sc_keys,
                     gyro_mode=gyro_mode,
                     on_progress=lambda msg: self._s.log.emit(msg),
                     steam_root=self.steam_root,
@@ -2223,7 +2247,8 @@ class _BaseInstallScreen(QWidget):
             defaults = {}
             if has_cod4_steam:
                 defaults["7940"] = ("7a722f97", "1")   # CoD4 -> Singleplayer
-            if has_waw_steam:
+            # OLED/Other WaW needs Steam's picker for its Plutonium entries
+            if has_waw_steam and not cfg.uses_oled_path():
                 defaults["10090"] = ("9aa5e05f", "0")   # WaW -> Campaign
             if defaults:
                 try:
@@ -2232,6 +2257,12 @@ class _BaseInstallScreen(QWidget):
                     self._s.log.emit("✓  Default launch options set (SP mode)")
                 except Exception as ex:
                     self._s.log.emit(f"  Launch options skipped: {ex}")
+            if has_waw_steam and cfg.uses_oled_path():
+                try:
+                    from wrapper import clear_default_launch_option
+                    clear_default_launch_option(self.steam_root, ["10090"])
+                except Exception as ex:
+                    self._s.log.emit(f"  WaW launch picker reset skipped: {ex}")
 
         # --- Steam artwork
         if steam_sel:

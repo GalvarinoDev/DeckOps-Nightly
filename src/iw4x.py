@@ -8,7 +8,7 @@ release.zip contents are relocated to the launcher-compatible layout:
   zone/zonebuilder/→ zone/iw4x/x86/zonebuilder/
 
 The launcher (iw4x-launcher.exe) handles self-updating on each launch.
-Steam games use a launch option to redirect iw4mp.exe to the launcher.
+Steam games get a "Play IW4x" launch menu entry that runs the launcher.
 
 Optionally downloads free DLC content from cdn.iw4x.io, including:
   - MW2 DLC map packs (main/iw4x/x86/*.iwd)
@@ -255,10 +255,12 @@ def _relocate_extracted(install_dir: str):
             shutil.move(old_abs, new_abs)
 
 
-def _build_iw4x_launch_option() -> str:
-    # Launcher ships x86 and x64 (mm) clients since v1.1.8-b.20; without
-    # --arch it may show a terminal picker nobody can answer in Game Mode.
-    return "bash -c 'exec \"${@/iw4mp.exe/iw4x-launcher.exe}\" --arch x86' -- %command%"
+# Steam copy launch menu entry. Launcher ships x86 and x64 (mm) clients
+# since v1.1.8-b.20; without --arch it may show a terminal picker nobody
+# can answer in Game Mode.
+IW4X_MENU = [
+    {"executable": "iw4x-launcher.exe", "arguments": "--arch x86", "description": "Play IW4x"},
+]
 
 
 # ── DLC install ──────────────────────────────────────────────────────────────
@@ -366,7 +368,7 @@ def install_iw4x(game: dict, steam_root: str,
 
     Downloads iw4x.dll, release.zip, and the IW4x launcher concurrently.
     release.zip contents are relocated to the launcher-compatible layout.
-    For Steam games, sets a launch option to redirect to iw4x-launcher.exe.
+    For Steam games, adds a "Play IW4x" launch menu entry (iw4x-launcher.exe --arch x86).
     """
     install_dir = game["install_dir"]
     _migrate_dlc_ff(install_dir)
@@ -446,17 +448,22 @@ def install_iw4x(game: dict, steam_root: str,
         zf.extractall(install_dir)
     os.remove(launcher_zip)
 
-    # ── Set launch option (Steam only) ───────────────────────────────────
+    # ── Launch menu (Steam only) ─────────────────────────────────────────
+    # Plain Play stays vanilla MW2; "Play IW4x" runs the launcher directly,
+    # which updates and then starts the x86 client. Older versions used a
+    # ${@/iw4mp.exe/...} launch option that redirected every launch, so clear it.
     if source != "own":
-        prog(80, "Setting launch options...")
+        prog(80, "Adding IW4x to the Steam launch menu...")
         try:
-            from wrapper import set_launch_options, clear_launch_options
-            # Clear first: set_launch_options appends when the old option differs,
-            # which would leave two %command% tokens after an upgrade.
+            from wrapper import clear_launch_options
+            from steam_appinfo import add_launch_entries
             clear_launch_options(steam_root, MW2_MP_APPID)
-            set_launch_options(steam_root, MW2_MP_APPID, _build_iw4x_launch_option())
+            if add_launch_entries(steam_root, MW2_MP_APPID, IW4X_MENU):
+                prog(80, "  ✓ Launch menu: Play IW4x")
+            else:
+                prog(80, "  ⚠ Launch menu not added yet, will retry next time Steam is closed")
         except Exception as ex:
-            prog(80, f"Could not set launch options: {ex}")
+            prog(80, f"Could not add launch menu: {ex}")
 
     prog(100, "IW4x base installation complete!")
 
@@ -537,11 +544,13 @@ def uninstall_iw4x(game: dict, steam_root: str = "",
     if remove_dlc:
         _remove_dlc_ff(install_dir)
 
-    # Clear launch option
+    # Clear launch option (older versions) and the launch menu entry
     if steam_root:
         try:
             from wrapper import clear_launch_options
+            from steam_appinfo import remove_launch_entries
             clear_launch_options(steam_root, MW2_MP_APPID)
+            remove_launch_entries(steam_root, MW2_MP_APPID, [e["executable"] for e in IW4X_MENU])
         except Exception:
             pass
 
