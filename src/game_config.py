@@ -776,5 +776,54 @@ def rename_player(player_name, steam_root, installed_games=None,
         except Exception as ex:
             prog(f"  ⚠ t7x: rename failed: {ex}")
 
+    updated += _rename_in_lan_scripts(player_name, installed_games, prog)
+
     prog(f"Player name updated in {updated} file(s).")
+    return updated
+
+
+def _rename_in_lan_scripts(player_name, installed_games, prog):
+    """
+    Plutonium offline scripts bake the name in as +name "...": the -lan .sh
+    (used by the LAN launcher), the OLED Steam Offline menu copy, and the
+    LCD Steam replaced exe fallback. Rewrite it in each.
+    """
+    import re
+    import config as cfg
+    from plutonium_oled import STEAM_MENU_EXES
+    from plutonium_lcd import PLUT_GAME_EXES
+
+    new = '+name "' + player_name.replace('"', '') + '"'
+    updated = 0
+    for key, entry in cfg.get_setup_games().items():
+        lan = entry.get("lan_wrapper_path")
+        if not lan:
+            continue
+        d = os.path.dirname(lan)
+        paths = {lan}
+        if key in STEAM_MENU_EXES:
+            paths.add(os.path.join(d, STEAM_MENU_EXES[key][1]))
+        if key in PLUT_GAME_EXES and entry.get("source") != "own":
+            paths.add(os.path.join(d, PLUT_GAME_EXES[key][1]))
+
+        for p in paths:
+            try:
+                with open(p, "rb") as f:
+                    raw = f.read()
+            except OSError:
+                continue
+            if not raw.startswith(b"#!"):
+                continue
+            body = raw.rstrip(b"\x00")
+            text = re.sub(r'\+name "[^"]*"', lambda m: new, body.decode("utf-8", "replace"), count=1)
+            out = text.encode("utf-8")
+            if out == body:
+                continue
+            # Replaced game exes are padded to the original size for Steam validation
+            if len(body) < len(raw) and len(out) < len(raw):
+                out += b"\x00" * (len(raw) - len(out))
+            with open(p, "wb") as f:
+                f.write(out)
+            updated += 1
+            prog(f"  + {key}: renamed in {os.path.basename(p)}")
     return updated
