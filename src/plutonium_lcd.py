@@ -928,15 +928,18 @@ def _write_lcd_wrapper(game: dict, game_key: str, steam_root: str,
     bootstrapper = os.path.join(heroic_plut_dir, "bin",
                                 "plutonium-bootstrapper-win32.exe")
     # MW3 Steam: point at downgrade/ where the 32-bit files live
-    game_dir_wine = _wine_path_lcd(plut_game_dir(game_key, install_dir))
+    from steam_common import wine_path_for_prefix
+    game_dir_wine = wine_path_for_prefix(plut_game_dir(game_key, install_dir), HEROIC_DEFAULT_WINE_PREFIX)
 
     script = (
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{HEROIC_DEFAULT_WINE_PREFIX}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
+        # Plutonium's own launcher passes a fresh random -token even in LAN mode
+        "TOKEN=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \\n')\n"
         f"cd \"{heroic_plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-        f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+        f"{_plut_key(game_key)} \"{game_dir_wine}\" -token \"$TOKEN\" -lan +name \"{player_name}\"\n"
     )
 
     script_bytes = script.encode("utf-8")
@@ -991,15 +994,18 @@ def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
     bootstrapper = os.path.join(heroic_plut_dir, "bin",
                                  "plutonium-bootstrapper-win32.exe")
     # MW3 Steam: point at downgrade/ where the 32-bit files live
-    game_dir_wine = _wine_path_lcd(plut_game_dir(game_key, install_dir, source))
+    from steam_common import wine_path_for_prefix
+    game_dir_wine = wine_path_for_prefix(plut_game_dir(game_key, install_dir, source), HEROIC_DEFAULT_WINE_PREFIX)
 
     script = (
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{HEROIC_DEFAULT_WINE_PREFIX}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
+        # Plutonium's own launcher passes a fresh random -token even in LAN mode
+        "TOKEN=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \\n')\n"
         f"cd \"{heroic_plut_dir}\"\n"
         f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-        f"{_plut_key(game_key)} \"{game_dir_wine}\" +name \"{player_name}\" -lan\n"
+        f"{_plut_key(game_key)} \"{game_dir_wine}\" -token \"$TOKEN\" -lan +name \"{player_name}\"\n"
     )
 
     with open(wrapper_path, "wb") as f:
