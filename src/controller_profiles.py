@@ -674,7 +674,7 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
     # that was written into the shortcut's Exe field.
     try:
         from detect_games import find_own_installed
-        from shortcut import OWN_SHORTCUTS
+        from shortcut import OWN_SHORTCUTS, own_shortcut_exe
         own_games = find_own_installed()
         if own_games:
             for key, game in own_games.items():
@@ -685,22 +685,7 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
                 exe_path = game.get("exe_path", "")
                 if not exe_path:
                     continue
-                install_dir = game.get("install_dir", "")
-
-                # Resolve the actual exe that was used in the shortcut.
-                # Must match create_own_game_shortcuts per-key logic.
-                if key == "iw4mp" and install_dir:
-                    actual_exe = os.path.join(install_dir, "iw4x.exe")
-                elif key == "cod4sp" and install_dir:
-                    actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
-                elif key in ("iw6mp", "iw6sp") and install_dir:
-                    actual_exe = os.path.join(install_dir, "iw6-mod.exe")
-                elif key in ("s1mp", "s1sp") and install_dir:
-                    actual_exe = os.path.join(install_dir, "s1-mod.exe")
-                elif key == "t7x" and install_dir:
-                    actual_exe = os.path.join(install_dir, "t7x.exe")
-                else:
-                    actual_exe = exe_path
+                actual_exe = own_shortcut_exe(key, game)
 
                 # Must match create_own_shortcuts: quoted exe + canonical name
                 quoted_exe = f'"{actual_exe}"'
@@ -878,7 +863,7 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
     # ── "My Own" game external controller profiles ────────────────────────────
     try:
         from detect_games import find_own_installed
-        from shortcut import OWN_SHORTCUTS
+        from shortcut import OWN_SHORTCUTS, own_shortcut_exe
         own_games = find_own_installed()
         if own_games:
             for key, game in own_games.items():
@@ -889,22 +874,7 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
                 exe_path = game.get("exe_path", "")
                 if not exe_path:
                     continue
-                install_dir = game.get("install_dir", "")
-
-                # Resolve the actual exe that was used in the shortcut.
-                # Must match create_own_game_shortcuts per-key logic.
-                if key == "iw4mp" and install_dir:
-                    actual_exe = os.path.join(install_dir, "iw4x.exe")
-                elif key == "cod4sp" and install_dir:
-                    actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
-                elif key in ("iw6mp", "iw6sp") and install_dir:
-                    actual_exe = os.path.join(install_dir, "iw6-mod.exe")
-                elif key in ("s1mp", "s1sp") and install_dir:
-                    actual_exe = os.path.join(install_dir, "s1-mod.exe")
-                elif key == "t7x" and install_dir:
-                    actual_exe = os.path.join(install_dir, "t7x.exe")
-                else:
-                    actual_exe = exe_path
+                actual_exe = own_shortcut_exe(key, game)
 
                 quoted_exe = f'"{actual_exe}"'
                 shortcut_appid = _calc_shortcut_appid(quoted_exe, canonical_name)
