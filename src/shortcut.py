@@ -881,9 +881,7 @@ def add_shortcut(
                         appid CRC calculation (for stable appids when the
                         actual exe differs from the original shortcut exe)
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     appid_key = appid_exe_path if appid_exe_path else exe_path
     shortcut_appid = _calc_shortcut_appid(appid_key, name)
@@ -990,9 +988,7 @@ def remove_shortcut(name: str, exe_path: str, artwork_def: dict = None,
                    if None, artwork files are left in place
     on_progress — optional callback(msg: str)
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     shortcut_appid = _calc_shortcut_appid(exe_path, name)
 
@@ -1108,9 +1104,7 @@ def cleanup_orphan_shortcuts(on_progress=None):
     Called automatically at the top of create_own_shortcuts() before new
     entries are written.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     # Build set of orphan appids from known stale (exe_path, name) pairs
     orphan_appids = set()
@@ -1238,9 +1232,7 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                   compatdata prefix (internal or SD card). Falls back to
                   STEAM_ROOT if not provided.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
     
     to_create = []
     for key, shortcut_def in SHORTCUTS.items():
@@ -1455,9 +1447,7 @@ def apply_steam_artwork(selected_keys: list, on_progress=None):
     """
     from detect_games import GAMES
 
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     # Map game keys to Steam appids that have custom artwork
     KEY_TO_STEAM_APPID = {
@@ -1563,9 +1553,7 @@ def enrich_own_games(own_games: dict, selected_keys: list,
       shortcut_appid, compatdata_path, source, current_name,
       _own_actual_exe, _own_launch_options
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     _PLUT_KEYS = {"t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp",
                   "iw5mp"}
@@ -1704,9 +1692,7 @@ def write_own_shortcuts(own_games: dict, selected_keys: list,
     gyro_mode     — "on" or "off"
     on_progress   — optional callback(msg: str)
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     # Clean up orphaned shortcuts from older DeckOps builds before
     # writing new entries. Safe to call every time -- no-ops if clean.
@@ -1941,9 +1927,7 @@ def create_launcher_shortcut(on_progress=None):
     No compat tool is set — the shell script invokes Proton directly.
     Called once after Plutonium games are set up — both OLED and LCD.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     launcher_sh = os.path.join(INSTALL_DIR, _LAUNCHER_SH_REL)
     launcher_exe = os.path.join(INSTALL_DIR, _LAUNCHER_EXE_REL)
@@ -2105,9 +2089,7 @@ def repair_shortcuts(steam_root: str = None, on_progress=None) -> list:
     import config as cfg
     from detect_games import parse_library_folders, find_installed_games, find_own_installed
 
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     sr = steam_root or STEAM_ROOT
     setup = cfg.get_setup_games()

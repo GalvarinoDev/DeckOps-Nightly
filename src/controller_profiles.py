@@ -444,9 +444,7 @@ def install_controller_templates(on_progress=None):
     Safe to call multiple times -- existing files are overwritten.
     Must be called while Steam is closed.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     import config as cfg
 
@@ -494,9 +492,7 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
     gyro_mode -- "on", "off", "hold", or "toggle"
     Must be called while Steam is closed.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     if gyro_mode not in ("on", "off", "hold", "toggle"):
         prog(f"  ⚠ Invalid gyro_mode '{gyro_mode}' -- must be 'on', 'off', 'hold', or 'toggle'.")
@@ -760,9 +756,7 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
     Steam picks up our templates when the user plugs in their controller.
     Must be called while Steam is closed.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     if controller_type not in ("playstation", "xbox", "other", "steamcontroller"):
         prog(f"  ⚠ Invalid controller_type '{controller_type}'.")

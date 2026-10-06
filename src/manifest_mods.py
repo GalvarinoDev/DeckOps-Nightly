@@ -527,9 +527,7 @@ def _remove_ours(root: str, receipt: dict, keep: set = frozenset()):
 def install_manifest(m: dict, option_id: str, cdn_text: str, games_root: str,
                      on_progress=None, on_log=None) -> list:
     """Install or switch to one option of a validated manifest. Returns failed paths."""
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
+    prog = on_progress or (lambda *a: None)
     def log(msg):
         if on_log:
             on_log(msg)

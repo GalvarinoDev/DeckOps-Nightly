@@ -258,9 +258,7 @@ def install_iw4x_dlc(install_dir: str, on_progress=None):
     _migrate_old_layout(install_dir)
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
+    prog = on_progress or (lambda *a: None)
 
     # ── Fetch manifest ────────────────────────────────────────────────────
     prog(0, "Fetching DLC manifest...")

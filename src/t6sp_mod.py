@@ -59,9 +59,7 @@ def install_t6sp_mod(game: dict, steam_root: str,
     """
     install_dir = game["install_dir"]
 
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
+    prog = on_progress or (lambda *a: None)
 
     prog(2, "Installing Rattpak's T6SP-MOD (Beta)...")
 

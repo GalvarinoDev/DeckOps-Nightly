@@ -146,9 +146,7 @@ def _write_registry_keys(compatdata_path: str, on_progress=None):
       "PB Setup"=dword:00000002
       "Running"=dword:00000001
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     user_reg = os.path.join(compatdata_path, "pfx", "user.reg")
 
@@ -233,9 +231,7 @@ def _write_install_path_registry(compatdata_path: str, install_dir: str,
       Path separators are double-backslash (\\\\).
       String values use Wine's escaped format with double backslashes.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     system_reg = os.path.join(compatdata_path, "pfx", "system.reg")
 
@@ -551,9 +547,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     """
     install_dir = game["install_dir"]
 
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
+    prog = on_progress or (lambda *a: None)
 
     def log(msg):
         if on_progress:
