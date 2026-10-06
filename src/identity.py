@@ -48,7 +48,6 @@ LEDGER_PATH = os.path.expanduser(f"~/.config/{_XDG_ID}/vdf_edits.json")
 DESKTOP_FILE = os.path.expanduser(
     f"~/.local/share/applications/{_XDG_ID}.desktop"
 )
-DESKTOP_SHORTCUT_NAME = f"{INSTALL_DIR_NAME}.desktop"
 
 # Venv python path
 VENV_PYTHON = os.path.join(INSTALL_DIR, ".venv", "bin", "python3")
@@ -59,15 +58,6 @@ APP_TITLE = "DeckOps Nightly" if BRANCH == "nightly" else "DeckOps"
 
 # Both branches show a badge so the user can tell at a glance
 BUILD_BADGE = "NIGHTLY BUILD" if BRANCH == "nightly" else "STABLE BUILD"
-
-BUILD_HASH_FALLBACK = "nightly" if BRANCH == "nightly" else "stable"
-
-DESKTOP_ENTRY_NAME = APP_TITLE
-DESKTOP_ENTRY_COMMENT = (
-    f"{APP_TITLE} — Experimental build"
-    if BRANCH == "nightly"
-    else f"{APP_TITLE} — Call of Duty on SteamOS"
-)
 
 # ── GitHub raw asset URLs ────────────────────────────────────────────────────
 
