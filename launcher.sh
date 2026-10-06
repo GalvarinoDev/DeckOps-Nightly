@@ -162,9 +162,11 @@ check_for_updates() {
     if [ "$LOCAL_SHA" = "0" ] || [ -z "$CHANGED_FILES" ]; then
         # Full update — copy everything except protected paths
         # Preserve user config
+        # cp + mv (atomic rename) so a power loss can't leave a truncated config
         local SAVED_CONFIG=""
         if [ -f "$INSTALL_DIR/deckops.json" ]; then
-            SAVED_CONFIG="$(cat "$INSTALL_DIR/deckops.json")"
+            SAVED_CONFIG="$INSTALL_DIR/deckops.json.bak"
+            cp "$INSTALL_DIR/deckops.json" "$SAVED_CONFIG"
         fi
         local SAVED_MUSIC=""
         if [ -f "$INSTALL_DIR/assets/music/background.mp3" ]; then
@@ -176,8 +178,8 @@ check_for_updates() {
         cp -r "$UPDATE_DIR"/. "$INSTALL_DIR"/
 
         # Restore protected files
-        if [ -n "$SAVED_CONFIG" ]; then
-            echo "$SAVED_CONFIG" > "$INSTALL_DIR/deckops.json"
+        if [ -n "$SAVED_CONFIG" ] && [ -f "$SAVED_CONFIG" ]; then
+            mv "$SAVED_CONFIG" "$INSTALL_DIR/deckops.json"
         fi
         if [ -n "$SAVED_MUSIC" ] && [ -f "$SAVED_MUSIC" ]; then
             mv "$SAVED_MUSIC" "$INSTALL_DIR/assets/music/background.mp3"

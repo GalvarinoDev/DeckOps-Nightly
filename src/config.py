@@ -20,6 +20,9 @@ import threading
 from datetime import datetime
 
 from identity import CONFIG_PATH
+from log import get_logger
+
+_log = get_logger(__name__)
 
 DEFAULTS = {
     "first_run_complete": False,
@@ -87,13 +90,23 @@ def load() -> dict:
         try:
             with open(CONFIG_PATH, "r") as f:
                 data = json.load(f)
-            merged = dict(DEFAULTS)
-            merged.update(data)
-            _cache = merged
-            _cache_mtime = current_mtime
-            return dict(_cache)
-        except (json.JSONDecodeError, IOError):
+            if not isinstance(data, dict):
+                raise ValueError("config root is not an object")
+        except ValueError:
+            # Unparseable (truncated by a power loss, bad hand edit). Move it
+            # aside so the next save() can't overwrite the user's setup.
+            bad = f"{CONFIG_PATH}.corrupt-{datetime.now():%Y%m%d-%H%M%S}"
+            try: os.replace(CONFIG_PATH, bad)
+            except OSError: pass
+            _log.warning("deckops.json unreadable, moved to %s", bad)
             return dict(DEFAULTS)
+        except IOError:
+            return dict(DEFAULTS)
+        merged = dict(DEFAULTS)
+        merged.update(data)
+        _cache = merged
+        _cache_mtime = current_mtime
+        return dict(_cache)
 
 
 def save(config: dict):
