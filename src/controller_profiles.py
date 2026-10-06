@@ -656,7 +656,7 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
 
     serial = _get_deck_serial()
     if serial:
-        prog(f"  Deck serial: {serial}")
+        prog("  Deck serial found")
     else:
         prog("  ⚠ Could not read Deck serial -- serial configset write skipped.")
 

@@ -21,6 +21,7 @@ launcher_plut_win.py) before any other work.
 
 import logging
 import os
+import re
 from logging.handlers import RotatingFileHandler
 
 from identity import LOG_DIR as _LOG_DIR
@@ -35,6 +36,60 @@ _FORMAT = "[%(asctime)s] %(name)s  %(levelname)s  %(message)s"
 _DATE_FMT = "%Y-%m-%d %H:%M:%S"
 
 _setup_done = False
+
+# Logs get pasted publicly (Copy Log -> Discord), so personal data is masked
+# on the way out: Linux user name (home and media paths, native and Wine),
+# Steam account name, Steam account IDs, Deck serial. Path structure stays.
+_REDACT = [
+    (re.compile(r"(?:/var)?/home/[^/\s'\"]+"), "~"),
+    (re.compile(r"([A-Za-z]:\\+)(?:var\\+)?home\\+[^\\\s'\"]+"), r"\1~"),
+    (re.compile(r"(/(?:run/)?media/)[^/\s'\"]+"), r"\1<user>"),
+    (re.compile(r"(-username\s+)\S+"), r"\1***"),
+    (re.compile(r"(Logging ')[^']+(' into Steam3)"), r"\1***\2"),
+    (re.compile(r"((?:userdata|Steam Controller Configs)[/\\]+)\d+"), r"\1<uid>"),
+    (re.compile(r"\b((?:uid|user) )\d{3,}\b"), r"\1<uid>"),
+    (re.compile(r"(configset_)(?!controller_)[^./\s'\"]+(\.vdf)"), r"\1<serial>\2"),
+]
+_secrets = set()
+
+
+def redact_also(word: str):
+    """Mask this exact word in all later log output (e.g. a captured Steam
+    account name). Ignored under 3 chars to avoid masking ordinary text."""
+    if word and len(word) >= 3:
+        _secrets.add(re.escape(word))
+
+
+def redact(text: str) -> str:
+    for pat, rep in _REDACT:
+        text = pat.sub(rep, text)
+    if _secrets:
+        text = re.sub(r"\b(?:" + "|".join(_secrets) + r")\b", "***", text)
+    return text
+
+
+class _RedactingFormatter(logging.Formatter):
+    def format(self, record):
+        return redact(super().format(record))
+
+
+def _scrub_old_logs():
+    # One-time pass over logs written before masking existed.
+    marker = os.path.join(_LOG_DIR, ".masked")
+    if os.path.exists(marker):
+        return
+    for p in [_LOG_PATH] + [f"{_LOG_PATH}.{i}" for i in range(1, _BACKUP_COUNT + 1)]:
+        try:
+            with open(p, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(redact(text))
+        except OSError:
+            pass
+    try:
+        open(marker, "w").close()
+    except OSError:
+        pass
 
 
 def setup_logging(level: int = logging.DEBUG):
@@ -54,6 +109,7 @@ def setup_logging(level: int = logging.DEBUG):
     _setup_done = True
 
     os.makedirs(_LOG_DIR, exist_ok=True)
+    _scrub_old_logs()
 
     root = logging.getLogger("deckops")
     root.setLevel(level)
@@ -67,7 +123,7 @@ def setup_logging(level: int = logging.DEBUG):
             encoding="utf-8",
         )
         fh.setLevel(logging.DEBUG)
-        fh.setFormatter(logging.Formatter(_FORMAT, datefmt=_DATE_FMT))
+        fh.setFormatter(_RedactingFormatter(_FORMAT, datefmt=_DATE_FMT))
         root.addHandler(fh)
     except OSError:
         pass  # filesystem issue — fall through to stderr only
@@ -75,7 +131,7 @@ def setup_logging(level: int = logging.DEBUG):
     # Stderr handler — visible when running from terminal / SSH
     sh = logging.StreamHandler()
     sh.setLevel(logging.INFO)
-    sh.setFormatter(logging.Formatter(_FORMAT, datefmt=_DATE_FMT))
+    sh.setFormatter(_RedactingFormatter(_FORMAT, datefmt=_DATE_FMT))
     root.addHandler(sh)
 
 
