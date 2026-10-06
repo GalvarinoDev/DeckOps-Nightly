@@ -41,31 +41,42 @@ from log import get_logger
 _log = get_logger(__name__)
 
 
+def _remote_changes():
+    """
+    (local_sha, remote_sha, files) for the local VERSION vs GitHub main.
+    files is the compare API's file list, or None when there's no local
+    sha or the compare call fails. Raises if the commits lookup fails.
+    """
+    version_file = os.path.join(PROJECT_ROOT, "VERSION")
+    local_sha = "0"
+    if os.path.isfile(version_file):
+        with open(version_file) as f:
+            local_sha = f.read().strip() or "0"
+    api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}"
+    hdr = {"User-Agent": "DeckOps"}
+    req = urllib.request.Request(f"{api}/commits/main", headers=hdr)
+    with urllib.request.urlopen(req, timeout=10) as r:
+        remote_sha = json.loads(r.read()).get("sha", "")
+    files = None
+    if remote_sha and local_sha not in ("0", remote_sha):
+        try:
+            creq = urllib.request.Request(f"{api}/compare/{local_sha}...{remote_sha}", headers=hdr)
+            with urllib.request.urlopen(creq, timeout=15) as r2:
+                files = json.loads(r2.read()).get("files", [])
+        except Exception:
+            pass
+    return local_sha, remote_sha, files
+
+
 def _check_update_status():
     """Compare local VERSION sha to GitHub main. Returns 'OK|..', 'UPDATE|..' or 'FAIL|..'."""
     try:
-        version_file = os.path.join(PROJECT_ROOT, "VERSION")
-        local_sha = "0"
-        if os.path.isfile(version_file):
-            with open(version_file) as f:
-                local_sha = f.read().strip() or "0"
-        api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}"
-        req = urllib.request.Request(f"{api}/commits/main", headers={"User-Agent": "DeckOps"})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            remote_sha = json.loads(r.read()).get("sha", "")
+        local_sha, remote_sha, files = _remote_changes()
         if not remote_sha:
             return "FAIL|Could not reach GitHub."
         if local_sha == remote_sha:
             return "OK|You're up to date!"
-        file_count = "unknown"
-        if local_sha != "0":
-            try:
-                creq = urllib.request.Request(f"{api}/compare/{local_sha}...{remote_sha}",
-                                              headers={"User-Agent": "DeckOps"})
-                with urllib.request.urlopen(creq, timeout=15) as r2:
-                    file_count = str(len(json.loads(r2.read()).get("files", [])))
-            except Exception:
-                pass
+        file_count = "unknown" if files is None else str(len(files))
         return f"UPDATE|Update available — {file_count} file(s) changed."
     except Exception as ex:
         _log.warning("Update check failed: %s", ex)
@@ -1693,50 +1704,24 @@ class ConfigureScreen(QWidget):
             return filepath in protected
 
         try:
-            # Read local SHA
-            local_sha = "0"
-            if os.path.isfile(version_file):
-                with open(version_file) as f:
-                    local_sha = f.read().strip() or "0"
-
-            # Get remote SHA
-            req = urllib.request.Request(
-                f"https://api.github.com/repos/{github_user}/{github_repo}/commits/main",
-                headers={"User-Agent": "DeckOps"},
-            )
-            with urllib.request.urlopen(req, timeout=10) as r:
-                data = json.loads(r.read())
-            remote_sha = data.get("sha", "")
+            local_sha, remote_sha, file_entries = _remote_changes()
 
             if not remote_sha or local_sha == remote_sha:
                 self._apply_sig.log.emit("FAIL|Already up to date.")
                 return
 
-            # Get changed files list
-            changed_files = []
-            removed_files = []
-            if local_sha != "0":
-                try:
-                    creq = urllib.request.Request(
-                        f"https://api.github.com/repos/{github_user}/{github_repo}/compare/{local_sha}...{remote_sha}",
-                        headers={"User-Agent": "DeckOps"},
-                    )
-                    with urllib.request.urlopen(creq, timeout=15) as r2:
-                        cdata = json.loads(r2.read())
-                    file_entries = cdata.get("files", [])
-                    # Removed files 404 on raw.githubusercontent, so exclude
-                    # them from download and delete locally at apply time.
-                    # Renamed files download under their new name; the old
-                    # name (previous_filename) is deleted like a removal.
-                    changed_files = [f["filename"] for f in file_entries
-                                     if f.get("status") != "removed"]
-                    removed_files = [f["filename"] for f in file_entries
-                                     if f.get("status") == "removed"]
-                    removed_files += [f["previous_filename"] for f in file_entries
-                                      if f.get("status") == "renamed"
-                                      and f.get("previous_filename")]
-                except Exception:
-                    pass
+            # Removed files 404 on raw.githubusercontent, so exclude
+            # them from download and delete locally at apply time.
+            # Renamed files download under their new name; the old
+            # name (previous_filename) is deleted like a removal.
+            file_entries = file_entries or []
+            changed_files = [f["filename"] for f in file_entries
+                             if f.get("status") != "removed"]
+            removed_files = [f["filename"] for f in file_entries
+                             if f.get("status") == "removed"]
+            removed_files += [f["previous_filename"] for f in file_entries
+                              if f.get("status") == "renamed"
+                              and f.get("previous_filename")]
 
             # Clean staging dir
             if os.path.isdir(update_dir):
