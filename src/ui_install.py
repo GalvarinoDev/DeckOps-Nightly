@@ -249,7 +249,7 @@ class SetupScreen(QWidget):
 
     @staticmethod
     def _short_name(base):
-        return base.replace("Call of Duty 4: ", "CoD4: ").replace("Call of Duty: ", "")
+        return base.replace("Call of Duty 4: Modern Warfare", "Modern Warfare 1").replace("Call of Duty: ", "")
 
     def _build(self):
         for col in self._cols.values():
