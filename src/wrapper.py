@@ -183,6 +183,72 @@ def _write_and_validate_vdf(path: str, data: str, encoding: str = "utf-8",
     return True
 
 
+# ── localconfig.vdf helpers ──────────────────────────────────────────────────
+
+_INTERSTITIAL_RE = re.compile(
+    r'"Deck_ConfiguratorInterstitialApps_AppLauncherInteractionIssues"\s*"[^"]*"\s*"apps"\s*\{',
+    re.IGNORECASE
+)
+
+
+def _localconfigs(steam_root):
+    """Yield (uid, vdf_path, content) for every user's localconfig.vdf."""
+    userdata = os.path.join(steam_root, "userdata")
+    if not os.path.exists(userdata):
+        return
+    for uid in os.listdir(userdata):
+        vdf_path = os.path.join(userdata, uid, "config", "localconfig.vdf")
+        if not os.path.exists(vdf_path):
+            continue
+        with open(vdf_path, "r", errors="replace") as f:
+            content = f.read()
+        yield uid, vdf_path, content
+
+
+def _app_block(content, appid):
+    """
+    Return (open, close) brace offsets of the first "<appid>" { block, or None.
+
+    WARNING: Must skip braces inside quoted strings — VDF values like
+    bash substitutions (e.g. ${@/iw3sp.exe/iw3sp_mod.exe}) contain
+    { and } characters that must NOT be counted as block delimiters.
+    Failure to do this will corrupt localconfig.vdf by cutting blocks
+    short and trampling adjacent keys. _find_block_end handles this.
+    """
+    m = re.search(r'"' + re.escape(appid) + r'"\s*\{', content, re.IGNORECASE)
+    if not m:
+        return None
+    close = _find_block_end(content, m.end() - 1)
+    return None if close == -1 else (m.end() - 1, close)
+
+
+def _split_flat(inner):
+    """
+    Split an app block body at its first sub-block: (flat keys, sub-blocks).
+    Only the flat part is edited; keys of the same name inside cloud
+    sub-blocks are never touched.
+    """
+    sub = re.search(r'"[^"]+"\s*\{', inner)
+    return (inner[:sub.start()], inner[sub.start():]) if sub else (inner, "")
+
+
+def _value_pattern(key):
+    """Match "key" "value" with groups (prefix, value, closing quote)."""
+    return re.compile(r'("' + key + r'"\s*")((?:[^"\\]|\\.)*)(")', re.IGNORECASE)
+
+
+def _dlo_entry(appid, hash_key, index):
+    return (
+        f'\t\t\t\t"{appid}"\n'
+        f'\t\t\t\t{{\n'
+        f'\t\t\t\t\t"DefaultLaunchOption"\n'
+        f'\t\t\t\t\t{{\n'
+        f'\t\t\t\t\t\t"{hash_key}"\t\t"{index}"\n'
+        f'\t\t\t\t\t}}\n'
+        f'\t\t\t\t}}\n'
+    )
+
+
 def get_proton_path(steam_root):
     """
     Find the best available Proton binary for running Windows executables.
@@ -325,97 +391,40 @@ def set_launch_options(steam_root, appid, options):
     appid = str(appid)
     # Escape double quotes so the value is valid inside a VDF quoted string
     vdf_options = options.replace('"', '\\"')
-    userdata = os.path.join(steam_root, "userdata")
-    if not os.path.exists(userdata):
-        return
+    launch_pattern = _value_pattern("LaunchOptions")
 
-    for uid in os.listdir(userdata):
-        vdf_path = os.path.join(
-            userdata, uid, "config", "localconfig.vdf"
-        )
-        if not os.path.exists(vdf_path):
+    for uid, vdf_path, content in _localconfigs(steam_root):
+        # Brace parsing must be quote-aware -- see the WARNING in _app_block.
+        block = _app_block(content, appid)
+        if not block:
             continue
-
-        with open(vdf_path, "r", errors="replace") as f:
-            content = f.read()
-
-        # Find the appid block using regex, then brace-depth parse to get its
-        # true boundaries.
-        #
-        # WARNING: Must skip braces inside quoted strings — VDF values like
-        # bash substitutions (e.g. ${@/iw3sp.exe/iw3sp_mod.exe}) contain
-        # { and } characters that must NOT be counted as block delimiters.
-        # Failure to do this will corrupt localconfig.vdf by cutting blocks
-        # short and trampling adjacent keys.
-        key_pattern = re.compile(
-            r'"' + re.escape(appid) + r'"\s*\{',
-            re.IGNORECASE
-        )
-        key_match = key_pattern.search(content)
-        if not key_match:
-            continue
-
-        app_open  = key_match.end() - 1
-        app_close = _find_block_end(content, app_open)
-        if app_close == -1:
-            continue
-
-        app_inner = content[app_open + 1:app_close]
+        app_open, app_close = block
 
         # Always write LaunchOptions directly in the flat app block.
         # Steam reads LaunchOptions from here — the cloud sub-block value
         # is NOT shown in Steam properties and should never be written to.
-        launch_pattern = re.compile(
-            r'("LaunchOptions"\s*")((?:[^"\\]|\\.)*)(")',
-            re.IGNORECASE
-        )
-
-        # Only match LaunchOptions in the flat block, not inside sub-blocks.
-        # Find the first sub-block start so we only search before it.
-        subblock_match = re.search(r'"[^"]+"\s*\{', app_inner)
-        flat_section = app_inner[:subblock_match.start()] if subblock_match else app_inner
-
-        launch_match = launch_pattern.search(flat_section)
+        flat, rest = _split_flat(content[app_open + 1:app_close])
+        launch_match = launch_pattern.search(flat)
 
         if launch_match:
             existing = launch_match.group(2)
             if vdf_options in existing:
                 continue
             new_options = (existing.strip() + " " + vdf_options).strip()
-            # Replace only within flat_section, then reassemble app_inner so we
-            # never accidentally hit a LaunchOptions key inside a cloud sub-block.
-            new_flat = launch_pattern.sub(
-                lambda m: m.group(1) + new_options + m.group(3),
-                flat_section,
-                count=1
+            flat = launch_pattern.sub(
+                lambda m: m.group(1) + new_options + m.group(3), flat, count=1
             )
-            if subblock_match:
-                new_app_inner = new_flat + app_inner[subblock_match.start():]
-            else:
-                new_app_inner = new_flat
         else:
             # Insert before the first sub-block, or at end if no sub-blocks.
             # Derive indent from existing flat keys so the entry aligns correctly
             # regardless of how deeply nested this appid block is in the file.
-            indent_match = re.search(r'\n(\t+)"', flat_section)
-            if indent_match:
-                indent = indent_match.group(1)
-            else:
-                # Fall back: count tabs on the opening key line itself
-                key_line = key_match.group(0)
-                leading  = re.match(r'(\t*)', key_line)
-                indent   = (leading.group(1) if leading else '\t\t\t\t\t') + '\t'
-            insert_pos = subblock_match.start() if subblock_match else len(app_inner)
-            insert_str = f'{indent}"LaunchOptions"\t\t"{vdf_options}"\n'
-            new_app_inner = app_inner[:insert_pos] + insert_str + app_inner[insert_pos:]
+            # No flat keys: one tab, which is what the old key-line lookup produced.
+            indent_match = re.search(r'\n(\t+)"', flat)
+            indent = indent_match.group(1) if indent_match else '\t'
+            flat += f'{indent}"LaunchOptions"\t\t"{vdf_options}"\n'
 
-        new_content = (
-            content[:app_open + 1] +
-            new_app_inner +
-            content[app_close:]
-        )
-
-        _write_and_validate_vdf(vdf_path, new_content, errors="replace")
+        _write_and_validate_vdf(vdf_path, content[:app_open + 1] + flat + rest + content[app_close:],
+                                errors="replace")
         _record_localconfig(uid, appid, "LaunchOptions", vdf_options)
 
 
@@ -428,59 +437,24 @@ def clear_launch_options(steam_root, appid):
     Must be called while Steam is closed.
     """
     appid = str(appid)
-    userdata = os.path.join(steam_root, "userdata")
-    if not os.path.exists(userdata):
-        return
+    launch_pattern = _value_pattern("LaunchOptions")
 
-    for uid in os.listdir(userdata):
-        vdf_path = os.path.join(userdata, uid, "config", "localconfig.vdf")
-        if not os.path.exists(vdf_path):
+    for uid, vdf_path, content in _localconfigs(steam_root):
+        block = _app_block(content, appid)
+        if not block:
             continue
-
-        with open(vdf_path, "r", errors="replace") as f:
-            content = f.read()
-
-        key_pattern = re.compile(
-            r'"' + re.escape(appid) + r'"\s*\{',
-            re.IGNORECASE
-        )
-        key_match = key_pattern.search(content)
-        if not key_match:
-            continue
-
-        app_open  = key_match.end() - 1
-        app_close = _find_block_end(content, app_open)
-        if app_close == -1:
-            continue
-
-        app_inner = content[app_open + 1:app_close]
+        app_open, app_close = block
 
         # Only touch LaunchOptions in the flat block, not inside sub-blocks.
-        subblock_match = re.search(r'"[^"]+"\s*\{', app_inner)
-        flat_section = app_inner[:subblock_match.start()] if subblock_match else app_inner
-
-        launch_pattern = re.compile(
-            r'("LaunchOptions"\s*")((?:[^"\\]|\\.)*)(")',
-            re.IGNORECASE
-        )
-        launch_match = launch_pattern.search(flat_section)
+        flat, rest = _split_flat(content[app_open + 1:app_close])
+        launch_match = launch_pattern.search(flat)
         if not launch_match or not launch_match.group(2).strip():
             continue
 
         # Clear the value to empty string
-        new_flat = launch_pattern.sub(r'\g<1>\g<3>', flat_section, count=1)
-        if subblock_match:
-            new_app_inner = new_flat + app_inner[subblock_match.start():]
-        else:
-            new_app_inner = new_flat
-
-        new_content = (
-            content[:app_open + 1] +
-            new_app_inner +
-            content[app_close:]
-        )
-
-        _write_and_validate_vdf(vdf_path, new_content, errors="replace")
+        flat = launch_pattern.sub(r'\g<1>\g<3>', flat, count=1)
+        _write_and_validate_vdf(vdf_path, content[:app_open + 1] + flat + rest + content[app_close:],
+                                errors="replace")
         _record_localconfig(uid, appid, "LaunchOptions", "")
 
 
@@ -618,70 +592,33 @@ def set_steam_input_enabled(steam_root, appids=None):
         appids = DEFAULT_APPIDS
 
     appids = [str(a) for a in appids]
-    userdata = os.path.join(steam_root, "userdata")
-    if not os.path.exists(userdata):
-        return
+    si_pattern = _value_pattern("UseSteamControllerConfig")
 
-    for uid in os.listdir(userdata):
-        vdf_path = os.path.join(userdata, uid, "config", "localconfig.vdf")
-        if not os.path.exists(vdf_path):
-            continue
-
-        with open(vdf_path, "r", errors="replace") as f:
-            content = f.read()
-
-        modified = False
+    for uid, vdf_path, content in _localconfigs(steam_root):
         modified_appids = []
         for appid in appids:
-            key_pattern = re.compile(
-                r'"' + re.escape(appid) + r'"\s*\{',
-                re.IGNORECASE
-            )
-            key_match = key_pattern.search(content)
-            if not key_match:
+            block = _app_block(content, appid)
+            if not block:
                 continue
-
-            app_open  = key_match.end() - 1
-            app_close = _find_block_end(content, app_open)
-            if app_close == -1:
-                continue
-
-            app_block = content[app_open + 1:app_close]
-
-            si_pattern = re.compile(
-                r'("UseSteamControllerConfig"\s*")((?:[^"\\]|\\.)*)(")',
-                re.IGNORECASE
-            )
+            app_open, app_close = block
 
             # Only patch the flat section, not inside any sub-blocks
-            subblock_match = re.search(r'"[^"]+"\s*\{', app_block)
-            flat_section = app_block[:subblock_match.start()] if subblock_match else app_block
-            si_match = si_pattern.search(flat_section)
+            flat, rest = _split_flat(content[app_open + 1:app_close])
+            si_match = si_pattern.search(flat)
 
             if si_match:
                 if si_match.group(2) == "1":
                     continue  # already enabled
-                new_block = si_pattern.sub(
-                    lambda m: m.group(1) + "1" + m.group(3),
-                    app_block,
-                    count=1,
-                )
+                flat = si_pattern.sub(lambda m: m.group(1) + "1" + m.group(3), flat, count=1)
             else:
-                indent_match = re.search(r'\n(\t+)"', flat_section)
+                indent_match = re.search(r'\n(\t+)"', flat)
                 indent = indent_match.group(1) if indent_match else '\t\t\t\t\t\t'
-                insert_pos = subblock_match.start() if subblock_match else len(app_block)
-                insert_str = f'{indent}"UseSteamControllerConfig"\t\t"1"\n'
-                new_block = app_block[:insert_pos] + insert_str + app_block[insert_pos:]
+                flat += f'{indent}"UseSteamControllerConfig"\t\t"1"\n'
 
-            content = (
-                content[:app_open + 1] +
-                new_block +
-                content[app_close:]
-            )
-            modified = True
+            content = content[:app_open + 1] + flat + rest + content[app_close:]
             modified_appids.append(appid)
 
-        if modified:
+        if modified_appids:
             _write_and_validate_vdf(vdf_path, content, errors="replace")
             for appid in modified_appids:
                 _record_localconfig(uid, appid, "UseSteamControllerConfig", "1")
@@ -821,26 +758,12 @@ def set_default_launch_option(steam_root, appids_config):
 
     Must be called while Steam is closed.
     """
-    userdata = os.path.join(steam_root, "userdata")
-    if not os.path.exists(userdata):
-        return
-
-    for uid in os.listdir(userdata):
-        vdf_path = os.path.join(userdata, uid, "config", "localconfig.vdf")
-        if not os.path.exists(vdf_path):
-            continue
-
-        with open(vdf_path, "r", errors="replace") as f:
-            content = f.read()
-
+    for uid, vdf_path, content in _localconfigs(steam_root):
         modified = False
 
         # ── Step 1: set the checkbox to "1" so the Deck configurator treats
         # the launch choice as confirmed and stops showing the picker ──────────
-        checkbox_pattern = re.compile(
-            r'("Deck_ConfiguratorInterstitialsCheckbox_AppLauncherInteractionIssues"\s*")((?:[^"\\]|\\.)*)(")',
-            re.IGNORECASE
-        )
+        checkbox_pattern = _value_pattern("Deck_ConfiguratorInterstitialsCheckbox_AppLauncherInteractionIssues")
         if checkbox_pattern.search(content):
             content  = checkbox_pattern.sub(r'\g<1>1\g<3>', content)
             modified = True
@@ -848,11 +771,7 @@ def set_default_launch_option(steam_root, appids_config):
         # ── Step 2: write DefaultLaunchOption into the Deck configurator's
         # own "apps" block — this is what the picker actually reads on SteamOS.
         # The block sits immediately after the InterstitialApps key. ──────────
-        interstitial_pattern = re.compile(
-            r'"Deck_ConfiguratorInterstitialApps_AppLauncherInteractionIssues"\s*"[^"]*"\s*"apps"\s*\{',
-            re.IGNORECASE
-        )
-        interstitial_match = interstitial_pattern.search(content)
+        interstitial_match = _INTERSTITIAL_RE.search(content)
 
         if interstitial_match:
             apps_open  = interstitial_match.end() - 1
@@ -861,15 +780,7 @@ def set_default_launch_option(steam_root, appids_config):
                 apps_block = content[apps_open + 1:apps_close]
 
                 for appid, (hash_key, index) in appids_config.items():
-                    entry = (
-                        f'\t\t\t\t"{appid}"\n'
-                        f'\t\t\t\t{{\n'
-                        f'\t\t\t\t\t"DefaultLaunchOption"\n'
-                        f'\t\t\t\t\t{{\n'
-                        f'\t\t\t\t\t\t"{hash_key}"\t\t"{index}"\n'
-                        f'\t\t\t\t\t}}\n'
-                        f'\t\t\t\t}}\n'
-                    )
+                    entry = _dlo_entry(appid, hash_key, index)
                     appid_pattern = re.compile(
                         r'"' + re.escape(appid) + r'"\s*\{',
                         re.IGNORECASE
@@ -901,15 +812,7 @@ def set_default_launch_option(steam_root, appids_config):
             deck_block += '\t\t\t"Deck_ConfiguratorInterstitialApps_AppLauncherInteractionIssues"\t\t"[' + ','.join(appids_config.keys()) + ']"\n'
             deck_block += '\t\t\t"apps"\n\t\t\t{\n'
             for appid, (hash_key, index) in appids_config.items():
-                deck_block += (
-                    f'\t\t\t\t"{appid}"\n'
-                    f'\t\t\t\t{{\n'
-                    f'\t\t\t\t\t"DefaultLaunchOption"\n'
-                    f'\t\t\t\t\t{{\n'
-                    f'\t\t\t\t\t\t"{hash_key}"\t\t"{index}"\n'
-                    f'\t\t\t\t\t}}\n'
-                    f'\t\t\t\t}}\n'
-                )
+                deck_block += _dlo_entry(appid, hash_key, index)
             deck_block += '\t\t\t}\n'
 
             tips_pattern = re.compile(r'"LaunchOptionTipsShown"', re.IGNORECASE)
@@ -951,20 +854,8 @@ def clear_default_launch_option(steam_root, appids):
     configurator "apps" block (see set_default_launch_option), so Steam
     shows the launch menu again. Must be called while Steam is closed.
     """
-    userdata = os.path.join(steam_root, "userdata")
-    if not os.path.exists(userdata):
-        return
-    interstitial_pattern = re.compile(
-        r'"Deck_ConfiguratorInterstitialApps_AppLauncherInteractionIssues"\s*"[^"]*"\s*"apps"\s*\{',
-        re.IGNORECASE
-    )
-    for uid in os.listdir(userdata):
-        vdf_path = os.path.join(userdata, uid, "config", "localconfig.vdf")
-        if not os.path.exists(vdf_path):
-            continue
-        with open(vdf_path, "r", errors="replace") as f:
-            content = f.read()
-        m = interstitial_pattern.search(content)
+    for uid, vdf_path, content in _localconfigs(steam_root):
+        m = _INTERSTITIAL_RE.search(content)
         if not m:
             continue
         apps_open = m.end() - 1
