@@ -426,11 +426,6 @@ def is_installed(root: str, mod_id: str) -> bool:
     return bool(get_receipt(root, mod_id).get("complete"))
 
 
-def is_partial(root: str, mod_id: str) -> bool:
-    r = get_receipt(root, mod_id)
-    return bool(r) and not r.get("complete")
-
-
 def _write_receipt(root: str, m: dict, opt: dict, cdn: str, overwritten: list, failed: list):
     rp = _receipt_path(root, m["id"])
     os.makedirs(os.path.dirname(rp), exist_ok=True)

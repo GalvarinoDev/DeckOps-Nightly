@@ -1,7 +1,6 @@
 import os
 import json
 import re
-import stat
 import shutil
 import subprocess
 
@@ -307,44 +306,6 @@ def find_compatdata(steam_root, appid, game_install_dir=None):
     if os.path.exists(default):
         return default
     return None
-
-
-def get_plutonium_launcher(compatdata_path):
-    """
-    Return the path to plutonium-launcher-win32.exe inside the given prefix,
-    or None if not found.
-    """
-    launcher = os.path.join(
-        compatdata_path,
-        "pfx", "drive_c", "users", "steamuser",
-        "AppData", "Local", "Plutonium", "bin",
-        "plutonium-launcher-win32.exe"
-    )
-    if os.path.exists(launcher):
-        return launcher
-    return None
-
-
-def write_wrapper_script(exe_path, script_content, original_size=None):
-    """
-    Write a bash wrapper script to replace the original exe.
-    Backs up the original first, then writes and chmod's the script.
-    Pads to original_size with null bytes so Steam's file validation passes.
-    """
-    backup_path = exe_path + ".bak"
-    if not os.path.exists(backup_path) and os.path.exists(exe_path):
-        shutil.copy2(exe_path, backup_path)
-
-    script_bytes = script_content.encode("utf-8")
-
-    if original_size and original_size > len(script_bytes):
-        script_bytes += b"\x00" * (original_size - len(script_bytes))
-
-    with open(exe_path, "wb") as f:
-        f.write(script_bytes)
-
-    os.chmod(exe_path, os.stat(exe_path).st_mode |
-             stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
 
 def set_launch_options(steam_root, appid, options):

@@ -16,7 +16,6 @@ Called at the end of InstallScreen._run() after client installation completes.
 Must be called while Steam is closed.
 """
 
-import binascii
 import os
 import re
 import shutil
@@ -35,12 +34,11 @@ _log = get_logger(__name__)
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 from steam_common import (
-    PROJECT_ROOT, STEAM_ROOT, USERDATA_DIR, STEAM_CONFIG, MIN_UID,
+    PROJECT_ROOT, STEAM_ROOT, USERDATA_DIR,
     calc_shortcut_appid as _calc_shortcut_appid,
     find_all_steam_uids as _find_all_steam_uids,
     get_deck_serial as _get_deck_serial,
     patch_configset as _patch_configset,
-    record_configset_edit as _record_configset_edit,
 )
 
 COMPAT_ROOT    = os.path.join(STEAM_ROOT, "steamapps", "compatdata")
@@ -1909,18 +1907,6 @@ _OLD_LAUNCHER_EXE = VENV_PYTHON
 _OLD_LAUNCHER_EXE_DIRECT = os.path.join(INSTALL_DIR, _LAUNCHER_EXE_REL)
 
 
-def get_launcher_appid() -> int:
-    """
-    Return the Steam shortcut appid for the offline launcher.
-
-    Uses the shell script path (not the exe) since the shortcut now
-    points at launcher_offline.sh.
-    """
-    launcher_sh = os.path.join(INSTALL_DIR, _LAUNCHER_SH_REL)
-    exe_path = f'"{launcher_sh}"'
-    return _calc_shortcut_appid(exe_path, LAUNCHER_TITLE)
-
-
 def get_launcher_plut_dir() -> str:
     """
     Return the Plutonium directory inside the launcher's Wine prefix.
@@ -2112,107 +2098,6 @@ def create_launcher_shortcut(on_progress=None):
             _log.debug("operation failed", exc_info=True)
 
     prog(f"  Launcher shortcut appid: {shortcut_appid}")
-
-
-def remove_launcher_shortcut(on_progress=None):
-    """
-    Remove the DeckOps Plutonium Offline Launcher shortcut from shortcuts.vdf
-    for all discovered Steam UIDs. Also removes associated artwork.
-
-    Handles the current shell-script-based shortcut plus two old variants
-    (exe-direct and python3-based) with different appids.
-    """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    # Current shell-script-based appid
-    launcher_sh = os.path.join(INSTALL_DIR, _LAUNCHER_SH_REL)
-    appid_current = _calc_shortcut_appid(f'"{launcher_sh}"', LAUNCHER_TITLE)
-
-    # Old exe-direct appid
-    appid_exe = _calc_shortcut_appid(f'"{_OLD_LAUNCHER_EXE_DIRECT}"', LAUNCHER_TITLE)
-
-    # Old python3-based appid
-    appid_py = _calc_shortcut_appid(f'"{_OLD_LAUNCHER_EXE}"', LAUNCHER_TITLE)
-
-    appids_to_clean = {appid_current, appid_exe, appid_py}
-
-    uids = _find_all_steam_uids()
-    if not uids:
-        return
-
-    for uid in uids:
-        shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
-        grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
-
-        if not os.path.exists(shortcuts_path):
-            continue
-
-        try:
-            with open(shortcuts_path, "rb") as f:
-                data = f.read()
-        except OSError:
-            _log.debug("shortcuts.vdf read failed", exc_info=True)
-            continue
-
-        header = b'\x00shortcuts\x00'
-        footer = b'\x08\x08'
-
-        body = data
-        if body.startswith(header):
-            body = body[len(header):]
-        if body.endswith(footer):
-            body = body[:-2]
-        elif body.endswith(b'\x08'):
-            body = body[:-1]
-
-        entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', body)]
-        if not entry_starts:
-            continue
-
-        entries = []
-        for i, start in enumerate(entry_starts):
-            end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(body)
-            entries.append(body[start:end])
-
-        title_bytes = LAUNCHER_TITLE.encode("utf-8")
-        filtered = [
-            e for e in entries
-            if b'\x01AppName\x00' + title_bytes + b'\x00' not in e
-            and b'\x01appname\x00' + title_bytes + b'\x00' not in e
-        ]
-
-        if len(filtered) < len(entries):
-            reindexed = []
-            for new_idx, entry in enumerate(filtered):
-                entry = re.sub(rb'^\x00\d+\x00', f'\x00{new_idx}\x00'.encode(), entry)
-                reindexed.append(entry)
-            new_data = header + b''.join(reindexed) + footer
-            try:
-                _backup_file(shortcuts_path)
-                with open(shortcuts_path, "wb") as f:
-                    f.write(new_data)
-                prog(f"  Removed launcher shortcut for uid {uid}")
-            except OSError as ex:
-                prog(f"  Could not write shortcuts.vdf: {ex}")
-
-        # Remove artwork for both old and new appids
-        artwork_suffixes = [
-            f"_icon.{LAUNCHER_ART['icon_ext']}",
-            f"p.{LAUNCHER_ART['grid_ext']}",
-            f".{LAUNCHER_ART['wide_ext']}",
-            f"_hero.{LAUNCHER_ART['hero_ext']}",
-            f"_logo.{LAUNCHER_ART['logo_ext']}",
-        ]
-        for appid in appids_to_clean:
-            for suffix in artwork_suffixes:
-                art_path = os.path.join(grid_dir, f"{appid}{suffix}")
-                if os.path.exists(art_path):
-                    try:
-                        os.remove(art_path)
-                    except OSError:
-                        _log.debug("file removal failed", exc_info=True)
 
 
 # --- Repair: re-add any DeckOps shortcut missing from shortcuts.vdf

@@ -24,12 +24,6 @@ Both flows:
   - Write metadata tracking version, paths, installation state
   - Launcher modifies .ff and .bik files in-place (patches)
 
-Uninstall:
-  - Clear launch options (Steam only)
-  - Remove mod client exe, launcher artifacts, data/ contents
-  - Restore .bak files if present (migration from old wrapper flow)
-  - User must verify integrity in Steam to restore patched .ff files
-
 Progress is reported via a callback:
     on_progress(percent: int, status: str)
 """
@@ -99,14 +93,6 @@ _APPIDS = {
     "s1sp":  "209650",
 }
 
-# Subdirectories inside data/ created by the AlterWare launcher.
-# These are all mod files — none exist in the base game.
-# On uninstall we remove their contents but leave data/ itself.
-_DATA_SUBDIRS = ["dw", "maps", "scripts", "ui_scripts", "sound"]
-
-# Standalone files the launcher drops into the game root.
-_LAUNCHER_ARTIFACTS = ["alterware-launcher.json", "awcache.json"]
-
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -159,28 +145,6 @@ def _migrate_old_wrapper(install_dir: str, original_exe: str):
         if os.path.exists(original_path):
             os.remove(original_path)
         os.rename(backup_path, original_path)
-
-
-def is_alterware_installed(install_dir: str, game_key: str) -> bool:
-    """
-    Returns True if the AlterWare mod client is installed for this game.
-
-    Checks for the mod client exe or the DeckOps metadata file.
-    """
-    cfg = _GAME_CONFIG.get(game_key)
-    if not cfg:
-        return False
-    _, client_exe, _ = cfg
-
-    # Check for mod client exe
-    if os.path.exists(os.path.join(install_dir, client_exe)):
-        return True
-
-    # Check for metadata file (install completed)
-    if os.path.exists(os.path.join(install_dir, METADATA_FILE)):
-        return True
-
-    return False
 
 
 # ── public API ────────────────────────────────────────────────────────────────
@@ -369,68 +333,3 @@ def install_alterware(game: dict, game_key: str,
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
     prog(100, f"{launcher_arg} installation complete!")
-
-
-def uninstall_alterware(game: dict, game_key: str, steam_root: str = ""):
-    """
-    Remove AlterWare mod files and clear launch options.
-
-    Clears Steam launch options, removes the mod client exe, launcher
-    artifacts, and contents of the data/ subdirectories created by the
-    launcher. Leaves the data/ folder itself in place. Also restores
-    any .bak files left over from the old wrapper flow.
-
-    The launcher patches .ff and .bik files in-place during install.
-    After uninstall, the user should verify integrity through Steam to
-    restore those files to their original state.
-
-    Parameters:
-      game       — dict from detect_games with install_dir
-      game_key   — one of: iw6mp, iw6sp, s1mp, s1sp
-      steam_root — path to Steam root (for clearing launch options)
-    """
-    install_dir = game["install_dir"]
-
-    cfg = _GAME_CONFIG.get(game_key)
-    if not cfg:
-        return
-    _, client_exe, original_exe = cfg
-
-    # ── Clear Steam launch options ────────────────────────────────────────
-    appid = _APPIDS.get(game_key)
-    if appid and steam_root:
-        from wrapper import clear_launch_options
-        clear_launch_options(steam_root, appid)
-
-    # ── Restore original exe from .bak (old wrapper flow migration) ───────
-    _migrate_old_wrapper(install_dir, original_exe)
-
-    # ── Remove mod client exe ─────────────────────────────────────────────
-    client_path = os.path.join(install_dir, client_exe)
-    if os.path.exists(client_path):
-        os.remove(client_path)
-
-    # ── Remove launcher artifacts ─────────────────────────────────────────
-    for artifact in _LAUNCHER_ARTIFACTS:
-        p = os.path.join(install_dir, artifact)
-        if os.path.exists(p):
-            os.remove(p)
-
-    # ── Remove contents of data/ subdirectories ───────────────────────────
-    # These are all mod files created by the AlterWare launcher.
-    # We remove their contents but leave data/ itself in place.
-    data_dir = os.path.join(install_dir, "data")
-    if os.path.isdir(data_dir):
-        for subdir in _DATA_SUBDIRS:
-            subdir_path = os.path.join(data_dir, subdir)
-            if os.path.isdir(subdir_path):
-                shutil.rmtree(subdir_path, ignore_errors=True)
-        # Also remove the disclosure text file
-        disclosure = os.path.join(data_dir, "open_source_software_disclosure.txt")
-        if os.path.exists(disclosure):
-            os.remove(disclosure)
-
-    # ── Remove metadata ───────────────────────────────────────────────────
-    meta_file = os.path.join(install_dir, METADATA_FILE)
-    if os.path.exists(meta_file):
-        os.remove(meta_file)

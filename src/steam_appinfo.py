@@ -258,18 +258,6 @@ def _record(appid, entries=None, remove=None):
 
 # --- public API
 
-def get_launch_entries(steam_root: str, appid: int) -> list:
-    """Current launch entries as [(key, {field: value}), ...] for display/debugging."""
-    out = []
-    def read(launch):
-        for _, key, val in launch:
-            if isinstance(val, list):
-                out.append((key, {k: v.decode("utf-8", "replace") for t, k, v in val if t == _T_STR}))
-        return False
-    _edit_launch(steam_root, appid, read)
-    return out
-
-
 def add_launch_entries(steam_root: str, appid: int, entries: list, record: bool = True) -> bool:
     """
     Append launch entries after the stock ones. Each entry is a dict with

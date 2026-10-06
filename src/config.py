@@ -124,11 +124,6 @@ def is_first_run() -> bool:
     return not load().get("first_run_complete", False)
 
 
-def get_os_type() -> str | None:
-    """Returns 'steamos', 'bazzite', 'cachyos', 'other_linux', or None."""
-    return load().get("os_type")
-
-
 def set_os_type(os_type: str):
     """Save the user's operating system type.
 
@@ -137,11 +132,6 @@ def set_os_type(os_type: str):
     config = load()
     config["os_type"] = os_type
     save(config)
-
-
-def is_bazzite() -> bool:
-    """Returns True if the user selected Bazzite as their OS."""
-    return load().get("os_type") == "bazzite"
 
 
 def get_deck_model() -> str | None:
@@ -157,11 +147,6 @@ def set_deck_model(model: str):
     config = load()
     config["deck_model"] = model
     save(config)
-
-
-def is_oled() -> bool:
-    """True only for actual Steam Deck OLED hardware."""
-    return load().get("deck_model") == "oled"
 
 
 def is_lcd() -> bool:
@@ -260,11 +245,6 @@ def set_gyro_mode(mode: str):
     save(config)
 
 
-def get_play_mode() -> str | None:
-    """Returns 'handheld', 'docked', or None if not yet set."""
-    return load().get("play_mode")
-
-
 def set_play_mode(mode: str):
     """Save the user's play mode. mode should be 'handheld' or 'docked'."""
     config = load()
@@ -286,11 +266,6 @@ def set_external_controller(controller_type: str):
     config = load()
     config["external_controller"] = controller_type
     save(config)
-
-
-def get_docked_resolution() -> str | None:
-    """Returns '1280x720', '1280x800', '1920x1080', '1920x1200', 'own', or None."""
-    return load().get("docked_resolution")
 
 
 def set_docked_resolution(resolution: str):

@@ -148,12 +148,6 @@ def _remove_dlc_ff(install_dir: str):
             d = os.path.dirname(d)
 
 
-def is_iw4x_installed(install_dir: str) -> bool:
-    """Returns True if iw4x.exe and iw4x.dll are present."""
-    return (os.path.exists(os.path.join(install_dir, "iw4x.exe")) and
-            os.path.exists(os.path.join(install_dir, "iw4x.dll")))
-
-
 def is_iw4x_dlc_installed(install_dir: str) -> bool:
     """Returns True if DLC content appears to be present."""
     markers = [
@@ -473,88 +467,3 @@ def install_iw4x(game: dict, steam_root: str,
             if on_progress:
                 on_progress(50 + int(pct / 100 * 50), msg)
         install_iw4x_dlc(install_dir, on_progress=dlc_prog)
-
-
-def uninstall_iw4x(game: dict, steam_root: str = "",
-                   remove_dlc: bool = False):
-    """
-    Remove IW4x client files and launcher. Restores iw4mp.exe from
-    backup if an old exe-swap install is present. DLC content (~3 GB)
-    is preserved by default; pass remove_dlc=True to delete it.
-    """
-    install_dir = game["install_dir"]
-
-    # Restore iw4mp.exe from legacy backup if present
-    iw4mp_bak = os.path.join(install_dir, "iw4mp.exe.bak")
-    if os.path.exists(iw4mp_bak):
-        iw4mp = os.path.join(install_dir, "iw4mp.exe")
-        if os.path.exists(iw4mp):
-            os.remove(iw4mp)
-        os.rename(iw4mp_bak, iw4mp)
-
-    for fname in ["iw4x.dll", "iw4x.exe", "iw4x-launcher.exe",
-                   "zonebuilder.exe", "Unlinker.exe", "steam_appid.txt",
-                   "zone-conversion.log"]:
-        p = os.path.join(install_dir, fname)
-        if os.path.exists(p):
-            os.remove(p)
-
-    # Launcher cache
-    cache_dir = os.path.join(install_dir, "cache")
-    if os.path.exists(cache_dir):
-        shutil.rmtree(cache_dir)
-
-    # New layout: main/iw4x/x86/
-    iw4x_dir = os.path.join(install_dir, "main", "iw4x", "x86")
-    if os.path.exists(iw4x_dir):
-        if remove_dlc:
-            shutil.rmtree(iw4x_dir)
-        else:
-            for entry in os.listdir(iw4x_dir):
-                p = os.path.join(iw4x_dir, entry)
-                if os.path.isdir(p):
-                    shutil.rmtree(p)
-                elif not entry.endswith(".iwd"):
-                    os.remove(p)
-
-    # Legacy layout: iw4x/
-    old_iw4x = os.path.join(install_dir, "iw4x")
-    if os.path.exists(old_iw4x):
-        if remove_dlc:
-            shutil.rmtree(old_iw4x)
-        else:
-            for entry in os.listdir(old_iw4x):
-                p = os.path.join(old_iw4x, entry)
-                if os.path.isdir(p):
-                    shutil.rmtree(p)
-                elif not entry.endswith(".iwd"):
-                    os.remove(p)
-
-    # Zone directories (new + legacy)
-    for zone_sub in [
-        os.path.join("zone", "iw4x", "x86", "patch"),
-        os.path.join("zone", "iw4x", "x86", "zonebuilder"),
-        os.path.join("zone", "patch"),
-        os.path.join("zone", "zonebuilder"),
-    ]:
-        d = os.path.join(install_dir, zone_sub)
-        if os.path.exists(d):
-            shutil.rmtree(d)
-
-    if remove_dlc:
-        _remove_dlc_ff(install_dir)
-
-    # Clear launch option (older versions) and the launch menu entry
-    if steam_root:
-        try:
-            from wrapper import clear_launch_options
-            from steam_appinfo import remove_launch_entries
-            clear_launch_options(steam_root, MW2_MP_APPID)
-            remove_launch_entries(steam_root, MW2_MP_APPID, [e["executable"] for e in IW4X_MENU])
-        except Exception:
-            pass
-
-    # Clean up old DeckOps metadata
-    old_meta = os.path.join(install_dir, "iw4x-updoot")
-    if os.path.exists(old_meta):
-        shutil.rmtree(old_meta)
