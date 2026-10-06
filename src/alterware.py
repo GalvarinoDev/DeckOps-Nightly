@@ -36,7 +36,7 @@ import tarfile
 import tempfile
 
 from log import get_logger
-from net import download as _download
+from net import download as _download, github_asset
 
 _log = get_logger(__name__)
 
@@ -49,6 +49,20 @@ _LAUNCHER_URL = (
 )
 
 _CDN_BASE = "https://cdn.alterware.ovh"
+
+
+def cdn_digests() -> dict:
+    """{cdn_path: "sha1:<hex>"} from the CDN's files.json. Empty on failure
+    so a CDN hiccup skips verification instead of blocking the install."""
+    try:
+        import urllib.request
+        from net import BROWSER_UA
+        req = urllib.request.Request(f"{_CDN_BASE}/files.json", headers=BROWSER_UA)
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return {f["name"]: f"sha1:{f['hash']}" for f in json.loads(r.read()) if f.get("hash")}
+    except Exception as ex:
+        _log.warning("AlterWare files.json lookup failed, downloading unverified: %s", ex)
+        return {}
 
 # Game exe replacements the launcher doesn't download on its own.
 # (cdn_path, local_filename) — downloaded after the launcher finishes.
@@ -190,8 +204,10 @@ def install_alterware(game: dict, game_key: str,
     launcher_bin = os.path.join(tmp_dir, "alterware-launcher")
 
     try:
+        url, dg = github_asset("alterware/alterware-launcher",
+                               "x86_64-unknown-linux-gnu.tar.gz", fallback=_LAUNCHER_URL)
         _download(
-            _LAUNCHER_URL, tar_path,
+            url, tar_path, digest=dg,
             on_progress=lambda pct, lbl: prog(5 + int(pct * 0.15), lbl),
             label="AlterWare launcher",
             timeout=120,
@@ -259,6 +275,7 @@ def install_alterware(game: dict, game_key: str,
 
     # ── Step 3b: Download CDN game exe replacements ─────────────────────
     cdn_files = _CDN_GAME_EXES.get(game_key, [])
+    digests = cdn_digests() if cdn_files else {}
     for cdn_path, local_name in cdn_files:
         dst = os.path.join(install_dir, local_name)
         prog(75, f"Downloading {local_name} from CDN...")
@@ -266,7 +283,7 @@ def install_alterware(game: dict, game_key: str,
             _download(
                 f"{_CDN_BASE}/{cdn_path}", dst,
                 on_progress=lambda p, m: prog(75 + int(p * 0.04), m),
-                label=local_name, timeout=120,
+                label=local_name, timeout=120, digest=digests.get(cdn_path),
             )
             _log.info("CDN: placed %s", local_name)
         except Exception as e:

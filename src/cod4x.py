@@ -52,6 +52,10 @@ _ARCHIVE_FALLBACK_URL = (
     "https://archive.org/download/co-d-4x.-21.3.-setup/CoD4x.21.3.Setup.exe"
 )
 
+# Both URLs serve the same 21.3 installer. If cod4x.ovh ever ships a new
+# build, the mismatch drops to the archive.org copy; update this hash then.
+_SETUP_EXE_DIGEST = "sha256:bcda78657050e359d9116477758d1d8167410d6d60a6b40f1bb5ec9d0cafb1f7"
+
 # ── GitHub fallback (disabled) ───────────────────────────────────────────────
 # Replaced by the archive.org fallback above.  Kept here for reference.
 #
@@ -601,7 +605,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
             _SETUP_EXE_URL, setup_exe,
             on_progress=lambda pct, lbl: prog(10 + int(pct * 0.40), lbl),
             label="CoD4x installer",
-            timeout=60,
+            timeout=60, digest=_SETUP_EXE_DIGEST,
         )
     except Exception as e:
         log(f"  ⚠ Setup.exe download failed: {e}")
@@ -612,7 +616,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
                 _ARCHIVE_FALLBACK_URL, setup_exe,
                 on_progress=lambda pct, lbl: prog(10 + int(pct * 0.40), lbl),
                 label="CoD4x installer (archive.org)",
-                timeout=300,
+                timeout=300, digest=_SETUP_EXE_DIGEST,
             )
             log("  ✓ Archive.org fallback download complete")
         except Exception as e2:

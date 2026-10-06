@@ -19,7 +19,8 @@ import os
 import zipfile
 
 from log import get_logger
-from net import download
+from net import download, github_asset
+from alterware import cdn_digests
 
 _log = get_logger(__name__)
 
@@ -60,18 +61,23 @@ def install_sp_mod(game_key: str, install_dir: str, on_progress=None,
         if on_progress:
             on_progress(pct, msg)
 
+    digests = cdn_digests() if files else {}
     for i, (cdn_path, local_path) in enumerate(files):
         dst = os.path.join(install_dir, local_path)
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         name = os.path.basename(local_path)
         download(f"{_CDN_BASE}/{cdn_path}", dst,
-                 lambda p, m, i=i: prog(int((i + p / 100) * 100 / steps), m), name)
+                 lambda p, m, i=i: prog(int((i + p / 100) * 100 / steps), m), name,
+                 digest=digests.get(cdn_path))
         _log.info("CDN: placed %s", local_path)
 
     arch = "x86" if own else "x64"
     zip_dest = os.path.join(install_dir, f"iw-pad-{arch}.zip")
-    download(_IW_PAD_URL.format(arch), zip_dest,
-             lambda p, m: prog(int((len(files) + p / 100) * 100 / steps), m), "IW-Pad")
+    url, dg = github_asset("GalvarinoDev/IW-Pad", f"iw-pad-{arch}.zip",
+                           fallback=_IW_PAD_URL.format(arch))
+    download(url, zip_dest,
+             lambda p, m: prog(int((len(files) + p / 100) * 100 / steps), m), "IW-Pad",
+             digest=dg)
     with zipfile.ZipFile(zip_dest) as zf:
         zf.extractall(install_dir)
     os.remove(zip_dest)
