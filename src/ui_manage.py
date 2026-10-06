@@ -1750,28 +1750,13 @@ class ConfigureScreen(QWidget):
                 shutil.copytree(extracted, update_dir, dirs_exist_ok=True)
                 shutil.rmtree(tmp_extract, ignore_errors=True)
 
-                # Apply: copy everything, then restore protected files
-                saved_config = None
-                config_path = os.path.join(install_dir, "deckops.json")
-                if os.path.isfile(config_path):
-                    with open(config_path) as f:
-                        saved_config = f.read()
-
-                saved_music = None
-                music_path = os.path.join(install_dir, "assets", "music", "background.mp3")
-                if os.path.isfile(music_path):
-                    saved_music = music_path + ".bak"
-                    shutil.copy2(music_path, saved_music)
-
-                # Copy staged files into install dir
+                # Apply: drop protected paths from staging first, so the user's
+                # copies are never overwritten (no restore window to crash in)
+                for p in protected:
+                    sp = os.path.join(update_dir, p)
+                    if os.path.isdir(sp): shutil.rmtree(sp)
+                    elif os.path.exists(sp): os.remove(sp)
                 shutil.copytree(update_dir, install_dir, dirs_exist_ok=True)
-
-                # Restore protected
-                if saved_config is not None:
-                    with open(config_path, "w") as f:
-                        f.write(saved_config)
-                if saved_music and os.path.isfile(saved_music):
-                    shutil.move(saved_music, music_path)
             else:
                 # Partial update — download only changed files
                 total = len(changed_files)
