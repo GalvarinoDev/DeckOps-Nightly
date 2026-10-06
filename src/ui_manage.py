@@ -1789,12 +1789,11 @@ class ConfigureScreen(QWidget):
                     os.makedirs(os.path.dirname(dest), exist_ok=True)
 
                     try:
-                        req = urllib.request.Request(
-                            f"{github_raw}/{filepath}",
-                            headers={"User-Agent": "DeckOps"},
-                        )
-                        with urllib.request.urlopen(req, timeout=30) as r, open(dest, "wb") as f:
-                            f.write(r.read())
+                        # net.download retries and rejects truncated streams,
+                        # so a dropped connection can't stage a half-written .py
+                        from net import download
+                        download(f"{github_raw}/{filepath}", dest, timeout=30,
+                                 headers={"User-Agent": "DeckOps"})
                     except urllib.error.HTTPError as ex:
                         if ex.code == 404:
                             # File was deleted or renamed — skip it
