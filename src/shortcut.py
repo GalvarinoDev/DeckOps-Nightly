@@ -473,6 +473,42 @@ def _read_shortcuts_raw(path: str) -> bytes:
     return data
 
 
+def _split_entries(body: bytes) -> list:
+    """Split a header-stripped shortcuts body into raw entries."""
+    starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', body)]
+    return [body[s:e] for s, e in zip(starts, starts[1:] + [len(body)])]
+
+
+def _reindex(entries: list) -> bytes:
+    """Join entries with contiguous indices starting at 0 so Steam sees them all."""
+    return b''.join(re.sub(rb'^\x00\d+\x00', f'\x00{i}\x00'.encode(), e)
+                    for i, e in enumerate(entries))
+
+
+def _shortcut_entry(appid: int, name: str, exe: str, start_dir: str, icon: str,
+                    launch_options: str, last_play: int = 0) -> dict:
+    """Field dict for _make_shortcut_entry. Exe/StartDir are passed already quoted."""
+    return {
+        "appid":               _to_signed32(appid),
+        "AppName":             name,
+        "Exe":                 exe,
+        "StartDir":            start_dir,
+        "icon":                icon,
+        "ShortcutPath":        "",
+        "LaunchOptions":       launch_options,
+        "IsHidden":            0,
+        "AllowDesktopConfig":  1,
+        "AllowOverlay":        1,
+        "OpenVR":              0,
+        "Devkit":              0,
+        "DevkitGameID":        "",
+        "DevkitOverrideAppID": 0,
+        "LastPlayTime":        last_play,
+        "FlatpakAppID":        "",
+        "tags":                {"0": "DeckOps"},
+    }
+
+
 def _get_next_index(raw_data: bytes) -> int:
     """
     Find the next available shortcut index from raw shortcut entry data.
@@ -774,8 +810,8 @@ def get_shortcut_appid(name: str) -> int | None:
 # could not correct a broken LaunchOptions field. For LCD Own installs in
 # particular this broke every reinstall after Steam touched shortcuts.vdf.
 #
-# This helper uses the same \x00\d+\x00 entry-boundary regex that
-# remove_shortcut and cleanup_orphan_shortcuts already use for consistency.
+# Entry splitting goes through _split_entries (\x00\d+\x00 boundaries), shared
+# with remove_shortcut and cleanup_orphan_shortcuts.
 
 def _strip_entries_by_name(raw_body: bytes, names_to_strip: set) -> tuple:
     """
@@ -792,15 +828,9 @@ def _strip_entries_by_name(raw_body: bytes, names_to_strip: set) -> tuple:
     if not raw_body or not names_to_strip:
         return raw_body, set()
 
-    # Find entry boundaries. Same pattern as remove_shortcut/cleanup_orphan.
-    entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', raw_body)]
-    if not entry_starts:
+    entries = _split_entries(raw_body)
+    if not entries:
         return raw_body, set()
-
-    entries = []
-    for i, start in enumerate(entry_starts):
-        end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(raw_body)
-        entries.append(raw_body[start:end])
 
     kept = []
     stripped = set()
@@ -823,17 +853,7 @@ def _strip_entries_by_name(raw_body: bytes, names_to_strip: set) -> tuple:
     if not stripped:
         return raw_body, set()
 
-    # Re-index remaining entries so Steam sees contiguous indices starting at 0
-    reindexed = []
-    for new_idx, entry in enumerate(kept):
-        entry = re.sub(
-            rb'^\x00\d+\x00',
-            f'\x00{new_idx}\x00'.encode(),
-            entry,
-        )
-        reindexed.append(entry)
-
-    return b''.join(reindexed), stripped
+    return _reindex(kept), stripped
 
 
 # ── Generic shortcut API ─────────────────────────────────────────────────────
@@ -917,25 +937,7 @@ def add_shortcut(
             f"{shortcut_appid}_icon.{artwork_def.get('icon_ext', 'png')}",
         )
 
-        entry = {
-            "appid":               _to_signed32(shortcut_appid),
-            "AppName":             name,
-            "Exe":                 exe_path,
-            "StartDir":            start_dir,
-            "icon":                icon_path,
-            "ShortcutPath":        "",
-            "LaunchOptions":       launch_options,
-            "IsHidden":            0,
-            "AllowDesktopConfig":  1,
-            "AllowOverlay":        1,
-            "OpenVR":              0,
-            "Devkit":              0,
-            "DevkitGameID":        "",
-            "DevkitOverrideAppID": 0,
-            "LastPlayTime":        0,
-            "FlatpakAppID":        "",
-            "tags":                {"0": "DeckOps"},
-        }
+        entry = _shortcut_entry(shortcut_appid, name, exe_path, start_dir, icon_path, launch_options)
 
         entry_bytes = _make_shortcut_entry(next_idx, entry)
         try:
@@ -1000,57 +1002,14 @@ def remove_shortcut(name: str, exe_path: str, artwork_def: dict = None,
         shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
         grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
 
-        if not os.path.exists(shortcuts_path):
+        body = _read_shortcuts_raw(shortcuts_path)
+        if not _split_entries(body):
             continue
 
-        try:
-            with open(shortcuts_path, "rb") as f:
-                data = f.read()
-        except OSError:
-            _log.debug("shortcuts.vdf read failed", exc_info=True)
-            continue
-
-        header = b'\x00shortcuts\x00'
-        footer = b'\x08\x08'
-
-        body = data
-        if body.startswith(header):
-            body = body[len(header):]
-        if body.endswith(footer):
-            body = body[:-2]
-        elif body.endswith(b'\x08'):
-            body = body[:-1]
-
-        entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', body)]
-        if not entry_starts:
-            continue
-
-        entries = []
-        for i, start in enumerate(entry_starts):
-            end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(body)
-            entries.append(body[start:end])
-
-        title_bytes = name.encode("utf-8")
-        filtered = [
-            e for e in entries
-            if b'\x01AppName\x00' + title_bytes + b'\x00' not in e
-            and b'\x01appname\x00' + title_bytes + b'\x00' not in e
-        ]
-
-        if len(filtered) < len(entries):
-            reindexed = []
-            for new_idx, entry in enumerate(filtered):
-                entry = re.sub(
-                    rb'^\x00\d+\x00',
-                    f'\x00{new_idx}\x00'.encode(),
-                    entry,
-                )
-                reindexed.append(entry)
-            new_data = header + b''.join(reindexed) + footer
+        new_body, stripped = _strip_entries_by_name(body, {name})
+        if stripped:
             try:
-                _backup_file(shortcuts_path)
-                with open(shortcuts_path, "wb") as f:
-                    f.write(new_data)
+                _write_shortcuts_vdf(shortcuts_path, new_body, [])
                 prog(f"  Removed shortcut '{name}' for uid {uid}")
             except OSError as ex:
                 prog(f"  Could not write shortcuts.vdf: {ex}")
@@ -1127,36 +1086,9 @@ def cleanup_orphan_shortcuts(on_progress=None):
         shortcuts_path = os.path.join(USERDATA_DIR, uid, "config", "shortcuts.vdf")
         grid_dir = os.path.join(USERDATA_DIR, uid, "config", "grid")
 
-        if not os.path.exists(shortcuts_path):
+        entries = _split_entries(_read_shortcuts_raw(shortcuts_path))
+        if not entries:
             continue
-
-        try:
-            with open(shortcuts_path, "rb") as f:
-                data = f.read()
-        except OSError:
-            _log.debug("shortcuts.vdf read failed", exc_info=True)
-            continue
-
-        header = b'\x00shortcuts\x00'
-        footer = b'\x08\x08'
-
-        body = data
-        if body.startswith(header):
-            body = body[len(header):]
-        if body.endswith(footer):
-            body = body[:-2]
-        elif body.endswith(b'\x08'):
-            body = body[:-1]
-
-        # Split into entries
-        entry_starts = [m.start() for m in re.finditer(rb'\x00\d+\x00', body)]
-        if not entry_starts:
-            continue
-
-        entries = []
-        for i, start in enumerate(entry_starts):
-            end = entry_starts[i + 1] if i + 1 < len(entry_starts) else len(body)
-            entries.append(body[start:end])
 
         # Filter out orphans by checking their stored appid against our set
         keep = []
@@ -1173,20 +1105,8 @@ def cleanup_orphan_shortcuts(on_progress=None):
             keep.append(entry)
 
         if removed_here > 0:
-            # Reindex remaining entries
-            reindexed = []
-            for new_idx, entry in enumerate(keep):
-                entry = re.sub(
-                    rb'^\x00\d+\x00',
-                    f'\x00{new_idx}\x00'.encode(),
-                    entry,
-                )
-                reindexed.append(entry)
-            new_data = header + b''.join(reindexed) + footer
             try:
-                _backup_file(shortcuts_path)
-                with open(shortcuts_path, "wb") as f:
-                    f.write(new_data)
+                _write_shortcuts_vdf(shortcuts_path, _reindex(keep), [])
             except OSError as ex:
                 prog(f"  Could not write shortcuts.vdf: {ex}")
             total_removed += removed_here
@@ -1363,25 +1283,8 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
             else:
                 icon_path = os.path.join(grid_dir, f"{shortcut_appid}_icon.{shortcut_def['icon_ext']}")
 
-                entry = {
-                    "appid":               _to_signed32(shortcut_appid),
-                    "AppName":             name,
-                    "Exe":                 f'"{actual_exe}"',
-                    "StartDir":            f'"{start_dir}"',
-                    "icon":                icon_path,
-                    "ShortcutPath":        "",
-                    "LaunchOptions":       launch_options,
-                    "IsHidden":            0,
-                    "AllowDesktopConfig":  1,
-                    "AllowOverlay":        1,
-                    "OpenVR":              0,
-                    "Devkit":              0,
-                    "DevkitGameID":        "",
-                    "DevkitOverrideAppID": 0,
-                    "LastPlayTime":        int(time.time()),
-                    "FlatpakAppID":        "",
-                    "tags":                {"0": "DeckOps"},
-                }
+                entry = _shortcut_entry(shortcut_appid, name, f'"{actual_exe}"', f'"{start_dir}"',
+                                        icon_path, launch_options, last_play=int(time.time()))
 
                 entry_bytes = _make_shortcut_entry(next_idx, entry)
                 new_entries.append(entry_bytes)
@@ -1768,25 +1671,7 @@ def write_own_shortcuts(own_games: dict, selected_keys: list,
             if name in existing_names:
                 prog(f"    ⚠ Unexpected name collision after strip")
 
-            entry = {
-                "appid":               _to_signed32(shortcut_appid),
-                "AppName":             name,
-                "Exe":                 f'"{actual_exe}"',
-                "StartDir":            f'"{install_dir}"',
-                "icon":                icon_path,
-                "ShortcutPath":        "",
-                "LaunchOptions":       launch_options,
-                "IsHidden":            0,
-                "AllowDesktopConfig":  1,
-                "AllowOverlay":        1,
-                "OpenVR":              0,
-                "Devkit":              0,
-                "DevkitGameID":        "",
-                "DevkitOverrideAppID": 0,
-                "LastPlayTime":        0,
-                "FlatpakAppID":        "",
-                "tags":                {"0": "DeckOps"},
-            }
+            entry = _shortcut_entry(shortcut_appid, name, f'"{actual_exe}"', f'"{install_dir}"', icon_path, launch_options)
 
             entry_bytes = _make_shortcut_entry(next_idx, entry)
             new_entries.append(entry_bytes)
@@ -2019,25 +1904,7 @@ def create_launcher_shortcut(on_progress=None):
         if LAUNCHER_TITLE in existing_names:
             prog(f"  Launcher shortcut already exists")
         else:
-            entry = {
-                "appid":               _to_signed32(shortcut_appid),
-                "AppName":             LAUNCHER_TITLE,
-                "Exe":                 exe_path,
-                "StartDir":            start_dir,
-                "icon":                icon_path,
-                "ShortcutPath":        "",
-                "LaunchOptions":       _launcher_launch_opts(shortcut_appid),
-                "IsHidden":            0,
-                "AllowDesktopConfig":  1,
-                "AllowOverlay":        1,
-                "OpenVR":              0,
-                "Devkit":              0,
-                "DevkitGameID":        "",
-                "DevkitOverrideAppID": 0,
-                "LastPlayTime":        0,
-                "FlatpakAppID":        "",
-                "tags":                {"0": "DeckOps"},
-            }
+            entry = _shortcut_entry(shortcut_appid, LAUNCHER_TITLE, exe_path, start_dir, icon_path, _launcher_launch_opts(shortcut_appid))
 
             entry_bytes = _make_shortcut_entry(next_idx, entry)
             try:
