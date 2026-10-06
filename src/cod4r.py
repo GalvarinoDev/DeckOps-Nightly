@@ -191,6 +191,7 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
     prog = on_progress or (lambda *a: None)
 
     def log(msg):
+        _log.info(msg.strip())
         if on_progress:
             on_progress(0, msg)
 
