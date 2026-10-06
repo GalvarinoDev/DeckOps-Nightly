@@ -1491,6 +1491,16 @@ def apply_steam_artwork(selected_keys: list, on_progress=None):
     prog(f"✓ Steam artwork applied for {len(to_apply)} game(s).")
 
 
+# Mod clients whose exe replaces the game's in own shortcuts; the appid CRC hashes this exe.
+_OWN_MOD_EXES = {"iw4mp": "iw4x.exe", "cod4sp": "iw3sp_mod.exe", "t7x": "t7x.exe",
+                 "iw6mp": "iw6-mod.exe", "iw6sp": "iw6-mod.exe", "s1mp": "s1-mod.exe", "s1sp": "s1-mod.exe"}
+
+
+def own_shortcut_exe(key: str, game: dict) -> str:
+    mod, d = _OWN_MOD_EXES.get(key), game.get("install_dir")
+    return os.path.join(d, mod) if mod and d else game.get("exe_path", "")
+
+
 def own_plut_prefix(key: str, game: dict) -> str:
     """Prefix for an own-copy Plutonium game. WaW is one game, so t4mp uses
     the t4sp prefix, same as Steam WaW sharing 10090: one Plutonium copy,
@@ -1593,6 +1603,7 @@ def enrich_own_games(own_games: dict, selected_keys: list,
         game["current_name"]    = name
 
         # ── Resolve the actual exe and launch options per client type ──
+        actual_exe = own_shortcut_exe(key, game)
         if key in _PLUT_KEYS:
             import config as _cfg
             if _cfg.is_lcd():
@@ -1615,7 +1626,6 @@ def enrich_own_games(own_games: dict, selected_keys: list,
             )
 
         elif key == "iw4mp":
-            actual_exe = os.path.join(install_dir, "iw4x.exe")
             # Run the launcher first so own installs self-update like Steam
             # copies; --arch x86 skips its x86/x64 picker.
             launch_options = "bash -c 'exec \"${@/iw4x.exe/iw4x-launcher.exe}\" --arch x86' -- %command%"
@@ -1623,31 +1633,18 @@ def enrich_own_games(own_games: dict, selected_keys: list,
         elif key in ("iw4sp", "iw5sp"):
             # Same exe keeps the appid stable; IW-Pad's launcher picks the AlterWare client.
             from sp_mod import build_sp_launch_option
-            actual_exe = exe_path
             launch_options = build_sp_launch_option(key)
 
-        elif key == "cod4sp":
-            actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
-            launch_options = ""
-
         elif key == "t7":
-            actual_exe = exe_path
             launch_options = 'WINEDLLOVERRIDES="d3d11=n,b" %command%'
 
-        elif key == "t7x":
-            actual_exe = os.path.join(install_dir, "t7x.exe")
-            launch_options = ""
+        elif key in ("iw6mp", "s1mp"):
+            launch_options = "-multiplayer"
 
-        elif key in ("iw6mp", "iw6sp"):
-            actual_exe = os.path.join(install_dir, "iw6-mod.exe")
-            launch_options = "-multiplayer" if key == "iw6mp" else "-singleplayer"
-
-        elif key in ("s1mp", "s1sp"):
-            actual_exe = os.path.join(install_dir, "s1-mod.exe")
-            launch_options = "-multiplayer" if key == "s1mp" else "-singleplayer"
+        elif key in ("iw6sp", "s1sp"):
+            launch_options = "-singleplayer"
 
         else:
-            actual_exe = exe_path
             launch_options = ""
 
         # Recalculate appid from actual_exe (mod client exe may differ
