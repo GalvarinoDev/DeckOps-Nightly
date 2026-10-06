@@ -59,7 +59,6 @@ from steam_common import (
 ASSETS_DIR    = os.path.join(PROJECT_ROOT, "assets", "controllers")
 TEMPLATES_DIR = os.path.expanduser("~/.steam/steam/controller_base/templates")
 
-STEAM_DIR = STEAM_ROOT  # alias kept for existing references in this module
 
 
 def _calc_shortcut_appid(exe_path: str, name: str) -> str:
@@ -494,8 +493,8 @@ def _assign(uids, pick, canonical, configsets, prog, launcher=False, label=""):
 
     def write(uid, appid, filenames, num_dir=True, named_keys=()):
         primary = filenames[0]
-        config_root    = os.path.join(STEAM_DIR, "userdata", uid, "241100", "remote", "controller_config")
-        steam_cfg_root = os.path.join(STEAM_DIR, "steamapps", "common", "Steam Controller Configs", uid, "config")
+        config_root    = os.path.join(STEAM_ROOT, "userdata", uid, "241100", "remote", "controller_config")
+        steam_cfg_root = os.path.join(STEAM_ROOT, "steamapps", "common", "Steam Controller Configs", uid, "config")
 
         # Path 1: userdata controller_config (Your Layouts)
         dest_dir = os.path.join(config_root, appid)
