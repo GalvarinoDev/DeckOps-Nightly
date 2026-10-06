@@ -16,12 +16,12 @@ import copy
 import os
 import json
 import re
-import tempfile
 import threading
 from datetime import datetime
 
 from identity import CONFIG_PATH
 from log import get_logger
+from steam_common import write_json
 
 _log = get_logger(__name__)
 
@@ -118,17 +118,8 @@ def save(config: dict):
     global _cache, _cache_mtime
 
     with _lock:
-        config_dir = os.path.dirname(CONFIG_PATH)
-        os.makedirs(config_dir, exist_ok=True)
-        fd, tmp_path = tempfile.mkstemp(dir=config_dir, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w") as f:
-                json.dump(config, f, indent=2)
-            os.replace(tmp_path, CONFIG_PATH)
-        except BaseException:
-            try: os.unlink(tmp_path)
-            except OSError: pass
-            raise
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        write_json(CONFIG_PATH, config)
         _cache = None
         _cache_mtime = 0.0
 
