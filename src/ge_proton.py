@@ -135,24 +135,6 @@ def _find_default_pfx(ge_version: str | None) -> str | None:
     return None
 
 
-# ── Download helpers ──────────────────────────────────────────────────────────
-
-def _verify_checksum(tarball_path, checksum_url):
-    """Download the .sha512sum file and verify the tarball. Returns True if OK."""
-    import hashlib
-    req = urllib.request.Request(checksum_url, headers=_BROWSER_UA)
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        checksum_data = resp.read().decode().strip()
-
-    # Format: "<hash>  <filename>"
-    expected_hash = checksum_data.split()[0]
-    sha512 = hashlib.sha512()
-    with open(tarball_path, "rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 256), b""):
-            sha512.update(chunk)
-    return sha512.hexdigest() == expected_hash
-
-
 # ── Install ───────────────────────────────────────────────────────────────────
 
 def install_ge_proton(on_progress=None):
@@ -184,14 +166,17 @@ def install_ge_proton(on_progress=None):
     with tempfile.TemporaryDirectory(prefix="deckops_ge_") as tmp:
         tarball_path = os.path.join(tmp, f"{dir_name}.tar.gz")
 
-        prog(10, f"Downloading {dir_name}...")
-        download(tarball_url, tarball_path, on_progress=on_progress, label=dir_name)
-
+        digest = None
         if checksum_url:
-            prog(85, "Verifying checksum...")
-            if not _verify_checksum(tarball_path, checksum_url):
-                raise RuntimeError("GE-Proton checksum mismatch — download may be corrupt")
-            prog(87, "Checksum OK.")
+            # Format: "<hash>  <filename>". net.download verifies it and
+            # retries a mismatch instead of failing the install outright.
+            req = urllib.request.Request(checksum_url, headers=_BROWSER_UA)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                digest = "sha512:" + resp.read().decode().split()[0]
+
+        prog(10, f"Downloading {dir_name}...")
+        download(tarball_url, tarball_path, on_progress=on_progress, label=dir_name,
+                 digest=digest)
 
         # Use system tar for speed and memory efficiency — Python's tarfile
         # module is noticeably slower and more memory-hungry when extracting
