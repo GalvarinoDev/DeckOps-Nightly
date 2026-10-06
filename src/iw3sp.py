@@ -65,18 +65,34 @@ def _build_iw3sp_launch_option() -> str:
     return "bash -c 'exec \"${@/iw3sp.exe/iw3sp_mod.exe}\"' -- %command%"
 
 
-def reapply_steam_launch_option(steam_root: str) -> bool:
+def cod4_launch_option(setup_games: dict) -> str:
     """
-    Re-set the 7940 IW3SP option after the launch-option clean slate.
-    The install flow runs IW3SP before Steam is closed, so the option it
-    writes there doesn't survive. Steam must be closed.
+    The one 7940 launch option for what DeckOps set up from Steam: MP and
+    SP share the appid, so the CoD4R pre-launch update and the IW3SP exe
+    swap are built together here instead of overwriting each other.
+    Returns "" when neither applies.
+    """
+    from steam_common import prelaunch_prefix
+    steam = lambda k, c: (setup_games.get(k, {}).get("client") == c
+                          and setup_games[k].get("source", "steam") == "steam")
+    sp = _build_iw3sp_launch_option() if steam("cod4sp", "iw3sp") else "%command%"
+    if steam("cod4mp", "cod4r"):
+        return prelaunch_prefix("cod4mp") + sp
+    return sp if sp != "%command%" else ""
+
+
+def apply_cod4_launch_option(steam_root: str) -> bool:
+    """
+    Set 7940's option after the launch-option clean slate. The install
+    flow runs the CoD4 installers before Steam is closed, so options they
+    write there don't survive. Steam must be closed.
     """
     import config as cfg
-    e = cfg.get_setup_games().get("cod4sp", {})
-    if e.get("client") != "iw3sp" or e.get("source", "steam") != "steam":
+    opt = cod4_launch_option(cfg.get_setup_games())
+    if not opt:
         return False
     from wrapper import set_launch_options
-    set_launch_options(steam_root, COD4_APPID, _build_iw3sp_launch_option())
+    set_launch_options(steam_root, COD4_APPID, opt)
     return True
 
 

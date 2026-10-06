@@ -194,6 +194,13 @@ def patch_configset(configset_path: str, key: str, template_name: str):
     record_configset_edit(configset_path, key, template_name)
 
 
+def prelaunch_prefix(key: str) -> str:
+    """Launch option text that runs prelaunch.sh (silent mod client update)
+    before the rest of the command. Goes right before %command% or the
+    option that wraps it."""
+    return f'bash "{PROJECT_ROOT}/prelaunch.sh" {key} '
+
+
 # --- Wine drive letters
 
 def nvme_compatdata(appid) -> str:

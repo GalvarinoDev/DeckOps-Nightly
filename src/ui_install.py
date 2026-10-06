@@ -365,7 +365,7 @@ class SetupScreen(QWidget):
 
         if "cod4mp" in keys and "cod4mp" in all_installed:
             notes = {
-                "cod4r": "Native controller support, server browser, bots and quality-of-life fixes. Built for handhelds.",
+                "cod4r": "Native controller support, server browser, bots and quality-of-life fixes. Built for controllers.",
                 "cod4x": "Established community client. No native controller support, so you'll set up controls manually.",
             }
             w, v = _opt_box()
@@ -1815,12 +1815,12 @@ class _BaseInstallScreen(QWidget):
                     clear_launch_options(self.steam_root, appid)
             clear_compat_tool(MANAGED_APPIDS)
             self._s.log.emit("✓  Cleared launch options and compat tools")
-            # The CoD4 phase ran before Steam closed, so IW3SP's option
-            # has to be set again now.
+            # The CoD4 phase ran before Steam closed, so its launch option
+            # (IW3SP swap, CoD4R pre-launch update) has to be set now.
             if "7940" in run_appids:
-                from iw3sp import reapply_steam_launch_option
-                if reapply_steam_launch_option(self.steam_root):
-                    self._s.log.emit("✓  IW3SP launch option set")
+                from iw3sp import apply_cod4_launch_option
+                if apply_cod4_launch_option(self.steam_root):
+                    self._s.log.emit("✓  CoD4 launch option set")
         except Exception as ex:
             self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
 

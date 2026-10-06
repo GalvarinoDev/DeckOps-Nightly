@@ -2135,8 +2135,8 @@ class UpdateScreen(QWidget):
             clear_compat_tool(MANAGED_APPIDS)
             self._s.log.emit("✓  Cleared launch options and compat tools")
             if "7940" in run_appids:
-                from iw3sp import reapply_steam_launch_option
-                reapply_steam_launch_option(self.steam_root)
+                from iw3sp import apply_cod4_launch_option
+                apply_cod4_launch_option(self.steam_root)
         except Exception as ex:
             self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
 

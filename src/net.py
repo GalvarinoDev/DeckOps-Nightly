@@ -74,7 +74,8 @@ def _detail(label: str, done: int, total: int, rate: float) -> str:
 
 
 def download(url: str, dest: str, on_progress=None, label: str = "",
-             timeout: int = 60, headers: dict = None, digest: str = None):
+             timeout: int = 60, headers: dict = None, digest: str = None,
+             tries: int = 3):
     """
     Download a URL to a local file with resume, progress and retry.
 
@@ -96,9 +97,11 @@ def download(url: str, dest: str, on_progress=None, label: str = "",
     headers     — request headers, default BROWSER_UA
     digest      — optional "algo:hex" (e.g. GitHub's "sha256:..."); a
                   mismatch discards the part file and counts as a failed try
+    tries       — attempts before giving up (1 for quick checks that must
+                  not hold anything up, e.g. before a game launch)
     """
     part = dest + ".part"
-    for attempt in range(3):
+    for attempt in range(tries):
         resume = 0
         if os.path.exists(part):
             try:
@@ -146,7 +149,7 @@ def download(url: str, dest: str, on_progress=None, label: str = "",
                 on_progress(100, _detail(label, done, total or done, 0))
             return
         except Exception:
-            if attempt == 2:
+            if attempt == tries - 1:
                 raise
             _log.debug("download retry %d for %s", attempt + 1, url)
             time.sleep(2 ** attempt)

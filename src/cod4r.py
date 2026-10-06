@@ -170,6 +170,57 @@ def _verify_cod4r_files(install_dir: str, on_progress=None) -> bool:
 
 # -- public API ---------------------------------------------------------------
 
+def sync_files(install_dir: str, compatdata_path: str, log=None, prog=None,
+               fetch_timeout: int = 30, tries: int = 3) -> int:
+    """
+    Bring the CoD4R files in line with the signed manifest and return how
+    many were replaced. Used by the install and by prelaunch.py.
+
+    Changed files download to <file>.new and are only renamed into place
+    once every download succeeded, so an interrupted update (a launch
+    timeout, the network dropping) leaves the previous set intact. The
+    .new sits next to its target because the game folder and the prefix
+    bin/ can be on different drives.
+    """
+    log = log or (lambda *a: None)
+    prog = prog or (lambda *a: None)
+    with tempfile.TemporaryDirectory() as tmp:
+        for name in ("manifest.json", "manifest.json.sig"):
+            _download(f"{_CDN}/{name}", os.path.join(tmp, name),
+                      label=f"CoD4R {name}", timeout=fetch_timeout, tries=tries)
+        _check_signature(tmp, log)
+        with open(os.path.join(tmp, "manifest.json")) as f:
+            m = json.load(f)
+
+    base = m.get("base_url", _CDN).rstrip("/")
+    files = _manifest_files(m, install_dir, compatdata_path)
+    todo = [(p, e) for p, e in files
+            if not (os.path.isfile(p) and _sha256(p) == e["sha256"].lower())]
+    log(f"  CoD4R client v{m['client']['version']}: "
+        f"{len(files) - len(todo)} of {len(files)} files up to date")
+    total = sum(e["size"] for _, e in todo) or 1
+    done = 0
+    for p, e in todo:
+        new = p + ".new"
+        # Left by an earlier interrupted update and already complete.
+        if not (os.path.isfile(new) and _sha256(new) == e["sha256"].lower()):
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            _download(
+                f"{base}/{e['path']}", new,
+                on_progress=lambda pct, lbl, _d=done, _s=e["size"]:
+                    prog(int((_d + _s * pct / 100) / total * 100), lbl),
+                label=os.path.basename(p), timeout=120,
+                digest=f"sha256:{e['sha256']}",
+            )
+        done += e["size"]
+    for p, _ in todo:
+        os.replace(p + ".new", p)
+    if todo:
+        log(f"  Updated {len(todo)} CoD4R file(s): {', '.join(os.path.basename(p) for p, _ in todo)}")
+    return len(todo)
+
+
+
 def install_cod4r(game: dict, steam_root: str, proton_path: str,
                   compatdata_path: str, on_progress=None, appid: int = 7940,
                   source: str = "steam"):
@@ -202,35 +253,10 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
     prog(5, "Writing registry keys...")
     _write_registry_keys(compatdata_path, on_progress=log)
 
-    # -- Step 2: Fetch and check the manifest --------------------------------
+    # -- Steps 2-3: Fetch the manifest, download changed files ---------------
     prog(10, "Fetching CoD4R manifest...")
-    with tempfile.TemporaryDirectory() as tmp:
-        for name in ("manifest.json", "manifest.json.sig"):
-            _download(f"{_CDN}/{name}", os.path.join(tmp, name),
-                      label=f"CoD4R {name}", timeout=30)
-        _check_signature(tmp, log)
-        with open(os.path.join(tmp, "manifest.json")) as f:
-            m = json.load(f)
-
-    # -- Step 3: Download changed files --------------------------------------
-    base = m.get("base_url", _CDN).rstrip("/")
-    files = _manifest_files(m, install_dir, compatdata_path)
-    todo = [(p, e) for p, e in files
-            if not (os.path.isfile(p) and _sha256(p) == e["sha256"].lower())]
-    log(f"  CoD4R client v{m['client']['version']}: "
-        f"{len(files) - len(todo)} of {len(files)} files up to date")
-    total = sum(e["size"] for _, e in todo) or 1
-    done = 0
-    for p, e in todo:
-        os.makedirs(os.path.dirname(p), exist_ok=True)
-        _download(
-            f"{base}/{e['path']}", p,
-            on_progress=lambda pct, lbl, _d=done, _s=e["size"]:
-                prog(15 + int((_d + _s * pct / 100) / total * 60), lbl),
-            label=os.path.basename(p), timeout=120,
-            digest=f"sha256:{e['sha256']}",
-        )
-        done += e["size"]
+    sync_files(install_dir, compatdata_path, log,
+               lambda pct, lbl: prog(15 + int(pct * 0.6), lbl))
 
     # -- Step 4: Verify CoD4R files ------------------------------------------
     prog(80, "Verifying installation...")
