@@ -153,8 +153,6 @@ MENU_MOD_ASSETS_DIR = os.path.join(os.path.dirname(_OLED_HERE), "assets", "mods"
 MENU_MOD_FILES = {
     "t6mp":  ("t6/deckops_bo2_menu.iwd", "storage/t6/raw/deckops_bo2_menu.iwd"),
     "t6zm":  ("t6/deckops_bo2_menu.iwd", "storage/t6/raw/deckops_bo2_menu.iwd"),
-    "iw5mp": ("iw5mp/main.lua", "storage/iw5/ui_mp/main.lua"),
-    "iw5mp_ds": ("iw5mp/main.lua", "storage/iw5/ui_mp/main.lua"),
 }
 
 
