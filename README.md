@@ -28,7 +28,9 @@
 | Black Ops II | SP/ZM/MP | [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) + [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
 | Black Ops III | SP/MP/ZM | [CleanOps](https://github.com/notnightwolf/cleanopsT7) | ✅ | ✅ | ✅ |
 
-All titles use controller and gyro through Steam Input. You choose your gyro mode during setup (ADS, Hold, or Toggle). Aim assist is not available for MW2 SP and MW3 SP. CoD4x is available as an alternative MW1 MP client during setup.
+All titles use controller and gyro through Steam Input. You choose your gyro mode during setup (ADS, Hold, or Toggle). DeckOps installs [IW-Pad](https://github.com/GalvarinoDev/IW-Pad) for MW2 SP and MW3 SP. IW-Pad adds controller support and aim assist. CoD4x is available as an alternative MW1 MP client during setup.
+
+IW-Pad and AlterWare do not repair the remote code execution (RCE) vulnerabilities in MW2 SP and MW3 SP. We do not recommend that you play Special Ops in MW2 or MW3. If you play Special Ops, you do so at your own risk.
 
 Supports Steam Deck (LCD and OLED), Steam Machine, Legion Go / Go S / Go 2, ROG Ally / Ally X, MSI Claw 8, and PC. SteamOS, Bazzite, and CachyOS supported.
 

@@ -499,7 +499,8 @@ class ManagementScreen(QWidget):
         """Show configure dialog with Mods, Update, and Reinstall options."""
         _MOD_CLIENTS = ("cod4r", "cod4x", "iw4x", "plutonium", "alterware", "t7x")
         has_mods_support = any(KEY_CLIENT.get(k, "") in _MOD_CLIENTS for k in installed_keys)
-        has_mod_client = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in installed_keys)
+        has_mod_client = any(KEY_CLIENT.get(k, "") not in ("steam", "") for k in installed_keys) \
+            or any(cfg.get_setup_games().get(k, {}).get("client") == "iw-pad" for k in installed_keys)
 
         # Depot downgrade option: shown for any Steam-sourced game that
         # can be downgraded (MW3, Ghosts, AW). Whether the downgrade
@@ -2183,7 +2184,7 @@ class UpdateScreen(QWidget):
             entry = setup_games.get(key, {})
             source = entry.get("source", "steam")
             # Prefer the client from the original install if available
-            if key == "cod4mp" and entry.get("client"):
+            if key in ("cod4mp", "iw4sp", "iw5sp") and entry.get("client"):
                 c = entry["client"]
             try:
                 from plutonium_oled import GAME_META as _PLUT_META
@@ -2259,6 +2260,10 @@ class UpdateScreen(QWidget):
                 elif c == "t6sp_mod":
                     install_t6sp_mod(game, self.steam_root, proton, compat, op,
                                     source=source)
+                elif c == "iw-pad":
+                    from sp_mod import install_sp_mod
+                    install_sp_mod(key, game["install_dir"], op,
+                                   source=source, steam_root=self.steam_root)
                 self._s.log.emit(f"✓  {base_name} ({key}) done")
                 cfg.mark_game_setup(key, c, source=source,
                                     wrapper_path=entry.get("wrapper_path"),

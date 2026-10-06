@@ -191,6 +191,7 @@ def _build_config_map(steam_root, installed_games=None):
         # ── MW2 SP ────────────────────────────────────────────────────────────
         "iw4sp": [
             ("MW2/config.cfg", None),
+            ("MW2/iw4x_sp_config.cfg", None),  # read by iw4x-sp (own installs) instead of config.cfg
         ],
 
         # ── MW2 MP (iw4x) ─────────────────────────────────────────────────────

@@ -167,14 +167,14 @@ TRITON_STANDARD = [
 #
 # "standard" -- the user's scheme choice (normal gamepad layout)
 # "other"    -- KB+M variant for SP campaigns that need mouse-look
-#               via Steam Input (CoD4 MP, MW2 SP, MW3 SP)
+#               via Steam Input (CoD4x MP)
 
 APPID_PROFILE_MAP = {
     "7940":   "standard",  # CoD4 SP (IW3SP-MOD)
     "10090":  "standard",  # WaW -- Plutonium SP/ZM/MP
-    "10180":  "other",     # MW2 SP -- via Steam, KB+M layout
+    "10180":  "standard",  # MW2 SP -- IW-Pad (stick input + aim assist)
     "10190":  "standard",  # MW2 MP -- iw4x
-    "42680":  "other",     # MW3 SP -- via Steam, KB+M layout
+    "42680":  "standard",  # MW3 SP -- IW-Pad (stick input + aim assist)
     "42690":  "standard",  # MW3 MP -- Plutonium
     "42750":  "standard",  # MW3 DS -- Plutonium (free dedicated server)
     "42700":  "standard",  # BO1 SP/ZM -- Plutonium

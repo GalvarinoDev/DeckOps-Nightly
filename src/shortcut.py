@@ -134,7 +134,7 @@ OWN_SHORTCUTS = {
     },
     "iw4sp": {
         "name":           "Call of Duty: Modern Warfare 2 (2009) - Singleplayer",
-        "template_type":  "other",
+        "template_type":  "standard",
         "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/10180/ad502494f1658220f9166c7e17ac90422bf6a479.jpg",
         "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
         "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/header.jpg",
@@ -154,7 +154,7 @@ OWN_SHORTCUTS = {
     },
     "iw5sp": {
         "name":           "Call of Duty: Modern Warfare 3 (2011) - Singleplayer",
-        "template_type":  "other",
+        "template_type":  "standard",
         "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/42680/c3330a875925437d8216949b6571f6e941ba0679.jpg",
         "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",
         "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/header.jpg",
@@ -1637,6 +1637,12 @@ def enrich_own_games(own_games: dict, selected_keys: list,
             # Run the launcher first so own installs self-update like Steam
             # copies; --arch x86 skips its x86/x64 picker.
             launch_options = "bash -c 'exec \"${@/iw4x.exe/iw4x-launcher.exe}\" --arch x86' -- %command%"
+
+        elif key in ("iw4sp", "iw5sp"):
+            # Same exe keeps the appid stable; IW-Pad's launcher picks the AlterWare client.
+            from sp_mod import build_sp_launch_option
+            actual_exe = exe_path
+            launch_options = build_sp_launch_option(key)
 
         elif key == "cod4sp":
             actual_exe = os.path.join(install_dir, "iw3sp_mod.exe")
