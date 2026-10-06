@@ -97,9 +97,8 @@ def load() -> dict:
             # Unparseable (truncated by a power loss, bad hand edit). Move it
             # aside so the next save() can't overwrite the user's setup.
             bad = f"{CONFIG_PATH}.corrupt-{datetime.now():%Y%m%d-%H%M%S}"
-            try: os.replace(CONFIG_PATH, bad)
-            except OSError: pass
-            _log.warning("deckops.json unreadable, moved to %s", bad)
+            try: os.replace(CONFIG_PATH, bad); _log.warning("deckops.json unreadable, moved to %s", bad)
+            except OSError as ex: _log.warning("deckops.json unreadable and could not be moved aside: %s", ex)
             return copy.deepcopy(DEFAULTS)
         except IOError:
             return copy.deepcopy(DEFAULTS)
