@@ -6,6 +6,7 @@ import subprocess
 
 from identity import LEDGER_PATH
 from log import get_logger
+from steam_common import backup_file as _backup_file, newest_proton_dir
 
 _log = get_logger(__name__)
 
@@ -74,15 +75,6 @@ def _record_configset(configset_filename: str, key: str, template_name: str):
     file_block[key] = template_name
     _write_ledger(ledger)
 
-
-
-def _backup_file(path: str):
-    """Write a .bak copy before modifying a Steam config file."""
-    if os.path.exists(path):
-        try:
-            shutil.copy2(path, path + ".bak")
-        except OSError:
-            _log.debug("VDF backup failed for config file", exc_info=True)
 
 
 def _find_block_end(text, start):
@@ -266,9 +258,11 @@ def get_proton_path(steam_root):
     Uses numeric version sorting so GE-Proton9-28 > GE-Proton9-5,
     and Proton 10 > Proton 9.
     """
-    def _version_key(name):
-        parts = re.findall(r'\d+', name)
-        return tuple(int(p) for p in parts)
+    ge_search_dirs = [
+        os.path.expanduser("~/.local/share/Steam/compatibilitytools.d"),
+    ]
+    if steam_root:
+        ge_search_dirs.append(os.path.join(steam_root, "compatibilitytools.d"))
 
     # Try config-pinned version first
     try:
@@ -278,51 +272,23 @@ def get_proton_path(steam_root):
         pinned = None
 
     if pinned:
-        ge_search_dirs = [
-            os.path.expanduser("~/.local/share/Steam/compatibilitytools.d"),
-        ]
-        if steam_root:
-            ge_search_dirs.append(os.path.join(steam_root, "compatibilitytools.d"))
         for ge_dir in ge_search_dirs:
             candidate = os.path.join(ge_dir, pinned, "proton")
             if os.path.exists(candidate):
                 return candidate
 
     # Pinned version not found — fall back to newest GE-Proton on disk
-    ge_search_dirs = [
-        os.path.expanduser("~/.local/share/Steam/compatibilitytools.d"),
-    ]
-    if steam_root:
-        ge_search_dirs.append(os.path.join(steam_root, "compatibilitytools.d"))
     for ge_dir in ge_search_dirs:
-        if not os.path.isdir(ge_dir):
-            continue
-        ge_dirs = [
-            d for d in os.listdir(ge_dir)
-            if d.startswith("GE-Proton") and
-            os.path.exists(os.path.join(ge_dir, d, "proton"))
-        ]
-        if ge_dirs:
-            ge_dirs.sort(key=_version_key, reverse=True)
-            return os.path.join(ge_dir, ge_dirs[0], "proton")
+        name = newest_proton_dir(ge_dir, "GE-Proton")
+        if name:
+            return os.path.join(ge_dir, name, "proton")
 
     # Fall back to vanilla Proton
     if not steam_root:
         return None
     common = os.path.join(steam_root, "steamapps", "common")
-    if not os.path.exists(common):
-        return None
-
-    proton_dirs = [
-        d for d in os.listdir(common)
-        if d.startswith("Proton") and
-        os.path.exists(os.path.join(common, d, "proton"))
-    ]
-    if not proton_dirs:
-        return None
-
-    proton_dirs.sort(key=_version_key, reverse=True)
-    return os.path.join(common, proton_dirs[0], "proton")
+    name = newest_proton_dir(common, "Proton")
+    return os.path.join(common, name, "proton") if name else None
 
 
 def find_compatdata(steam_root, appid, game_install_dir=None):

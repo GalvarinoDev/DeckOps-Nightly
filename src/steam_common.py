@@ -24,6 +24,7 @@ sites unchanged, e.g.:
 import binascii
 import os
 import re
+import shutil
 
 from log import get_logger
 
@@ -60,6 +61,30 @@ def calc_shortcut_appid(exe_path: str, name: str) -> int:
 
 
 # ── Steam account discovery ───────────────────────────────────────────────────
+
+def backup_file(path: str):
+    """Write a .bak copy before modifying a Steam config file."""
+    if os.path.exists(path):
+        try:
+            shutil.copy2(path, path + ".bak")
+        except OSError:
+            _log.debug("backup failed for %s", path, exc_info=True)
+
+
+def newest_proton_dir(parent: str, prefix: str) -> str | None:
+    """
+    Name of the newest <prefix>* folder in parent that contains a proton
+    script, or None. Numeric sort so GE-Proton9-28 > GE-Proton9-5 and
+    Proton 10 > Proton 9.
+    """
+    if not os.path.isdir(parent):
+        return None
+    names = [
+        d for d in os.listdir(parent)
+        if d.startswith(prefix) and os.path.exists(os.path.join(parent, d, "proton"))
+    ]
+    return max(names, key=lambda n: tuple(int(p) for p in re.findall(r'\d+', n)), default=None)
+
 
 def find_all_steam_uids() -> list[str]:
     """Return all valid Steam user ID folders from userdata/.

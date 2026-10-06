@@ -26,7 +26,7 @@ import urllib.request
 
 from log import get_logger
 from net import BROWSER_UA as _BROWSER_UA, download
-from steam_common import nvme_compatdata as _nvme_compatdata
+from steam_common import nvme_compatdata as _nvme_compatdata, newest_proton_dir
 
 _log = get_logger(__name__)
 
@@ -105,24 +105,7 @@ def _get_local_version() -> str | None:
     Returns the version string (e.g. 'GE-Proton10-32') or None if not found.
     Works regardless of how GE-Proton was installed (ProtonUp-Qt, manual, etc.)
     """
-    import re
-    if not os.path.isdir(COMPAT_DIR):
-        return None
-
-    def _version_key(name):
-        parts = re.findall(r'\d+', name)
-        return tuple(int(p) for p in parts)
-
-    candidates = [
-        d for d in os.listdir(COMPAT_DIR)
-        if d.startswith("GE-Proton") and
-        os.path.exists(os.path.join(COMPAT_DIR, d, "proton"))
-    ]
-    if not candidates:
-        return None
-
-    candidates.sort(key=_version_key, reverse=True)
-    return candidates[0]
+    return newest_proton_dir(COMPAT_DIR, "GE-Proton")
 
 
 # ── default_pfx resolution ───────────────────────────────────────────────────
@@ -393,6 +376,19 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
         return False
 
 
+def _finish_clone(source_pfx_dir: str, dest_prefix_path: str, ge_version: str | None):
+    # Write version file so Proton knows which version initialized this prefix
+    if ge_version:
+        with open(os.path.join(dest_prefix_path, "version"), "w") as f:
+            f.write(ge_version + "\n")
+    # Copy tracked_files from the donor's parent directory.
+    # Proton requires this file to exist -- without it, prefix setup
+    # crashes with FileNotFoundError on update_builtin_libs().
+    donor_tracked = os.path.join(os.path.dirname(source_pfx_dir), "tracked_files")
+    if os.path.isfile(donor_tracked):
+        shutil.copy2(donor_tracked, os.path.join(dest_prefix_path, "tracked_files"))
+
+
 def _clone_prefix(source_pfx_dir: str, dest_prefix_path: str,
                   ge_version: str | None, on_progress=None) -> bool:
     """
@@ -424,18 +420,7 @@ def _clone_prefix(source_pfx_dir: str, dest_prefix_path: str,
         start = time.time()
         shutil.copytree(source_pfx_dir, dest_pfx_dir, symlinks=True)
         elapsed = time.time() - start
-        # Write version file so Proton knows which version initialized this prefix
-        if ge_version:
-            version_file = os.path.join(dest_prefix_path, "version")
-            with open(version_file, "w") as f:
-                f.write(ge_version + "\n")
-        # Copy tracked_files from the donor's parent directory.
-        # Proton requires this file to exist — without it, prefix setup
-        # crashes with FileNotFoundError on update_builtin_libs().
-        donor_root = os.path.dirname(source_pfx_dir)
-        donor_tracked = os.path.join(donor_root, "tracked_files")
-        if os.path.isfile(donor_tracked):
-            shutil.copy2(donor_tracked, os.path.join(dest_prefix_path, "tracked_files"))
+        _finish_clone(source_pfx_dir, dest_prefix_path, ge_version)
         prog(f"  ✓ Prefix cloned from donor ({elapsed:.1f}s)")
         return True
     except Exception as ex:
@@ -548,20 +533,7 @@ def _overlay_prefix(source_pfx_dir: str, dest_prefix_path: str,
             else:
                 prog(f"  ✓ All {skipped} files already present ({elapsed:.1f}s)")
 
-        # Write version file
-        if ge_version:
-            version_file = os.path.join(dest_prefix_path, "version")
-            with open(version_file, "w") as f:
-                f.write(ge_version + "\n")
-
-        # Copy tracked_files from the donor's parent directory.
-        # Proton requires this file -- without it, prefix setup
-        # crashes with FileNotFoundError on update_builtin_libs().
-        donor_root = os.path.dirname(source_pfx_dir)
-        donor_tracked = os.path.join(donor_root, "tracked_files")
-        if os.path.isfile(donor_tracked):
-            shutil.copy2(donor_tracked, os.path.join(dest_prefix_path, "tracked_files"))
-
+        _finish_clone(source_pfx_dir, dest_prefix_path, ge_version)
         return True
     except Exception as ex:
         prog(f"  ⚠ Prefix overlay failed: {ex}")
@@ -677,18 +649,7 @@ def _clone_with_symlinks(source_pfx_dir: str, dest_prefix_path: str,
         elapsed = time.time() - start
         prog(f"  ✓ Prefix cloned with symlinked DLLs ({elapsed:.1f}s)")
 
-        # Write version file
-        if ge_version:
-            version_file = os.path.join(dest_prefix_path, "version")
-            with open(version_file, "w") as f:
-                f.write(ge_version + "\n")
-
-        # Copy tracked_files
-        donor_root = os.path.dirname(source_pfx_dir)
-        donor_tracked = os.path.join(donor_root, "tracked_files")
-        if os.path.isfile(donor_tracked):
-            shutil.copy2(donor_tracked, os.path.join(dest_prefix_path, "tracked_files"))
-
+        _finish_clone(source_pfx_dir, dest_prefix_path, ge_version)
         return True
     except Exception as ex:
         prog(f"  ⚠ Symlinked clone failed: {ex}")

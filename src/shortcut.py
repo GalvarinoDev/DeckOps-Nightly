@@ -34,6 +34,7 @@ _log = get_logger(__name__)
 
 from steam_common import (
     PROJECT_ROOT, STEAM_ROOT, USERDATA_DIR,
+    backup_file as _backup_file,
     calc_shortcut_appid as _calc_shortcut_appid,
     find_all_steam_uids as _find_all_steam_uids,
     get_deck_serial as _get_deck_serial,
@@ -543,15 +544,6 @@ def _get_next_index(raw_data: bytes) -> int:
             i += 1
 
     return max(indices, default=-1) + 1
-
-
-def _backup_file(path: str):
-    """Write a .bak copy before modifying a Steam config file."""
-    if os.path.exists(path):
-        try:
-            shutil.copy2(path, path + ".bak")
-        except OSError:
-            _log.debug("shortcuts.vdf backup failed", exc_info=True)
 
 
 def _write_shortcuts_vdf(path: str, existing_raw: bytes, new_entries: list):
