@@ -157,6 +157,16 @@ def patch_configset(configset_path: str, key: str, template_name: str):
 
 # --- Wine drive letters
 
+def nvme_compatdata(appid) -> str:
+    """Internal-drive compatdata path for appid."""
+    return os.path.join(STEAM_ROOT, "steamapps", "compatdata", str(appid))
+
+
+def linux_to_wine_path(linux_path: str) -> str:
+    """Z: drive path (Wine maps the whole Linux filesystem under Z:)."""
+    return "Z:" + linux_path.replace("/", "\\")
+
+
 def wine_path_for_prefix(linux_path: str, compatdata_path: str) -> str:
     """
     Windows path for linux_path as seen inside the Proton prefix at

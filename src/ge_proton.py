@@ -26,6 +26,7 @@ import urllib.request
 
 from log import get_logger
 from net import BROWSER_UA as _BROWSER_UA, download
+from steam_common import nvme_compatdata as _nvme_compatdata
 
 _log = get_logger(__name__)
 
@@ -741,14 +742,6 @@ def _cleanup_sd_card_prefixes(appids: list[str], on_progress=None):
         prog(f"  ✓ Cleaned {cleaned} SD card prefix(es)")
     else:
         prog("  No SD card prefixes to clean up")
-
-
-def _nvme_compatdata(appid: str) -> str:
-    """Return the NVMe compatdata path for a given appid."""
-    return os.path.join(
-        os.path.expanduser("~/.local/share/Steam"),
-        "steamapps", "compatdata", str(appid),
-    )
 
 
 def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str, str]],

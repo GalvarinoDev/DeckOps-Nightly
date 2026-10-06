@@ -32,6 +32,7 @@ import subprocess
 import tempfile
 
 from net import download as _download, DownloadError
+from steam_common import nvme_compatdata as _nvme_compatdata, linux_to_wine_path as _linux_to_wine_path
 
 from log import get_logger
 
@@ -128,26 +129,6 @@ def _get_appdata_dir(compatdata_path: str) -> str:
         "pfx", "drive_c", "users", "steamuser",
         "AppData", "Local", _APPDATA_FOLDER,
     )
-
-
-def _nvme_compatdata(appid: str) -> str:
-    """Return the NVMe compatdata path for a given appid."""
-    return os.path.join(
-        os.path.expanduser("~/.local/share/Steam"),
-        "steamapps", "compatdata", str(appid),
-    )
-
-
-def _linux_to_wine_path(linux_path: str) -> str:
-    """
-    Convert a Linux path to a Wine Z: drive path.
-
-    Wine maps the entire Linux filesystem under Z:, so
-    /home/deck/.local/share/Steam/steamapps/common/Call of Duty 4
-    becomes
-    Z:\\home\\deck\\.local\\share\\Steam\\steamapps\\common\\Call of Duty 4
-    """
-    return "Z:" + linux_path.replace("/", "\\")
 
 
 def _write_registry_keys(compatdata_path: str, on_progress=None):
