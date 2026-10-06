@@ -425,6 +425,159 @@ def _external_profile_filenames(controller_type: str, profile_type: str, gyro_mo
 
     return []
 
+def _cod4mp_profile(key: str, profile_type: str) -> str:
+    # CoD4R has native controller support -- use standard gamepad layout
+    if key != "cod4mp":
+        return profile_type
+    import config as cfg
+    return cfg.get_cod4mp_profile_type(profile_type)
+
+
+def _steam_shortcut_appids(prog) -> dict:
+    """Non-Steam shortcut appids for SHORTCUT_DEFS games installed through Steam."""
+    appids = {}
+    try:
+        from detect_games import find_steam_root, parse_library_folders, find_installed_games
+        steam_root = find_steam_root()
+        if steam_root:
+            installed = find_installed_games(parse_library_folders(steam_root))
+            for key, sdef in SHORTCUT_DEFS.items():
+                game = installed.get(key)
+                if not game:
+                    continue
+                install_dir = game.get("install_dir", "")
+                if not install_dir:
+                    continue
+                exe_path = os.path.join(install_dir, sdef["exe_name"])
+                appids[key] = _calc_shortcut_appid(exe_path, sdef["name"])
+    except Exception as ex:
+        prog(f"  ⚠ Could not detect shortcut appids: {ex}")
+    return appids
+
+
+def _launcher_appid(prog):
+    # The launcher is not in SHORTCUT_DEFS because its exe is a shell script
+    # under INSTALL_DIR, not a game exe in a Steam library. Read the appid
+    # from shortcuts.vdf rather than recalculating the CRC so it matches
+    # whatever Steam is actually using.
+    try:
+        from shortcut import get_shortcut_appid, LAUNCHER_TITLE
+        found = get_shortcut_appid(LAUNCHER_TITLE)
+        if found is not None:
+            return str(found)
+    except Exception as ex:
+        prog(f"  ⚠ Could not detect launcher shortcut appid: {ex}")
+    return None
+
+
+def _assign(uids, pick, canonical, configsets, prog, launcher=False, label=""):
+    """
+    Shared body of assign_controller_profiles / assign_external_controller_profiles.
+
+    pick(profile_type) -> template filenames, primary first
+    canonical(primary) -> VDF name for the numbered appid folder
+    configsets         -> configset filenames to patch under each uid
+    launcher           -- also re-apply the offline launcher shortcut profile
+    """
+    shortcut_appids = _steam_shortcut_appids(prog)
+    launcher_appid  = _launcher_appid(prog) if launcher else None
+
+    def files(profile_type, missing_msg=None):
+        filenames = pick(profile_type)
+        if not filenames:
+            return None
+        if not os.path.exists(os.path.join(ASSETS_DIR, filenames[0])):
+            if missing_msg:
+                prog(missing_msg.format(filenames[0]))
+            return None
+        return filenames
+
+    def write(uid, appid, filenames, num_dir=True, named_keys=()):
+        primary = filenames[0]
+        config_root    = os.path.join(STEAM_DIR, "userdata", uid, "241100", "remote", "controller_config")
+        steam_cfg_root = os.path.join(STEAM_DIR, "steamapps", "common", "Steam Controller Configs", uid, "config")
+
+        # Path 1: userdata controller_config (Your Layouts)
+        dest_dir = os.path.join(config_root, appid)
+        os.makedirs(dest_dir, exist_ok=True)
+        for filename in filenames:
+            src = os.path.join(ASSETS_DIR, filename)
+            if os.path.exists(src):
+                shutil.copy2(src, os.path.join(dest_dir, filename))
+
+        # Path 2: numbered appid folder under Steam Controller Configs.
+        # Writes the canonical VDF (e.g. controller_neptune.vdf or
+        # controller_ps5.vdf) so Steam can find the profile even if the
+        # configset patching has not taken effect yet.
+        if num_dir:
+            cfg_dir_num = os.path.join(steam_cfg_root, appid)
+            os.makedirs(cfg_dir_num, exist_ok=True)
+            shutil.copy2(os.path.join(ASSETS_DIR, primary), os.path.join(cfg_dir_num, canonical(primary)))
+
+        # Path 3: patch configset files -- this sets the active default
+        for cs_filename in configsets:
+            configset_path = os.path.join(steam_cfg_root, cs_filename)
+            _patch_configset(configset_path, appid, primary)
+            for named_key in named_keys:
+                _patch_configset(configset_path, named_key, primary)
+
+    for uid in uids:
+        for appid, profile_type in APPID_PROFILE_MAP.items():
+            filenames = files(profile_type, "  ⚠ Asset missing, skipping: {}")
+            if filenames:
+                write(uid, appid, filenames, named_keys=APPID_NAMED_KEYS.get(appid, []))
+                prog(f"  ✓ [{appid}] → {filenames[0]}")
+
+        # ── Non-Steam shortcut controller profiles ────────────────────────────
+        for key, sdef in SHORTCUT_DEFS.items():
+            if key not in shortcut_appids:
+                continue
+            filenames = files(_cod4mp_profile(key, sdef["profile_type"]))
+            if filenames:
+                write(uid, shortcut_appids[key], filenames)
+                prog(f"  ✓ [shortcut {shortcut_appids[key]}] → {filenames[0]}")
+
+        # ── DeckOps offline launcher controller profile ───────────────────────
+        # The launcher shortcut gets its initial profile from shortcut.py's
+        # _assign_controller_config at creation time, but that write is lost
+        # if Steam was running (Steam flushes in-memory configset state on
+        # exit). Re-applying here means every install's final profile pass
+        # and the Settings "Re-apply Templates" button self-heal the
+        # launcher instead of skipping it.
+        if launcher_appid:
+            filenames = files("standard", "  ⚠ Asset missing, launcher skipped: {}")
+            if filenames:
+                write(uid, launcher_appid, filenames)
+                prog(f"  ✓ [launcher {launcher_appid}] → {filenames[0]}")
+
+    # ── "My Own" game controller profiles ────────────────────────────────────
+    # For users who installed via CD/GOG/etc, DeckOps created the shortcuts
+    # with canonical names. We recalculate the appid the same way
+    # create_own_shortcuts() does and assign profiles to it.
+    #
+    # Some mod clients replace the exe in the shortcut (e.g. iw6-mod.exe
+    # instead of iw6mp64_ship.exe). The CRC must use the same exe path
+    # that was written into the shortcut's Exe field.
+    try:
+        from detect_games import find_own_installed
+        from shortcut import OWN_SHORTCUTS, own_shortcut_exe
+        for key, game in (find_own_installed() or {}).items():
+            if key not in OWN_SHORTCUTS or not game.get("exe_path", ""):
+                continue
+            # Must match create_own_shortcuts: quoted exe + canonical name
+            shortcut_appid = _calc_shortcut_appid(f'"{own_shortcut_exe(key, game)}"', OWN_SHORTCUTS[key]["name"])
+
+            profile_type = APPID_PROFILE_MAP.get(game.get("appid", ""), "standard")
+            filenames = files(_cod4mp_profile(key, profile_type))
+            if not filenames:
+                continue
+            for uid in uids:
+                write(uid, shortcut_appid, filenames, num_dir=False)
+            prog(f"  ✓ [own {shortcut_appid}] {key} → {filenames[0]}")
+    except Exception as ex:
+        prog(f"  ⚠ Could not assign {label}profiles for own games: {ex}")
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def install_controller_templates(on_progress=None):
@@ -507,228 +660,12 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
     else:
         prog("  ⚠ Could not read Deck serial -- serial configset write skipped.")
 
-    # Pre-calculate non-Steam shortcut appids before entering the uid loop.
-    shortcut_appids = {}
-    try:
-        from detect_games import find_steam_root, parse_library_folders, find_installed_games
-        steam_root = find_steam_root()
-        if steam_root:
-            installed = find_installed_games(parse_library_folders(steam_root))
-            for key, sdef in SHORTCUT_DEFS.items():
-                game = installed.get(key)
-                if not game:
-                    continue
-                install_dir = game.get("install_dir", "")
-                if not install_dir:
-                    continue
-                exe_path = os.path.join(install_dir, sdef["exe_name"])
-                shortcut_appids[key] = _calc_shortcut_appid(exe_path, sdef["name"])
-    except Exception as ex:
-        prog(f"  ⚠ Could not detect shortcut appids: {ex}")
-
-    # Pre-calculate the offline launcher shortcut appid, if the shortcut
-    # exists. The launcher is not in SHORTCUT_DEFS because its exe is a
-    # shell script under INSTALL_DIR, not a game exe in a Steam library.
-    # Read the appid from shortcuts.vdf rather than recalculating the CRC
-    # so it matches whatever Steam is actually using.
-    launcher_appid = None
-    try:
-        from shortcut import get_shortcut_appid, LAUNCHER_TITLE
-        _found = get_shortcut_appid(LAUNCHER_TITLE)
-        if _found is not None:
-            launcher_appid = str(_found)
-    except Exception as ex:
-        prog(f"  ⚠ Could not detect launcher shortcut appid: {ex}")
-
     # Resolve the primary controller type (neptune vs steamos_handheld)
     canonical_vdf, configset_filename = _primary_configset_name()
+    configsets = [configset_filename] + ([f"configset_{serial}.vdf"] if serial else [])
 
-    for uid in uids:
-        config_root    = os.path.join(
-            STEAM_DIR, "userdata", uid, "241100", "remote", "controller_config"
-        )
-        steam_cfg_root = os.path.join(
-            STEAM_DIR, "steamapps", "common", "Steam Controller Configs", uid, "config"
-        )
-        configset_primary = os.path.join(steam_cfg_root, configset_filename)
-        configset_serial  = os.path.join(steam_cfg_root, f"configset_{serial}.vdf") if serial else None
-
-        for appid, profile_type in APPID_PROFILE_MAP.items():
-            filenames        = _profile_filename(profile_type, gyro_mode)
-            primary_filename = filenames[0] if filenames else None
-            if not primary_filename:
-                continue
-
-            src_primary = os.path.join(ASSETS_DIR, primary_filename)
-            if not os.path.exists(src_primary):
-                prog(f"  ⚠ Asset missing, skipping: {primary_filename}")
-                continue
-
-            # Path 1: userdata controller_config (Your Layouts)
-            dest_dir = os.path.join(config_root, appid)
-            os.makedirs(dest_dir, exist_ok=True)
-            for filename in filenames:
-                src  = os.path.join(ASSETS_DIR, filename)
-                dest = os.path.join(dest_dir, filename)
-                if os.path.exists(src):
-                    shutil.copy2(src, dest)
-
-            # Path 2: numbered appid folder under Steam Controller Configs
-            # Writes the canonical VDF (controller_neptune.vdf or
-            # controller_steamos_handheld.vdf) so Steam can find the
-            # profile even if the configset patching has not taken effect yet.
-            cfg_dir_num = os.path.join(steam_cfg_root, appid)
-            os.makedirs(cfg_dir_num, exist_ok=True)
-            shutil.copy2(src_primary, os.path.join(cfg_dir_num, canonical_vdf))
-
-            # Path 3: patch configset files -- this sets the active default
-            _patch_configset(configset_primary, appid, primary_filename)
-            if configset_serial:
-                _patch_configset(configset_serial, appid, primary_filename)
-
-            for named_key in APPID_NAMED_KEYS.get(appid, []):
-                _patch_configset(configset_primary, named_key, primary_filename)
-                if configset_serial:
-                    _patch_configset(configset_serial, named_key, primary_filename)
-
-            prog(f"  ✓ [{appid}] → {primary_filename}")
-
-        # ── Non-Steam shortcut controller profiles ────────────────────────────
-        for key, sdef in SHORTCUT_DEFS.items():
-            if key not in shortcut_appids:
-                continue
-
-            shortcut_appid   = shortcut_appids[key]
-
-            # CoD4R has native controller support -- use standard gamepad layout
-            _profile = sdef["profile_type"]
-            if key == "cod4mp":
-                import config as _cfg_ctrl
-                _profile = _cfg_ctrl.get_cod4mp_profile_type(_profile)
-
-            filenames        = _profile_filename(_profile, gyro_mode)
-            primary_filename = filenames[0] if filenames else None
-            if not primary_filename:
-                continue
-
-            src_primary = os.path.join(ASSETS_DIR, primary_filename)
-            if not os.path.exists(src_primary):
-                continue
-
-            dest_dir = os.path.join(config_root, shortcut_appid)
-            os.makedirs(dest_dir, exist_ok=True)
-            for filename in filenames:
-                src = os.path.join(ASSETS_DIR, filename)
-                if os.path.exists(src):
-                    shutil.copy2(src, os.path.join(dest_dir, filename))
-
-            cfg_dir_num = os.path.join(steam_cfg_root, shortcut_appid)
-            os.makedirs(cfg_dir_num, exist_ok=True)
-            shutil.copy2(src_primary, os.path.join(cfg_dir_num, canonical_vdf))
-
-            _patch_configset(configset_primary, shortcut_appid, primary_filename)
-            if configset_serial:
-                _patch_configset(configset_serial, shortcut_appid, primary_filename)
-
-            prog(f"  ✓ [shortcut {shortcut_appid}] → {primary_filename}")
-
-        # ── DeckOps offline launcher controller profile ───────────────────────
-        # The launcher shortcut gets its initial profile from shortcut.py's
-        # _assign_controller_config at creation time, but that write is lost
-        # if Steam was running (Steam flushes in-memory configset state on
-        # exit). Re-applying here means every install's final profile pass
-        # and the Settings "Re-apply Templates" button self-heal the
-        # launcher instead of skipping it.
-        if launcher_appid:
-            filenames        = _profile_filename("standard", gyro_mode)
-            primary_filename = filenames[0] if filenames else None
-            if primary_filename:
-                src_primary = os.path.join(ASSETS_DIR, primary_filename)
-                if os.path.exists(src_primary):
-                    dest_dir = os.path.join(config_root, launcher_appid)
-                    os.makedirs(dest_dir, exist_ok=True)
-                    for filename in filenames:
-                        src = os.path.join(ASSETS_DIR, filename)
-                        if os.path.exists(src):
-                            shutil.copy2(src, os.path.join(dest_dir, filename))
-
-                    cfg_dir_num = os.path.join(steam_cfg_root, launcher_appid)
-                    os.makedirs(cfg_dir_num, exist_ok=True)
-                    shutil.copy2(src_primary, os.path.join(cfg_dir_num, canonical_vdf))
-
-                    _patch_configset(configset_primary, launcher_appid, primary_filename)
-                    if configset_serial:
-                        _patch_configset(configset_serial, launcher_appid, primary_filename)
-
-                    prog(f"  ✓ [launcher {launcher_appid}] → {primary_filename}")
-                else:
-                    prog(f"  ⚠ Asset missing, launcher skipped: {primary_filename}")
-
-    # ── "My Own" game controller profiles ────────────────────────────────────
-    # For users who installed via CD/GOG/etc, DeckOps created the shortcuts
-    # with canonical names. We recalculate the appid the same way
-    # create_own_shortcuts() does and assign profiles to it.
-    #
-    # Some mod clients replace the exe in the shortcut (e.g. iw6-mod.exe
-    # instead of iw6mp64_ship.exe). The CRC must use the same exe path
-    # that was written into the shortcut's Exe field.
-    try:
-        from detect_games import find_own_installed
-        from shortcut import OWN_SHORTCUTS, own_shortcut_exe
-        own_games = find_own_installed()
-        if own_games:
-            for key, game in own_games.items():
-                if key not in OWN_SHORTCUTS:
-                    continue
-                own_def = OWN_SHORTCUTS[key]
-                canonical_name = own_def["name"]
-                exe_path = game.get("exe_path", "")
-                if not exe_path:
-                    continue
-                actual_exe = own_shortcut_exe(key, game)
-
-                # Must match create_own_shortcuts: quoted exe + canonical name
-                quoted_exe = f'"{actual_exe}"'
-                shortcut_appid = _calc_shortcut_appid(quoted_exe, canonical_name)
-
-                steam_appid = game.get("appid", "")
-                profile_type = APPID_PROFILE_MAP.get(steam_appid, "standard")
-
-                # CoD4R has native controller support -- use standard gamepad layout
-                if key == "cod4mp":
-                    import config as cfg
-                    profile_type = cfg.get_cod4mp_profile_type(profile_type)
-                filenames = _profile_filename(profile_type, gyro_mode)
-                primary_filename = filenames[0] if filenames else None
-                if not primary_filename:
-                    continue
-                src_primary = os.path.join(ASSETS_DIR, primary_filename)
-                if not os.path.exists(src_primary):
-                    continue
-                for uid in uids:
-                    config_root = os.path.join(
-                        STEAM_DIR, "userdata", uid, "241100", "remote", "controller_config"
-                    )
-                    steam_cfg_root = os.path.join(
-                        STEAM_DIR, "steamapps", "common", "Steam Controller Configs", uid, "config"
-                    )
-                    configset_own = os.path.join(steam_cfg_root, configset_filename)
-                    configset_serial_path = os.path.join(steam_cfg_root, f"configset_{serial}.vdf") if serial else None
-
-                    dest_dir = os.path.join(config_root, shortcut_appid)
-                    os.makedirs(dest_dir, exist_ok=True)
-                    for filename in filenames:
-                        src = os.path.join(ASSETS_DIR, filename)
-                        if os.path.exists(src):
-                            shutil.copy2(src, os.path.join(dest_dir, filename))
-
-                    _patch_configset(configset_own, shortcut_appid, primary_filename)
-                    if configset_serial_path:
-                        _patch_configset(configset_serial_path, shortcut_appid, primary_filename)
-
-                prog(f"  ✓ [own {shortcut_appid}] {key} → {primary_filename}")
-    except Exception as ex:
-        prog(f"  ⚠ Could not assign profiles for own games: {ex}")
+    _assign(uids, lambda pt: _profile_filename(pt, gyro_mode), lambda primary: canonical_vdf,
+            configsets, prog, launcher=True)
 
     prog("Controller profiles assigned.")
 
@@ -759,166 +696,10 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
         prog("  ⚠ No Steam user accounts found -- external controller assignment skipped.")
         return
 
-    configset_filenames = EXTERNAL_CONFIGSET_NAMES.get(controller_type, [])
-
-    # Pre-calculate non-Steam shortcut appids
-    shortcut_appids = {}
-    try:
-        from detect_games import find_steam_root, parse_library_folders, find_installed_games
-        steam_root = find_steam_root()
-        if steam_root:
-            installed = find_installed_games(parse_library_folders(steam_root))
-            for key, sdef in SHORTCUT_DEFS.items():
-                game = installed.get(key)
-                if not game:
-                    continue
-                install_dir = game.get("install_dir", "")
-                if not install_dir:
-                    continue
-                exe_path = os.path.join(install_dir, sdef["exe_name"])
-                shortcut_appids[key] = _calc_shortcut_appid(exe_path, sdef["name"])
-    except Exception as ex:
-        prog(f"  ⚠ Could not detect shortcut appids: {ex}")
-
-    for uid in uids:
-        config_root    = os.path.join(
-            STEAM_DIR, "userdata", uid, "241100", "remote", "controller_config"
-        )
-        steam_cfg_root = os.path.join(
-            STEAM_DIR, "steamapps", "common", "Steam Controller Configs", uid, "config"
-        )
-
-        for appid, profile_type in APPID_PROFILE_MAP.items():
-            filenames        = _external_profile_filenames(controller_type, profile_type, gyro_mode)
-            primary_filename = filenames[0] if filenames else None
-            if not primary_filename:
-                continue
-
-            src_primary = os.path.join(ASSETS_DIR, primary_filename)
-            if not os.path.exists(src_primary):
-                prog(f"  ⚠ Asset missing, skipping: {primary_filename}")
-                continue
-
-            # Copy all matching templates into the userdata controller_config dir
-            dest_dir = os.path.join(config_root, appid)
-            os.makedirs(dest_dir, exist_ok=True)
-            for filename in filenames:
-                src = os.path.join(ASSETS_DIR, filename)
-                if os.path.exists(src):
-                    shutil.copy2(src, os.path.join(dest_dir, filename))
-
-            # Path 2: numbered appid folder -- derive canonical name from
-            # template filename by stripping _deckops suffix.
-            # e.g. controller_ps5_deckops.vdf -> controller_ps5.vdf
-            canonical_vdf = primary_filename.replace("_deckops", "")
-            cfg_dir_num = os.path.join(steam_cfg_root, appid)
-            os.makedirs(cfg_dir_num, exist_ok=True)
-            shutil.copy2(src_primary, os.path.join(cfg_dir_num, canonical_vdf))
-
-            # Patch all relevant external configset files
-            for cs_filename in configset_filenames:
-                configset_path = os.path.join(steam_cfg_root, cs_filename)
-                _patch_configset(configset_path, appid, primary_filename)
-
-                for named_key in APPID_NAMED_KEYS.get(appid, []):
-                    _patch_configset(configset_path, named_key, primary_filename)
-
-            prog(f"  ✓ [{appid}] → {primary_filename}")
-
-        # ── Non-Steam shortcut controller profiles ────────────────────────────
-        for key, sdef in SHORTCUT_DEFS.items():
-            if key not in shortcut_appids:
-                continue
-
-            shortcut_appid   = shortcut_appids[key]
-
-            # CoD4R has native controller support -- use standard gamepad layout
-            _profile = sdef["profile_type"]
-            if key == "cod4mp":
-                import config as _cfg_ctrl
-                _profile = _cfg_ctrl.get_cod4mp_profile_type(_profile)
-
-            filenames        = _external_profile_filenames(controller_type, _profile, gyro_mode)
-            primary_filename = filenames[0] if filenames else None
-            if not primary_filename:
-                continue
-
-            src_primary = os.path.join(ASSETS_DIR, primary_filename)
-            if not os.path.exists(src_primary):
-                continue
-
-            dest_dir = os.path.join(config_root, shortcut_appid)
-            os.makedirs(dest_dir, exist_ok=True)
-            for filename in filenames:
-                src = os.path.join(ASSETS_DIR, filename)
-                if os.path.exists(src):
-                    shutil.copy2(src, os.path.join(dest_dir, filename))
-
-            canonical_vdf = primary_filename.replace("_deckops", "")
-            cfg_dir_num = os.path.join(steam_cfg_root, shortcut_appid)
-            os.makedirs(cfg_dir_num, exist_ok=True)
-            shutil.copy2(src_primary, os.path.join(cfg_dir_num, canonical_vdf))
-
-            for cs_filename in configset_filenames:
-                configset_path = os.path.join(steam_cfg_root, cs_filename)
-                _patch_configset(configset_path, shortcut_appid, primary_filename)
-
-            prog(f"  ✓ [shortcut {shortcut_appid}] → {primary_filename}")
-
-    # ── "My Own" game external controller profiles ────────────────────────────
-    try:
-        from detect_games import find_own_installed
-        from shortcut import OWN_SHORTCUTS, own_shortcut_exe
-        own_games = find_own_installed()
-        if own_games:
-            for key, game in own_games.items():
-                if key not in OWN_SHORTCUTS:
-                    continue
-                own_def = OWN_SHORTCUTS[key]
-                canonical_name = own_def["name"]
-                exe_path = game.get("exe_path", "")
-                if not exe_path:
-                    continue
-                actual_exe = own_shortcut_exe(key, game)
-
-                quoted_exe = f'"{actual_exe}"'
-                shortcut_appid = _calc_shortcut_appid(quoted_exe, canonical_name)
-
-                steam_appid  = game.get("appid", "")
-                profile_type = APPID_PROFILE_MAP.get(steam_appid, "standard")
-
-                # CoD4R has native controller support -- use standard gamepad layout
-                if key == "cod4mp":
-                    import config as cfg
-                    profile_type = cfg.get_cod4mp_profile_type(profile_type)
-                filenames    = _external_profile_filenames(controller_type, profile_type, gyro_mode)
-                primary_filename = filenames[0] if filenames else None
-                if not primary_filename:
-                    continue
-                src_primary = os.path.join(ASSETS_DIR, primary_filename)
-                if not os.path.exists(src_primary):
-                    continue
-
-                for uid in uids:
-                    config_root    = os.path.join(
-                        STEAM_DIR, "userdata", uid, "241100", "remote", "controller_config"
-                    )
-                    steam_cfg_root = os.path.join(
-                        STEAM_DIR, "steamapps", "common", "Steam Controller Configs", uid, "config"
-                    )
-                    dest_dir = os.path.join(config_root, shortcut_appid)
-                    os.makedirs(dest_dir, exist_ok=True)
-                    for filename in filenames:
-                        src = os.path.join(ASSETS_DIR, filename)
-                        if os.path.exists(src):
-                            shutil.copy2(src, os.path.join(dest_dir, filename))
-
-                    for cs_filename in configset_filenames:
-                        configset_path = os.path.join(steam_cfg_root, cs_filename)
-                        _patch_configset(configset_path, shortcut_appid, primary_filename)
-
-                prog(f"  ✓ [own {shortcut_appid}] {key} → {primary_filename}")
-    except Exception as ex:
-        prog(f"  ⚠ Could not assign external profiles for own games: {ex}")
+    # Numbered appid folder name is the template name minus _deckops,
+    # e.g. controller_ps5_deckops.vdf -> controller_ps5.vdf
+    _assign(uids, lambda pt: _external_profile_filenames(controller_type, pt, gyro_mode),
+            lambda primary: primary.replace("_deckops", ""),
+            EXTERNAL_CONFIGSET_NAMES.get(controller_type, []), prog, label="external ")
 
     prog("External controller profiles assigned.")
