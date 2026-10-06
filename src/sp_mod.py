@@ -20,11 +20,10 @@ import zipfile
 
 from log import get_logger
 from net import download, github_asset
-from alterware import cdn_digests
+from alterware import _CDN_BASE, cdn_digests
 
 _log = get_logger(__name__)
 
-_CDN_BASE = "https://cdn.alterware.ovh"
 _IW_PAD_URL = "https://github.com/GalvarinoDev/IW-Pad/releases/latest/download/iw-pad-{}.zip"
 
 _SP_MOD_CONFIG = {
