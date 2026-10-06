@@ -1521,6 +1521,8 @@ PYEOF
             if [ -d "$plut_dir" ]; then
                 prefix_id=$(basename "$prefix_dir")
                 if $KEEP_PLUT_STORAGE && [ -d "$plut_dir/storage" ]; then
+                    # Links point into the master copy, which is removed below.
+                    find "$plut_dir/storage" -type l -delete 2>/dev/null
                     find "$plut_dir" -mindepth 1 -maxdepth 1 ! -name storage -exec rm -rf {} + \
                         && success "Removed Plutonium from prefix $prefix_id (kept storage/)" \
                         || warn "Failed to remove Plutonium from prefix $prefix_id"
