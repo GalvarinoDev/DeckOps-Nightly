@@ -21,6 +21,7 @@ import subprocess
 import zipfile
 
 from log import get_logger, redact_also
+from steam_common import write_json
 
 _log = get_logger(__name__)
 
@@ -292,8 +293,7 @@ def _write_receipt(game_id: str, install_dir: str, merged: dict):
     data["updated_at"] = datetime.now().isoformat()
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(data, f, indent=1)
+        write_json(path, data, indent=1)
         _log.info("Wrote downgrade receipt for %s (%d files)", game_id, len(data["files"]))
     except OSError as ex:
         _log.warning("Could not write downgrade receipt %s: %s", path, ex)

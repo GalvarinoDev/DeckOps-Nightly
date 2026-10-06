@@ -6,7 +6,7 @@ import subprocess
 
 from identity import LEDGER_PATH
 from log import get_logger
-from steam_common import backup_file as _backup_file, newest_proton_dir
+from steam_common import backup_file as _backup_file, newest_proton_dir, write_json as _write_json
 
 _log = get_logger(__name__)
 
@@ -31,8 +31,7 @@ def _write_ledger(data: dict):
     """Write the VDF edit ledger. Failures are logged but non-fatal."""
     try:
         os.makedirs(os.path.dirname(LEDGER_PATH), exist_ok=True)
-        with open(LEDGER_PATH, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        _write_json(LEDGER_PATH, data)
     except OSError:
         _log.debug("VDF ledger write failed", exc_info=True)
 
