@@ -22,11 +22,10 @@ import shutil
 import struct
 import threading
 import time
-import urllib.request
 
 from identity import INSTALL_DIR, VENV_PYTHON, asset_url
 from log import get_logger
-from net import BROWSER_UA as _BROWSER_UA
+from net import download
 
 _log = get_logger(__name__)
 
@@ -391,10 +390,7 @@ def _download(url: str, dest: str) -> bool:
     """Download a file from URL to dest path. Returns True on success."""
     try:
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        req = urllib.request.Request(url, headers=_BROWSER_UA)
-        with urllib.request.urlopen(req, timeout=30) as r:
-            with open(dest, "wb") as f:
-                f.write(r.read())
+        download(url, dest, timeout=30)
         return True
     except Exception:
         _log.debug("artwork download failed", exc_info=True)

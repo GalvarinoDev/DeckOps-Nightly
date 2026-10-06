@@ -28,10 +28,9 @@ import shutil
 import json
 import subprocess
 import time
-import urllib.request
 
 from log import get_logger
-from net import BROWSER_UA, DownloadError
+from net import DownloadError, download
 from depot_downgrade import plut_game_dir
 
 _log = get_logger(__name__)
@@ -229,26 +228,17 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
     bootstrapper = os.path.join(plut_dir, "plutonium.exe")
 
     prog(5, "Downloading Plutonium bootstrapper...")
-    _primary_failed = False
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(PLUT_BOOTSTRAPPER_URL, headers=BROWSER_UA)
-            with urllib.request.urlopen(req, timeout=60) as r, open(bootstrapper, "wb") as f:
-                f.write(r.read())
-            break
-        except Exception as ex:
-            if attempt == 2:
-                _primary_failed = True
-                _log.warning("Primary Plutonium download failed after 3 attempts: %s", ex)
-            else:
-                time.sleep(2 ** attempt)
-
-    if _primary_failed:
+    try:
+        download(PLUT_BOOTSTRAPPER_URL, bootstrapper)
+    except Exception as ex:
+        _log.warning("Primary Plutonium download failed after 3 attempts: %s", ex)
         prog(5, "Falling back to archive.org mirror...")
+        # Drop the primary's partial file or download() would resume the
+        # mirror's copy on top of it.
+        try: os.remove(bootstrapper + ".part")
+        except OSError: pass
         try:
-            req = urllib.request.Request(_PLUT_ARCHIVE_FALLBACK_URL, headers=BROWSER_UA)
-            with urllib.request.urlopen(req, timeout=60) as r, open(bootstrapper, "wb") as f:
-                f.write(r.read())
+            download(_PLUT_ARCHIVE_FALLBACK_URL, bootstrapper)
             _log.info("Plutonium bootstrapper downloaded from archive.org fallback")
         except Exception as ex2:
             raise DownloadError(
