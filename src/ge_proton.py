@@ -180,9 +180,7 @@ def install_ge_proton(on_progress=None):
 
     on_progress — optional callback(percent: int, msg: str)
     """
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
+    prog = on_progress or (lambda *a: None)
 
     local_version = _get_local_version()
     prog(0, "Checking for GE-Proton updates...")
@@ -308,9 +306,7 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
 
     Returns True if deps are now in place, False if we couldn't do it.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     default_pfx = _find_default_pfx(ge_version)
     if not default_pfx:
@@ -418,9 +414,7 @@ def _clone_prefix(source_pfx_dir: str, dest_prefix_path: str,
 
     Returns True on success, False on failure.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     dest_pfx_dir = os.path.join(dest_prefix_path, "pfx")
     try:
@@ -467,9 +461,7 @@ def _overlay_prefix(source_pfx_dir: str, dest_prefix_path: str,
 
     Returns True on success, False on failure.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     import time
 
@@ -594,9 +586,7 @@ def _ensure_shared_dlls(ge_version: str | None, on_progress=None) -> bool:
 
     Returns True if shared DLLs are ready, False on failure.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     default_pfx = _find_default_pfx(ge_version)
     if not default_pfx:
@@ -655,9 +645,7 @@ def _clone_with_symlinks(source_pfx_dir: str, dest_prefix_path: str,
 
     Returns True on success, False on failure.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     import time
 
@@ -714,9 +702,7 @@ def _cleanup_sd_card_prefixes(appids: list[str], on_progress=None):
     """
     import glob
 
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     sd_patterns = [
         "/run/media/deck/*/steamapps/compatdata",
@@ -772,9 +758,7 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
     import subprocess
     import time
 
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     default_pfx = _find_default_pfx(ge_version)
     if not default_pfx:

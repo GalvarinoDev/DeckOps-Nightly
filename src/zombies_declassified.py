@@ -124,9 +124,7 @@ def install_zd(plut_storage_t6: str, on_progress=None):
     plut_storage_t6 -- path to <plut_dir>/storage/t6/
     on_progress     -- callback(percent: int, message: str)
     """
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
+    prog = on_progress or (lambda *a: None)
 
     files = fetch_manifest(on_progress)
     total = len(files)
@@ -177,9 +175,7 @@ def install_zd(plut_storage_t6: str, on_progress=None):
 
 def update_zd(plut_storage_t6: str, on_progress=None):
     """Check for updates and apply if available. Returns True if updated."""
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
+    prog = on_progress or (lambda *a: None)
 
     current = get_zd_info(plut_storage_t6)
     current_hash = current.get("manifest_hash", "")
@@ -203,9 +199,7 @@ def update_zd(plut_storage_t6: str, on_progress=None):
 
 def uninstall_zd(plut_storage_t6: str, on_progress=None):
     """Remove Zombies Declassified files from storage/t6/."""
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
+    prog = on_progress or (lambda *a: None)
 
     prog(0, "Removing Zombies Declassified...")
 

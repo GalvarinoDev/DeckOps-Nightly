@@ -193,9 +193,7 @@ def install_alterware(game: dict, game_key: str,
         raise ValueError(f"Unknown game key: {game_key}")
     launcher_arg, client_exe, original_exe = cfg
 
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
+    prog = on_progress or (lambda *a: None)
 
     # ── Step 1: Download the native Linux launcher ────────────────────────
     prog(5, "Downloading AlterWare launcher...")

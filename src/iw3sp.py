@@ -81,9 +81,7 @@ def install_iw3sp(game: dict, steam_root: str,
     install_dir = game["install_dir"]
     zip_dest    = os.path.join(install_dir, "iw3sp_mod.zip")
 
-    def prog(pct, msg):
-        if on_progress:
-            on_progress(pct, msg)
+    prog = on_progress or (lambda *a: None)
 
     # Fetch latest release info from Gitea API
     prog(2, "Checking for latest IW3SP-MOD release...")

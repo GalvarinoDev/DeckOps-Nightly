@@ -558,9 +558,7 @@ def find_own_installed(extra_paths=None, on_progress=None):
     extra_paths -- optional list of additional directories to scan
     on_progress -- optional callback(msg: str)
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     # Build scan list: defaults + globs + extras
     scan_dirs = []

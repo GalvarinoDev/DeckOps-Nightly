@@ -456,9 +456,7 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
 
     Returns (applied, skipped, failed) counts.
     """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     applied  = 0
     skipped  = 0
@@ -628,9 +626,7 @@ def rename_player(player_name, steam_root, installed_games=None,
     """
     import config as cfg
 
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
+    prog = on_progress or (lambda *a: None)
 
     if not player_name:
         prog("No player name provided.")
