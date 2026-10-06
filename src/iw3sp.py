@@ -65,6 +65,21 @@ def _build_iw3sp_launch_option() -> str:
     return "bash -c 'exec \"${@/iw3sp.exe/iw3sp_mod.exe}\"' -- %command%"
 
 
+def reapply_steam_launch_option(steam_root: str) -> bool:
+    """
+    Re-set the 7940 IW3SP option after the launch-option clean slate.
+    The install flow runs IW3SP before Steam is closed, so the option it
+    writes there doesn't survive. Steam must be closed.
+    """
+    import config as cfg
+    e = cfg.get_setup_games().get("cod4sp", {})
+    if e.get("client") != "iw3sp" or e.get("source", "steam") != "steam":
+        return False
+    from wrapper import set_launch_options
+    set_launch_options(steam_root, COD4_APPID, _build_iw3sp_launch_option())
+    return True
+
+
 # ── public API ────────────────────────────────────────────────────────────────
 
 def install_iw3sp(game: dict, steam_root: str,
