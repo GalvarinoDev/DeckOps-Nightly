@@ -1263,7 +1263,15 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
             else:
                 actual_exe     = exe_path
                 start_dir      = install_dir
-                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" %command%'
+                # Steam CoD4 MP is played through this shortcut, not appid
+                # 7940, so CoD4R's pre-launch update has to hook in here.
+                pre = ""
+                if key == "cod4mp":
+                    import config as _cfg
+                    if _cfg.get_setup_games().get("cod4mp", {}).get("client") == "cod4r":
+                        from steam_common import prelaunch_prefix
+                        pre = prelaunch_prefix("cod4mp")
+                launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" {pre}%command%'
 
             shortcut_appid = _calc_shortcut_appid(exe_path, name)
 
