@@ -34,9 +34,6 @@ os.makedirs(MUSIC_DIR,   exist_ok=True)
 
 FONT_FILE = "RussoOne-Regular.ttf"
 
-# No remote font downloads
-FONTS = {}
-
 # ── Steam portrait grid images ────────────────────────────────────────────────
 
 _STEAM_CDN = "https://shared.steamstatic.com/store_item_assets/steam/apps/{appid}/library_600x900_2x.jpg"
@@ -96,10 +93,6 @@ def run(on_progress=None, on_complete=None):
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     tasks = []
-
-    for filename, url in FONTS.items():
-        dest = os.path.join(FONTS_DIR, filename)
-        tasks.append((url, dest, f"Font: {filename}"))
 
     for appid in HEADER_APPIDS:
         url  = _HEADER_OVERRIDES.get(appid, _STEAM_CDN.format(appid=appid))
