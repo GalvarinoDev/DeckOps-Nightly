@@ -693,6 +693,11 @@ def assign_controller_profiles(gyro_mode: str, on_progress=None):
 
                 steam_appid = game.get("appid", "")
                 profile_type = APPID_PROFILE_MAP.get(steam_appid, "standard")
+
+                # CoD4R has native controller support -- use standard gamepad layout
+                if key == "cod4mp":
+                    import config as cfg
+                    profile_type = cfg.get_cod4mp_profile_type(profile_type)
                 filenames = _profile_filename(profile_type, gyro_mode)
                 primary_filename = filenames[0] if filenames else None
                 if not primary_filename:
@@ -884,6 +889,7 @@ def assign_external_controller_profiles(controller_type: str, gyro_mode: str, on
 
                 # CoD4R has native controller support -- use standard gamepad layout
                 if key == "cod4mp":
+                    import config as cfg
                     profile_type = cfg.get_cod4mp_profile_type(profile_type)
                 filenames    = _external_profile_filenames(controller_type, profile_type, gyro_mode)
                 primary_filename = filenames[0] if filenames else None
