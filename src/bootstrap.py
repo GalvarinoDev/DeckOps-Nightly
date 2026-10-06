@@ -13,10 +13,8 @@ will be played automatically. Users can drop any MP3 file there themselves.
 """
 
 import os
-import time
-import urllib.request
 
-from net import BROWSER_UA
+from net import download
 
 # ── paths ─────────────────────────────────────────────────────────────────────
 
@@ -77,19 +75,13 @@ def _download(url: str, dest: str, label: str, on_progress) -> bool:
         on_progress(f"  checkmark  {label} (cached)")
         return True
     on_progress(f"  down  {label}...")
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(url, headers=BROWSER_UA)
-            with urllib.request.urlopen(req, timeout=30) as r:
-                with open(dest, "wb") as f:
-                    f.write(r.read())
-            on_progress(f"  checkmark  {label}")
-            return True
-        except Exception as e:
-            if attempt == 2:
-                on_progress(f"  fail  {label} failed: {e}")
-                return False
-            time.sleep(2 ** attempt)
+    try:
+        download(url, dest, timeout=30)
+    except Exception as e:
+        on_progress(f"  fail  {label} failed: {e}")
+        return False
+    on_progress(f"  checkmark  {label}")
+    return True
 
 
 # ── public API ────────────────────────────────────────────────────────────────

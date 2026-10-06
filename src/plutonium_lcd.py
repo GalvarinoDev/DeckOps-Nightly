@@ -40,12 +40,11 @@ import shutil
 import stat
 import subprocess
 import time
-import urllib.request
 
 from identity import VENV_PYTHON
 from depot_downgrade import plut_game_dir
 from log import get_logger
-from net import BROWSER_UA as _BROWSER_UA, DownloadError
+from net import DownloadError, download
 
 _log = get_logger(__name__)
 
@@ -1072,42 +1071,29 @@ def _download_plutonium_exe(dest_dir: str, on_progress=None) -> str:
         return dest
 
     prog("  Downloading Plutonium bootstrapper...")
-    import time
-    _primary_failed = False
-    for attempt in range(3):
-        try:
-            req = urllib.request.Request(PLUT_BOOTSTRAPPER_URL,
-                                          headers=_BROWSER_UA)
-            with urllib.request.urlopen(req, timeout=60) as r, \
-                 open(dest, "wb") as f:
-                f.write(r.read())
-            prog(f"  Downloaded plutonium.exe ({os.path.getsize(dest)} bytes)")
-            return dest
-        except Exception as ex:
-            if attempt == 2:
-                _primary_failed = True
-                _log.warning("Primary Plutonium download failed after 3 attempts: %s", ex)
-            else:
-                time.sleep(2 ** attempt)
+    try:
+        download(PLUT_BOOTSTRAPPER_URL, dest)
+        prog(f"  Downloaded plutonium.exe ({os.path.getsize(dest)} bytes)")
+        return dest
+    except Exception as ex:
+        _log.warning("Primary Plutonium download failed after 3 attempts: %s", ex)
 
-    if _primary_failed:
-        prog("  Falling back to archive.org mirror...")
-        try:
-            req = urllib.request.Request(_PLUT_ARCHIVE_FALLBACK_URL,
-                                          headers=_BROWSER_UA)
-            with urllib.request.urlopen(req, timeout=60) as r, \
-                 open(dest, "wb") as f:
-                f.write(r.read())
-            _log.info("Plutonium bootstrapper downloaded from archive.org fallback")
-            prog(f"  Downloaded plutonium.exe from archive.org ({os.path.getsize(dest)} bytes)")
-            return dest
-        except Exception as ex2:
-            raise DownloadError(
-                url=_PLUT_ARCHIVE_FALLBACK_URL,
-                dest=dest,
-                label="Plutonium bootstrapper",
-                cause=ex2,
-            )
+    prog("  Falling back to archive.org mirror...")
+    # Drop the primary's partial file or download() would resume the
+    # mirror's copy on top of it.
+    try: os.remove(dest + ".part")
+    except OSError: pass
+    try:
+        download(_PLUT_ARCHIVE_FALLBACK_URL, dest)
+    except Exception as ex2:
+        raise DownloadError(
+            url=_PLUT_ARCHIVE_FALLBACK_URL,
+            dest=dest,
+            label="Plutonium bootstrapper",
+            cause=ex2,
+        )
+    _log.info("Plutonium bootstrapper downloaded from archive.org fallback")
+    prog(f"  Downloaded plutonium.exe from archive.org ({os.path.getsize(dest)} bytes)")
     return dest
 
 

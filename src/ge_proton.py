@@ -25,7 +25,7 @@ import tempfile
 import urllib.request
 
 from log import get_logger
-from net import BROWSER_UA as _BROWSER_UA
+from net import BROWSER_UA as _BROWSER_UA, download
 
 _log = get_logger(__name__)
 
@@ -153,26 +153,6 @@ def _find_default_pfx(ge_version: str | None) -> str | None:
 
 # ── Download helpers ──────────────────────────────────────────────────────────
 
-def _download(url, dest, on_progress=None):
-    """Download a URL to dest with optional progress callback(percent, msg)."""
-    req = urllib.request.Request(url, headers=_BROWSER_UA)
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        total = int(resp.headers.get("Content-Length", 0))
-        downloaded = 0
-        chunk = 1024 * 1024  # 1MB
-        with open(dest, "wb") as f:
-            while True:
-                buf = resp.read(chunk)
-                if not buf:
-                    break
-                f.write(buf)
-                downloaded += len(buf)
-                if on_progress and total:
-                    pct = int(downloaded / total * 100)
-                    mb = downloaded / 1024 / 1024
-                    on_progress(pct, f"Downloading GE-Proton... {mb:.1f} MB")
-
-
 def _verify_checksum(tarball_path, checksum_url):
     """Download the .sha512sum file and verify the tarball. Returns True if OK."""
     import hashlib
@@ -223,7 +203,7 @@ def install_ge_proton(on_progress=None):
         tarball_path = os.path.join(tmp, f"{dir_name}.tar.gz")
 
         prog(10, f"Downloading {dir_name}...")
-        _download(tarball_url, tarball_path, on_progress=on_progress)
+        download(tarball_url, tarball_path, on_progress=on_progress, label=dir_name)
 
         if checksum_url:
             prog(85, "Verifying checksum...")
