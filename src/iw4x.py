@@ -27,7 +27,7 @@ import shutil
 import zipfile
 import threading
 
-from net import download as _download
+from net import download as _download, github_asset
 
 from log import get_logger
 
@@ -39,7 +39,6 @@ _log = get_logger(__name__)
 # and other assets. No separate downloads needed.
 DLL_URL = "https://github.com/iw4x/iw4x-client/releases/latest/download/iw4x.dll"
 ZIP_URL = "https://github.com/iw4x/iw4x-rawfiles/releases/latest/download/release.zip"
-LAUNCHER_API_URL = "https://api.github.com/repos/iw4x/launcher/releases/latest"
 
 # CDN manifest for free DLC content (maps from CoD4, BO1, MW3, CoD Online, MW2 DLC)
 # Approximate; the UI labels quote it as "~3 GB" and preflight budgets for it.
@@ -61,21 +60,6 @@ _FF_PREFIXES = (
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 # _download imported from net.py; call sites pass timeout=120 for large files.
-
-
-def _get_launcher_url():
-    """Get the latest launcher zip URL from GitHub releases API."""
-    import urllib.request
-    req = urllib.request.Request(
-        LAUNCHER_API_URL,
-        headers={"Accept": "application/vnd.github+json", "User-Agent": "DeckOps"}
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read())
-    for asset in data.get("assets", []):
-        if asset["name"].endswith("x86_64-windows.zip"):
-            return asset["browser_download_url"]
-    raise RuntimeError("No launcher zip found in latest GitHub release")
 
 
 def _remap_dlc_path(manifest_path: str, install_dir: str) -> str:
@@ -392,31 +376,34 @@ def install_iw4x(game: dict, steam_root: str,
             scaled = int(pct / 100 * base_end)
             on_progress(scaled, msg)
 
-    # ── Resolve launcher URL ─────────────────────────────────────────────
+    # ── Resolve URLs + sha256 digests ────────────────────────────────────
+    # The launcher zip name is versioned, so its lookup has no fallback.
     prog(2, "Checking latest launcher version...")
-    launcher_url = _get_launcher_url()
+    launcher_url, launcher_dg = github_asset("iw4x/launcher", "x86_64-windows.zip")
+    dll_url, dll_dg = github_asset("iw4x/iw4x-client", "iw4x.dll", fallback=DLL_URL)
+    zip_url, zip_dg = github_asset("iw4x/iw4x-rawfiles", "release.zip", fallback=ZIP_URL)
 
     # ── Download iw4x.dll, release.zip, and launcher concurrently ────────
     prog(5, "Downloading iw4x files...")
 
     launcher_zip = os.path.join(install_dir, "launcher.zip")
     dl_tasks = [
-        (DLL_URL,       os.path.join(install_dir, "iw4x.dll"), "iw4x.dll"),
-        (ZIP_URL,       os.path.join(install_dir, "release.zip"), "release.zip"),
-        (launcher_url,  launcher_zip, "iw4x-launcher"),
+        (dll_url,       os.path.join(install_dir, "iw4x.dll"), "iw4x.dll", dll_dg),
+        (zip_url,       os.path.join(install_dir, "release.zip"), "release.zip", zip_dg),
+        (launcher_url,  launcher_zip, "iw4x-launcher", launcher_dg),
     ]
     dl_errors = []
     dl_done   = [0]
     dl_lock   = threading.Lock()
 
-    def _dl(url, dest, label):
-        _download(url, dest, None, f"Downloading {label}...", timeout=120)
+    def _dl(url, dest, label, digest):
+        _download(url, dest, None, f"Downloading {label}...", timeout=120, digest=digest)
         with dl_lock:
             dl_done[0] += 1
             prog(5 + int(dl_done[0] / len(dl_tasks) * 40), f"Downloaded {label}")
 
     with ThreadPoolExecutor(max_workers=3) as ex:
-        futs = {ex.submit(_dl, url, dest, label): label for url, dest, label in dl_tasks}
+        futs = {ex.submit(_dl, *t): t[2] for t in dl_tasks}
         for fut in as_completed(futs):
             try:
                 fut.result()

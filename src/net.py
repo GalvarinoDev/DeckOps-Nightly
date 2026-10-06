@@ -6,6 +6,8 @@ installers (cod4x, iw3sp, iw4x, cleanops). Centralises the browser
 UA string and retry/backoff logic so changes propagate everywhere.
 """
 
+import hashlib
+import json
 import os
 import time
 import urllib.request
@@ -72,7 +74,7 @@ def _detail(label: str, done: int, total: int, rate: float) -> str:
 
 
 def download(url: str, dest: str, on_progress=None, label: str = "",
-             timeout: int = 60, headers: dict = None):
+             timeout: int = 60, headers: dict = None, digest: str = None):
     """
     Download a URL to a local file with resume, progress and retry.
 
@@ -92,6 +94,8 @@ def download(url: str, dest: str, on_progress=None, label: str = "",
     label       — human-readable name shown in progress messages
     timeout     — socket timeout in seconds (default 60)
     headers     — request headers, default BROWSER_UA
+    digest      — optional "algo:hex" (e.g. GitHub's "sha256:..."); a
+                  mismatch discards the part file and counts as a failed try
     """
     part = dest + ".part"
     for attempt in range(3):
@@ -135,6 +139,8 @@ def download(url: str, dest: str, on_progress=None, label: str = "",
             # renamed into place. Force a retry, which now resumes.
             if total and done < total:
                 raise IOError(f"incomplete download: {done} of {total} bytes")
+            if digest:
+                _check_digest(part, digest)
             os.replace(part, dest)
             if on_progress:
                 on_progress(100, _detail(label, done, total or done, 0))
@@ -144,3 +150,38 @@ def download(url: str, dest: str, on_progress=None, label: str = "",
                 raise
             _log.debug("download retry %d for %s", attempt + 1, url)
             time.sleep(2 ** attempt)
+
+
+def _check_digest(path: str, digest: str):
+    algo, want = digest.split(":", 1)
+    h = hashlib.new(algo)
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(CHUNK), b""):
+            h.update(chunk)
+    if h.hexdigest().lower() != want.lower():
+        os.remove(path)
+        raise IOError(f"{algo} mismatch for {os.path.basename(path)}")
+
+
+def github_asset(repo: str, suffix: str, fallback: str = None):
+    """
+    (url, digest) of the latest release asset of repo whose name ends with
+    suffix. digest is GitHub's "sha256:..." or None. If the API lookup
+    fails and fallback is given, returns (fallback, None) so an API outage
+    or rate limit doesn't block the install, just skips verification.
+    """
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{repo}/releases/latest",
+            headers={"Accept": "application/vnd.github+json", "User-Agent": "DeckOps"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read())
+        for a in data.get("assets", []):
+            if a["name"].endswith(suffix):
+                return a["browser_download_url"], a.get("digest")
+        raise RuntimeError(f"No *{suffix} asset in latest {repo} release")
+    except Exception as ex:
+        if fallback is None:
+            raise
+        _log.warning("GitHub lookup for %s failed, downloading unverified: %s", repo, ex)
+        return fallback, None
