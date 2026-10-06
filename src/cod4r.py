@@ -10,38 +10,37 @@ directly into the game directory:
                           xcommon_cod4qol, xcommon_cod4r_weapons)
   - zone/english/*.ff   (fastfiles: cod4r_patchv2, cod4r_controls,
                           cod4r_ambfix, qol)
+  - iw3mp.exe, mss32.dll (CoD4R builds, replace the stock files)
   - miles32.dll          (patched Miles Sound System library)
   - Cod4R-DedRun.exe     (dedicated server runner)
   - userraw/cod4r_id.key  (player identity key)
   - Mods/mp_bots/         (bot support mod)
-
-After installation, the game launches via the stock iw3mp.exe -- the
-patched DLLs and fastfiles are loaded automatically by the engine.
+plus launcher.dll and cod4r_<ver>/cod4r_<ver>.dll in the prefix's
+AppData/Local/CallofDuty4MW/bin/.
 
 Install flow:
   1. Write registry keys so Steam skips first-launch installers
-  2. Download CoD4R-Launcher.exe
-  3. Pre-write settings.txt so the launcher knows the game directory
-  4. Run the launcher through Proton (auto-downloads files, user closes when done)
-  5. Write registry keys again (safety net after Proton run)
-  6. Verify CoD4R files landed
-  7. Write metadata
+  2. Fetch CoD4R's signed manifest and check its signature
+  3. Download every file whose sha256 doesn't match the manifest
+  4. Verify CoD4R files landed
+  5. Delete servercache.dat
+  6. Write metadata
 
-The launcher persists its settings at:
-  AppData/Local/CoD4R/Launcher/settings.txt
-with three lines: game path, theme index, theme name.
-
-Path format:
-  - Both Steam and own installs use the Z: drive (Wine maps / to Z:)
+DeckOps does what CoD4R-Launcher.exe does itself, without running it:
+the launcher needs a GUI the user has to close, and newer builds show a
+black window under Proton. Re-running the install only downloads files
+that changed, so it doubles as the update.
 """
 
+import base64
+import hashlib
+import json
 import os
-import re
 import subprocess
+import tempfile
 
-from identity import GITHUB_RAW
 from net import download as _download
-from steam_common import nvme_compatdata as _nvme_compatdata, linux_to_wine_path as _linux_to_wine_path, write_json
+from steam_common import nvme_compatdata as _nvme_compatdata, write_json
 from cod4x import _write_registry_keys  # same appid 7940 keys
 
 from log import get_logger
@@ -51,35 +50,35 @@ _log = get_logger(__name__)
 
 # -- constants ----------------------------------------------------------------
 
-# CoD4R launcher hosted on the DeckOps repo.
-_LAUNCHER_URL = f"{GITHUB_RAW}/assets/CoD4R/CoD4R-Launcher.exe"
+# CoD4R's update server, the one CoD4R-Launcher.exe uses. Plain HTTP, so
+# the manifest is checked against the launcher's signing key below.
+_CDN = "http://74.208.200.240"
+
+# Public key embedded in CoD4R-Launcher.exe. manifest.json.sig is a
+# base64 RSA SHA-256 signature over manifest.json.
+_MANIFEST_KEY = """-----BEGIN PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA2r/t4vsfcLA6PuC6aZod
+nMB58WzKrgnO64IN5zAeAbDxqWk+sjtu9L08id6UPvBPuTcqo7DwmKZQ01axFxHl
+UKfHFeXGHgaM7ua4RTdcDbIxza7o6lGUhtca3Ntbi3LilF0MkzTcbwOjUdIEoUlV
+kUHPZpUgY0jFmjma8TurqnOAbxzys3XnQ4gHkY0eL90p3Q2oPrwUAs1vuSe3MI8R
+0/s/LIfjyKIvuyhTmLqnQ2ma5zUnCi9NUYUEvZWtCmUpIqCjgF/1ypywF3kphIsb
+q90gdFSQ3O07sQwPq7zwlATmw/k/OoT4shjnoi7Md08tlbWHzokdifOcmk212uLI
+Hw5da5sFDZW8omLa1DuOiWLqK810Z7rVbxdHzrtYJ6wZsWFXuTjz0JhPODMIcDGc
+ETrWCgWAB+TNx1eNk4ITA4HjsTBBn4KnBAa5JuBTagC7/ZnOldJMN9erzE8ldoFE
+9wBKiWkXCPtQhjQ6oEDdgsUgU+L1OBODhGPxv4U73o6De0j85ANR4tcCnqPoqzd0
+nk24kQKH8EQJTDH9qo5p4/TNMrAd9wAK+U42xh8Eho7vY7JihIhzI1ShEdkqNA/Z
+quSjERQjJq5Eys+oN4JPzOV31ZY9t2Ai5LofPn8r5sC1sMnrjORg9nd22LwgZZgg
+kGVOa+i6OT99LMDzING0zlECAwEAAQ==
+-----END PUBLIC KEY-----
+"""
 
 METADATA_FILE = "deckops_cod4r.json"
-
-# The AppData subfolder name inside the Wine prefix where the launcher
-# stores its settings file.
-_COD4R_APPDATA_FOLDER = "CoD4R"
 
 # The AppData subfolder name where the game stores runtime data
 # (servercache, player configs, etc.) -- same as CoD4x.
 _GAME_APPDATA_FOLDER = "CallofDuty4MW"
 
 # -- helpers ------------------------------------------------------------------
-
-def _get_settings_path(compatdata_path: str) -> str:
-    """
-    Return the path to CoD4R's settings.txt inside the Wine prefix.
-
-    The launcher stores its config at:
-      AppData/Local/CoD4R/Launcher/settings.txt
-    """
-    return os.path.join(
-        compatdata_path,
-        "pfx", "drive_c", "users", "steamuser",
-        "AppData", "Local", _COD4R_APPDATA_FOLDER,
-        "Launcher", "settings.txt",
-    )
-
 
 def _get_game_appdata_dir(compatdata_path: str) -> str:
     """
@@ -95,50 +94,46 @@ def _get_game_appdata_dir(compatdata_path: str) -> str:
     )
 
 
-def _build_wine_game_path(install_dir: str, source: str) -> str:
-    """
-    Build the Wine-style game path for settings.txt.
+def _check_signature(tmp: str, log):
+    key = os.path.join(tmp, "key.pem"); sig = os.path.join(tmp, "sig.bin")
+    with open(key, "w") as f: f.write(_MANIFEST_KEY)
+    with open(os.path.join(tmp, "manifest.json.sig"), "rb") as f: raw = base64.b64decode(f.read())
+    with open(sig, "wb") as f: f.write(raw)
+    try:
+        r = subprocess.run(["openssl", "dgst", "-sha256", "-verify", key, "-signature", sig,
+                            os.path.join(tmp, "manifest.json")], capture_output=True, text=True)
+    except FileNotFoundError:
+        # Same policy as net.download digests: missing tooling skips the
+        # check rather than blocking the install.
+        log("  openssl not found, CoD4R manifest signature not checked")
+        return
+    if r.returncode != 0:
+        raise RuntimeError(f"CoD4R manifest signature check failed: {(r.stdout + r.stderr).strip()}")
+    log("  CoD4R manifest signature verified")
 
-    Both Steam and own installs use the Z: drive (Wine maps / to Z:).
-    The launcher's own auto-detect also uses the Z: path, so we match
-    that format for consistency.
 
-    Parameters:
-      install_dir -- Linux path to the game directory
-      source      -- 'steam' or 'own'
+def _manifest_files(m: dict, install_dir: str, compatdata_path: str) -> list:
+    """(local path, manifest entry) for every CoD4R file, placed where
+    CoD4R-Launcher.exe puts them (verified by hash on a launcher run)."""
+    bin_dir = os.path.join(_get_game_appdata_dir(compatdata_path), "bin")
+    dests = {"root": install_dir, "main": os.path.join(install_dir, "main"),
+             "zone": os.path.join(install_dir, "zone", "english"), "bin": bin_dir}
+    out = []
+    for a in m["assets"]:
+        if a["dest"] not in dests:
+            raise RuntimeError(f"Unknown CoD4R manifest dest '{a['dest']}' for {a['name']}")
+        out.append((os.path.join(dests[a["dest"]], os.path.basename(a["name"])), a))
+    c = os.path.basename(m["client"]["path"])
+    out.append((os.path.join(bin_dir, os.path.splitext(c)[0], c), m["client"]))
+    out.append((os.path.join(install_dir, os.path.basename(m["dedi"]["path"])), m["dedi"]))
+    return out
 
-    Returns:
-      Wine path string suitable for settings.txt
-    """
-    return _linux_to_wine_path(install_dir)
 
-
-def _write_settings_txt(compatdata_path: str, install_dir: str,
-                        source: str, on_progress=None):
-    """
-    Pre-write the CoD4R launcher's settings.txt so it knows the game
-    directory without requiring the GUI folder picker.
-
-    settings.txt format (3 lines):
-      <game path>
-      <theme index>
-      <theme name>
-    """
-    def log(msg):
-        if on_progress:
-            on_progress(msg)
-
-    settings_path = _get_settings_path(compatdata_path)
-    os.makedirs(os.path.dirname(settings_path), exist_ok=True)
-
-    wine_path = _build_wine_game_path(install_dir, source)
-
-    content = f"{wine_path}\n1\nred\n"
-
-    with open(settings_path, "w") as f:
-        f.write(content)
-
-    log(f"  Settings path written: {wine_path}")
+def _sha256(path: str) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""): h.update(chunk)
+    return h.hexdigest()
 
 
 def _verify_cod4r_files(install_dir: str, on_progress=None) -> bool:
@@ -179,17 +174,13 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
                   compatdata_path: str, on_progress=None, appid: int = 7940,
                   source: str = "steam"):
     """
-    Install CoD4R using the launcher through Proton.
-
-    The prefix is already initialized by ensure_all_prefix_deps before
-    this function runs. We pre-write the launcher's settings.txt with
-    the game path, run the launcher (which auto-downloads files), wait
-    for the user to close it, then verify and write metadata.
+    Install or update CoD4R from its signed manifest. No Proton run and
+    no user interaction; files already matching the manifest are skipped.
 
     Parameters:
       game            -- dict from detect_games with install_dir, exe_path, etc.
-      steam_root      -- path to the Steam root directory
-      proton_path     -- path to the Proton executable
+      steam_root      -- path to the Steam root directory (unused, common signature)
+      proton_path     -- path to the Proton executable (unused, common signature)
       compatdata_path -- path to the game's compatdata prefix (can be None/empty)
       on_progress     -- optional callback(percent: int, status: str)
       appid           -- Steam appid (default 7940)
@@ -206,59 +197,48 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
     compatdata_path = _nvme_compatdata(str(appid))
     log(f"  Prefix path: {compatdata_path}")
 
-    # -- Step 1: Write registry keys (pre-launcher) --------------------------
+    # -- Step 1: Write registry keys -----------------------------------------
     prog(5, "Writing registry keys...")
     _write_registry_keys(compatdata_path, on_progress=log)
 
-    # -- Step 2: Download CoD4R launcher -------------------------------------
-    prog(10, "Downloading CoD4R launcher...")
-    launcher_exe = os.path.join(install_dir, "CoD4R-Launcher.exe")
-    _download(
-        _LAUNCHER_URL, launcher_exe,
-        on_progress=lambda pct, lbl: prog(10 + int(pct * 0.20), lbl),
-        label="CoD4R launcher",
-        timeout=120,
-    )
+    # -- Step 2: Fetch and check the manifest --------------------------------
+    prog(10, "Fetching CoD4R manifest...")
+    with tempfile.TemporaryDirectory() as tmp:
+        for name in ("manifest.json", "manifest.json.sig"):
+            _download(f"{_CDN}/{name}", os.path.join(tmp, name),
+                      label=f"CoD4R {name}", timeout=30)
+        _check_signature(tmp, log)
+        with open(os.path.join(tmp, "manifest.json")) as f:
+            m = json.load(f)
 
-    # -- Step 3: Pre-write settings.txt --------------------------------------
-    prog(35, "Writing launcher settings...")
-    _write_settings_txt(compatdata_path, install_dir, source, on_progress=log)
-
-    # -- Step 4: Run the launcher through Proton -----------------------------
-    # The launcher auto-detects that files need downloading and pulls them.
-    # It stays open showing "You're up to date" when done -- the user closes
-    # it manually, same as the Plutonium bootstrapper flow.
-    prog(40, "Running CoD4R launcher...")
-    _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
-
-    env = os.environ.copy()
-    env["STEAM_COMPAT_DATA_PATH"] = compatdata_path
-    env["STEAM_COMPAT_CLIENT_INSTALL_PATH"] = _compat_install
-
-    try:
-        proc = subprocess.Popen(
-            [proton_path, "run", launcher_exe],
-            env=env,
-            cwd=install_dir,
+    # -- Step 3: Download changed files --------------------------------------
+    base = m.get("base_url", _CDN).rstrip("/")
+    files = _manifest_files(m, install_dir, compatdata_path)
+    todo = [(p, e) for p, e in files
+            if not (os.path.isfile(p) and _sha256(p) == e["sha256"].lower())]
+    log(f"  CoD4R client v{m['client']['version']}: "
+        f"{len(files) - len(todo)} of {len(files)} files up to date")
+    total = sum(e["size"] for _, e in todo) or 1
+    done = 0
+    for p, e in todo:
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        _download(
+            f"{base}/{e['path']}", p,
+            on_progress=lambda pct, lbl, _d=done, _s=e["size"]:
+                prog(15 + int((_d + _s * pct / 100) / total * 60), lbl),
+            label=os.path.basename(p), timeout=120,
+            digest=f"sha256:{e['sha256']}",
         )
-        proc.wait()
-        log("  CoD4R launcher closed by user")
-    except Exception as e:
-        raise RuntimeError(f"CoD4R launcher failed: {e}")
+        done += e["size"]
 
-    # -- Step 5: Write registry keys (post-launcher) -------------------------
-    # The Proton run may have created a fresh user.reg, so write again.
-    prog(70, "Finalizing registry...")
-    _write_registry_keys(compatdata_path, on_progress=log)
-
-    # -- Step 6: Verify CoD4R files ------------------------------------------
+    # -- Step 4: Verify CoD4R files ------------------------------------------
     prog(80, "Verifying installation...")
     verified = _verify_cod4r_files(install_dir, on_progress=log)
     if not verified:
-        log("  CoD4R files not fully present -- launcher may not have completed")
+        log("  CoD4R files not fully present")
         log("  Try running DeckOps install again")
 
-    # -- Step 7: Delete servercache.dat --------------------------------------
+    # -- Step 5: Delete servercache.dat --------------------------------------
     # Force a fresh server list on first launch.
     appdata_dir = _get_game_appdata_dir(compatdata_path)
     for cache_path in [
@@ -270,7 +250,7 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
 
     prog(90, "Cleared server cache.")
 
-    # -- Step 8: Write metadata -----------------------------------------------
+    # -- Step 6: Write metadata -----------------------------------------------
     prog(95, "Saving metadata...")
     write_json(os.path.join(install_dir, METADATA_FILE), {
         "client": "cod4r",
