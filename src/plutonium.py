@@ -1,5 +1,5 @@
 """
-plutonium_oled.py - DeckOps installer for Plutonium (OLED / Other path)
+plutonium.py - DeckOps installer for Plutonium (every device except Steam Deck LCD)
 (Call of Duty: MW3, World at War, Black Ops, Black Ops II)
 
 LCD Decks are dispatched to plutonium_lcd.py early in

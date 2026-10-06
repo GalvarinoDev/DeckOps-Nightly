@@ -1655,9 +1655,9 @@ class _BaseInstallScreen(QWidget):
         # routes through HGL (shared default prefix); OLED uses the
         # dedicated DeckOps prefix via Proton directly.
         if has_plut:
-            from plutonium_oled import (launch_bootstrapper, is_plutonium_ready,
+            from plutonium import (launch_bootstrapper, is_plutonium_ready,
                                    install_plutonium)
-            from plutonium_oled import GAME_META as _PLUT_META
+            from plutonium import GAME_META as _PLUT_META
             is_lcd = cfg.is_lcd()
             self._phase("plutboot")
 
@@ -2108,7 +2108,7 @@ class _BaseInstallScreen(QWidget):
         # --- Clean up ZD files leaked into non-t6zm prefixes
         if has_plut and not cfg.is_lcd():
             try:
-                from plutonium_oled import cleanup_zd_from_other_prefixes
+                from plutonium import cleanup_zd_from_other_prefixes
                 n = cleanup_zd_from_other_prefixes(
                     {k: g for k, gd, g in self.selected if g},
                     self.steam_root,
@@ -2122,7 +2122,7 @@ class _BaseInstallScreen(QWidget):
         # --- Clean up Plutonium dirs leaked into non-Plutonium prefixes
         if has_plut and not cfg.is_lcd():
             try:
-                from plutonium_oled import cleanup_plut_from_non_plut_prefixes
+                from plutonium import cleanup_plut_from_non_plut_prefixes
                 n = cleanup_plut_from_non_plut_prefixes(
                     self.steam_root,
                     on_progress=lambda msg: self._s.log.emit(msg),

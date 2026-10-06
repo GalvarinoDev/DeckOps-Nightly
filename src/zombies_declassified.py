@@ -59,7 +59,7 @@ def resolve_zd_storage(t6zm_game=None):
                 return os.path.join(pd, "storage", "t6")
         except Exception:
             _log.warning("Could not read %s", meta, exc_info=True)
-    from plutonium_oled import get_dedicated_plut_dir
+    from plutonium import get_dedicated_plut_dir
     return os.path.join(get_dedicated_plut_dir(), "storage", "t6")
 
 

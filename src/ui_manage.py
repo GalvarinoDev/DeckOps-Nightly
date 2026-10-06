@@ -1990,7 +1990,7 @@ class UpdateScreen(QWidget):
                                        launch_bootstrapper_lcd,
                                        is_plutonium_ready_lcd)
         else:
-            from plutonium_oled import (install_plutonium,
+            from plutonium import (install_plutonium,
                                         launch_bootstrapper,
                                         is_plutonium_ready)
 
@@ -2092,7 +2092,7 @@ class UpdateScreen(QWidget):
             # repopulate it on the first key.
             # LCD: not needed — Plutonium files live inside the Heroic prefix.
             if not is_lcd:
-                from plutonium_oled import SHARED_PLUT_DIR
+                from plutonium import SHARED_PLUT_DIR
                 if os.path.isdir(SHARED_PLUT_DIR):
                     shutil.rmtree(SHARED_PLUT_DIR, ignore_errors=True)
                     self._s.log.emit("  Cleared shared Plutonium cache for rebuild")
@@ -2159,7 +2159,7 @@ class UpdateScreen(QWidget):
             if key in ("cod4mp", "iw4sp", "iw5sp") and entry.get("client"):
                 c = entry["client"]
             try:
-                from plutonium_oled import GAME_META as _PLUT_META
+                from plutonium import GAME_META as _PLUT_META
                 from detect_games import GAMES as _GAMES_MAP
                 if c == "plutonium" and key in _PLUT_META:
                     _appid = _PLUT_META[key][0]
@@ -2291,7 +2291,7 @@ class UpdateScreen(QWidget):
         # Clean up ZD files leaked into non-t6zm prefixes by older versions
         if has_plut and not is_lcd:
             try:
-                from plutonium_oled import cleanup_zd_from_other_prefixes
+                from plutonium import cleanup_zd_from_other_prefixes
                 n = cleanup_zd_from_other_prefixes(
                     {k: g for k, _, g in self.selected if g},
                     self.steam_root,
@@ -2305,7 +2305,7 @@ class UpdateScreen(QWidget):
         # Clean up Plutonium dirs leaked into non-Plutonium prefixes by older versions
         if has_plut and not is_lcd:
             try:
-                from plutonium_oled import cleanup_plut_from_non_plut_prefixes
+                from plutonium import cleanup_plut_from_non_plut_prefixes
                 n = cleanup_plut_from_non_plut_prefixes(
                     self.steam_root,
                     on_progress=lambda msg: self._s.log.emit(msg),
