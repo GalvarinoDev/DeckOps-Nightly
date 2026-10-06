@@ -22,11 +22,11 @@ import config as cfg
 import inhibit
 
 from ui_constants import (
-    C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN, C_RED_BTN, C_BLUE_BTN,
-    font, _btn, _lbl, _hdiv, _title_block, _log_to_file, _log_html, _copy_log_to_clipboard,
-    _Sigs, _detached_open, _header_bar, _badge, _header_path, _ask_iw4x_dlc,
+    C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN, C_RED_BTN, C_BLUE_BTN,
+    font, _btn, _lbl, _hdiv, _log_to_file, _log_html, _copy_log_to_clipboard,
+    _Sigs, _detached_open, _header_bar, _header_path, _ask_iw4x_dlc,
     _show_preflight,
-    ALL_GAMES, KEY_CLIENT, KEY_MODE_LABEL,
+    ALL_GAMES, KEY_CLIENT,
     _active_keys, _active_client, _active_appid,
     SP_IMAGE_URLS, IMG_RATIO, CARD_COLS, CARD_MAX_W,
     HEROES_DIR, PROJECT_ROOT,

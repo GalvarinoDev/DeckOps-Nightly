@@ -24,7 +24,6 @@ compatdata prefix. The compatdata write is preserved for future offline mode.
 """
 
 import os
-import glob
 import shutil
 
 from log import get_logger

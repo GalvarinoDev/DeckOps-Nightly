@@ -20,10 +20,10 @@ import inhibit
 from net import DownloadError
 
 from ui_constants import (
-    C_BG, C_CARD, C_IW, C_TREY, C_DIM, C_DARK_BTN, C_BLUE_BTN,
+    C_IW, C_TREY, C_DIM, C_DARK_BTN, C_BLUE_BTN,
     font, _btn, _lbl, _title_block, _header_bar, _badge, _log_to_file, _log_html, _copy_log_to_clipboard, _Sigs,
-    ALL_GAMES, KEY_CLIENT, KEY_EXES, KEY_MODE_LABEL,
-    _active_keys, _active_client, _active_appid,
+    ALL_GAMES, KEY_CLIENT, KEY_MODE_LABEL,
+    _active_keys, _active_client,
     _ask_bo3_client, _show_preflight,
     go_to, get_screen,
 )

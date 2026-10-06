@@ -20,10 +20,10 @@ import inhibit
 from identity import APP_TITLE
 
 from ui_constants import (
-    C_DIM, C_DARK_BTN, font, _btn, _lbl, _title_block, _Sigs,
+    C_DIM, C_DARK_BTN, font, _lbl, _title_block, _Sigs,
     _load_font, _app_style, _start_audio, _kill_audio,
     _set_audio_enabled,
-    go_to, get_screen,
+    go_to,
 )
 
 from ui_setup import SetupFlowScreen
