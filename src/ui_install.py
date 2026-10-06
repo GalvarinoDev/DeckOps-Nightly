@@ -511,7 +511,7 @@ class SetupScreen(QWidget):
                 rows,
                 iw4x_dlc=bool(self._iw4x_dlc_cb and self._iw4x_dlc_cb.isChecked()),
                 zd=bool(self._zd_cb and self._zd_cb.isChecked()),
-                downgrade_keys=[k for k, _, _ in rows])
+                downgrade_keys=[k for k, _gd, _g in steam_selected])  # own copies are already 32-bit
         except Exception as ex:
             _log_to_file(f"[SetupScreen] preflight failed: {ex}")
             return True
@@ -1316,6 +1316,7 @@ class _BaseInstallScreen(QWidget):
         has_plut      = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
         has_cod4      = any(KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp") for k in selected_keys)
         has_t6sp_mod  = any(KEY_CLIENT.get(k) == "t6sp_mod" for k in selected_keys)
+        _sp_keys = [k for k in ("iw4sp", "iw5sp") if k in selected_keys]
 
         _cod4_client = getattr(self, "cod4_client", "cod4r")
         _steam_killed = False
@@ -1345,6 +1346,7 @@ class _BaseInstallScreen(QWidget):
             ("t7x",       "Installing T7x",               6 if has_t7x else 0),
             ("cleanops",  "Installing CleanOps",          3 if has_cleanops else 0),
             ("alterware", "Installing AlterWare",         8 * _nk("alterware")),
+            ("spmod",     "Installing IW-Pad",            4 * len(_sp_keys)),
             ("zd",        "Zombies Declassified",         8 if has_plut and "t6zm" in selected_keys else 0),
             ("finalize",  "Finishing up",                 8),
         ])
@@ -2054,6 +2056,26 @@ class _BaseInstallScreen(QWidget):
                 except Exception as ex:
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
                     self._mark(key, "failed", str(ex))
+
+        # --- MW2/MW3 SP: IW-Pad. Steam (x64) gets IW-Pad + launch option; own (32-bit)
+        # also gets the AlterWare SP client. On failure the game stays vanilla.
+        if _sp_keys:
+            from sp_mod import install_sp_mod
+            self._phase("spmod")
+            _sp_games = {k: g for k, _gd, g in self.selected if k in _sp_keys}
+            for _i_sp, _sp_key in enumerate(_sp_keys):
+                _g = _sp_games.get(_sp_key) or {}
+                source = "own" if _sp_key in own_selected else "steam"
+                def op_sp(pct, msg, _i=_i_sp):
+                    self._s.progress.emit(self._ppct(pct, _i, len(_sp_keys)), msg)
+                try:
+                    install_sp_mod(_sp_key, _g["install_dir"], op_sp,
+                                   source=source, steam_root=self.steam_root)
+                    cfg.mark_game_setup(_sp_key, "iw-pad", source=source)
+                    self._s.log.emit(f"✓  IW-Pad installed ({_sp_key}, {source})")
+                except Exception as ex:
+                    _g["_own_launch_options"] = ""
+                    self._s.log.emit(f"✗  IW-Pad install failed ({_sp_key}): {ex}")
 
         # --- Zombies Declassified (optional DLC5 for BO2 Zombies via Plutonium)
         if has_plut and "t6zm" in selected_keys:

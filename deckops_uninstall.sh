@@ -619,6 +619,17 @@ OWN_CLEANUP = {
                   "deckops_alterware.json", "data/open_source_software_disclosure.txt"],
         "dirs":  ["data/dw", "data/maps", "data/scripts", "data/ui_scripts", "data/sound"],
     },
+    # Own MW2/MW3 SP: shortcut keeps the stock exe; IW-Pad + AlterWare SP client (sp_mod.py)
+    "iw4sp.exe": {
+        "files": ["iw-pad.exe", "iw-pad.dll", "iw-pad.log",
+                  "iw4x-sp.exe", "data/iw4sp.exe"],
+        "dirs":  [],
+    },
+    "iw5sp.exe": {
+        "files": ["iw-pad.exe", "iw-pad.dll", "iw-pad.log",
+                  "iw5-mod.exe", "iw5mp_server.exe", "raw/scripts/sp/_cp.gsc"],
+        "dirs":  [],
+    },
 }
 
 # LCD own Plutonium wrapper exes - these are DeckOps-created bash scripts,
@@ -663,11 +674,12 @@ for uid in os.listdir(USERDATA_DIR):
             continue
 
         install_dir = os.path.dirname(exe_path)
-        if not install_dir or install_dir in cleaned:
+        # Keyed per exe: own MW2 SP and IW4x share one folder but clean different files.
+        if not install_dir or (install_dir, exe_name) in cleaned:
             continue
         if not os.path.isdir(install_dir):
             continue
-        cleaned.add(install_dir)
+        cleaned.add((install_dir, exe_name))
 
         print(f"  Cleaning {install_dir}...")
 
@@ -1551,6 +1563,17 @@ PYEOF
             fi
         done
     fi
+fi
+
+# MW2/MW3 SP (Steam): IW-Pad files (sp_mod.py). Launch options are cleared with the other managed appids.
+if [ -n "$STEAM_ROOT" ]; then
+    for appid in 10180 42680; do
+        game_dir=$(find_install_dir "$appid") || true
+        [ -n "$game_dir" ] || continue
+        for f in "iw-pad.exe" "iw-pad.dll" "iw-pad.log"; do
+            [ -f "$game_dir/$f" ] && { rm -f "$game_dir/$f" && success "Removed $f (appid $appid)" || warn "Failed to remove $f (appid $appid)"; }
+        done
+    done
 fi
 echo ""
 
