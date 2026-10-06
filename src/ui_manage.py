@@ -6,7 +6,7 @@ Screens: ManagementCard, ManagementScreen, SetupCompleteScreen,
 Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
 """
 
-import os, subprocess, sys, shutil, stat, threading, json, urllib.request, urllib.error
+import os, subprocess, sys, shutil, stat, threading, json, urllib.request, urllib.error, compileall
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
@@ -1750,6 +1750,10 @@ class ConfigureScreen(QWidget):
                 shutil.copytree(extracted, update_dir, dirs_exist_ok=True)
                 shutil.rmtree(tmp_extract, ignore_errors=True)
 
+                # A syntax error pushed to main would otherwise brick every install on relaunch
+                if not compileall.compile_dir(update_dir, quiet=1):
+                    raise RuntimeError("update has Python errors, nothing applied")
+
                 # Apply: drop protected paths from staging first, so the user's
                 # copies are never overwritten (no restore window to crash in)
                 for p in protected:
@@ -1789,6 +1793,10 @@ class ConfigureScreen(QWidget):
                         shutil.rmtree(update_dir, ignore_errors=True)
                         self._apply_sig.log.emit(f"FAIL|Download failed: {filepath}")
                         return
+
+                # A syntax error pushed to main would otherwise brick every install on relaunch
+                if not compileall.compile_dir(update_dir, quiet=1):
+                    raise RuntimeError("update has Python errors, nothing applied")
 
                 # Apply staged files
                 for filepath in changed_files:
