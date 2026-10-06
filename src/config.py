@@ -12,6 +12,7 @@ The config file tracks:
     - The Steam root path found during setup
 """
 
+import copy
 import os
 import json
 import re
@@ -80,11 +81,11 @@ def load() -> dict:
             current_mtime = os.path.getmtime(CONFIG_PATH)
         except OSError:
             # File doesn't exist or can't be stat'd — return defaults
-            return dict(DEFAULTS)
+            return copy.deepcopy(DEFAULTS)
 
         # Return cached copy if file hasn't changed
         if _cache is not None and current_mtime == _cache_mtime:
-            return dict(_cache)
+            return copy.deepcopy(_cache)
 
         # Cache miss or stale — re-read from disk
         try:
@@ -99,14 +100,14 @@ def load() -> dict:
             try: os.replace(CONFIG_PATH, bad)
             except OSError: pass
             _log.warning("deckops.json unreadable, moved to %s", bad)
-            return dict(DEFAULTS)
+            return copy.deepcopy(DEFAULTS)
         except IOError:
-            return dict(DEFAULTS)
-        merged = dict(DEFAULTS)
+            return copy.deepcopy(DEFAULTS)
+        merged = copy.deepcopy(DEFAULTS)
         merged.update(data)
         _cache = merged
         _cache_mtime = current_mtime
-        return dict(_cache)
+        return copy.deepcopy(_cache)
 
 
 def save(config: dict):
