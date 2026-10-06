@@ -746,11 +746,14 @@ def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
     launcher = os.path.join(plut_dir, "bin",
                             "plutonium-launcher-win32.exe")
     plut_url = f"plutonium://play/{_plut_key(game_key)}"
+    from steam_common import prelaunch_prefix
 
     script = (
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
+        # Silent Plutonium update; the launcher never updates on its own.
+        f"{prelaunch_prefix(game_key)}true\n"
         f"\"{proton_path}\" run \"{launcher}\" \"{plut_url}\" &\n"
         "PROTON_PID=$!\n"
         "sleep 8\n"

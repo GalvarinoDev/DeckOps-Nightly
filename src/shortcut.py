@@ -1235,9 +1235,10 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                     plut_launcher  = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
                     actual_exe     = plut_launcher
                     start_dir      = install_dir
+                    from steam_common import prelaunch_prefix
                     launch_options = (
                         f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                        f'%command% "plutonium://play/t4mp"'
+                        f'{prelaunch_prefix("t4mp")}%command% "plutonium://play/t4mp"'
                     )
                 else:
                     # LCD: non-Steam shortcut for online play via cache_cleanup.py.
@@ -1523,9 +1524,10 @@ def enrich_own_games(own_games: dict, selected_keys: list,
                 "AppData", "Local", "Plutonium",
             )
             actual_exe = os.path.join(plut_dir, "bin", "plutonium-launcher-win32.exe")
+            from steam_common import prelaunch_prefix
             launch_options = (
                 f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
-                f'%command% "plutonium://play/{key}"'
+                f'{prelaunch_prefix(key)}%command% "plutonium://play/{key}"'
             )
 
         elif key == "iw4mp":
