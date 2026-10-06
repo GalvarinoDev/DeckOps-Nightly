@@ -1799,17 +1799,28 @@ class _BaseInstallScreen(QWidget):
         # --- Kill Steam
         _kill_steam_once()
 
-        # --- Clean slate: clear ALL launch options and compat tools
+        # --- Clean slate: clear launch options and ALL compat tools
         # Previous installs (LCD->OLED switch, older DeckOps versions) can
         # leave stale launch options and compat tool entries that conflict
-        # with the current install. Wipe everything for MANAGED_APPIDS
-        # first, then re-apply what's needed below.
+        # with the current install. Wipe them first, then re-apply what's
+        # needed below. Launch options are only cleared for the Steam games
+        # in this run: a per-game Set Up must not wipe the options of games
+        # it doesn't reinstall (CleanOps, IW-Pad, AlterWare, IW3SP).
         try:
             from wrapper import clear_launch_options, clear_compat_tool
+            from detect_games import GAMES
+            run_appids = {GAMES[k]["appid"] for k, _, _ in steam_sel if k in GAMES}
             for appid in MANAGED_APPIDS:
-                clear_launch_options(self.steam_root, appid)
+                if appid in run_appids:
+                    clear_launch_options(self.steam_root, appid)
             clear_compat_tool(MANAGED_APPIDS)
-            self._s.log.emit("✓  Cleared all launch options and compat tools")
+            self._s.log.emit("✓  Cleared launch options and compat tools")
+            # The CoD4 phase ran before Steam closed, so IW3SP's option
+            # has to be set again now.
+            if "7940" in run_appids:
+                from iw3sp import reapply_steam_launch_option
+                if reapply_steam_launch_option(self.steam_root):
+                    self._s.log.emit("✓  IW3SP launch option set")
         except Exception as ex:
             self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
 

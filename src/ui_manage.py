@@ -2122,12 +2122,21 @@ class UpdateScreen(QWidget):
         # Same clean-slate approach as InstallScreen.
         # Prevents stale entries from previous installs (LCD→OLED, older
         # DeckOps versions) interfering with the update.
+        # Launch options only for the Steam games in this update, so a
+        # per-game update doesn't wipe other games' options.
         try:
             from wrapper import clear_launch_options, clear_compat_tool
+            from detect_games import GAMES
+            run_appids = {GAMES[k]["appid"] for k, _, g in self.selected
+                          if k in GAMES and (g or {}).get("source") != "own"}
             for appid in MANAGED_APPIDS:
-                clear_launch_options(self.steam_root, appid)
+                if appid in run_appids:
+                    clear_launch_options(self.steam_root, appid)
             clear_compat_tool(MANAGED_APPIDS)
-            self._s.log.emit("✓  Cleared all launch options and compat tools")
+            self._s.log.emit("✓  Cleared launch options and compat tools")
+            if "7940" in run_appids:
+                from iw3sp import reapply_steam_launch_option
+                reapply_steam_launch_option(self.steam_root)
         except Exception as ex:
             self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
 
