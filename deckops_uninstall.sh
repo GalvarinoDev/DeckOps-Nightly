@@ -384,7 +384,7 @@ if [ -n "$STEAM_ROOT" ]; then
             [ -f "$cod4_dir/$f" ] && rm -f "$cod4_dir/$f" && success "Removed $f" || skip "$f not found"
         done
         # CoD4R files
-        for f in "Cod4R-DedRun.exe" "miles32.dll" "deckops_cod4r.json" "pbgame.htm" "eula.txt"; do
+        for f in "Cod4R-DedRun.exe" "CoD4R-Launcher.exe" "miles32.dll" "deckops_cod4r.json" "pbgame.htm" "eula.txt"; do
             [ -f "$cod4_dir/$f" ] && rm -f "$cod4_dir/$f" && success "Removed $f" || skip "$f not found"
         done
         for f in "jcod4r_00.iwd" "xcommon_glyphs.iwd" "xcommon_cod4qol.iwd" "xcommon_cod4r_weapons.iwd"; do
@@ -565,7 +565,8 @@ OWN_CLEANUP = {
     "iw3mp.exe": {
         "files": ["cod4x_021.dll", "cod4x_loader.exe", "cod4x.exe",
                   "deckops_cod4x.json", "servercache.dat",
-                  "Cod4R-DedRun.exe", "miles32.dll", "deckops_cod4r.json",
+                  "Cod4R-DedRun.exe", "CoD4R-Launcher.exe", "miles32.dll",
+                  "deckops_cod4r.json",
                   "pbgame.htm", "eula.txt"],
         "dirs":  ["userraw", "Mods/mp_bots"],
         "subdirs": {

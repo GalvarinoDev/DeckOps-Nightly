@@ -565,7 +565,6 @@ class _BaseInstallScreen(QWidget):
         super().__init__(); self.stack = stack; self.screen_name = screen_name
         self.steam_root = ""
         self._plut_event = threading.Event()
-        self._cod4r_event = threading.Event()
         self._iw5_dg_event = threading.Event()
         self._iw5_method = ""
         self._dg_game_title = ""
@@ -652,12 +651,6 @@ class _BaseInstallScreen(QWidget):
         pw = QHBoxLayout(); pw.addStretch(); pw.addWidget(self.plut_btn); pw.addStretch()
         clay.addLayout(pw)
 
-        self.cod4r_btn = _btn("I've closed the CoD4R launcher  ✓", C_TREY, size=13, h=52)
-        self.cod4r_btn.setFixedWidth(460); self.cod4r_btn.setVisible(False)
-        self.cod4r_btn.clicked.connect(self._confirm_cod4r)
-        c4w = QHBoxLayout(); c4w.addStretch(); c4w.addWidget(self.cod4r_btn); c4w.addStretch()
-        clay.addLayout(c4w)
-
         self.iw5_dg_btn = _btn("Download complete, continue  ✓", C_IW, size=13, h=52)
         self.iw5_dg_btn.setFixedWidth(460); self.iw5_dg_btn.setVisible(False)
         self.iw5_dg_btn.clicked.connect(self._confirm_iw5_dg)
@@ -711,8 +704,6 @@ class _BaseInstallScreen(QWidget):
         self._s.done.connect(self._on_done)
         self._s.plut_wait.connect(self._show_plut_wait)
         self._s.plut_go.connect(self._hide_plut_wait)
-        self._s.cod4r_wait.connect(self._show_cod4r_wait)
-        self._s.cod4r_go.connect(self._hide_cod4r_wait)
         self._s.iw5_dg_wait.connect(self._show_iw5_dg_wait)
         self._s.iw5_dg_go.connect(self._hide_iw5_dg_wait)
         self._s.iw5_qr_show.connect(self._show_iw5_qr)
@@ -802,12 +793,6 @@ class _BaseInstallScreen(QWidget):
     def _hide_plut_wait(self):
         self.plut_warn.setVisible(False)
         self.plut_btn.setVisible(False)
-
-    def _show_cod4r_wait(self):
-        self.cod4r_btn.setVisible(True)
-
-    def _hide_cod4r_wait(self):
-        self.cod4r_btn.setVisible(False)
 
     def _show_iw5_dg_wait(self, cmd, step_label):
         from depot_downgrade import copy_to_clipboard
@@ -1114,9 +1099,6 @@ class _BaseInstallScreen(QWidget):
     def _confirm_plut(self):
         self._plut_event.set()
 
-    def _confirm_cod4r(self):
-        self._cod4r_event.set()
-
     def _show_retry_dl_dialog(self, label, error_msg):
         msg = QMessageBox(self)
         msg.setWindowTitle(f"{label} — Download Failed")
@@ -1231,7 +1213,6 @@ class _BaseInstallScreen(QWidget):
         self.stat.setText("")
         self.plut_btn.setVisible(False)
         self.plut_warn.setVisible(False)
-        self.cod4r_btn.setVisible(False)
         self.iw5_dg_btn.setVisible(False)
         self.iw5_qr_box.setVisible(False)
         self.zd_info.setVisible(False); self.zd_yes.setVisible(False); self.zd_skip.setVisible(False)
@@ -1245,7 +1226,6 @@ class _BaseInstallScreen(QWidget):
         inhibit.start("DeckOps is installing")
         self.cont_btn.setVisible(False)
         self._plut_event.clear()
-        self._cod4r_event.clear()
         self._iw5_dg_event.clear()
         self._iw5_method = ""
         self._dg_game_title = ""
@@ -1456,9 +1436,7 @@ class _BaseInstallScreen(QWidget):
         _log_to_file("[BREADCRUMB] prefix deps done")
 
         # --- CoD4 (iw3sp + cod4r/cod4x) -- Steam still running
-        # Runs before the Plutonium bootstrapper and before Steam is closed
-        # so the touchpad still works as a mouse for closing the CoD4R
-        # launcher window.
+        # Runs before the Plutonium bootstrapper and before Steam is closed.
         _log_to_file("[BREADCRUMB] starting cod4 install phase")
         if has_cod4:
             cod4_selected = [(k, gd, g) for k, gd, g in self.selected if KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp")]
@@ -1483,25 +1461,12 @@ class _BaseInstallScreen(QWidget):
                         cod4_appid = gd["appid"]
 
                     # One dispatch for the first attempt and every recovery
-                    # path, so a retry keeps the CoD4R user gate and marks the
-                    # game the same way the first attempt would.
+                    # path, so a retry marks the game the same way the first
+                    # attempt would.
                     def _attempt():
                         if c == "cod4r":
-                            self._s.progress.emit(
-                                self._ppct(20, _i_c4, _n_c4),
-                                "Installing CoD4R — close the launcher when done...")
-                            self._s.log.emit(
-                                "CoD4R is downloading and installing now.\n"
-                                "  1. Wait for the CoD4R launcher to finish downloading and updating\n"
-                                "  2. Close the launcher when it is done\n"
-                                "  3. Click the button below to continue"
-                            )
-                            self._s.cod4r_wait.emit()
                             install_cod4r(game, self.steam_root, proton, compat, op_cod4,
                                           appid=cod4_appid, source=source)
-                            self._cod4r_event.wait()
-                            self._cod4r_event.clear()
-                            self._s.cod4r_go.emit()
                         elif c == "cod4x":
                             install_cod4x(game, self.steam_root, proton, compat, op_cod4,
                                           appid=cod4_appid)
