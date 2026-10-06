@@ -42,6 +42,7 @@ import subprocess
 
 from identity import GITHUB_RAW
 from net import download as _download
+from cod4x import _write_registry_keys  # same appid 7940 keys
 
 from log import get_logger
 
@@ -62,20 +63,6 @@ _COD4R_APPDATA_FOLDER = "CoD4R"
 # The AppData subfolder name where the game stores runtime data
 # (servercache, player configs, etc.) -- same as CoD4x.
 _GAME_APPDATA_FOLDER = "CallofDuty4MW"
-
-# Registry keys that tell Steam the first-launch installers already ran.
-# Without these, Steam runs PunkBuster setup, DirectX setup, and PunkBuster
-# Vista setup on every first launch -- and re-validates game files afterward.
-#
-# Source: installscript.vdf in the CoD4 game directory.
-# Key path: HKEY_CURRENT_USER\Software\Valve\Steam\Apps\7940
-_REGISTRY_VALUES = {
-    "dxsetup":    "dword:00000001",
-    "Installed":  "dword:00000001",
-    "PB Setup":   "dword:00000002",
-    "Running":    "dword:00000001",
-}
-
 
 # -- helpers ------------------------------------------------------------------
 
@@ -179,70 +166,6 @@ def _write_settings_txt(compatdata_path: str, install_dir: str,
         f.write(content)
 
     log(f"  Settings path written: {wine_path}")
-
-
-def _write_registry_keys(compatdata_path: str, on_progress=None):
-    """
-    Write registry keys into the Wine prefix's user.reg so Steam thinks
-    the first-launch installers (Punkbuster, DirectX) have already run.
-
-    Same mechanism as cod4x.py -- prevents Steam from re-validating
-    game files and overwriting CoD4R's modified files.
-    """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    user_reg = os.path.join(compatdata_path, "pfx", "user.reg")
-
-    if not os.path.exists(user_reg):
-        prog("  user.reg not found -- registry keys will be written after prefix init")
-        return False
-
-    with open(user_reg, "r", errors="replace") as f:
-        content = f.read()
-
-    key_path = r"[Software\\Valve\\Steam\\Apps\\7940]"
-
-    value_lines = []
-    for name, val in _REGISTRY_VALUES.items():
-        value_lines.append(f'"{name}"={val}')
-    values_text = "\n".join(value_lines)
-
-    if key_path in content:
-        pattern = re.compile(
-            r'(\[Software\\\\Valve\\\\Steam\\\\Apps\\\\7940\][^\n]*\n)((?:(?!\[)[^\n]*\n)*)',
-            re.MULTILINE
-        )
-        match = pattern.search(content)
-        if match:
-            header = match.group(1)
-            existing_body = match.group(2)
-
-            existing_values = {}
-            for line in existing_body.strip().split("\n"):
-                line = line.strip()
-                if line and "=" in line:
-                    k = line.split("=")[0]
-                    existing_values[k] = line
-
-            for name, val in _REGISTRY_VALUES.items():
-                existing_values[f'"{name}"'] = f'"{name}"={val}'
-
-            new_body = "\n".join(existing_values.values()) + "\n"
-            content = content[:match.start()] + header + new_body + content[match.end():]
-    else:
-        block = (
-            f"\n{key_path}\n"
-            f"{values_text}\n"
-        )
-        content += block
-
-    with open(user_reg, "w", errors="replace") as f:
-        f.write(content)
-
-    prog("  Registry keys written (skip Punkbuster/DirectX first-launch)")
-    return True
 
 
 def _verify_cod4r_files(install_dir: str, on_progress=None) -> bool:
