@@ -96,8 +96,4 @@ def stop():
         _cookie = None
 
 
-def is_held():
-    return bool((_proc and _proc.poll() is None) or _cookie)
-
-
 atexit.register(stop)

@@ -38,11 +38,10 @@ Path format:
 import os
 import re
 import json
-import shutil
 import subprocess
 
 from identity import GITHUB_RAW
-from net import download as _download, DownloadError
+from net import download as _download
 
 from log import get_logger
 
@@ -63,28 +62,6 @@ _COD4R_APPDATA_FOLDER = "CoD4R"
 # The AppData subfolder name where the game stores runtime data
 # (servercache, player configs, etc.) -- same as CoD4x.
 _GAME_APPDATA_FOLDER = "CallofDuty4MW"
-
-# Files that CoD4R adds to the game directory. Used for verification
-# after install and cleanup during uninstall.
-_COD4R_FILES = [
-    os.path.join("main", "jcod4r_00.iwd"),
-    os.path.join("main", "xcommon_glyphs.iwd"),
-    os.path.join("main", "xcommon_cod4qol.iwd"),
-    os.path.join("main", "xcommon_cod4r_weapons.iwd"),
-    os.path.join("zone", "english", "cod4r_patchv2.ff"),
-    os.path.join("zone", "english", "cod4r_controls.ff"),
-    os.path.join("zone", "english", "cod4r_ambfix.ff"),
-    os.path.join("zone", "english", "qol.ff"),
-    "Cod4R-DedRun.exe",
-    "miles32.dll",
-    "pbgame.htm",
-    "eula.txt",
-]
-
-_COD4R_DIRS = [
-    os.path.join("userraw"),
-    os.path.join("Mods", "mp_bots"),
-]
 
 # Registry keys that tell Steam the first-launch installers already ran.
 # Without these, Steam runs PunkBuster setup, DirectX setup, and PunkBuster
@@ -409,69 +386,3 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
     })
 
     prog(100, "CoD4R installation complete!")
-
-
-def is_cod4r_installed(install_dir: str) -> bool:
-    """
-    Quick check for whether CoD4R files are present in a game directory.
-
-    Checks for the most distinctive CoD4R file (jcod4r_00.iwd) to
-    distinguish from a vanilla or CoD4x install.
-    """
-    return os.path.exists(os.path.join(install_dir, "main", "jcod4r_00.iwd"))
-
-
-def uninstall_cod4r(game: dict, compatdata_path: str = None):
-    """
-    Remove CoD4R files and restore the game directory to vanilla state.
-
-    CoD4R adds files but does not replace iw3mp.exe, so uninstall is
-    just removing the added files. miles32.dll is a CoD4R addition (not
-    a backup of mss32.dll like in CoD4x), so it is simply deleted.
-
-    Parameters:
-      game            -- dict from detect_games with install_dir
-      compatdata_path -- path to the game's compatdata prefix. If None,
-                         attempts to read it from the metadata file.
-    """
-    install_dir = game["install_dir"]
-
-    # -- Remove CoD4R files from game directory -------------------------------
-    for rel in _COD4R_FILES:
-        full = os.path.join(install_dir, rel)
-        if os.path.exists(full):
-            os.remove(full)
-            _log.debug("Removed %s", rel)
-
-    # -- Remove CoD4R directories ---------------------------------------------
-    for rel in _COD4R_DIRS:
-        full = os.path.join(install_dir, rel)
-        if os.path.isdir(full):
-            shutil.rmtree(full, ignore_errors=True)
-            _log.debug("Removed directory %s", rel)
-
-    # -- Clean up prefix AppData ----------------------------------------------
-    if compatdata_path is None:
-        meta_path = os.path.join(install_dir, METADATA_FILE)
-        if os.path.exists(meta_path):
-            try:
-                with open(meta_path, "r") as f:
-                    meta = json.load(f)
-                compatdata_path = meta.get("compatdata_path")
-            except (json.JSONDecodeError, IOError):
-                _log.debug("failed to read cod4r metadata", exc_info=True)
-
-    if compatdata_path:
-        # Remove CoD4R launcher settings
-        cod4r_appdata = os.path.join(
-            compatdata_path,
-            "pfx", "drive_c", "users", "steamuser",
-            "AppData", "Local", _COD4R_APPDATA_FOLDER,
-        )
-        if os.path.isdir(cod4r_appdata):
-            shutil.rmtree(cod4r_appdata, ignore_errors=True)
-
-    # -- Remove metadata -------------------------------------------------------
-    meta_file = os.path.join(install_dir, METADATA_FILE)
-    if os.path.exists(meta_file):
-        os.remove(meta_file)

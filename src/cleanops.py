@@ -37,14 +37,6 @@ APPID         = "311210"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def is_cleanops_installed(install_dir: str) -> bool:
-    """Returns True if the CleanOps DLL and metadata file are both present."""
-    return (
-        os.path.exists(os.path.join(install_dir, DLL_NAME))
-        and os.path.exists(os.path.join(install_dir, METADATA_FILE))
-    )
-
-
 # ── CleanOps public API ──────────────────────────────────────────────────────
 
 def install_cleanops(game: dict, steam_root: str,
@@ -96,31 +88,3 @@ def install_cleanops(game: dict, steam_root: str,
         json.dump({"client": "cleanops", "dll": DLL_NAME}, f, indent=2)
 
     prog(100, "CleanOps installation complete!")
-
-
-def uninstall_cleanops(game: dict, steam_root: str = None):
-    """
-    Remove CleanOps from a BO3 install directory.
-
-    Deletes d3d11.dll and the metadata file. Clears launch options
-    for Steam copies if steam_root is provided.
-    """
-    install_dir = game["install_dir"]
-
-    # Remove DLL
-    dll_path = os.path.join(install_dir, DLL_NAME)
-    if os.path.exists(dll_path):
-        os.remove(dll_path)
-
-    # Remove metadata
-    meta_path = os.path.join(install_dir, METADATA_FILE)
-    if os.path.exists(meta_path):
-        os.remove(meta_path)
-
-    # Clear launch options
-    if steam_root:
-        try:
-            from wrapper import clear_launch_options
-            clear_launch_options(steam_root, APPID)
-        except Exception:
-            _log.debug("failed to clear launch options", exc_info=True)

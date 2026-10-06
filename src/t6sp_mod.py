@@ -39,11 +39,6 @@ METADATA_FILE = "deckops_t6sp_mod.json"
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def is_t6sp_mod_installed(install_dir: str) -> bool:
-    """Returns True if t6sp.exe.bak exists (meaning the mod is active)."""
-    return os.path.exists(os.path.join(install_dir, "t6sp.exe.bak"))
-
-
 # ── public API ────────────────────────────────────────────────────────────────
 
 def install_t6sp_mod(game: dict, steam_root: str,
@@ -108,29 +103,3 @@ def install_t6sp_mod(game: dict, steam_root: str,
         json.dump({"client": "t6sp_mod", "source": source}, f, indent=2)
 
     prog(100, "T6SP-MOD (Beta) installation complete!")
-
-
-def uninstall_t6sp_mod(game: dict):
-    """
-    Restore t6sp.exe from backup and remove T6SP-MOD files.
-    """
-    install_dir = game["install_dir"]
-
-    t6sp     = os.path.join(install_dir, "t6sp.exe")
-    t6sp_bak = os.path.join(install_dir, "t6sp.exe.bak")
-
-    # Restore original exe from backup
-    if os.path.exists(t6sp_bak):
-        if os.path.exists(t6sp):
-            os.remove(t6sp)
-        os.rename(t6sp_bak, t6sp)
-
-    # Remove mod DLL
-    dll_path = os.path.join(install_dir, "t6sp-mod.dll")
-    if os.path.exists(dll_path):
-        os.remove(dll_path)
-
-    # Remove metadata
-    meta = os.path.join(install_dir, METADATA_FILE)
-    if os.path.exists(meta):
-        os.remove(meta)

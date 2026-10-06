@@ -206,19 +206,6 @@ def is_plutonium_ready() -> bool:
     )
 
 
-def is_bootstrapper_ready() -> bool:
-    """
-    Returns True if the Plutonium bootstrapper binary exists in the
-    dedicated prefix. This is a weaker check than is_plutonium_ready
-    because it does not require a login -- it only confirms the
-    bootstrapper exe has been downloaded into the dedicated prefix.
-    """
-    bootstrapper = os.path.join(
-        get_dedicated_plut_dir(), "bin", "plutonium-bootstrapper-win32.exe"
-    )
-    return os.path.exists(bootstrapper)
-
-
 # ── bootstrapper ──────────────────────────────────────────────────────────────
 
 def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = None):
@@ -1338,50 +1325,3 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
 
     prog(100, f"Plutonium ready for {game['name']}!")
     return wrapper_path
-
-
-def uninstall_plutonium(game: dict, game_key: str):
-    """
-    Restore the original game exe from backup and remove the
-    Plutonium folder from this game's prefix.
-    Also cleans up any Heroic entries if this was an LCD install.
-    """
-    install_dir    = game["install_dir"]
-    _, _, exe_name = GAME_META[game_key]
-    exe_path       = os.path.join(install_dir, exe_name)
-    backup_path    = exe_path + ".bak"
-
-    if os.path.exists(backup_path):
-        shutil.move(backup_path, exe_path)
-
-    # Launch menu wrappers and entries (OLED Steam games)
-    names = list(STEAM_MENU_EXES.get(game_key, ()))
-    if names:
-        for n in names:
-            p = os.path.join(install_dir, n)
-            if os.path.exists(p):
-                os.remove(p)
-        try:
-            import config as _cfg
-            from steam_appinfo import remove_launch_entries
-            steam_root = _cfg.load().get("steam_root") or os.path.expanduser("~/.local/share/Steam")
-            remove_launch_entries(steam_root, GAME_META[game_key][0], names)
-        except Exception:
-            _log.debug("launch menu removal failed", exc_info=True)
-
-    meta     = _read_metadata(install_dir)
-    plut_dir = meta.get("plut_dir", "")
-    if plut_dir and os.path.isdir(plut_dir):
-        shutil.rmtree(plut_dir)
-
-    # Clean up Heroic entries if this was an LCD Heroic install
-    if meta.get("lcd_heroic"):
-        try:
-            from plutonium_lcd import cleanup_heroic_game
-            cleanup_heroic_game(game_key)
-        except Exception:
-            pass  # Non-fatal - Heroic may not be installed
-
-    meta_file = os.path.join(install_dir, METADATA_FILE)
-    if os.path.exists(meta_file):
-        os.remove(meta_file)

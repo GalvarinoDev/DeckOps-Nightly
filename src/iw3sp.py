@@ -11,7 +11,6 @@ Progress is reported via a callback:
 
 import os
 import json
-import shutil
 import urllib.request
 import zipfile
 
@@ -60,11 +59,6 @@ def _get_latest_release():
 
 
 # _download and _BROWSER_UA imported from net.py.
-
-
-def is_iw3sp_installed(install_dir: str) -> bool:
-    """Returns True if iw3sp_mod.exe is present."""
-    return os.path.exists(os.path.join(install_dir, "iw3sp_mod.exe"))
 
 
 def _build_iw3sp_launch_option() -> str:
@@ -141,43 +135,3 @@ def install_iw3sp(game: dict, steam_root: str,
         json.dump({"version": version}, f, indent=2)
 
     prog(100, f"IW3SP-MOD v{version} installation complete!")
-
-
-def uninstall_iw3sp(game: dict, steam_root: str = ""):
-    """
-    Remove IW3SP-MOD files. Restores iw3sp.exe from legacy backup
-    if present from an old exe-swap install.
-    """
-    install_dir = game["install_dir"]
-
-    # Restore original exe from legacy backup if present
-    iw3sp_bak = os.path.join(install_dir, "iw3sp.exe.bak")
-    if os.path.exists(iw3sp_bak):
-        iw3sp = os.path.join(install_dir, "iw3sp.exe")
-        if os.path.exists(iw3sp):
-            os.remove(iw3sp)
-        os.rename(iw3sp_bak, iw3sp)
-
-    # Remove metadata
-    meta = os.path.join(install_dir, METADATA_FILE)
-    if os.path.exists(meta):
-        os.remove(meta)
-
-    # Remove known IW3SP-MOD files dropped into the CoD4 root
-    for fname in ["iw3sp_mod.exe", "iw3sp_mod.dll"]:
-        p = os.path.join(install_dir, fname)
-        if os.path.exists(p):
-            os.remove(p)
-
-    # Remove iw3sp_mod folder if present
-    iw3sp_dir = os.path.join(install_dir, "iw3sp_mod")
-    if os.path.exists(iw3sp_dir):
-        shutil.rmtree(iw3sp_dir)
-
-    # Clear launch option
-    if steam_root:
-        try:
-            from wrapper import clear_launch_options
-            clear_launch_options(steam_root, COD4_APPID)
-        except Exception:
-            pass
