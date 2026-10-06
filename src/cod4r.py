@@ -37,12 +37,11 @@ Path format:
 
 import os
 import re
-import json
 import subprocess
 
 from identity import GITHUB_RAW
 from net import download as _download
-from steam_common import nvme_compatdata as _nvme_compatdata, linux_to_wine_path as _linux_to_wine_path
+from steam_common import nvme_compatdata as _nvme_compatdata, linux_to_wine_path as _linux_to_wine_path, write_json
 from cod4x import _write_registry_keys  # same appid 7940 keys
 
 from log import get_logger
@@ -66,13 +65,6 @@ _COD4R_APPDATA_FOLDER = "CoD4R"
 _GAME_APPDATA_FOLDER = "CallofDuty4MW"
 
 # -- helpers ------------------------------------------------------------------
-
-def _write_metadata(install_dir: str, data: dict):
-    """Write DeckOps metadata JSON to the game directory."""
-    path = os.path.join(install_dir, METADATA_FILE)
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-
 
 def _get_settings_path(compatdata_path: str) -> str:
     """
@@ -280,7 +272,7 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
 
     # -- Step 8: Write metadata -----------------------------------------------
     prog(95, "Saving metadata...")
-    _write_metadata(install_dir, {
+    write_json(os.path.join(install_dir, METADATA_FILE), {
         "client": "cod4r",
         "source": source,
         "appdata_dir": appdata_dir,

@@ -26,13 +26,12 @@ Install flow:
 import os
 import re
 import glob
-import json
 import shutil
 import subprocess
 import tempfile
 
 from net import download as _download, DownloadError
-from steam_common import nvme_compatdata as _nvme_compatdata, linux_to_wine_path as _linux_to_wine_path
+from steam_common import nvme_compatdata as _nvme_compatdata, linux_to_wine_path as _linux_to_wine_path, write_json
 
 from log import get_logger
 
@@ -106,13 +105,6 @@ _LOG_DIR = os.path.join(
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 # _download imported from net.py; call site passes timeout=120.
-
-
-def _write_metadata(install_dir: str, data: dict):
-    """Write DeckOps metadata JSON to the game directory."""
-    path = os.path.join(install_dir, METADATA_FILE)
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
 
 
 def _get_appdata_dir(compatdata_path: str) -> str:
@@ -692,7 +684,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
 
     # ── Step 7: Write metadata ────────────────────────────────────────────
     prog(95, "Saving metadata...")
-    _write_metadata(install_dir, {
+    write_json(os.path.join(install_dir, METADATA_FILE), {
         "version": "21.3",
         "method": "setup_exe",
         "download_source": _dl_source,

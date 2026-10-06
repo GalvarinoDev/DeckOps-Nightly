@@ -37,6 +37,7 @@ import tempfile
 
 from log import get_logger
 from net import download as _download, github_asset
+from steam_common import write_json
 
 _log = get_logger(__name__)
 
@@ -109,13 +110,6 @@ _APPIDS = {
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
-
-def _write_metadata(install_dir: str, data: dict):
-    """Write DeckOps metadata JSON to the game directory."""
-    path = os.path.join(install_dir, METADATA_FILE)
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-
 
 def _build_launch_option(original_exe: str, client_exe: str,
                          mode_flag: str) -> str:
@@ -334,7 +328,7 @@ def install_alterware(game: dict, game_key: str,
 
     # ── Step 6: Write metadata ────────────────────────────────────────────
     prog(90, "Saving metadata...")
-    _write_metadata(install_dir, {
+    write_json(os.path.join(install_dir, METADATA_FILE), {
         "client": launcher_arg,
         "client_exe": client_exe,
         "original_exe": original_exe,

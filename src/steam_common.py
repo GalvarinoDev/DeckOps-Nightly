@@ -22,9 +22,11 @@ sites unchanged, e.g.:
 """
 
 import binascii
+import json
 import os
 import re
 import shutil
+import tempfile
 
 from log import get_logger
 
@@ -69,6 +71,19 @@ def backup_file(path: str):
             shutil.copy2(path, path + ".bak")
         except OSError:
             _log.debug("backup failed for %s", path, exc_info=True)
+
+
+def write_json(path: str, data):
+    # tmp + rename so a crash or sleep mid-write can't leave a half-written file
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp, path)
+    except BaseException:
+        try: os.unlink(tmp)
+        except OSError: pass
+        raise
 
 
 def newest_proton_dir(parent: str, prefix: str) -> str | None:
