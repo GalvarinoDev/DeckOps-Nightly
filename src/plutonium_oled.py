@@ -348,6 +348,24 @@ _STORAGE_SUBDIRS = {
 }
 
 
+def _link_to_master(master: str, plut_dir: str, stores, prog):
+    """
+    Swap the Plutonium files just copied into plut_dir for links to the
+    master, so each file is stored once and pre-launch updates reach every
+    prefix. Best effort: without the manifest the copies stay and the first
+    online launch links them instead.
+    """
+    def say(msg):
+        _log.info(msg); prog(msg)
+    try:
+        import plutonium_update as pu
+        _, info = pu.fetch()
+        for store in stores:
+            pu.link_prefix(master, plut_dir, store, info, say)
+    except Exception as ex:
+        say(f"  ⚠ Plutonium links skipped, copies kept: {ex}")
+
+
 def _copy_plut_to_prefix(src_plut_dir: str, dest_plut_dir: str,
                           game_key: str = "", on_progress=None):
     """
@@ -1186,6 +1204,8 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         src_plut_dir, dest_plut_dir, game_key=game_key,
         on_progress=lambda msg: prog(40, msg),
     )
+    _link_to_master(src_plut_dir, dest_plut_dir, [_STORAGE_SUBDIRS.get(game_key)],
+                    lambda msg: prog(45, msg))
 
     prog(60, "Writing game path to config.json...")
     # Pass all keys that share this appid so config has all paths for this prefix.
@@ -1226,6 +1246,11 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
             game_key,
             on_progress=lambda msg: prog(72, msg),
         )
+        _storage = os.path.join(launcher_plut_dir, "storage")
+        _link_to_master(src_plut_dir, launcher_plut_dir,
+                        [d for d in set(_STORAGE_SUBDIRS.values())
+                         if os.path.isdir(os.path.join(_storage, d))],
+                        lambda msg: prog(73, msg))
 
         # Write merged config.json with ALL selected Plutonium game paths
         all_plut_keys = [
