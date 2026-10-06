@@ -20,7 +20,7 @@ import struct
 import subprocess
 import zipfile
 
-from log import get_logger
+from log import get_logger, redact_also
 
 _log = get_logger(__name__)
 
@@ -814,6 +814,7 @@ def run_depot_download_qr(
                 m = _USERNAME_RE.search(line)
                 if m:
                     captured_username = m.group(1)
+                    redact_also(captured_username)
                     auth_succeeded = True
                     on_auth_success(captured_username)
                     on_log("QR authentication successful.")
