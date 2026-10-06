@@ -341,6 +341,13 @@ def _build_config_map(steam_root, installed_games=None):
 
 # ── Install-dir based dest resolvers ──────────────────────────────────────────
 
+def _cod4_profile_name(player_name):
+    """CoD4 profile folder name as the game finds it on disk. Wine drops
+    trailing dots and spaces from Windows path names, so a Steam name like
+    "casimiro." makes the game use profiles/casimiro."""
+    return (player_name or "").replace('"', '').rstrip(". ") or "Player"
+
+
 def _dest_from_install(game_key, install_dir, player_name=None):
     """
     For game keys whose destination is relative to install_dir,
@@ -348,8 +355,8 @@ def _dest_from_install(game_key, install_dir, player_name=None):
     Returns None for keys that use a fixed compatdata path instead.
     """
     if game_key in ("cod4sp", "cod4mp"):
-        profile = player_name.replace('"', '') if player_name else "Player"
-        return os.path.join(install_dir, "players", "profiles", profile)
+        return os.path.join(install_dir, "players", "profiles",
+                            _cod4_profile_name(player_name))
     if game_key in ("iw4sp", "iw4mp"):
         return os.path.join(install_dir, "players")
     if game_key == "iw5sp":
@@ -425,6 +432,22 @@ def _write_cod4_active_txt(profiles_dir, player_name):
         safe_name = player_name.replace('"', '')
         with open(active_path, "w", encoding="utf-8") as f:
             f.write(safe_name)
+    except (IOError, OSError):
+        pass  # Non-fatal
+
+
+def _mark_iw3sp_cfg_initialized(profile_dir):
+    """
+    Pre-write IW3SP-MOD's first-run marker. Without it, the first SP launch
+    on a profile rebuilds iw3sp_mod_config.cfg from the vanilla config.cfg
+    (or defaults when there is none) and the deployed DeckOps settings are
+    lost: 1024x768, 60 Hz, controller off. Text matches what the mod writes.
+    """
+    try:
+        d = os.path.join(profile_dir, "iw3sp_mod_init_cfg")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "IW3SP_MOD_CONFIG_INIT_DONE"), "w", encoding="utf-8") as f:
+            f.write("// INIT REALLOCATION THE SETTINGS FROM ORIGINAL 'config.cfg' to 'iw3sp_mod_config.cfg'")
     except (IOError, OSError):
         pass  # Non-fatal
 
@@ -541,6 +564,8 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
                 _replace_player_name(dest, player_name)
                 prog(f"  + {key}: {os.path.basename(src)} -> {dest_dir}")
                 applied += 1
+                if os.path.basename(dest) == "iw3sp_mod_config.cfg":
+                    _mark_iw3sp_cfg_initialized(dest_dir)
 
                 # CoD4 / CoD4x uses active.txt in the profiles directory
                 # to determine the displayed player name. Write it after
@@ -663,7 +688,7 @@ def rename_player(player_name, steam_root, installed_games=None,
                 # (could be "Player" or a previous custom name) and rename it.
                 if key in ("cod4sp", "cod4mp"):
                     profiles_dir = os.path.join(install_dir, "players", "profiles")
-                    new_profile = player_name.replace('"', '')
+                    new_profile = _cod4_profile_name(player_name)
                     new_profile_dir = os.path.join(profiles_dir, new_profile)
                     # Find the existing profile folder — check active.txt first,
                     # then fall back to any single subfolder.
@@ -673,7 +698,7 @@ def rename_player(player_name, steam_root, installed_games=None,
                         try:
                             with open(active_path, "r", encoding="utf-8") as f:
                                 old_name = f.read().strip()
-                            candidate = os.path.join(profiles_dir, old_name)
+                            candidate = os.path.join(profiles_dir, _cod4_profile_name(old_name))
                             if os.path.isdir(candidate):
                                 old_profile_dir = candidate
                         except (IOError, OSError):
