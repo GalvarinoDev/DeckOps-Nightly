@@ -42,6 +42,7 @@ import subprocess
 
 from identity import GITHUB_RAW
 from net import download as _download
+from steam_common import nvme_compatdata as _nvme_compatdata, linux_to_wine_path as _linux_to_wine_path
 from cod4x import _write_registry_keys  # same appid 7940 keys
 
 from log import get_logger
@@ -71,26 +72,6 @@ def _write_metadata(install_dir: str, data: dict):
     path = os.path.join(install_dir, METADATA_FILE)
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
-
-
-def _nvme_compatdata(appid: str) -> str:
-    """Return the NVMe compatdata path for a given appid."""
-    return os.path.join(
-        os.path.expanduser("~/.local/share/Steam"),
-        "steamapps", "compatdata", str(appid),
-    )
-
-
-def _linux_to_wine_path(linux_path: str) -> str:
-    """
-    Convert a Linux path to a Wine Z: drive path.
-
-    Wine maps the entire Linux filesystem under Z:, so
-    /home/deck/.local/share/Steam/steamapps/common/Call of Duty 4
-    becomes
-    Z:\\home\\deck\\.local\\share\\Steam\\steamapps\\common\\Call of Duty 4
-    """
-    return "Z:" + linux_path.replace("/", "\\")
 
 
 def _get_settings_path(compatdata_path: str) -> str:
