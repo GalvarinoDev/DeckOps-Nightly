@@ -42,7 +42,6 @@ Must be called while Steam is closed.
 import os
 import re
 import shutil
-import binascii
 
 from log import get_logger
 
@@ -51,12 +50,11 @@ _log = get_logger(__name__)
 # ── Paths ─────────────────────────────────────────────────────────────────────
 
 from steam_common import (
-    PROJECT_ROOT, STEAM_ROOT, STEAM_CONFIG, MIN_UID,
+    PROJECT_ROOT, STEAM_ROOT,
     calc_shortcut_appid as _calc_appid_int,
     find_all_steam_uids as _find_all_steam_uids,
     get_deck_serial as _get_deck_serial,
     patch_configset as _patch_configset,
-    record_configset_edit as _record_configset_edit,
 )
 ASSETS_DIR    = os.path.join(PROJECT_ROOT, "assets", "controllers")
 TEMPLATES_DIR = os.path.expanduser("~/.steam/steam/controller_base/templates")

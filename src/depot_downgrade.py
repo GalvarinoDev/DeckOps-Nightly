@@ -18,7 +18,6 @@ import re
 import shutil
 import struct
 import subprocess
-import threading
 import zipfile
 
 from log import get_logger

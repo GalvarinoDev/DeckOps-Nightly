@@ -24,7 +24,6 @@ sites unchanged, e.g.:
 import binascii
 import os
 import re
-import shutil
 
 from log import get_logger
 

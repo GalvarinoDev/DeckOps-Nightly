@@ -9,7 +9,7 @@ import html
 import os
 
 from PyQt5.QtWidgets import (
-    QLabel, QPushButton, QFrame, QHBoxLayout, QVBoxLayout, QMessageBox, QWidget,
+    QLabel, QPushButton, QFrame, QHBoxLayout, QMessageBox, QWidget,
 )
 from PyQt5.QtCore import Qt, pyqtSignal, QObject
 from PyQt5.QtGui import QFont, QFontDatabase
