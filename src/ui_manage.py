@@ -1732,15 +1732,11 @@ class ConfigureScreen(QWidget):
                 # No compare available — full zip download
                 self._apply_sig.log.emit("PROG|Downloading full update...")
                 import tempfile, zipfile
-                tmp_zip = tempfile.mktemp(suffix=".zip", prefix="deckops_update_")
-                req = urllib.request.Request(
-                    f"https://github.com/{github_user}/{github_repo}/archive/refs/heads/main.zip",
-                    headers={"User-Agent": "DeckOps"},
-                )
-                with urllib.request.urlopen(req, timeout=120) as r, open(tmp_zip, "wb") as f:
-                    f.write(r.read())
-
+                from net import download
                 tmp_extract = tempfile.mkdtemp(prefix="deckops_extract_")
+                tmp_zip = os.path.join(tmp_extract, "main.zip")
+                download(f"https://github.com/{github_user}/{github_repo}/archive/refs/heads/main.zip",
+                         tmp_zip, timeout=120, headers={"User-Agent": "DeckOps"})
                 with zipfile.ZipFile(tmp_zip, "r") as zf:
                     zf.extractall(tmp_extract)
                 os.remove(tmp_zip)
