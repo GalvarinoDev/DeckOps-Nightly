@@ -133,6 +133,12 @@ def save(config: dict):
         _cache_mtime = 0.0
 
 
+def _set(key: str, value):
+    config = load()
+    config[key] = value
+    save(config)
+
+
 def is_first_run() -> bool:
     """Returns True if setup has never been completed."""
     return not load().get("first_run_complete", False)
@@ -254,16 +260,12 @@ def get_gyro_mode() -> str | None:
 
 def set_gyro_mode(mode: str):
     """Save the user's gyro preference: 'on', 'off', 'hold', or 'toggle'."""
-    config = load()
-    config["gyro_mode"] = mode
-    save(config)
+    _set("gyro_mode", mode)
 
 
 def set_play_mode(mode: str):
     """Save the user's play mode. mode should be 'handheld' or 'docked'."""
-    config = load()
-    config["play_mode"] = mode
-    save(config)
+    _set("play_mode", mode)
 
 
 def is_docked() -> bool:
@@ -277,23 +279,17 @@ def get_external_controller() -> str | None:
 
 def set_external_controller(controller_type: str):
     """Save the user's external controller type. Should be 'playstation', 'xbox', 'steamcontroller', or 'other'."""
-    config = load()
-    config["external_controller"] = controller_type
-    save(config)
+    _set("external_controller", controller_type)
 
 
 def set_docked_resolution(resolution: str):
     """Save the user's docked display resolution. 'own' means user sets it in-game."""
-    config = load()
-    config["docked_resolution"] = resolution
-    save(config)
+    _set("docked_resolution", resolution)
 
 
 def set_game_source(source: str):
     """Save game source preference."""
-    config = load()
-    config["game_source"] = source
-    save(config)
+    _set("game_source", source)
 
 
 def get_music_enabled() -> bool:
@@ -303,9 +299,7 @@ def get_music_enabled() -> bool:
 
 def set_music_enabled(enabled: bool):
     """Save background music on/off preference."""
-    config = load()
-    config["music_enabled"] = enabled
-    save(config)
+    _set("music_enabled", enabled)
 
 
 def get_music_volume() -> float:
@@ -315,9 +309,7 @@ def get_music_volume() -> float:
 
 def set_music_volume(volume: float):
     """Save music volume. Clamped to 0.0 - 1.0."""
-    config = load()
-    config["music_volume"] = max(0.0, min(1.0, volume))
-    save(config)
+    _set("music_volume", max(0.0, min(1.0, volume)))
 
 
 def get_ge_proton_version() -> str | None:
@@ -327,9 +319,7 @@ def get_ge_proton_version() -> str | None:
 
 def set_ge_proton_version(version: str):
     """Save the installed GE-Proton version after CompatToolMapping is applied."""
-    config = load()
-    config["ge_proton_version"] = version
-    save(config)
+    _set("ge_proton_version", version)
 
 
 def get_player_name() -> str | None:
@@ -339,9 +329,7 @@ def get_player_name() -> str | None:
 
 def set_player_name(name: str):
     """Save the player's chosen in-game name."""
-    config = load()
-    config["player_name"] = name.strip() if name else None
-    save(config)
+    _set("player_name", name.strip() if name else None)
 
 
 def get_steam_display_name(steam_root: str | None = None) -> str | None:
