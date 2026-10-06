@@ -6,7 +6,7 @@ due to LCD compatibility issues. Heroic's Flatpak version doesn't have
 this problem, so LCD users route their Plutonium games through Heroic.
 
 This module owns the full LCD install flow -- it is the LCD counterpart
-to plutonium_oled.py. plutonium_oled.py's install_plutonium dispatches
+to plutonium.py. plutonium.py's install_plutonium dispatches
 to install_plutonium_lcd at the top of the function when running on LCD.
 
 Architecture (Shape A -- shared Heroic default prefix):
@@ -27,7 +27,7 @@ Architecture (Shape A -- shared Heroic default prefix):
      launcherArgs="plutonium://play/<key>" and winePrefix pointed at the
      same shared prefix. Steam shortcuts launch via the heroic:// protocol.
 
-OLED Decks do not use this module at all -- plutonium_oled.py handles OLED
+OLED Decks do not use this module at all -- plutonium.py handles OLED
 directly through Steam's Proton runtime and a bash wrapper per game.
 """
 
@@ -100,8 +100,8 @@ BOOTSTRAP_APP_NAME = "do_plut_bootstrap"
 BOOTSTRAP_TITLE    = "DeckOps Plutonium Setup"
 
 # Map each Plutonium game key to the config.json path field Plutonium uses
-# for that game's install directory. Mirrors plutonium_oled.GAME_META so
-# plutonium_lcd.py doesn't have to import from plutonium_oled.py.
+# for that game's install directory. Mirrors plutonium.GAME_META so
+# plutonium_lcd.py doesn't have to import from plutonium.py.
 PLUT_CONFIG_KEYS = {
     "t4sp":  "t4Path",
     "t4mp":  "t4Path",
@@ -159,7 +159,7 @@ LCD_LAN_WRAPPER_NAMES = {
 }
 
 # Shared Plutonium directories (bin/, launcher/, games/) live here. One real
-# copy shared across all prefixes via symlinks. Same location as plutonium_oled.py
+# copy shared across all prefixes via symlinks. Same location as plutonium.py
 # uses for OLED so LCD and OLED share the same shared dir if both are present.
 SHARED_PLUT_DIR = os.path.expanduser("~/.local/share/deckops/plutonium_shared")
 _PLUT_SHARED_SUBDIRS = ("bin", "launcher", "games")
@@ -698,7 +698,7 @@ def _remove_heroic_game_config(game_key: str, on_progress=None):
 
 
 # ── LCD Shape A helpers ─────────────────────────────────────────────────────
-# Everything below powers the LCD Plutonium install flow. plutonium_oled.py's
+# Everything below powers the LCD Plutonium install flow. plutonium.py's
 # install_plutonium dispatches to install_plutonium_lcd at the top of the
 # function on LCD, so these helpers are the actual entry points for LCD.
 
@@ -738,7 +738,7 @@ def is_plutonium_ready_lcd() -> bool:
 
 
 def _wine_path_lcd(linux_path: str) -> str:
-    """Convert a Linux path to Wine Z: drive notation (same as plutonium_oled.py)."""
+    """Convert a Linux path to Wine Z: drive notation (same as plutonium.py)."""
     return "Z:" + linux_path.replace("/", "\\")
 
 
@@ -794,8 +794,8 @@ def _write_plutonium_config_lcd(plut_dir: str, selected_keys: list,
 def _write_metadata_lcd(install_dir: str, data: dict):
     """
     Write the DeckOps metadata sentinel into a game's install directory.
-    Mirrors plutonium_oled._write_metadata so plutonium_lcd.py doesn't need
-    to import private helpers from plutonium_oled.py.
+    Mirrors plutonium._write_metadata so plutonium_lcd.py doesn't need
+    to import private helpers from plutonium.py.
     """
     if not install_dir:
         return
@@ -1018,7 +1018,7 @@ def _install_menu_mod_lcd(plut_dir: str, game_key: str, on_progress=None):
     """
     Copy and install the DeckOps menu mod for the given game key.
 
-    LCD counterpart to plutonium_oled._install_menu_mod. Copies the
+    LCD counterpart to plutonium._install_menu_mod. Copies the
     bundled mod file from assets/mods/ into the shared Heroic prefix's
     Plutonium storage path so it is loaded automatically by the
     Plutonium client on game launch.

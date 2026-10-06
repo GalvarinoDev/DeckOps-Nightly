@@ -811,7 +811,7 @@ def _rename_in_lan_scripts(player_name, installed_games, prog):
     """
     import re
     import config as cfg
-    from plutonium_oled import STEAM_MENU_EXES
+    from plutonium import STEAM_MENU_EXES
     from plutonium_lcd import PLUT_GAME_EXES
 
     new = '+name "' + player_name.replace('"', '') + '"'

@@ -35,7 +35,7 @@ def _cod4mp(key, cmd):
 def _plutonium(key, cmd):
     # OLED only: the online wrapper and own shortcuts export the game's
     # prefix. Offline/LAN launches don't come through here.
-    from plutonium_oled import DEDICATED_PREFIX, _STORAGE_SUBDIRS, _plut_dir_in_prefix
+    from plutonium import DEDICATED_PREFIX, _STORAGE_SUBDIRS, _plut_dir_in_prefix
     import plutonium_update as pu
     master = _plut_dir_in_prefix(DEDICATED_PREFIX)
     compat = os.environ.get("STEAM_COMPAT_DATA_PATH", "")
