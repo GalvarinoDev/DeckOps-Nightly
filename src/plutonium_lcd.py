@@ -818,10 +818,6 @@ def _ensure_shared_plutonium_lcd(src_plut_dir: str, on_progress=None) -> bool:
     Ensure the shared Plutonium directory has current copies of bin/,
     launcher/, and games/ from the Heroic shared prefix.
 
-    Same pattern as plutonium._ensure_shared_plutonium but sources from
-    the Heroic prefix instead of the OLED dedicated prefix. Both write
-    to the same SHARED_PLUT_DIR so they share the cache.
-
     Returns True if shared dirs are ready, False on failure.
     """
     def prog(msg):

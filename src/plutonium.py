@@ -266,76 +266,15 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
     prog(30, "Plutonium closed.")
 
 
-# ── copy to game prefix ───────────────────────────────────────────────────────
-# We do a full copy of the Plutonium/ folder into each game's prefix rather
-# than symlinking or sharing a single install. Each prefix is its own Wine
-# environment and symlinks across prefixes can cause path resolution issues.
-# Full copies keep each game isolated so one prefix can't break another.
-
-
 # ── shared Plutonium directories ─────────────────────────────────────────────
 # bin/, launcher/, and games/ are identical across all prefixes (~129MB total).
-# Instead of copying them 6 times (~774MB waste), we keep one real copy and
-# symlink from each prefix. Only storage/ is per-game and gets a real copy.
-
-SHARED_PLUT_DIR = os.path.expanduser("~/.local/share/deckops/plutonium_shared")
+# Each prefix symlinks them to the master copy in the dedicated prefix, so
+# pre-launch updates reach every prefix. Only storage/ is per-game.
 _PLUT_SHARED_SUBDIRS = ("bin", "launcher", "games")
 
-
-def _ensure_shared_plutonium(src_plut_dir: str, on_progress=None) -> bool:
-    """
-    Ensure the shared Plutonium directory has current copies of bin/,
-    launcher/, and games/ from the source Plutonium install.
-
-    Copies from src_plut_dir (the dedicated DeckOps plutonium prefix)
-    into the shared location. If the shared dirs already exist and have
-    the same file count, this is a fast no-op.
-
-    Returns True if shared dirs are ready, False on failure.
-    """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    all_present = True
-    for subdir in _PLUT_SHARED_SUBDIRS:
-        src = os.path.join(src_plut_dir, subdir)
-        dst = os.path.join(SHARED_PLUT_DIR, subdir)
-        if not os.path.isdir(src):
-            continue
-        if not os.path.isdir(dst):
-            all_present = False
-            break
-        # Quick file count check
-        src_count = sum(1 for _ in os.scandir(src))
-        dst_count = sum(1 for _ in os.scandir(dst))
-        if dst_count < src_count:
-            all_present = False
-            break
-
-    if all_present and os.path.isdir(SHARED_PLUT_DIR):
-        prog("  ✓ Shared Plutonium dirs verified")
-        return True
-
-    prog("  Setting up shared Plutonium directories...")
-    start = time.time()
-
-    try:
-        os.makedirs(SHARED_PLUT_DIR, exist_ok=True)
-        for subdir in _PLUT_SHARED_SUBDIRS:
-            src = os.path.join(src_plut_dir, subdir)
-            dst = os.path.join(SHARED_PLUT_DIR, subdir)
-            if not os.path.isdir(src):
-                continue
-            if os.path.isdir(dst):
-                shutil.rmtree(dst)
-            shutil.copytree(src, dst)
-        elapsed = time.time() - start
-        prog(f"  ✓ Shared Plutonium dirs ready ({elapsed:.1f}s)")
-        return True
-    except Exception as ex:
-        prog(f"  ⚠ Shared Plutonium setup failed: {ex}")
-        return False
+# Old copy of the shared dirs that prefixes used to link to. Update Plutonium
+# removes it, then reinstalls every Plutonium game so they link to the master.
+SHARED_PLUT_DIR = os.path.expanduser("~/.local/share/deckops/plutonium_shared")
 
 
 _STORAGE_SUBDIRS = {
@@ -369,13 +308,11 @@ def _copy_plut_to_prefix(src_plut_dir: str, dest_plut_dir: str,
     """
     Set up Plutonium in a game prefix using symlinks for shared dirs.
 
-    bin/, launcher/, and games/ are symlinked to the shared copy at
-    ~/.local/share/deckops/plutonium_shared/. Only the relevant storage/
+    bin/, launcher/, and games/ are symlinked to the master copy in the
+    dedicated prefix. Only the relevant storage/
     subdirectory for game_key is copied as real files, so large mods
     (e.g. Zombies Declassified ~9GB in storage/t6/) don't leak into
     unrelated prefixes.
-
-    Falls back to full copy if shared dirs aren't available.
     """
 
     def prog(msg):
@@ -441,70 +378,40 @@ def _copy_plut_fresh(src_plut_dir: str, dest_plut_dir: str, game_key: str, prog)
 
     start = time.time()
 
-    # Try symlink approach if shared dirs are available
-    shared_ready = all(
-        os.path.isdir(os.path.join(SHARED_PLUT_DIR, d))
-        for d in _PLUT_SHARED_SUBDIRS
-        if os.path.isdir(os.path.join(src_plut_dir, d))
-    )
+    os.makedirs(dest_plut_dir, exist_ok=True)
 
-    if shared_ready:
-        os.makedirs(dest_plut_dir, exist_ok=True)
+    # Symlink shared directories to the master
+    for subdir in _PLUT_SHARED_SUBDIRS:
+        shared_src = os.path.join(src_plut_dir, subdir)
+        dest_sub = os.path.join(dest_plut_dir, subdir)
+        if os.path.isdir(shared_src):
+            os.symlink(shared_src, dest_sub)
 
-        # Symlink shared directories
-        for subdir in _PLUT_SHARED_SUBDIRS:
-            shared_src = os.path.join(SHARED_PLUT_DIR, subdir)
-            dest_sub = os.path.join(dest_plut_dir, subdir)
-            if os.path.isdir(shared_src):
-                os.symlink(shared_src, dest_sub)
-
-        # Copy only the storage subdirectory for this game
-        storage_src = os.path.join(src_plut_dir, "storage")
-        if os.path.isdir(storage_src):
-            storage_name = _STORAGE_SUBDIRS.get(game_key)
-            if storage_name:
-                sub_src = os.path.join(storage_src, storage_name)
-                if os.path.isdir(sub_src):
-                    sub_dst = os.path.join(dest_plut_dir, "storage", storage_name)
-                    os.makedirs(os.path.join(dest_plut_dir, "storage"), exist_ok=True)
-                    shutil.copytree(sub_src, sub_dst)
-            else:
-                storage_dst = os.path.join(dest_plut_dir, "storage")
-                shutil.copytree(storage_src, storage_dst)
-
-        # Copy any remaining top-level files (config, etc.)
-        for item in os.listdir(src_plut_dir):
-            src_item = os.path.join(src_plut_dir, item)
-            dst_item = os.path.join(dest_plut_dir, item)
-            if os.path.exists(dst_item):
-                continue  # already handled (symlink or storage)
-            if os.path.isfile(src_item):
-                shutil.copy2(src_item, dst_item)
-
-        elapsed = time.time() - start
-        prog(f"  Copied Plutonium with symlinks ({elapsed:.1f}s)")
-    else:
-        # Fallback: full copy — still filter storage if game_key is known
-        storage_name = _STORAGE_SUBDIRS.get(game_key) if game_key else ""
+    # Copy only the storage subdirectory for this game
+    storage_src = os.path.join(src_plut_dir, "storage")
+    if os.path.isdir(storage_src):
+        storage_name = _STORAGE_SUBDIRS.get(game_key)
         if storage_name:
-            os.makedirs(dest_plut_dir, exist_ok=True)
-            for item in os.listdir(src_plut_dir):
-                src_item = os.path.join(src_plut_dir, item)
-                dst_item = os.path.join(dest_plut_dir, item)
-                if item == "storage":
-                    sub_src = os.path.join(src_item, storage_name)
-                    if os.path.isdir(sub_src):
-                        sub_dst = os.path.join(dst_item, storage_name)
-                        os.makedirs(dst_item, exist_ok=True)
-                        shutil.copytree(sub_src, sub_dst)
-                elif os.path.isdir(src_item):
-                    shutil.copytree(src_item, dst_item)
-                else:
-                    shutil.copy2(src_item, dst_item)
+            sub_src = os.path.join(storage_src, storage_name)
+            if os.path.isdir(sub_src):
+                sub_dst = os.path.join(dest_plut_dir, "storage", storage_name)
+                os.makedirs(os.path.join(dest_plut_dir, "storage"), exist_ok=True)
+                shutil.copytree(sub_src, sub_dst)
         else:
-            shutil.copytree(src_plut_dir, dest_plut_dir)
-        elapsed = time.time() - start
-        prog(f"  Copied Plutonium ({elapsed:.1f}s)")
+            storage_dst = os.path.join(dest_plut_dir, "storage")
+            shutil.copytree(storage_src, storage_dst)
+
+    # Copy any remaining top-level files (config, etc.)
+    for item in os.listdir(src_plut_dir):
+        src_item = os.path.join(src_plut_dir, item)
+        dst_item = os.path.join(dest_plut_dir, item)
+        if os.path.exists(dst_item):
+            continue  # already handled (symlink or storage)
+        if os.path.isfile(src_item):
+            shutil.copy2(src_item, dst_item)
+
+    elapsed = time.time() - start
+    prog(f"  Copied Plutonium with symlinks ({elapsed:.1f}s)")
 
 
 # ── config.json ───────────────────────────────────────────────────────────────
@@ -613,19 +520,15 @@ def _copy_plut_to_launcher_prefix(src_plut_dir: str, game_prefix_plut_dir: str,
 
     os.makedirs(launcher_plut_dir, exist_ok=True)
 
-    # Symlink shared directories (skip if already present)
-    shared_ready = all(
-        os.path.isdir(os.path.join(SHARED_PLUT_DIR, d))
-        for d in _PLUT_SHARED_SUBDIRS
-        if os.path.isdir(os.path.join(src_plut_dir, d))
-    )
-
-    if shared_ready:
-        for subdir in _PLUT_SHARED_SUBDIRS:
-            shared_src = os.path.join(SHARED_PLUT_DIR, subdir)
-            dest_sub = os.path.join(launcher_plut_dir, subdir)
-            if os.path.isdir(shared_src) and not os.path.exists(dest_sub):
-                os.symlink(shared_src, dest_sub)
+    # Link shared directories to the master; a link left pointing at the old
+    # shared copy (or dangling once it is removed) is replaced.
+    for subdir in _PLUT_SHARED_SUBDIRS:
+        shared_src = os.path.join(src_plut_dir, subdir)
+        dest_sub = os.path.join(launcher_plut_dir, subdir)
+        if os.path.isdir(shared_src) and (os.path.islink(dest_sub) or not os.path.lexists(dest_sub)):
+            if os.path.islink(dest_sub):
+                os.unlink(dest_sub)
+            os.symlink(shared_src, dest_sub)
 
     # Merge storage/ — copy per-game storage subdirs without wiping others.
     storage_name = _STORAGE_SUBDIRS.get(game_key)
@@ -1182,10 +1085,6 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         return wrapper_path
 
     src_plut_dir  = get_dedicated_plut_dir()
-
-    # Ensure shared Plutonium dirs are set up (one-time, shared across games)
-    _ensure_shared_plutonium(src_plut_dir,
-                             on_progress=lambda msg: prog(5, msg))
 
     # OLED / Other past this point (LCD returns early above).
     # Plutonium files go into Steam's compatdata prefix for the game,
