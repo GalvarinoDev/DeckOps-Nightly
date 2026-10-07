@@ -1337,7 +1337,7 @@ if [ -n "$STEAM_ROOT" ]; then
     fi
     echo ""
 
-    # --- Steam launch menu wrappers (OLED/Other)
+    # --- Steam launch menu wrappers (OLED/Other wrappers, LCD placeholders)
     # Mirrors: plutonium.STEAM_MENU_EXES. Online/Offline files written
     # next to the untouched game exe for the Steam launch menu entries.
     info "Removing Plutonium launch menu wrappers..."
