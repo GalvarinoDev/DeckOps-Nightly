@@ -42,14 +42,7 @@ def _plutonium(key, cmd):
     if not os.path.isdir(master) or not compat:
         return
     log = lambda m: _log.info(m)
-    # One quick try so being offline costs a few seconds at most.
-    prod, info = pu.fetch(timeout=5, tries=1)
-    local = pu.local_revision(master)
-    if local != info["revision"]:
-        log(f"Plutonium: master r{local}, server r{info['revision']}, updating")
-        pu.sync_master(master, prod, info, log)
-    else:
-        log(f"Plutonium r{local}: up to date")
+    info = pu.update(master, log)
     prefix = _plut_dir_in_prefix(compat)
     if os.path.isdir(prefix) and os.path.realpath(prefix) != os.path.realpath(master):
         pu.link_prefix(master, prefix, _STORAGE_SUBDIRS.get(key), info, log)

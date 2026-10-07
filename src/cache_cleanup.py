@@ -36,10 +36,10 @@ import os
 import shutil
 import sys
 
-from log import get_logger
+from log import get_logger, setup_logging
 from steam_common import calc_shortcut_appid as _calc_shortcut_appid
 
-_log = get_logger(__name__)
+_log = get_logger("cache_cleanup")
 
 
 
@@ -243,6 +243,7 @@ def launch_game(game_key: str, source: str, lan: bool = False):
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
+    setup_logging()
     if len(sys.argv) < 3:
         print(f"Usage: {sys.argv[0]} <game_key> <source>")
         print(f"  game_key: t4sp, t4mp, t5sp, t5mp, t6mp, t6zm, iw5mp, iw5mp_ds")
@@ -271,6 +272,16 @@ def main():
         if not hit:
             os.execvp(cmd[0], cmd)  # stock launch menu entry
         game_key, lan = hit  # WaW SP/MP share one appid and launch option
+
+    # Heroic's prefix holds the only real Plutonium copy; never block the launch
+    try:
+        import plutonium_update as pu
+        from plutonium_lcd import get_shared_plut_dir
+        d = get_shared_plut_dir()
+        if os.path.isdir(d):
+            pu.update(d, _log.info)
+    except Exception as ex:
+        _log.warning("Plutonium update skipped: %s", ex)
 
     # Nuke shader cache, then launch
     cleanup_shader_cache(game_key, source)

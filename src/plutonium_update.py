@@ -120,6 +120,20 @@ def sync_master(plut_dir: str, prod: dict, info: dict, log=None) -> int:
     return len(todo)
 
 
+def update(plut_dir: str, log=None) -> dict:
+    """Fetch once, sync plut_dir if its revision differs, return info."""
+    log = log or (lambda *a: None)
+    # One quick try so being offline costs a few seconds at most.
+    prod, info = fetch(timeout=5, tries=1)
+    local = local_revision(plut_dir)
+    if local != info["revision"]:
+        log(f"Plutonium: r{local}, server r{info['revision']}, updating")
+        sync_master(plut_dir, prod, info, log)
+    else:
+        log(f"Plutonium r{local}: up to date")
+    return info
+
+
 def link_prefix(master: str, prefix_plut: str, store: str, info: dict, log=None) -> int:
     """
     Point a game prefix's Plutonium folder at the master: the shared dir
