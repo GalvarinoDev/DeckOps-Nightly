@@ -2086,16 +2086,15 @@ class UpdateScreen(QWidget):
 
             self._s.log.emit("✓  Plutonium updated.")
 
-            # OLED: wipe shared Plutonium dir so it gets rebuilt with fresh
-            # binaries. Game prefixes symlink to this dir --
-            # _ensure_shared_plutonium() inside install_plutonium() will
-            # repopulate it on the first key.
+            # OLED: remove the old shared copy prefixes used to link to.
+            # Every installed Plutonium game is reinstalled below and links
+            # to the master in the dedicated prefix instead.
             # LCD: not needed — Plutonium files live inside the Heroic prefix.
             if not is_lcd:
                 from plutonium import SHARED_PLUT_DIR
                 if os.path.isdir(SHARED_PLUT_DIR):
                     shutil.rmtree(SHARED_PLUT_DIR, ignore_errors=True)
-                    self._s.log.emit("  Cleared shared Plutonium cache for rebuild")
+                    self._s.log.emit("  Removed the old shared Plutonium copy")
 
         # ── GE-Proton download (Steam may still be running) ─────────
         ge_version = None
