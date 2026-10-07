@@ -49,7 +49,7 @@ from net import DownloadError, download
 _log = get_logger(__name__)
 
 
-from shortcut import add_shortcut, remove_shortcut
+from shortcut import add_shortcut
 from steam_common import calc_shortcut_appid as _calc_shortcut_appid
 
 
@@ -83,13 +83,6 @@ HEROIC_ICONS_DIR = os.path.join(HEROIC_CONFIG_DIR, "icons")
 HEROIC_GAMES_DIR           = os.path.expanduser("~/Games/Heroic")
 HEROIC_DEFAULT_WINE_PREFIX = os.path.join(HEROIC_GAMES_DIR, "Prefixes", "default")
 DECKOPS_PLUT_DIR           = os.path.join(HEROIC_GAMES_DIR, "deckops_plutonium")
-
-# Legacy: per-game launcher wrapper scripts from prior iterations.
-# New installs use Heroic's native shortcut pattern (Exe="flatpak",
-# LaunchOptions="run ... --no-gui ...") and don't create wrappers.
-# This constant is kept so cleanup_heroic_game / cleanup_all_heroic
-# can remove stale wrappers from older installs.
-LCD_WRAPPER_DIR = os.path.expanduser("~/.local/share/deckops/lcd_wrappers")
 
 PLUT_BOOTSTRAPPER_URL = "https://cdn.plutonium.pw/updater/plutonium.exe"
 _PLUT_ARCHIVE_FALLBACK_URL = "https://archive.org/download/plutonium_202605/plutonium.exe"
@@ -172,15 +165,6 @@ MENU_MOD_FILES = {
     "t6mp":  ("t6/deckops_bo2_menu.iwd", "storage/t6/raw/deckops_bo2_menu.iwd"),
     "t6zm":  ("t6/deckops_bo2_menu.iwd", "storage/t6/raw/deckops_bo2_menu.iwd"),
 }
-
-
-# Where Heroic puts its managed Wine prefixes for sideloaded games when
-# DeckOps overrides the per-game winePrefix. Kept as a legacy constant for
-# migration cleanup (old DeckOps installs created per-game prefixes here).
-# Shape A uses HEROIC_DEFAULT_WINE_PREFIX instead.
-HEROIC_PREFIX_BASE = os.path.expanduser(
-    "~/.local/share/deckops/heroic_prefixes"
-)
 
 
 # ── Steam paths (same as shortcut.py) ───────────────────────────────────────
@@ -583,25 +567,6 @@ def _add_heroic_sideload_entry(game_key: str, executable: str,
     _write_heroic_library(library)
 
 
-def _remove_heroic_sideload_entry(game_key: str, on_progress=None):
-    """Remove a DeckOps sideload entry from Heroic's library.json."""
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    app_name = _heroic_app_name(game_key)
-    library = _read_heroic_library()
-
-    before = len(library["games"])
-    library["games"] = [g for g in library["games"] if g.get("app_name") != app_name]
-
-    if len(library["games"]) < before:
-        _write_heroic_library(library)
-        prog(f"  Removed HGL entry for {game_key}")
-    else:
-        prog(f"  No HGL entry found for {game_key}")
-
-
 # ── Heroic per-game config ──────────────────────────────────────────────────
 
 def _write_heroic_game_config(game_key: str, ge_proton_version: str,
@@ -678,23 +643,6 @@ def _write_heroic_game_config(game_key: str, ge_proton_version: str,
         json.dump(config, f, indent=2)
 
     prog(f"  HGL game config written for {game_key}")
-
-
-def _remove_heroic_game_config(game_key: str, on_progress=None):
-    """Remove the Heroic GamesConfig JSON for a game key."""
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    app_name = _heroic_app_name(game_key)
-    config_path = os.path.join(HEROIC_GAMES_CONFIG_DIR, f"{app_name}.json")
-    if os.path.exists(config_path):
-        os.remove(config_path)
-        prog(f"  Removed HGL game config for {game_key}")
-
-    # Shape A: the shared default Wine prefix is never removed on single-game
-    # uninstall because other Plutonium games may still need it. Full wipe
-    # happens in cleanup_all_heroic() when the user uninstalls DeckOps.
 
 
 # ── LCD Shape A helpers ─────────────────────────────────────────────────────
@@ -1102,7 +1050,6 @@ def _ensure_bootstrap_sideload_entry(plutonium_exe: str,
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
     prog("  Bootstrap GamesConfig written.")
-
 
 
 def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
@@ -1666,111 +1613,3 @@ def _create_heroic_steam_shortcut(game_key: str, on_progress=None,
         clear_compat_tool=True,
         appid_exe_path=appid_exe,
     )
-
-
-def _remove_heroic_steam_shortcut(game_key: str, on_progress=None):
-    """
-    Remove the DeckOps Steam shortcut for an HGL LCD game.
-    Delegates to shortcut.remove_shortcut for all VDF and artwork cleanup.
-
-    Uses the same exe_path and title that were used during install so the
-    appid calculation matches exactly what was written.
-    """
-    if game_key not in HEROIC_PLUT_GAMES:
-        return
-
-    game_def = HEROIC_PLUT_GAMES[game_key]
-    title    = game_def["title"]
-
-    # Must match _create_heroic_steam_shortcut exactly
-    exe_path = '"/usr/bin/flatpak"'
-
-    remove_shortcut(
-        name=title,
-        exe_path=exe_path,
-        artwork_def=game_def,
-        on_progress=on_progress,
-    )
-
-
-def cleanup_heroic_game(game_key: str, on_progress=None):
-    """
-    Remove all Heroic-related artifacts for a game key.
-    Called during uninstall to clean up LCD Plutonium installs.
-    """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    prog(f"Cleaning up HGL entry for {game_key}...")
-
-    _remove_heroic_sideload_entry(game_key, on_progress=on_progress)
-    _remove_heroic_game_config(game_key, on_progress=on_progress)
-
-    # Per-game launcher wrapper script
-    wrapper = os.path.join(LCD_WRAPPER_DIR, f"plut_{game_key}.sh")
-    if os.path.exists(wrapper):
-        try:
-            os.remove(wrapper)
-            prog(f"  Removed launcher wrapper for {game_key}")
-        except OSError as ex:
-            prog(f"  Failed to remove launcher wrapper: {ex}")
-
-    # Remove the Steam shortcut from shortcuts.vdf for all discovered UIDs.
-    # Uses the same exe_path/title the shortcut was written with so the
-    # appid calculation matches exactly what was written during install.
-    _remove_heroic_steam_shortcut(game_key, on_progress=on_progress)
-
-
-def cleanup_all_heroic(on_progress=None):
-    """Remove all DeckOps-managed Heroic entries and state."""
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    prog("Cleaning up all DeckOps HGL entries...")
-
-    # Per-game sideload entries + GamesConfig JSONs
-    for game_key in HEROIC_PLUT_GAMES:
-        cleanup_heroic_game(game_key, on_progress=on_progress)
-
-    # Bootstrap sideload entry + GamesConfig
-    library = _read_heroic_library()
-    before = len(library["games"])
-    library["games"] = [g for g in library["games"]
-                        if g.get("app_name") != BOOTSTRAP_APP_NAME]
-    if len(library["games"]) < before:
-        _write_heroic_library(library)
-        prog("  Removed bootstrap sideload entry")
-    bootstrap_cfg = os.path.join(HEROIC_GAMES_CONFIG_DIR,
-                                 f"{BOOTSTRAP_APP_NAME}.json")
-    if os.path.exists(bootstrap_cfg):
-        os.remove(bootstrap_cfg)
-        prog("  Removed bootstrap GamesConfig")
-
-    # Our copy of plutonium.exe under ~/Games/Heroic/deckops_plutonium/
-    if os.path.isdir(DECKOPS_PLUT_DIR):
-        shutil.rmtree(DECKOPS_PLUT_DIR)
-        prog("  Removed DeckOps Plutonium directory")
-
-    # Plutonium install inside the shared default prefix. The rest of the
-    # shared prefix is left alone -- it may contain other sideloaded games
-    # the user installed through Heroic themselves.
-    shared_plut = get_shared_plut_dir()
-    if os.path.isdir(shared_plut):
-        shutil.rmtree(shared_plut)
-        prog("  Removed Plutonium install from shared HGL prefix")
-
-    # Per-game launcher wrapper scripts dir
-    if os.path.isdir(LCD_WRAPPER_DIR):
-        shutil.rmtree(LCD_WRAPPER_DIR)
-        prog("  Removed LCD launcher wrappers directory")
-
-    # Legacy cleanup: old DeckOps versions (Fix #1.5) used per-game prefixes
-    # under ~/.local/share/deckops/heroic_prefixes/. Wipe that dir if it
-    # still exists so stale state doesn't confuse future installs.
-    if os.path.isdir(HEROIC_PREFIX_BASE):
-        shutil.rmtree(HEROIC_PREFIX_BASE)
-        prog("  Removed legacy DeckOps HGL prefix directory")
-
-    prog("HGL cleanup complete.")
