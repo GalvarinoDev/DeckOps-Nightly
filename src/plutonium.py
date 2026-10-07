@@ -870,10 +870,17 @@ def _setup_steam_menu(game: dict, game_key: str, steam_root: str,
     )
     if lan_wrapper_path and os.path.exists(lan_wrapper_path):
         shutil.copy2(lan_wrapper_path, os.path.join(game["install_dir"], offline_name))
+    add_steam_menu(game, game_key, steam_root, prog)
+    return online_path
 
-    # Rebuild our entries for this appid in STEAM_MENU_EXES order (Online
-    # before Offline, WaW SP before MP) whatever order keys were installed in.
-    # Sibling keys count once their online wrapper is on disk.
+
+def add_steam_menu(game: dict, game_key: str, steam_root: str, prog):
+    """
+    Rebuild our entries for this appid in STEAM_MENU_EXES order (Online
+    before Offline, WaW SP before MP) whatever order keys were installed in.
+    Sibling keys count once their online file is on disk. Shared with LCD,
+    which writes its own files under the same names.
+    """
     appid = GAME_META[game_key][0]
     keys = [k for k in STEAM_MENU_EXES if GAME_META[k][0] == appid and (
             k == game_key or os.path.exists(os.path.join(game["install_dir"], STEAM_MENU_EXES[k][0])))]
@@ -888,7 +895,6 @@ def _setup_steam_menu(game: dict, game_key: str, steam_root: str,
     added = add_launch_entries(steam_root, appid, entries)
     prog(92, "  ✓ Launch menu: " + " / ".join(e["description"] for e in entries) if added
              else "  ⚠ Launch menu not added yet, will retry next time Steam is closed")
-    return online_path
 
 
 # ── metadata ──────────────────────────────────────────────────────────────────

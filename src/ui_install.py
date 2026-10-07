@@ -2245,9 +2245,7 @@ class _BaseInstallScreen(QWidget):
             defaults = {}
             if has_cod4_steam:
                 defaults["7940"] = ("7a722f97", "1")   # CoD4 -> Singleplayer
-            # OLED/Other WaW needs Steam's picker for its Plutonium entries
-            if has_waw_steam and not cfg.uses_oled_path():
-                defaults["10090"] = ("9aa5e05f", "0")   # WaW -> Campaign
+            # WaW keeps Steam's picker for its Plutonium entries
             if defaults:
                 try:
                     from wrapper import set_default_launch_option
@@ -2255,7 +2253,7 @@ class _BaseInstallScreen(QWidget):
                     self._s.log.emit("✓  Default launch options set (SP mode)")
                 except Exception as ex:
                     self._s.log.emit(f"  Launch options skipped: {ex}")
-            if has_waw_steam and cfg.uses_oled_path():
+            if has_waw_steam:
                 try:
                     from wrapper import clear_default_launch_option
                     clear_default_launch_option(self.steam_root, ["10090"])

@@ -2086,15 +2086,13 @@ class UpdateScreen(QWidget):
 
             self._s.log.emit("✓  Plutonium updated.")
 
-            # OLED: remove the old shared copy prefixes used to link to.
-            # Every installed Plutonium game is reinstalled below and links
-            # to the master in the dedicated prefix instead.
-            # LCD: not needed — Plutonium files live inside the Heroic prefix.
-            if not is_lcd:
-                from plutonium import SHARED_PLUT_DIR
-                if os.path.isdir(SHARED_PLUT_DIR):
-                    shutil.rmtree(SHARED_PLUT_DIR, ignore_errors=True)
-                    self._s.log.emit("  Removed the old shared Plutonium copy")
+            # Remove the old shared copy prefixes used to link to. OLED games
+            # are reinstalled below and link to the master in the dedicated
+            # prefix instead; LCD reads everything from the Heroic prefix.
+            from plutonium import SHARED_PLUT_DIR
+            if os.path.isdir(SHARED_PLUT_DIR):
+                shutil.rmtree(SHARED_PLUT_DIR, ignore_errors=True)
+                self._s.log.emit("  Removed the old shared Plutonium copy")
 
         # ── GE-Proton download (Steam may still be running) ─────────
         ge_version = None
@@ -2250,10 +2248,10 @@ class UpdateScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Steam Input setup skipped: {ex}")
 
-        # OLED/Other Steam WaW now has Plutonium entries in its launch menu;
-        # a Deck default from older installs would auto-pick Campaign and hide it.
+        # Steam WaW has Plutonium entries in its launch menu; a Deck default
+        # from older installs would auto-pick Campaign and hide it.
         _setup = cfg.get_setup_games()
-        if not is_lcd and any(k in ("t4sp", "t4mp") and _setup.get(k, {}).get("source", "steam") == "steam"
+        if any(k in ("t4sp", "t4mp") and _setup.get(k, {}).get("source", "steam") == "steam"
                               for k, _, _ in self.selected):
             try:
                 from wrapper import clear_default_launch_option

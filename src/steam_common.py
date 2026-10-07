@@ -230,6 +230,12 @@ def wine_path_for_prefix(linux_path: str, compatdata_path: str) -> str:
     dosdevices = os.path.join(compatdata_path, "pfx", "dosdevices")
     if not os.path.isdir(dosdevices):
         return z_path
+    # Internal paths stay on Z: even when a letter maps them: Proton and
+    # Heroic remap letters like s: between runs (Heroic prefix s: was home
+    # at install, the SD card at launch, so LCD MW3 offline broke, 2026-10-06).
+    home = os.path.realpath(os.path.expanduser("~"))
+    if path == home or path.startswith(home + "/"):
+        return z_path
 
     drives = {}
     for name in os.listdir(dosdevices):
@@ -249,8 +255,7 @@ def wine_path_for_prefix(linux_path: str, compatdata_path: str) -> str:
         if "steamapps" not in parts:
             return z_path
         root = "/".join(parts[:parts.index("steamapps")]) or "/"
-        home = os.path.realpath(os.path.expanduser("~"))
-        if root == "/" or root == home or root.startswith(home + "/"):
+        if root == "/":
             return z_path
         free = [f"{c}:" for c in "defghijklmnopqrstuvwxy" if f"{c}:" not in drives]
         if not free:

@@ -16,10 +16,14 @@ LaunchOptions (own games). Not used on OLED — OLED launches through
 Steam's Proton directly and its shader cache is actually useful.
 
 Usage:
-    python3 cache_cleanup.py <game_key> <source>
+    python3 cache_cleanup.py <game_key> <source> [Steam's %command%...]
 
     game_key  — Plutonium game key (t4sp, t4mp, t5sp, t5mp, t6mp, t6zm, iw5mp, iw5mp_ds)
     source    — "steam" or "own"
+
+With Steam's command (Steam games), the launch menu entry that was picked
+decides: Plutonium Online / Offline launch the matching Heroic entry, any
+other entry runs Steam's command unchanged (the stock game).
 
 Steam source adds LD_PRELOAD to work around Steam's pinned libcurl
 conflicting with the system flatpak binary.
@@ -186,7 +190,7 @@ def _strip_steam_shader_env(env: dict) -> dict:
 
 # ── Game launch ──────────────────────────────────────────────────────────────
 
-def launch_game(game_key: str, source: str):
+def launch_game(game_key: str, source: str, lan: bool = False):
     """
     Launch the Heroic flatpak for a Plutonium game and wait for it to
     finish. Uses subprocess instead of os.execv so the parent process
@@ -201,7 +205,8 @@ def launch_game(game_key: str, source: str):
     import subprocess
     import time
 
-    app_name = _heroic_app_name(game_key)
+    # Offline entry key must match plutonium_lcd.lan_key
+    app_name = _heroic_app_name(f"{game_key}_lan" if lan else game_key)
 
     heroic_url = f"heroic://launch?appName={app_name}&runner=sideload"
 
@@ -246,6 +251,7 @@ def main():
 
     game_key = sys.argv[1]
     source = sys.argv[2]
+    cmd = sys.argv[3:]
 
     if game_key not in STEAM_APPIDS:
         print(f"Unknown game key: {game_key}")
@@ -255,9 +261,20 @@ def main():
         print(f"Unknown source: {source} (expected 'steam' or 'own')")
         sys.exit(1)
 
+    lan = False
+    if cmd:
+        from plutonium import STEAM_MENU_EXES
+        menu = {n: (k, i == 1) for k, names in STEAM_MENU_EXES.items()
+                for i, n in enumerate(names)}
+        hit = next((menu[os.path.basename(a)] for a in cmd
+                    if os.path.basename(a) in menu), None)
+        if not hit:
+            os.execvp(cmd[0], cmd)  # stock launch menu entry
+        game_key, lan = hit  # WaW SP/MP share one appid and launch option
+
     # Nuke shader cache, then launch
     cleanup_shader_cache(game_key, source)
-    launch_game(game_key, source)
+    launch_game(game_key, source, lan)
 
 
 if __name__ == "__main__":
