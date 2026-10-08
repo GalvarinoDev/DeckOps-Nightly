@@ -23,6 +23,7 @@ from ui_constants import (
     font, _btn, _lbl, _badge, _header_bar, _log_to_file, _log_html, _copy_log_to_clipboard, _Sigs, go_to,
 )
 
+_NEXT_TO_JSON = "@json"
 _BOX_CSS = f"color:#CCC;background:#1A1A2A;border:1px solid {C_DIM};border-radius:8px;padding:10px 16px;"
 
 
@@ -136,15 +137,20 @@ class ManifestModsScreen(QWidget):
         for b in self._root_grp.buttons():
             self._root_grp.removeButton(b); b.deleteLater()
         home = os.path.expanduser("~")
-        saved = {mm.get_saved(f["manifest"]["id"]).get("games_root") for f in self._found if "manifest" in f}
-        for i, r in enumerate(self._roots):
-            b = _pill("Internal: ~/" + os.path.relpath(r, home) if r.startswith(home + os.sep) else f"SD / drive: {r}")
-            b.setProperty("root", r); b.setChecked(r in saved or (i == 0 and not saved & set(self._roots)))
+        # Default: each mod goes to the Games folder its manifest is in; a drive sends all there.
+        for r in [_NEXT_TO_JSON] + self._roots:
+            b = _pill("Next to each manifest" if r == _NEXT_TO_JSON else
+                      "Internal: ~/" + os.path.relpath(r, home) if r.startswith(home + os.sep) else f"SD / drive: {r}")
+            b.setProperty("root", r); b.setChecked(r == _NEXT_TO_JSON)
             self._root_grp.addButton(b); self._root_row.insertWidget(self._root_row.count() - 1, b)
 
     def _root(self):
         b = self._root_grp.checkedButton()
         return b.property("root") if b else ""
+
+    def _target(self, r):
+        root = self._root()
+        return r["dir"] if root == _NEXT_TO_JSON else root
 
     def _build_rows(self):
         while self._list.count() > 1:
@@ -191,7 +197,7 @@ class ManifestModsScreen(QWidget):
                 cb.toggled.connect(lambda _on: self._update_total())
                 grp.buttonClicked.connect(lambda _b, mc=cb: (mc.setChecked(True), self._update_total()))
             orow.addStretch(); v.addLayout(orow)
-            self._rows.append({"m": m, "cb": cb, "grp": grp, "boxes": boxes, "state": state, "card": card})
+            self._rows.append({"m": m, "dir": os.path.dirname(f["path"]), "cb": cb, "grp": grp, "boxes": boxes, "state": state, "card": card})
             self._list.insertWidget(self._list.count() - 1, card)
         self._refresh_rows()
 
@@ -202,9 +208,8 @@ class ManifestModsScreen(QWidget):
                         f"QPushButton:disabled{{background:{color};color:#FFF;}}")
 
     def _refresh_rows(self):
-        root = self._root()
         for r in self._rows:
-            mid = r["m"]["id"]; iroot = mm.install_root(root, r["m"]) if root else ""
+            root = self._target(r); mid = r["m"]["id"]; iroot = mm.install_root(root, r["m"]) if root else ""
             rec = mm.get_receipt(iroot, mid) if iroot else {}
             if r["boxes"] is not None:
                 # Tick what is installed in this Games folder, so installing more parts keeps the old ones.
@@ -232,14 +237,14 @@ class ManifestModsScreen(QWidget):
         for r in self._rows:
             if not r["cb"].isChecked(): continue
             if r["boxes"] is not None:
-                out.append((r["m"], "+".join(b.property("oid") for b in r["boxes"] if b.isChecked())))
+                out.append((r["m"], "+".join(b.property("oid") for b in r["boxes"] if b.isChecked()), self._target(r)))
             elif r["grp"].checkedButton():
-                out.append((r["m"], r["grp"].checkedButton().property("oid")))
+                out.append((r["m"], r["grp"].checkedButton().property("oid"), self._target(r)))
         return out
 
     def _update_total(self):
         sel = self._selected()
-        size = sum(mm.total_size(mm.get_option(m, oid)) for m, oid in sel)
+        size = sum(mm.total_size(mm.get_option(m, oid)) for m, oid, _r in sel)
         self.inst.setText(f"Install Selected ({_fmt_size(size)})" if sel else "Install Selected")
         self.inst.setEnabled(bool(sel) and not self._busy)
 
@@ -253,9 +258,9 @@ class ManifestModsScreen(QWidget):
         self.warning.setText(text); self.warning.setVisible(True)
 
     def _install(self):
-        sel = self._selected(); root = self._root()
+        sel = self._selected()
         if not sel: return
-        if not root: self._warn("Choose where to install the mods."); return
+        if not self._root(): self._warn("Choose where to install the mods."); return
         try:
             cdn = mm.normalize_cdn(self.cdn.text())
         except mm.ManifestError as ex:
@@ -269,14 +274,14 @@ class ManifestModsScreen(QWidget):
         self._isigs.progress.connect(lambda p, m: (self.bar.setValue(p), self.cur.setText(m)))
         self._isigs.log.connect(self._append_log)
         self._isigs.done.connect(self._on_installed)
-        threading.Thread(target=self._do_install, args=(sel, cdn, root), daemon=True).start()
+        threading.Thread(target=self._do_install, args=(sel, cdn), daemon=True).start()
 
-    def _do_install(self, sel, cdn, root):
+    def _do_install(self, sel, cdn):
         self._results = []; n = len(sel)
         log = self._isigs.log.emit
         inhibit.start("DeckOps is installing mods")
         try:
-            for i, (m, oid) in enumerate(sel):
+            for i, (m, oid, root) in enumerate(sel):
                 opt = mm.get_option(m, oid)
                 log(f"--- {m['name']} ({opt['name']}) ---")
                 tag = f"[{i + 1}/{n}] {m['name']}: "
