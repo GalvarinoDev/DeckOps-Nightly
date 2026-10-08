@@ -332,8 +332,17 @@ def _copy_plut_to_prefix(src_plut_dir: str, dest_plut_dir: str,
         _restore_user_storage(dest_plut_dir, keep_root, prog)
 
 
-# storage/<game>/ parts that belong to the user, not to Plutonium
-_PLUT_USER_PARTS = ("players", "mods")
+# storage/<game>/ parts that belong to the user, not to Plutonium.
+# usermaps/ holds custom maps and Zombies Declassified (~9 GB).
+_PLUT_USER_PARTS = ("players", "mods", "usermaps")
+
+# Never copied from one prefix to another: each prefix keeps its own, and
+# copying them is how ZD ended up in every BO2 prefix.
+_PLUT_NO_COPY = ("mods", "usermaps")
+
+
+def _skip_no_copy(root):
+    return lambda d, names: [n for n in names if n in _PLUT_NO_COPY] if d == root else []
 
 
 def _stash_user_storage(plut_dir: str, keep_root: str, prog):
@@ -396,7 +405,7 @@ def _copy_plut_fresh(src_plut_dir: str, dest_plut_dir: str, game_key: str, prog)
             if os.path.isdir(sub_src):
                 sub_dst = os.path.join(dest_plut_dir, "storage", storage_name)
                 os.makedirs(os.path.join(dest_plut_dir, "storage"), exist_ok=True)
-                shutil.copytree(sub_src, sub_dst)
+                shutil.copytree(sub_src, sub_dst, ignore=_skip_no_copy(sub_src))
         else:
             storage_dst = os.path.join(dest_plut_dir, "storage")
             shutil.copytree(storage_src, storage_dst)
@@ -538,7 +547,7 @@ def _copy_plut_to_launcher_prefix(src_plut_dir: str, game_prefix_plut_dir: str,
         if os.path.isdir(src_storage):
             if os.path.exists(dst_storage):
                 shutil.rmtree(dst_storage)
-            shutil.copytree(src_storage, dst_storage)
+            shutil.copytree(src_storage, dst_storage, ignore=_skip_no_copy(src_storage))
             prog(f"  Merged storage/{storage_name} into launcher prefix")
 
     # Copy top-level files (config.json handled separately by _write_config)
@@ -913,97 +922,42 @@ def _read_metadata(install_dir: str) -> dict:
     return {}
 
 
-# ZD script files dropped into storage/t6/raw/ alongside dlc5 + usermaps
-_ZD_RAW_FILES = (
-    "raw/maps/mp/animscripts/zm_dog_combat.gsc",
-    "raw/maps/mp/animscripts/zm_dog_stop.gsc",
-    "raw/scripts/zm/zzz_zm_dogfog.csc",
-    "raw/scripts/zm/zzz_zm_factoryfog.csc",
-    "raw/scripts/zm/zzz_zm_factorypower.csc",
-    "raw/scripts/zm/zzz_zm_gglow.csc",
-    "raw/scripts/zm/zzz_zm_location.gsc",
-    "raw/scripts/zm/zzz_zm_moonsky.csc",
-    "raw/scripts/zm/zzz_zm_sumpffog.csc",
-)
-
-
 def cleanup_zd_from_other_prefixes(installed_games: dict, steam_root: str,
                                     on_progress=None):
     """
-    Remove leaked Zombies Declassified files from non-t6zm prefixes.
+    Remove Zombies Declassified from every storage/t6 except the t6zm
+    prefix's. Older versions left copies in the MP prefix, the master and
+    the launcher prefix. Nothing is removed unless the t6zm prefix has ZD,
+    so the only copy is never lost.
 
-    Earlier versions copied the entire storage/ tree (including ZD's ~9GB)
-    into every Plutonium game prefix. This finds and removes those copies
-    from prefixes that don't need them.
-
-    Returns the number of prefixes cleaned.
+    Returns the number of places cleaned.
     """
-    from zombies_declassified import _ZD_USERMAPS
+    from zombies_declassified import (resolve_zd_storage, is_zd_installed, t6_storage,
+                                      uninstall_zd, _ZD_PARTS)
+    from shortcut import get_launcher_plut_dir
 
     def prog(msg):
         if on_progress:
             on_progress(msg)
 
+    keep = resolve_zd_storage(installed_games.get("t6zm"))
+    if not keep or not is_zd_installed(keep):
+        return 0
+
+    places = {
+        "MP prefix": t6_storage("t6mp", installed_games.get("t6mp")),
+        "Plutonium master": os.path.join(get_dedicated_plut_dir(), "storage", "t6"),
+        "launcher prefix": os.path.join(get_launcher_plut_dir(), "storage", "t6"),
+    }
     cleaned = 0
-    for key in GAME_META:
-        if key == "t6zm" or key not in installed_games:
+    for label, t6 in places.items():
+        if not t6 or os.path.realpath(t6) == os.path.realpath(keep):
             continue
-        game = installed_games[key]
-        install_dir = game.get("install_dir", "")
-        if not install_dir:
+        if not any(os.path.lexists(os.path.join(t6, p)) for p in _ZD_PARTS):
             continue
-
-        meta = _read_metadata(install_dir)
-        plut_dir = meta.get("plut_dir", "")
-        if not plut_dir:
-            appid = GAME_META[key][0]
-            plut_dir = _plut_dir_in_compatdata(steam_root, appid)
-
-        storage_t6 = os.path.join(plut_dir, "storage", "t6")
-        dlc5_dir = os.path.join(storage_t6, "mods", "dlc5")
-        if not os.path.isdir(dlc5_dir):
-            continue
-
-        prog(f"  Cleaning ZD files from {key} prefix...")
-
-        shutil.rmtree(dlc5_dir, ignore_errors=True)
-
-        um_dir = os.path.join(storage_t6, "usermaps")
-        for mapname in _ZD_USERMAPS:
-            mp = os.path.join(um_dir, mapname)
-            if os.path.isdir(mp):
-                shutil.rmtree(mp, ignore_errors=True)
-
-        for subpath in _ZD_RAW_FILES:
-            fp = os.path.join(storage_t6, subpath)
-            if os.path.isfile(fp):
-                os.remove(fp)
-
+        uninstall_zd(t6)
         cleaned += 1
-        prog(f"  ✓ Removed ZD files from {key} prefix")
-
-    # Also clean the launcher prefix
-    try:
-        from shortcut import get_launcher_plut_dir
-        launcher_t6 = os.path.join(get_launcher_plut_dir(), "storage", "t6")
-        dlc5_dir = os.path.join(launcher_t6, "mods", "dlc5")
-        if os.path.isdir(dlc5_dir):
-            prog("  Cleaning ZD files from launcher prefix...")
-            shutil.rmtree(dlc5_dir, ignore_errors=True)
-            um_dir = os.path.join(launcher_t6, "usermaps")
-            for mapname in _ZD_USERMAPS:
-                mp = os.path.join(um_dir, mapname)
-                if os.path.isdir(mp):
-                    shutil.rmtree(mp, ignore_errors=True)
-            for subpath in _ZD_RAW_FILES:
-                fp = os.path.join(launcher_t6, subpath)
-                if os.path.isfile(fp):
-                    os.remove(fp)
-            cleaned += 1
-            prog("  ✓ Removed ZD files from launcher prefix")
-    except Exception:
-        pass
-
+        prog(f"  ✓ Removed Zombies Declassified copy from {label}")
     return cleaned
 
 

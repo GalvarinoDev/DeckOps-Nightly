@@ -41,26 +41,88 @@ def has_bo2_zm_dlc(bo2_dir: str) -> bool:
     return all(os.path.isfile(os.path.join(zone, f)) for f in _ZD_REQUIRED_DLC)
 
 
+# ZD script files dropped into storage/t6/raw/ alongside dlc5 + usermaps
+_ZD_RAW_FILES = (
+    "raw/maps/mp/animscripts/zm_dog_combat.gsc",
+    "raw/maps/mp/animscripts/zm_dog_stop.gsc",
+    "raw/scripts/zm/zzz_zm_dogfog.csc",
+    "raw/scripts/zm/zzz_zm_factoryfog.csc",
+    "raw/scripts/zm/zzz_zm_factorypower.csc",
+    "raw/scripts/zm/zzz_zm_gglow.csc",
+    "raw/scripts/zm/zzz_zm_location.gsc",
+    "raw/scripts/zm/zzz_zm_moonsky.csc",
+    "raw/scripts/zm/zzz_zm_sumpffog.csc",
+)
+
+# Everything ZD puts in storage/t6, relative to it
+_ZD_PARTS = ("mods/dlc5", *(f"usermaps/{m}" for m in _ZD_USERMAPS), *_ZD_RAW_FILES)
+
+_T6_APPIDS = {"t6zm": 212910, "t6mp": 202990}
+
+
+def t6_storage(key, game=None):
+    """storage/t6 in the prefix this BO2 key runs in. Worked out from the key itself:
+    t6mp and t6zm share deckops_plutonium.json, so its plut_dir can name the wrong one."""
+    import config as cfg
+    from plutonium import _plut_dir_in_prefix
+    game = game or {}
+    if cfg.get_setup_games().get(key, {}).get("source") == "own":
+        compat = game.get("compatdata_path")
+        if not compat and game.get("exe_path"):
+            from shortcut import own_plut_prefix
+            compat = own_plut_prefix(key, game)
+    else:
+        from detect_games import find_steam_root
+        from wrapper import find_compatdata
+        root = find_steam_root()
+        compat = root and find_compatdata(root, _T6_APPIDS[key], game.get("install_dir"))
+    return os.path.join(_plut_dir_in_prefix(compat), "storage", "t6") if compat else None
+
+
+def _adopt_zd(dst, t6zm_game):
+    """Older versions put ZD in the MP prefix or the master copy. Move it into
+    the t6zm prefix once; parts already there stay and the strays are cleaned later."""
+    if is_zd_installed(dst):
+        return
+    from plutonium import get_dedicated_plut_dir
+    # Install dir only: the t6zm game's exe/prefix would point own-copy t6mp at the wrong prefix
+    mp = t6_storage("t6mp", {"install_dir": (t6zm_game or {}).get("install_dir")})
+    srcs = [mp, os.path.join(get_dedicated_plut_dir(), "storage", "t6")]
+    meta = os.path.join((t6zm_game or {}).get("install_dir", ""), "deckops_plutonium.json")
+    try:
+        with open(meta) as f:
+            pd = json.load(f).get("plut_dir", "")
+        if pd:
+            srcs.insert(0, os.path.join(pd, "storage", "t6"))
+    except (OSError, ValueError):
+        pass
+    for src in srcs:
+        if not src or os.path.realpath(src) == os.path.realpath(dst) or not is_zd_installed(src):
+            continue
+        _log.info("Moving Zombies Declassified from %s to %s", src, dst)
+        for part in _ZD_PARTS:
+            s, d = os.path.join(src, part), os.path.join(dst, part)
+            if os.path.lexists(s) and not os.path.lexists(d):
+                os.makedirs(os.path.dirname(d), exist_ok=True)
+                shutil.move(s, d)
+        return
+
+
 def resolve_zd_storage(t6zm_game=None):
-    """Plutonium storage/t6 that ZD lives in. One lookup order for install, update and Options,
-    so an update always finds the existing install instead of starting a fresh one elsewhere."""
+    """Plutonium storage/t6 that ZD lives in: the t6zm prefix, never MP or the master.
+    One lookup for install, update and Options, so an update always finds the existing install."""
     import config as cfg
     if cfg.is_lcd():
         from plutonium_lcd import get_shared_plut_dir
         pd = get_shared_plut_dir()
         return os.path.join(pd, "storage", "t6") if pd else None
-    install_dir = (t6zm_game or {}).get("install_dir", "")
-    meta = os.path.join(install_dir, "deckops_plutonium.json") if install_dir else ""
-    if meta and os.path.exists(meta):
+    dst = t6_storage("t6zm", t6zm_game)
+    if dst:
         try:
-            with open(meta) as f:
-                pd = json.load(f).get("plut_dir", "")
-            if pd:
-                return os.path.join(pd, "storage", "t6")
-        except Exception:
-            _log.warning("Could not read %s", meta, exc_info=True)
-    from plutonium import get_dedicated_plut_dir
-    return os.path.join(get_dedicated_plut_dir(), "storage", "t6")
+            _adopt_zd(dst, t6zm_game)
+        except OSError:
+            _log.warning("Could not move Zombies Declassified into %s", dst, exc_info=True)
+    return dst
 
 
 def _manifest_hash(file_list: list) -> str:
@@ -218,17 +280,7 @@ def uninstall_zd(plut_storage_t6: str, on_progress=None):
     prog(70, "Removed usermaps/")
 
     # Remove raw/ scripts
-    for subpath in [
-        "raw/maps/mp/animscripts/zm_dog_combat.gsc",
-        "raw/maps/mp/animscripts/zm_dog_stop.gsc",
-        "raw/scripts/zm/zzz_zm_dogfog.csc",
-        "raw/scripts/zm/zzz_zm_factoryfog.csc",
-        "raw/scripts/zm/zzz_zm_factorypower.csc",
-        "raw/scripts/zm/zzz_zm_gglow.csc",
-        "raw/scripts/zm/zzz_zm_location.gsc",
-        "raw/scripts/zm/zzz_zm_moonsky.csc",
-        "raw/scripts/zm/zzz_zm_sumpffog.csc",
-    ]:
+    for subpath in _ZD_RAW_FILES:
         fp = os.path.join(plut_storage_t6, subpath)
         if os.path.isfile(fp):
             os.remove(fp)
