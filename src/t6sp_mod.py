@@ -4,18 +4,15 @@ t6sp_mod.py - DeckOps installer for T6SP-MOD (Call of Duty: Black Ops II Singlep
 Rattpak's T6SP-MOD — a dedicated singleplayer client for Black Ops II.
 https://github.com/Rattpak/T6SP-Mod-Release
 
-Downloads the mod exe and companion DLL from the DeckOps repo and drops
-them into the BO2 install directory.
+Downloads the mod exe and companion DLL from Rattpak's latest GitHub release
+and drops them into the BO2 install directory.
 
-For Steam games:
-  - Backs up t6sp.exe -> t6sp.exe.bak
-  - Overwrites t6sp.exe with the mod exe
-  - Drops t6sp-mod.dll alongside it
-  This lets Steam launch T6SP-MOD transparently via the existing SP shortcut.
-
-For own games:
-  - Same backup and overwrite flow
-  - The non-Steam shortcut already points at t6sp.exe
+The stock t6sp.exe is left untouched; T6SP-Mod.exe and t6sp-mod.dll go next to it.
+Steam games get a launch option that swaps t6sp.exe for T6SP-Mod.exe (same idea
+as IW3SP), so file verification and game updates can't undo the mod. Own games:
+the shortcut points at T6SP-Mod.exe (shortcut._OWN_MOD_EXES).
+Older installs replaced t6sp.exe and kept the original as t6sp.exe.bak; that
+backup is moved back on install.
 
 Progress is reported via a callback:
     on_progress(percent: int, status: str)
@@ -25,14 +22,15 @@ import os
 import json
 import shutil
 
-from identity import GITHUB_RAW
-from net import download as _download
+from net import download as _download, github_asset
 
-# T6SP-MOD files hosted on the DeckOps repo.
-# When Rattpak publishes the beta on his own GitHub, update these URLs.
-_BASE_URL = f"{GITHUB_RAW}/assets/T6SP_BETA"
-_MOD_EXE_URL = f"{_BASE_URL}/t6sp.exe"
-_MOD_DLL_URL = f"{_BASE_URL}/t6sp-mod.dll"
+# Rattpak's releases; the pinned URLs are only used if the GitHub API lookup fails
+_REPO = "Rattpak/T6SP-Mod-Release"
+_PIN = "https://github.com/Rattpak/T6SP-Mod-Release/releases/download/v1.0.0-Beta/"
+
+MOD_EXE = "T6SP-Mod.exe"
+APPID = 202970
+LAUNCH_OPTS = "bash -c 'exec \"${@/t6sp.exe/T6SP-Mod.exe}\"' -- %command%"
 
 METADATA_FILE = "deckops_t6sp_mod.json"
 
@@ -63,36 +61,46 @@ def install_t6sp_mod(game: dict, steam_root: str,
 
     prog(2, "Installing Rattpak's T6SP-MOD (Beta)...")
 
+    exe_url, exe_dg = github_asset(_REPO, "T6SP-Mod.exe", fallback=_PIN + "T6SP-Mod.exe")
+    dll_url, dll_dg = github_asset(_REPO, "t6sp-mod.dll", fallback=_PIN + "t6sp-mod.dll")
+
     # Download mod exe
     exe_dest = os.path.join(install_dir, "t6sp_mod_tmp.exe")
     prog(5, "Downloading T6SP-MOD exe...")
     _download(
-        _MOD_EXE_URL,
+        exe_url,
         exe_dest,
         lambda p, m: prog(5 + int(p * 0.35), m),
         "Downloading T6SP-MOD exe...",
+        digest=exe_dg,
     )
 
     # Download companion DLL
     dll_dest = os.path.join(install_dir, "t6sp-mod.dll")
     prog(45, "Downloading T6SP-MOD DLL...")
     _download(
-        _MOD_DLL_URL,
+        dll_url,
         dll_dest,
         lambda p, m: prog(45 + int(p * 0.30), m),
         "Downloading T6SP-MOD DLL...",
+        digest=dll_dg,
     )
 
-    # Backup original t6sp.exe and replace with mod exe
-    t6sp     = os.path.join(install_dir, "t6sp.exe")
+    shutil.move(exe_dest, os.path.join(install_dir, MOD_EXE))
+
+    # Older installs replaced t6sp.exe: put the original back
     t6sp_bak = os.path.join(install_dir, "t6sp.exe.bak")
+    if os.path.exists(t6sp_bak):
+        prog(80, "Restoring original t6sp.exe...")
+        shutil.move(t6sp_bak, os.path.join(install_dir, "t6sp.exe"))
 
-    prog(80, "Backing up original t6sp.exe...")
-    if os.path.exists(t6sp) and not os.path.exists(t6sp_bak):
-        shutil.copy2(t6sp, t6sp_bak)
-
-    prog(85, "Replacing t6sp.exe with T6SP-MOD...")
-    shutil.move(exe_dest, t6sp)
+    if source != "own":
+        prog(85, "Setting launch options...")
+        try:
+            from wrapper import set_launch_options
+            set_launch_options(steam_root, APPID, LAUNCH_OPTS)
+        except Exception as ex:
+            prog(85, f"⚠ Could not set launch options: {ex}")
 
     # Write metadata
     prog(95, "Saving metadata...")

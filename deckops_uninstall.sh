@@ -216,7 +216,7 @@ KNOWN_EXES = [
     "iw5mp.exe", "iw5sp.exe", "CoDWaW.exe", "CoDWaWmp.exe",
     "BlackOps.exe", "BlackOpsMP.exe", "t6zm.exe", "t6mp.exe", "t6sp.exe",
     # Mod client exes (own shortcuts point at these, not original game exes)
-    "iw4x.exe", "iw3sp_mod.exe",
+    "iw4x.exe", "iw3sp_mod.exe", "T6SP-Mod.exe",
     # AlterWare mod client exes (own shortcuts point at these)
     "iw6-mod.exe", "s1-mod.exe",
     # LCD own Plutonium wrapper exes (written by plutonium.py, not original game files)
@@ -445,7 +445,7 @@ info "Removing Rattpak's T6SP-MOD files from Black Ops II folder..."
 if [ -n "$STEAM_ROOT" ]; then
     bo2sp_dir=$(find_install_dir 202970) || true
     if [ -n "$bo2sp_dir" ]; then
-        for f in "t6sp-mod.dll" "deckops_t6sp_mod.json"; do
+        for f in "T6SP-Mod.exe" "t6sp-mod.dll" "deckops_t6sp_mod.json"; do
             [ -f "$bo2sp_dir/$f" ] && rm -f "$bo2sp_dir/$f" && success "Removed $f" || skip "$f not found"
         done
     else
@@ -585,9 +585,14 @@ OWN_CLEANUP = {
         "files": ["iw3sp_mod.exe", "iw3sp_mod.dll", "deckops_iw3sp.json"],
         "dirs":  ["iw3sp_mod"],
     },
-    # T6SP-MOD replaces t6sp.exe in place; DLL and metadata are the mod artifacts
+    # Older T6SP-MOD installs replaced t6sp.exe in place; DLL and metadata are the mod artifacts
     "t6sp.exe": {
         "files": ["t6sp-mod.dll", "deckops_t6sp_mod.json"],
+        "dirs":  [],
+    },
+    # Current T6SP-MOD: the shortcut points at T6SP-Mod.exe next to the stock t6sp.exe
+    "t6sp-mod.exe": {
+        "files": ["T6SP-Mod.exe", "t6sp-mod.dll", "deckops_t6sp_mod.json"],
         "dirs":  [],
     },
     "blackops3.exe": {
@@ -1964,6 +1969,7 @@ OWN_EXE_MAP = {
     "blackops.exe":   "Call of Duty: Black Ops",
     "blackopsmp.exe": "Call of Duty: Black Ops - Multiplayer",
     "t6sp.exe":       "Call of Duty: Black Ops II - Singleplayer",
+    "t6sp-mod.exe":   "Call of Duty: Black Ops II - Singleplayer",
     "t6zm.exe":       "Call of Duty: Black Ops II - Zombies",
     "t6mp.exe":       "Call of Duty: Black Ops II - Multiplayer",
     # Mod client exes (own shortcuts point at these, not original game exes)
@@ -2276,6 +2282,7 @@ OWN_EXE_MAP = {
     "blackops.exe":   "Call of Duty: Black Ops",
     "blackopsmp.exe": "Call of Duty: Black Ops - Multiplayer",
     "t6sp.exe":       "Call of Duty: Black Ops II - Singleplayer",
+    "t6sp-mod.exe":   "Call of Duty: Black Ops II - Singleplayer",
     "t6zm.exe":       "Call of Duty: Black Ops II - Zombies",
     "t6mp.exe":       "Call of Duty: Black Ops II - Multiplayer",
     # Mod client exes (own shortcuts point at these, not original game exes)
