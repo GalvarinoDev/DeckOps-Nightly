@@ -190,7 +190,7 @@ def _strip_steam_shader_env(env: dict) -> dict:
 
 # ── Game launch ──────────────────────────────────────────────────────────────
 
-def launch_game(game_key: str, source: str, lan: bool = False):
+def launch_game(game_key: str, source: str):
     """
     Launch the Heroic flatpak for a Plutonium game and wait for it to
     finish. Uses subprocess instead of os.execv so the parent process
@@ -205,8 +205,7 @@ def launch_game(game_key: str, source: str, lan: bool = False):
     import subprocess
     import time
 
-    # Offline entry key must match plutonium_lcd.lan_key
-    app_name = _heroic_app_name(f"{game_key}_lan" if lan else game_key)
+    app_name = _heroic_app_name(game_key)
 
     heroic_url = f"heroic://launch?appName={app_name}&runner=sideload"
 
@@ -262,16 +261,17 @@ def main():
         print(f"Unknown source: {source} (expected 'steam' or 'own')")
         sys.exit(1)
 
-    lan = False
+    lan = None
     if cmd:
         from plutonium import STEAM_MENU_EXES
         menu = {n: (k, i == 1) for k, names in STEAM_MENU_EXES.items()
                 for i, n in enumerate(names)}
-        hit = next((menu[os.path.basename(a)] for a in cmd
+        hit = next(((menu[os.path.basename(a)], a) for a in cmd
                     if os.path.basename(a) in menu), None)
         if not hit:
             os.execvp(cmd[0], cmd)  # stock launch menu entry
-        game_key, lan = hit  # WaW SP/MP share one appid and launch option
+        (game_key, offline), path = hit  # WaW SP/MP share one appid and launch option
+        lan = path if offline else None
 
     # Heroic's prefix holds the only real Plutonium copy; never block the launch
     try:
@@ -283,9 +283,14 @@ def main():
     except Exception as ex:
         _log.warning("Plutonium update skipped: %s", ex)
 
+    # Plutonium Offline: the entry's file opens the DeckOps: Plutonium Offline launcher.
+    # It runs here on the host, not through Heroic.
+    if lan:
+        os.execvp("bash", ["bash", lan])
+
     # Nuke shader cache, then launch
     cleanup_shader_cache(game_key, source)
-    launch_game(game_key, source, lan)
+    launch_game(game_key, source)
 
 
 if __name__ == "__main__":

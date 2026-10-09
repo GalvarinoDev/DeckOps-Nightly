@@ -186,7 +186,7 @@ class SetupScreen(QWidget):
         self._extra_paths = []
         self._cod4_choice = "cod4r"
         self._iw4x_dlc_cb = None; self._iw4x_dlc_present = False
-        self._zd_cb = None; self._waw_mp_cb = None
+        self._zd_cb = None; self._waw_mp_cb = None; self._lan_cb = None
 
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
@@ -259,7 +259,7 @@ class SetupScreen(QWidget):
                 if item.widget(): item.widget().deleteLater()
         self._checks.clear()
         self._iw4x_dlc_cb = None; self._iw4x_dlc_present = False
-        self._zd_cb = None; self._waw_mp_cb = None
+        self._zd_cb = None; self._waw_mp_cb = None; self._lan_cb = None
 
         MAX_SLOTS  = 3
         SLOT_W     = 28
@@ -351,6 +351,27 @@ class SetupScreen(QWidget):
             self._row_options(opts, keys, all_installed)
             outer.addLayout(opts)
             self._add_row(gd, cw)
+
+        # Offline Mode: its own row, one setting for every Plutonium game (not ticked by Select All)
+        from plutonium import GAME_META
+        if any(k in all_installed for k in GAME_META):
+            lan_gd = next(g for g in ALL_GAMES if g.get("client") == "lan")
+            cw = QWidget()
+            outer = QVBoxLayout(cw); outer.setContentsMargins(6, 6, 6, 6); outer.setSpacing(4)
+            row = QHBoxLayout(); row.setSpacing(10)
+            slot = QWidget(); slot.setFixedWidth(CHECKS_W)
+            sl = QHBoxLayout(slot); sl.setContentsMargins(0, 0, 0, 0)
+            self._lan_cb = QCheckBox(); self._lan_cb.setChecked(cfg.get_offline_mode())
+            sl.addWidget(self._lan_cb, alignment=Qt.AlignHCenter)
+            row.addWidget(slot)
+            row.addWidget(_lbl("Plutonium Offline", 13, "#FFF", align=Qt.AlignLeft, wrap=False), stretch=1)
+            row.addWidget(_badge("OFFLINE", C_TREY, 170, h=28, size=9))
+            outer.addLayout(row)
+            note = _lbl("Offline launcher, Plutonium Offline in each game's Steam launch menu, "
+                        "bot matches in BO2 / MW3 MP.", 10, C_DIM, align=Qt.AlignLeft)
+            note.setContentsMargins(CHECKS_W + 10, 0, 0, 0)
+            outer.addWidget(note)
+            self._add_row(lan_gd, cw)
 
     def _row_options(self, lay, keys, all_installed):
         """Per-game install choices shown under the row while that mode is ticked (replaces pop-ups)."""
@@ -554,6 +575,7 @@ class SetupScreen(QWidget):
         s.cod4_client = self._cod4_choice if "cod4mp" in sel else "cod4r"
         s.zd_choice = bool(self._zd_cb and self._zd_cb.isChecked())
         s.waw_mp_shortcut = bool(self._waw_mp_cb and self._waw_mp_cb.isChecked())
+        s.offline_mode = self._lan_cb.isChecked() if self._lan_cb else None
         s.bo3_client = _ask_bo3_client(self, all_tuples)
         go_to(self.stack, "InstallScreen")
 
@@ -581,6 +603,7 @@ class _BaseInstallScreen(QWidget):
         self._from_manage = False
         self.zd_choice = None
         self.waw_mp_shortcut = False
+        self.offline_mode = None
         self.bo3_client = "cleanops"
         self._results = []
         self._plan = []; self._bands = {}
@@ -1174,6 +1197,7 @@ class _BaseInstallScreen(QWidget):
         self.stat.setText(f"Finished in {el // 60}:{el % 60:02d}")
         self.zd_choice = None
         self.waw_mp_shortcut = False
+        self.offline_mode = None
         if ok:
             self.cur.setText(self._DONE_MSG)
         else:
@@ -1254,6 +1278,10 @@ class _BaseInstallScreen(QWidget):
     def _run(self):
         import traceback as _tb
         try:
+            # Before the installs: the Plutonium setup reads it
+            if self.offline_mode is not None:
+                cfg.set_offline_mode(self.offline_mode)
+            _log_to_file(f"Offline Mode: {'on' if cfg.get_offline_mode() else 'off'}")
             self._run_inner()
         except Exception:
             err = _tb.format_exc()
@@ -1838,10 +1866,11 @@ class _BaseInstallScreen(QWidget):
         # --- Plutonium games
         if has_plut:
             try:
-                from shortcut import create_launcher_shortcut
-                create_launcher_shortcut(
-                    on_progress=lambda m: self._s.log.emit(m)
-                )
+                if cfg.get_offline_mode():
+                    from shortcut import create_launcher_shortcut
+                    create_launcher_shortcut(
+                        on_progress=lambda m: self._s.log.emit(m)
+                    )
             except Exception as ex:
                 self._s.log.emit(f"  Launcher shortcut failed: {ex}")
 

@@ -1396,7 +1396,7 @@ def apply_steam_artwork(selected_keys: list, on_progress=None):
 
 
 # Mod clients whose exe replaces the game's in own shortcuts; the appid CRC hashes this exe.
-_OWN_MOD_EXES = {"iw4mp": "iw4x.exe", "cod4sp": "iw3sp_mod.exe", "t7x": "t7x.exe",
+_OWN_MOD_EXES = {"iw4mp": "iw4x.exe", "cod4sp": "iw3sp_mod.exe", "t7x": "t7x.exe", "t6sp": "T6SP-Mod.exe",
                  "iw6mp": "iw6-mod.exe", "iw6sp": "iw6-mod.exe", "s1mp": "s1-mod.exe", "s1sp": "s1-mod.exe"}
 
 
@@ -1773,6 +1773,12 @@ _OLD_LAUNCHER_EXE = VENV_PYTHON
 _OLD_LAUNCHER_EXE_DIRECT = os.path.join(INSTALL_DIR, _LAUNCHER_EXE_REL)
 
 
+def launcher_run_url() -> str:
+    """Steam URL that starts the Offline launcher shortcut (same appid as create_launcher_shortcut)."""
+    appid = _calc_shortcut_appid(f'"{os.path.join(INSTALL_DIR, _LAUNCHER_SH_REL)}"', LAUNCHER_TITLE)
+    return f"steam://rungameid/{(appid << 32) | 0x02000000}"
+
+
 def get_launcher_plut_dir() -> str:
     """
     Return the Plutonium directory inside the launcher's Wine prefix.
@@ -1946,6 +1952,12 @@ def create_launcher_shortcut(on_progress=None):
     prog(f"  Launcher shortcut appid: {shortcut_appid}")
 
 
+def remove_launcher_shortcut(on_progress=None):
+    """Offline Mode removed: take the offline launcher shortcut and its artwork out."""
+    exe_path = f'"{os.path.join(INSTALL_DIR, _LAUNCHER_SH_REL)}"'
+    remove_shortcut(LAUNCHER_TITLE, exe_path, LAUNCHER_ART, on_progress=on_progress)
+
+
 # --- Repair: re-add any DeckOps shortcut missing from shortcuts.vdf
 # Steam must already be closed; it rewrites shortcuts.vdf on exit.
 
@@ -1975,7 +1987,8 @@ def repair_shortcuts(steam_root: str = None, on_progress=None) -> list:
             expected[key] = ("heroic", HEROIC_PLUT_GAMES[key]["title"])
         elif src == "own" and key in OWN_SHORTCUTS:
             expected[key] = ("own", OWN_SHORTCUTS[key]["name"])
-    has_plut = any(e.get("client") == "plutonium" for e in setup.values())
+    # The offline launcher exists only with Offline Mode added
+    has_plut = cfg.get_offline_mode() and any(e.get("client") == "plutonium" for e in setup.values())
 
     uids = _find_all_steam_uids()
     if not uids:

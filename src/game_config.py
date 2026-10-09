@@ -120,34 +120,30 @@ def _heroic_mirror_path(compatdata_dest):
     return _heroic_pfx_local(*tail.split(os.sep))
 
 
-def _launcher_mirror_path(compatdata_dest):
+def _offline_mirror_path(compatdata_dest, key):
     """
-    Given a destination path inside a compatdata pfx AppData/Local tree,
-    return the equivalent path inside the offline launcher's prefix.
-
-    The launcher runs as a non-Steam shortcut with its own compatdata
-    prefix. Plutonium configs must be mirrored there so the bootstrapper
-    can find them when launched from the offline launcher.
-
-    Returns None if the input does not contain '/AppData/Local/' or if
-    the launcher appid cannot be determined.
+    The same folder inside the game's offline Plutonium copy (Offline Mode),
+    so offline play gets the resolution, FOV, sensitivity and player name too.
+    compatdata_dest is a folder under .../AppData/Local/Plutonium/. Returns None
+    when Offline Mode is off or the copy isn't built yet (it is never created here).
     """
-    marker = os.path.join("AppData", "Local") + os.sep
+    marker = os.path.join("AppData", "Local", "Plutonium") + os.sep
     idx = compatdata_dest.find(marker)
     if idx == -1:
         return None
-    tail = compatdata_dest[idx + len(marker):]
-    try:
-        from shortcut import get_launcher_plut_dir
-        # get_launcher_plut_dir returns .../AppData/Local/Plutonium
-        # We need the AppData/Local base, then append the tail
-        launcher_plut = get_launcher_plut_dir()
-        # Strip "Plutonium" from the end to get the AppData/Local base
-        launcher_local = os.path.dirname(launcher_plut)
-        return os.path.join(launcher_local, *tail.split(os.sep))
-    except Exception:
-        _log.debug("launcher prefix config lookup failed", exc_info=True)
+    import config as cfg
+    from plutonium import LAN_ROOT, LAN_MOD_PLAYERS, OLED_LAN_WRAPPER_NAMES, _plut_key
+    if not cfg.get_offline_mode() or key not in OLED_LAN_WRAPPER_NAMES:
         return None
+    mode = _plut_key(key)
+    client = os.path.join(LAN_ROOT, mode, "client")
+    if not os.path.isdir(client):
+        return None
+    dest = os.path.join(client, *compatdata_dest[idx + len(marker):].split(os.sep))
+    # Offline with a mod: the game reads its settings from players/<mod>/
+    if mode in LAN_MOD_PLAYERS and os.path.basename(dest) == "players":
+        dest = os.path.join(dest, LAN_MOD_PLAYERS[mode])
+    return dest
 
 
 # The config map is built inside apply_game_configs so steam_root is available.
@@ -295,12 +291,22 @@ def _build_config_map(steam_root, installed_games=None):
                     game_install_dir=_game_dir("t6mp"),
                 ),
             ),
+            # Without it the game auto-detects 800x600 and turns the gamepad off
+            (
+                "BO2/hardware_mp.chp",
+                _pfx_local(
+                    steam_root, 202990,
+                    "Plutonium", "storage", "t6", "players",
+                    game_install_dir=_game_dir("t6mp"),
+                ),
+            ),
         ],
 
         # ── BO2 SP (T6SP-MOD, uses stock BO2 install dir) ────────────────────
         # Binary settings profile — dropped into install_dir/players/.
         "t6sp": [
             ("BO2/user_sp.cgp", None),
+            ("BO2/hardware.chp", None),
         ],
 
         # ── Ghosts SP (AlterWare iw6, appid 209160) ──────────────────────────
@@ -610,27 +616,24 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
                         prog(f"  ! {key}: HGL mirror failed "
                              f"({os.path.basename(src)}): {ex}")
 
-            # ── Offline launcher prefix mirror (OLED / Other only) ────────
-            # The offline launcher exe runs in its own Proton prefix.
-            # Mirror Plutonium configs there so the bootstrapper finds
-            # resolution, FOV, sensitivity, and player name settings.
-            # LCD is skipped — both online and offline play use the
-            # single Heroic shared prefix, not the launcher's own prefix.
+            # ── Offline copy mirror (Offline Mode) ─────────────────────────
+            # Offline play runs from DeckOps' own Plutonium copy (OLED and LCD),
+            # so it gets the same configs.
             # Best-effort — does not affect applied/failed counts.
-            if fixed_dest and deck_model != "lcd":
-                launcher_dest_dir = _launcher_mirror_path(dest_dir)
-                if launcher_dest_dir:
+            if fixed_dest:
+                offline_dir = _offline_mirror_path(dest_dir, key)
+                if offline_dir:
                     try:
-                        os.makedirs(launcher_dest_dir, exist_ok=True)
-                        launcher_dest = os.path.join(
-                            launcher_dest_dir, os.path.basename(src)
+                        os.makedirs(offline_dir, exist_ok=True)
+                        offline_dest = os.path.join(
+                            offline_dir, os.path.basename(src)
                         )
-                        shutil.copy2(src, launcher_dest)
-                        _replace_player_name(launcher_dest, player_name)
-                        prog(f"  + {key}: also mirrored to launcher prefix "
-                             f"-> {launcher_dest_dir}")
+                        shutil.copy2(src, offline_dest)
+                        _replace_player_name(offline_dest, player_name)
+                        prog(f"  + {key}: also mirrored to the offline copy "
+                             f"-> {offline_dir}")
                     except Exception as ex:
-                        prog(f"  ! {key}: launcher mirror failed "
+                        prog(f"  ! {key}: offline copy mirror failed "
                              f"({os.path.basename(src)}): {ex}")
 
     prog(f"Game configs: {applied} applied, {skipped} skipped, {failed} failed.")
@@ -763,17 +766,17 @@ def rename_player(player_name, steam_root, installed_games=None,
                         updated += 1
                         prog(f"  + {key}: renamed in HGL mirror")
 
-            # Launcher prefix mirror
+            # Offline copy mirror
             if fixed_dest:
-                launcher_dest_dir = _launcher_mirror_path(dest_dir)
-                if launcher_dest_dir:
-                    launcher_dest = os.path.join(
-                        launcher_dest_dir, os.path.basename(asset_subpath)
+                offline_dir = _offline_mirror_path(dest_dir, key)
+                if offline_dir:
+                    offline_dest = os.path.join(
+                        offline_dir, os.path.basename(asset_subpath)
                     )
-                    if os.path.exists(launcher_dest):
-                        _replace_player_name(launcher_dest, player_name)
+                    if os.path.exists(offline_dest):
+                        _replace_player_name(offline_dest, player_name)
                         updated += 1
-                        prog(f"  + {key}: renamed in launcher mirror")
+                        prog(f"  + {key}: renamed in the offline copy")
 
     # ── T7X special case ─────────────────────────────────────────────────
     # T7X stores its player name in t7x/players/properties.json as JSON,
@@ -806,12 +809,11 @@ def rename_player(player_name, steam_root, installed_games=None,
 def _rename_in_lan_scripts(player_name, installed_games, prog):
     """
     Plutonium offline scripts bake the name in as +name "...": the -lan .sh
-    (used by the LAN launcher), the OLED Steam Offline menu copy, and the
-    LCD Steam replaced exe fallback. Rewrite it in each.
+    (used by the LAN launcher) and the LCD Steam replaced exe fallback.
+    Rewrite it in each.
     """
     import re
     import config as cfg
-    from plutonium import STEAM_MENU_EXES
     from plutonium_lcd import PLUT_GAME_EXES
 
     new = '+name "' + player_name.replace('"', '') + '"'
@@ -822,8 +824,6 @@ def _rename_in_lan_scripts(player_name, installed_games, prog):
             continue
         d = os.path.dirname(lan)
         paths = {lan}
-        if key in STEAM_MENU_EXES:
-            paths.add(os.path.join(d, STEAM_MENU_EXES[key][1]))
         if key in PLUT_GAME_EXES and entry.get("source") != "own":
             paths.add(os.path.join(d, PLUT_GAME_EXES[key][1]))
 

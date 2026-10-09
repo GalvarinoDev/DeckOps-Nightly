@@ -80,7 +80,7 @@ OLED_OWN_WRAPPER_EXES = {
 
 # OLED Steam games: (online, offline) wrapper files written next to the
 # untouched game exe. Steam launch menu entries point at these (see
-# steam_appinfo.py). Offline is a copy of the -lan .sh under an exe name.
+# steam_appinfo.py). Offline opens the Offline launcher (write_offline_menu_file).
 # Keys sharing an appid (WaW) appear in this order.
 STEAM_MENU_EXES = {
     "t4sp":  ("t4plutsp.exe",  "t4plutsp_lan.exe"),
@@ -114,18 +114,6 @@ OLED_LAN_WRAPPER_NAMES = {
     "t6zm":  "t6plut_lan_zm.sh",
     "iw5mp": "iw5plut_lan.sh",
     "iw5mp_ds": "iw5plut_lan.sh",
-}
-
-# Seconds each LAN wrapper stays alive after the bootstrapper returns.
-# The bootstrapper exits as soon as it has spawned the game; if the
-# wrapper exits with it, launcher_offline.sh ends, Steam considers the
-# shortcut stopped, and session teardown races the still-initializing
-# game. T6 initializes far more slowly than the IW-engine games, so it
-# gets a much longer hold.
-_LAN_LINGER_S_DEFAULT = 8
-_LAN_LINGER_S = {
-    "t6mp": 30,
-    "t6zm": 30,
 }
 
 # Old shared filenames used before the unique-name fix. Used during
@@ -503,71 +491,14 @@ def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
         prog(f"  ⚠ Menu mod copy failed: {ex}")
 
 
-# ── offline launcher prefix helper ────────────────────────────────────────────
-
-def _copy_plut_to_launcher_prefix(src_plut_dir: str, game_prefix_plut_dir: str,
-                                   launcher_plut_dir: str, game_key: str,
-                                   on_progress=None):
-    """
-    Mirror Plutonium files into the offline launcher's prefix.
-
-    Unlike _copy_plut_to_prefix, this does NOT wipe the destination — each
-    game's install_plutonium call adds its own storage/ subdirs incrementally.
-    Shared dirs (bin/, launcher/, games/) are symlinked once and skipped on
-    subsequent calls.
-
-    src_plut_dir          — dedicated prefix Plutonium dir (source of truth
-                            for bins, shared files)
-    game_prefix_plut_dir  — the per-game prefix Plutonium dir that was just
-                            populated (source of mods/storage for THIS game)
-    launcher_plut_dir     — destination inside the launcher's compatdata prefix
-    game_key              — current game key (for storage subdir mapping)
-    """
-    def prog(msg):
-        if on_progress:
-            on_progress(msg)
-
-    os.makedirs(launcher_plut_dir, exist_ok=True)
-
-    # Link shared directories to the master; a link left pointing at the old
-    # shared copy (or dangling once it is removed) is replaced.
-    for subdir in _PLUT_SHARED_SUBDIRS:
-        shared_src = os.path.join(src_plut_dir, subdir)
-        dest_sub = os.path.join(launcher_plut_dir, subdir)
-        if os.path.isdir(shared_src) and (os.path.islink(dest_sub) or not os.path.lexists(dest_sub)):
-            if os.path.islink(dest_sub):
-                os.unlink(dest_sub)
-            os.symlink(shared_src, dest_sub)
-
-    # Merge storage/ — copy per-game storage subdirs without wiping others.
-    storage_name = _STORAGE_SUBDIRS.get(game_key)
-    if storage_name:
-        src_storage = os.path.join(game_prefix_plut_dir, "storage", storage_name)
-        dst_storage = os.path.join(launcher_plut_dir, "storage", storage_name)
-        if os.path.isdir(src_storage):
-            if os.path.exists(dst_storage):
-                shutil.rmtree(dst_storage)
-            shutil.copytree(src_storage, dst_storage, ignore=_skip_no_copy(src_storage))
-            prog(f"  Merged storage/{storage_name} into launcher prefix")
-
-    # Copy top-level files (config.json handled separately by _write_config)
-    for item in os.listdir(src_plut_dir):
-        src_item = os.path.join(src_plut_dir, item)
-        dst_item = os.path.join(launcher_plut_dir, item)
-        if os.path.exists(dst_item):
-            continue  # already present (symlink, storage, or prior copy)
-        if os.path.isfile(src_item):
-            shutil.copy2(src_item, dst_item)
-
-
 # ── launcher prefix game configs ──────────────────────────────────────────────
 #
 # Maps game keys to their DeckOps asset config and the relative storage
 # path inside the Plutonium directory where the bootstrapper expects them.
-# This is the single source of truth for placing game configs into the
-# offline launcher prefix — called every time a Plutonium game is
-# installed or reinstalled, so configs always land regardless of which
-# install flow triggered it.
+# This is the single source of truth for placing game configs into a
+# Plutonium folder (a game's prefix and its offline copy) — called every
+# time a Plutonium game is installed or reinstalled, so configs always land
+# regardless of which install flow triggered it.
 
 _LAUNCHER_CONFIG_MAP = {
     # game_key: (asset_subpath, storage_relpath)
@@ -700,38 +631,25 @@ def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
     return wrapper_path
 
 
-def _write_oled_lan_wrapper(game: dict, game_key: str, steam_root: str,
-                             proton_path: str, compatdata_path: str,
-                             plut_dir: str, source: str = "steam") -> str | None:
+def _write_offline_wrapper(game: dict, game_key: str, source: str = "steam") -> str | None:
     """
-    Write a sidecar -lan bash script for OLED offline mode.
+    Write the game's offline script (e.g. t6plut_lan_mp.sh) next to the game files,
+    OLED and LCD alike. DeckOps_Offline.exe runs it through launcher_offline.sh (the
+    Steam launch menu's Plutonium Offline entry opens that launcher). It hands over to
+    assets/LAN/lan_server.sh, which starts the game from the offline Plutonium copy
+    in LAN_PREFIX; BO2 MP and MW3 MP also host a local server with bots.
 
-    Creates a new shell script (e.g. t4plut_lan_sp.sh) alongside the game
-    files. Each game_key gets a unique filename so SP/MP pairs don't
-    overwrite each other. DeckOps_Offline.exe reads the path from config
-    and calls bash on it for offline play.
-
-    Uses the bootstrapper with -lan flag so no Plutonium account is needed.
-    Written for both Steam and own game sources -- the path differs but
-    the script content is the same.
-
-    Returns the full path to the written script, or None if game_key
-    is not in OLED_LAN_WRAPPER_NAMES.
+    The player name stays as +name "..." so game_config's rename finds it.
+    Returns the script path, or None for a key without offline play.
     """
     if game_key not in OLED_LAN_WRAPPER_NAMES:
         return None
+    install_dir = game["install_dir"]
+    path = os.path.join(install_dir, OLED_LAN_WRAPPER_NAMES[game_key])
 
-    install_dir  = game["install_dir"]
-    wrapper_name = OLED_LAN_WRAPPER_NAMES[game_key]
-    wrapper_path = os.path.join(install_dir, wrapper_name)
-
-    # Clean up stale shared-name wrapper from older DeckOps versions.
-    # Old versions used the same filename for SP/MP pairs (e.g. t4plut_lan.sh
-    # for both t4sp and t4mp), causing whichever installed last to overwrite
-    # the other. Remove the old shared-name file if it differs from the new
-    # unique name so stale scripts don't persist.
+    # Older versions shared one name for SP/MP pairs; drop the stale file
     old_name = _OLD_OLED_LAN_WRAPPER_NAMES.get(game_key)
-    if old_name and old_name != wrapper_name:
+    if old_name and old_name != OLED_LAN_WRAPPER_NAMES[game_key]:
         old_path = os.path.join(install_dir, old_name)
         if os.path.exists(old_path):
             try:
@@ -739,43 +657,25 @@ def _write_oled_lan_wrapper(game: dict, game_key: str, steam_root: str,
             except OSError:
                 _log.debug("old wrapper cleanup failed", exc_info=True)
 
-    try:
-        import config as _cfg
-        player_name = _cfg.get_player_name() or "Player"
-    except Exception:
-        player_name = "Player"
-
-    bootstrapper  = os.path.join(plut_dir, "bin",
-                                  "plutonium-bootstrapper-win32.exe")
-    # MW3 Steam: point at downgrade/ where the 32-bit files live
+    import config as _cfg
     from steam_common import wine_path_for_prefix
-    game_dir_wine = wine_path_for_prefix(plut_game_dir(game_key, install_dir, source), compatdata_path)
-
-    linger = _LAN_LINGER_S.get(game_key, _LAN_LINGER_S_DEFAULT)
-    script = (
-        "#!/bin/bash\n"
-        f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
-        f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        # Plutonium's own launcher passes a fresh random -token even in LAN mode
-        "TOKEN=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \\n')\n"
-        f"cd \"{plut_dir}\"\n"
-        # No exec: the shell must survive the bootstrapper returning so it
-        # can hold the session open below.
-        f"\"{proton_path}\" run \"{bootstrapper}\" "
-        f"{_plut_key(game_key)} \"{game_dir_wine}\" -token \"$TOKEN\" -lan +name \"{player_name}\"\n"
-        "# The bootstrapper exits as soon as it has spawned the game. Stay\n"
-        "# alive so the Steam shortcut session is not torn down while the\n"
-        "# game is still initializing (T6 loads much slower than IW games).\n"
-        f"sleep {linger}\n"
-    )
-
-    with open(wrapper_path, "wb") as f:
-        f.write(script.encode("utf-8"))
-
-    os.chmod(wrapper_path, os.stat(wrapper_path).st_mode |
-             stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-    return wrapper_path
+    name = (_cfg.get_player_name() or "Player").replace('"', "")
+    mode = _plut_key(game_key)
+    game_dir = plut_game_dir(game_key, install_dir, source)
+    q = lambda v: "'" + v.replace("'", "'\\''") + "'"
+    run = (f'exec {q(os.path.join(os.path.dirname(_OLED_HERE), "assets", "LAN", "lan_server.sh"))} '
+           f'{mode} {q(wine_path_for_prefix(game_dir, LAN_PREFIX))} +name "{name}"')
+    lines = ["#!/bin/bash", f"# DeckOps offline {mode} (plutonium._write_offline_wrapper)"]
+    if game_key in LAN_KEYS:
+        run += f" {LAN_PORT} {q(wine_path_for_prefix(game_dir, LAN_SERVER_PREFIX))} " + _LAN_SERVER_ARGS[mode]
+        if mode == "t6mp":
+            # Map / Mode lists only the maps this install has
+            lines += [f"G={q(game_dir)}", "M=$(cd \"$G/zone/all\" && ls mp_*.ff | sed 's/\\.ff$//' | paste -sd,)"]
+            run = 'CLIENT_ARGS="+set fs_game mods/deckops_offline" ' + run
+    with open(path, "w") as f:
+        f.write("\n".join(lines + [run]) + "\n")
+    os.chmod(path, os.stat(path).st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+    return path
 
 
 def _write_wrapper(game: dict, game_key: str, steam_root: str,
@@ -878,9 +778,18 @@ def _setup_steam_menu(game: dict, game_key: str, steam_root: str,
         compatdata_path, plut_dir, wrapper_name=online_name,
     )
     if lan_wrapper_path and os.path.exists(lan_wrapper_path):
-        shutil.copy2(lan_wrapper_path, os.path.join(game["install_dir"], offline_name))
+        write_offline_menu_file(os.path.join(game["install_dir"], offline_name))
     add_steam_menu(game, game_key, steam_root, prog)
     return online_path
+
+
+def write_offline_menu_file(path: str):
+    """The Steam menu's Plutonium Offline file (OLED and LCD): prelaunch.sh / cache_cleanup.py
+    run it on the host, and it opens the DeckOps: Plutonium Offline launcher."""
+    from shortcut import launcher_run_url
+    with open(path, "w") as f:
+        f.write(f'#!/bin/bash\nexec steam "{launcher_run_url()}"\n')
+    os.chmod(path, 0o755)
 
 
 def add_steam_menu(game: dict, game_key: str, steam_root: str, prog):
@@ -896,14 +805,25 @@ def add_steam_menu(game: dict, game_key: str, steam_root: str, prog):
     entries = []
     for k in keys:
         on, off = STEAM_MENU_LABELS.get(k, _DEFAULT_MENU_LABELS)
-        entries += [{"executable": STEAM_MENU_EXES[k][0], "description": on},
-                    {"executable": STEAM_MENU_EXES[k][1], "description": off}]
+        entries.append({"executable": STEAM_MENU_EXES[k][0], "description": on})
+        # Offline only with Offline Mode added: its file is there exactly then
+        if os.path.exists(os.path.join(game["install_dir"], STEAM_MENU_EXES[k][1])):
+            entries.append({"executable": STEAM_MENU_EXES[k][1], "description": off})
 
     from steam_appinfo import add_launch_entries, remove_launch_entries
-    remove_launch_entries(steam_root, appid, [e["executable"] for e in entries])
+    remove_launch_entries(steam_root, appid, [n for k in keys for n in STEAM_MENU_EXES[k]])
     added = add_launch_entries(steam_root, appid, entries)
     prog(92, "  ✓ Launch menu: " + " / ".join(e["description"] for e in entries) if added
              else "  ⚠ Launch menu not added yet, will retry next time Steam is closed")
+
+
+def remove_offline_files(game: dict, game_key: str):
+    """Offline Mode off: the game's -lan script and its Steam menu Offline file go,
+    so add_steam_menu leaves the Offline entry out (same names on OLED and LCD)."""
+    d = game.get("install_dir", "")
+    for n in (OLED_LAN_WRAPPER_NAMES.get(game_key), STEAM_MENU_EXES.get(game_key, ("", ""))[1]):
+        if n and d and os.path.isfile(os.path.join(d, n)):
+            os.remove(os.path.join(d, n))
 
 
 # ── metadata ──────────────────────────────────────────────────────────────────
@@ -996,6 +916,368 @@ def cleanup_plut_from_non_plut_prefixes(steam_root: str, on_progress=None):
 
 # ── public API ────────────────────────────────────────────────────────────────
 
+# ---
+# Offline: local LAN server (BO2 MP, MW3 MP), run by assets/LAN/lan_server.sh
+#
+# Plain -lan play can't create a private match without a Plutonium account, so
+# these games host a hidden local dedicated server and join it. Opt-in
+# (config offline_mode). Server and game each run from their own Plutonium copy
+# under LAN_ROOT: Plutonium's files are hard links to the online copy, settings
+# and stats are real LAN files, user mods come in as one link per mod, and our
+# offline-only files are real files. Every folder is real, so nothing is ever
+# written through a link into an online folder: online launches never see our files.
+
+LAN_ROOT = os.path.expanduser("~/.local/share/deckops/lan")
+LAN_ASSETS = os.path.join(os.path.dirname(_OLED_HERE), "assets", "LAN", "offline")
+LAN_PORT = 4986
+LAN_KEYS = ("t6mp", "iw5mp", "iw5mp_ds")
+# Offline games run in their own prefix. The server runs in the Offline launcher's
+# prefix: the game's runtime launch (waitforexitandrun) waits for every wineserver
+# on its own prefix, so the two can't share one.
+LAN_PREFIX = os.path.expanduser("~/.local/share/deckops/lan_prefix")
+LAN_SERVER_PREFIX = os.path.expanduser("~/.local/share/deckops/launcher_prefix")
+_LAN_SERVER_ARGS = {
+    # $M: the maps in zone/all, listed by the offline script
+    "t6mp": '+set fs_game mods/deckops_offline +set dcac_maps "$M" +exec deckops_lan_mp.cfg +map_rotate',
+    "iw5mp": "+set sv_config deckops_lan.cfg +start_map_rotate",
+}
+
+# Third-party server files, downloaded at install: their repos show no license,
+# so they are never redistributed. Pinned to a commit, or a release checked by digest.
+_T6_BW = ("https://raw.githubusercontent.com/ineedbots/t6_bot_warfare/"
+          "cafee7d585160b046dc928f90798a611683e6cd1/scripts/mp/")
+_T6_GS = ("https://raw.githubusercontent.com/xerxes-at/T6ServerConfigs/"
+          "6d3b313acab5b5e21d61277bd1d2f3b234dc4918/localappdata/Plutonium/storage/t6/gamesettings/")
+LAN_DOWNLOADS = {
+    "t6mp": [(f"storage/t6/raw/scripts/mp/{f}", _T6_BW + f, None)
+             for f in ("bots.gsc", "bots_adapter_pt6.gsc")]
+          + [(f"storage/t6/gamesettings/{g}.cfg", _T6_GS + g + ".cfg", None)
+             for g in "conf ctf dem dm dom gun hq koth oic oneflag sas sd shrp tdm".split()],
+    # Release zip; only z_svr_bots.iwd is taken from it
+    "iw5mp": [("storage/iw5/z_svr_bots.iwd",
+               "https://github.com/ineedbots/iw5_bot_warfare/releases/download/v2.3.0/iw5bw230.zip",
+               "sha256:733692aaeda839635d86f9752803b04ecfbd0057f9475661b8cadf084543cfaa")],
+}
+
+# Plutonium's online data per title (demonware): pub is linked from the online copy,
+# user (stats) stays a real LAN folder so offline stats never reach online
+# 18301 is a guess for BO1: Plutonium's folder had it next to BO2's and MW3's after a
+# login, with MP and SP data (Deck, 2026-10-08). WaW had none.
+_LAN_DW_TITLE = {"t6": "18397", "iw5": "18409", "t5": "18301"}
+# Never taken from the online folder: the LAN copy keeps its own settings, logs
+# and stats, and user mods come in one link per mod
+_LAN_TOP_OWN = ("console.log", "crashdumps", "storage")
+_LAN_STORE_OWN = ("players", "mods", "usermaps", "main", "demo", "imgui.ini")
+_LAN_USER_DIRS = ("mods", "usermaps")
+# Games run offline with a mod (fs_game) read their settings from players/<mod>/, not
+# players/: BO2 MP fell back to 800x600 there (Deck, 2026-10-08). game_config mirrors there.
+LAN_MOD_PLAYERS = {"t6mp": os.path.join("mods", "deckops_offline")}
+# Real (not hard-linked) files under LAN_ROOT past this mean something got copied
+# by mistake (mods are only ever linked); our own files are a few MB
+_LAN_DISK_WARN = 100 * 1024 * 1024
+
+
+def _lan_link(src: str, dst: str):
+    """dst becomes a hard link to src's real file, a copy if they're on different drives."""
+    src = os.path.realpath(src)
+    if os.path.lexists(dst):
+        if not os.path.islink(dst) and os.path.samefile(src, dst):
+            return
+        os.remove(dst)
+    try:
+        os.link(src, dst)
+    except OSError:
+        shutil.copy2(src, dst)
+
+
+def _lan_mirror(src: str, dst: str, rel: str, keep):
+    """Hard-link src's files (links in src followed) into real folders under dst.
+    keep: paths relative to the LAN root that are never taken from src."""
+    os.makedirs(dst, exist_ok=True)
+    for n in os.listdir(src) if os.path.isdir(src) else ():
+        r = f"{rel}/{n}" if rel else n
+        if r in keep:
+            continue
+        s, d = os.path.join(src, n), os.path.join(dst, n)
+        if os.path.isdir(s):
+            _lan_mirror(s, d, r, keep)
+        elif os.path.isfile(s):
+            _lan_link(s, d)
+
+
+def _lan_tree(root: str, user_plut: str, master: str, store: str, files: dict, client: bool):
+    """Build one LAN Plutonium copy at root from the game's online folder user_plut.
+    files {rel: source} are our offline files (source None = a download, kept as is)."""
+    # Links from the last build go (old layout, removed mods); real files stay
+    for dp, dns, fns in os.walk(root):
+        for n in dns + fns:
+            if os.path.islink(os.path.join(dp, n)):
+                os.remove(os.path.join(dp, n))
+        dns[:] = [n for n in dns if os.path.isdir(os.path.join(dp, n))]
+    st = f"storage/{store}"
+    keep = set(files) | set(_LAN_TOP_OWN) | {f"{st}/{n}" for n in _LAN_STORE_OWN}
+    _lan_mirror(user_plut, root, "", keep)
+    _lan_mirror(os.path.join(user_plut, st), os.path.join(root, st), st, keep)
+    os.makedirs(os.path.join(root, st, "players"), exist_ok=True)
+    if client:
+        for d in _LAN_USER_DIRS:
+            src = os.path.join(user_plut, st, d)
+            ours = {r.split("/")[3] for r in files if r.startswith(f"{st}/{d}/")}
+            os.makedirs(os.path.join(root, st, d), exist_ok=True)
+            for n in os.listdir(src) if os.path.isdir(src) else ():
+                p = os.path.join(root, st, d, n)
+                if n not in ours and not os.path.lexists(p):
+                    os.symlink(os.path.join(src, n), p)
+        title = _LAN_DW_TITLE.get(store)
+        pub = title and next((p for p in (os.path.join(b, "storage", "demonware", title, "pub")
+                                          for b in (master, user_plut)) if os.path.isdir(p)), None)
+        dw = os.path.join(root, "storage", "demonware", title or "")
+        # The game makes an empty pub when it has none; a link makes it see the online data
+        if pub:
+            os.makedirs(os.path.join(dw, "user"), exist_ok=True)
+            if os.path.isdir(os.path.join(dw, "pub")) and not os.path.islink(os.path.join(dw, "pub")):
+                shutil.rmtree(os.path.join(dw, "pub"))
+            if not os.path.lexists(os.path.join(dw, "pub")):
+                os.symlink(pub, os.path.join(dw, "pub"))
+    top = os.path.realpath(LAN_ROOT) + os.sep
+    for rel, src in files.items():
+        dst = os.path.join(root, rel)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        if not os.path.realpath(os.path.dirname(dst)).startswith(top):
+            raise RuntimeError(f"offline file would land outside {LAN_ROOT}: {dst}")
+        if src and os.path.lexists(dst):
+            os.remove(dst)
+        if src:
+            shutil.copyfile(src, dst)
+
+
+def _lan_assets(mode: str, role: str) -> dict:
+    base = os.path.join(LAN_ASSETS, mode, role)
+    return {os.path.relpath(os.path.join(dp, f), base): os.path.join(dp, f)
+            for dp, _, fns in os.walk(base) for f in fns}
+
+
+def _lan_download(dst: str, url: str, digest, prog):
+    if not url.endswith(".zip"):
+        download(url, dst, digest=digest)
+        return
+    import tempfile, zipfile
+    with tempfile.TemporaryDirectory() as tmp:
+        z = os.path.join(tmp, "dl.zip")
+        download(url, z, digest=digest)
+        with zipfile.ZipFile(z) as zf:
+            name = next(n for n in zf.namelist() if os.path.basename(n) == os.path.basename(dst))
+            with zf.open(name) as fi, open(dst, "wb") as fo:
+                shutil.copyfileobj(fi, fo)
+
+
+def _lan_disk_check(prog):
+    sizes = []
+    for dp, _, fns in os.walk(LAN_ROOT):
+        for f in fns:
+            st = os.lstat(os.path.join(dp, f))
+            if stat.S_ISREG(st.st_mode) and st.st_nlink == 1:
+                sizes.append((st.st_size, os.path.relpath(os.path.join(dp, f), LAN_ROOT)))
+    total = sum(n for n, _ in sizes)
+    if total > _LAN_DISK_WARN:
+        big = ", ".join(f"{p} ({n >> 20} MB)" for n, p in sorted(sizes, reverse=True)[:5])
+        _log.warning("offline LAN folders hold %d MB of copies: %s", total >> 20, big)
+        prog(f"  ⚠ Offline folders use {total >> 20} MB of copied files: {big}")
+
+
+def lan_dirs(mode: str):
+    return os.path.join(LAN_ROOT, mode, "server"), os.path.join(LAN_ROOT, mode, "client")
+
+
+def refresh_lan(mode: str, prog=lambda m: None):
+    """Rebuild the server and game copies from the online folder saved at install.
+    Run at every offline launch (prelaunch.py lan <mode>) so mods added or Plutonium
+    files updated since the install show up offline too."""
+    with open(os.path.join(LAN_ROOT, mode, "source.json")) as f:
+        user_plut = json.load(f)["user_plut"]
+    store = _STORAGE_SUBDIRS[mode]
+    server, client = lan_dirs(mode)
+    master = get_dedicated_plut_dir()
+    if mode in LAN_KEYS:
+        dl = {rel: None for rel, _, _ in LAN_DOWNLOADS.get(mode, ())}
+        _lan_tree(server, user_plut, master, store, {**dl, **_lan_assets(mode, "server")}, False)
+    _lan_tree(client, user_plut, master, store, _lan_assets(mode, "client"), True)
+    _lan_disk_check(prog)
+    prog(f"  ✓ Offline server folders ready ({mode})")
+
+
+def setup_lan(game: dict, game_key: str, user_plut: str, source: str, prog):
+    """Set up offline play for a Plutonium game when Offline Mode is on: the offline
+    prefixes and the game's offline Plutonium copy, plus the local server for
+    t6mp / iw5mp. user_plut is the game's online Plutonium folder (OLED: its
+    compatdata prefix, LCD: Heroic's). MW3 DS shares MW3's offline folders."""
+    import config as _cfg
+    if game_key not in OLED_LAN_WRAPPER_NAMES or not _cfg.get_offline_mode():
+        return
+    mode = _plut_key(game_key)
+    try:
+        _lan_prefixes(prog)
+        # Offline BO2 stats and settings landed online through the old shared players/ (2026-10-08)
+        leak = os.path.join(user_plut, "storage", "t6", "players", "mods", "deckops_offline")
+        if mode == "t6mp" and os.path.isdir(leak) and not os.path.islink(leak):
+            shutil.rmtree(leak)
+        os.makedirs(os.path.join(LAN_ROOT, mode), exist_ok=True)
+        with open(os.path.join(LAN_ROOT, mode, "source.json"), "w") as f:
+            json.dump({"user_plut": user_plut}, f)
+        # Folders first, so every download lands in a real folder of ours
+        refresh_lan(mode, prog)
+        server, _ = lan_dirs(mode)
+        for rel, url, digest in LAN_DOWNLOADS.get(mode, ()) if mode in LAN_KEYS else ():
+            dst = os.path.join(server, rel)
+            if not os.path.isfile(dst):
+                prog(f"  Downloading {os.path.basename(rel)}...")
+                _lan_download(dst, url, digest, prog)
+        # MW3 server config + mode recipes live in the game's admin/ (sv_config).
+        # Never overwrite: the user's own dedicated server may keep files there.
+        admin = os.path.join(LAN_ASSETS, mode, "admin")
+        if os.path.isdir(admin):
+            dst_dir = os.path.join(plut_game_dir(game_key, game["install_dir"], source), "admin")
+            os.makedirs(dst_dir, exist_ok=True)
+            for n in os.listdir(admin):
+                if not os.path.exists(os.path.join(dst_dir, n)):
+                    shutil.copyfile(os.path.join(admin, n), os.path.join(dst_dir, n))
+    except Exception as ex:
+        _log.warning("offline setup failed for %s", game_key, exc_info=True)
+        prog(f"  ⚠ Offline setup failed: {ex}")
+
+
+def _lan_prefixes(prog):
+    """The offline game prefix and the Offline launcher's prefix (the server's), set up
+    with GE-Proton's default prefix like a first install of a game prefix."""
+    import config as _cfg
+    from ge_proton import ensure_prefix_deps
+    from steam_common import STEAM_ROOT
+    from wrapper import get_proton_path
+    for p in (LAN_PREFIX, LAN_SERVER_PREFIX):
+        if not os.path.isdir(os.path.join(p, "pfx", "drive_c", "windows")):
+            os.makedirs(p, exist_ok=True)
+            ensure_prefix_deps(_cfg.get_ge_proton_version(), p, prog,
+                               proton_path=get_proton_path(STEAM_ROOT), steam_root=STEAM_ROOT)
+
+
+def lan_runtime() -> tuple:
+    """(Steam Linux Runtime dir the GE-Proton asks for, Steam libraries outside home).
+    The game runs inside that runtime like Steam's own launches; the container only
+    sees home unless the other libraries are mounted. ("", ...) if not found."""
+    import re
+    import config as _cfg
+    from detect_games import parse_library_folders, find_steam_root
+    sr = _cfg.load().get("steam_root") or find_steam_root()
+    libs = [os.path.join(l, "steamapps") for l in parse_library_folders(sr)]
+    home = os.path.realpath(os.path.expanduser("~")) + os.sep
+    mounts = ":".join(l for l in libs if not os.path.realpath(l).startswith(home))
+    try:
+        with open(os.path.join(sr, "compatibilitytools.d", _cfg.get_ge_proton_version(), "toolmanifest.vdf")) as f:
+            tool = re.search(r'"require_tool_appid"\s*"(\d+)"', f.read()).group(1)
+    except (OSError, AttributeError, TypeError):
+        return "", mounts
+    for lib in libs:
+        try:
+            with open(os.path.join(lib, f"appmanifest_{tool}.acf")) as f:
+                d = os.path.join(lib, "common", re.search(r'"installdir"\s*"([^"]+)"', f.read()).group(1))
+        except (OSError, AttributeError):
+            continue
+        if os.path.isfile(os.path.join(d, "_v2-entry-point")):
+            return d, mounts
+    return "", mounts
+
+
+def _plut_compat(game_key: str, game: dict, source: str, steam_root: str) -> str:
+    """The game's Proton prefix, picked like the install and update flows do."""
+    import config as _cfg
+    from wrapper import find_compatdata
+    appid = str(GAME_META[game_key][0])
+    compat = ""
+    if source == "own":
+        compat = game.get("compatdata_path", "")
+        if not compat and not _cfg.is_lcd():
+            from shortcut import own_plut_prefix
+            compat = own_plut_prefix(game_key, game)
+    if not compat:
+        compat = find_compatdata(steam_root, appid, game_install_dir=game.get("install_dir"))
+    if not compat and game.get("install_dir"):
+        compat = os.path.join(os.path.dirname(os.path.dirname(game["install_dir"])), "compatdata", appid)
+    return compat
+
+
+def _lan_user_plut(game_key: str, game: dict, source: str = "steam") -> str:
+    """The game's online Plutonium folder, as install_plutonium picks it."""
+    import config as _cfg
+    if _cfg.is_lcd():
+        from plutonium_lcd import get_shared_plut_dir
+        return get_shared_plut_dir()
+    from steam_common import STEAM_ROOT
+    return _plut_dir_in_prefix(_plut_compat(game_key, game, source, STEAM_ROOT))
+
+
+def setup_lan_all(prog=lambda m: None):
+    """Offline Mode added: build offline LAN for every set-up BO2 MP / MW3 MP."""
+    import config as _cfg
+    from detect_games import find_all_games
+    found = find_all_games()
+    for key, entry in _cfg.get_setup_games().items():
+        if key in LAN_KEYS and entry.get("client") == "plutonium" and key in found:
+            src = entry.get("source", "steam")
+            setup_lan(found[key], key, _lan_user_plut(key, found[key], src), src, prog)
+
+
+def apply_offline_mode(on: bool, steam_root: str, prog=lambda pct, msg: None):
+    """Add or remove Offline Mode for every set-up Plutonium game: rerun the
+    Plutonium setup (the offline pieces follow config offline_mode), then the
+    offline launcher. No Plutonium bootstrapper run. Steam must be closed:
+    launch menu entries and shortcuts.vdf get rewritten."""
+    import config as _cfg
+    from detect_games import find_all_games
+    from wrapper import get_proton_path
+    import shortcut
+    _cfg.set_offline_mode(on)
+    if not on:
+        remove_lan(lambda m: prog(5, m))
+        shortcut.remove_launcher_shortcut(lambda m: prog(8, m))
+        for p in (LAN_SERVER_PREFIX, LAN_PREFIX):
+            if os.path.isdir(p):
+                shutil.rmtree(p)
+    found = find_all_games(steam_root)
+    setup = _cfg.get_setup_games()
+    games = {k: found[k] for k, e in setup.items()
+             if e.get("client") == "plutonium" and k in GAME_META and k in found}
+    proton = get_proton_path(steam_root)
+    step = 80 // max(len(games), 1)
+    for i, (k, g) in enumerate(games.items()):
+        src = setup[k].get("source", "steam")
+        base = 10 + i * step
+        prog(base, f"{g.get('name', k)}...")
+        try:
+            install_plutonium(g, k, steam_root, proton, _plut_compat(k, g, src, steam_root),
+                              on_progress=lambda pct, msg, b=base: prog(b + pct * step // 100, msg),
+                              installed_games=games, source=src)
+        except Exception as ex:
+            _log.warning("offline mode: %s failed", k, exc_info=True)
+            prog(base, f"  ⚠ {k}: {ex}")
+    if on and games:
+        # Configs last, like the install's finalize phase: game_config also fills the
+        # offline copies (resolution, FOV, sensitivity, name) now that they exist
+        from game_config import apply_game_configs
+        apply_game_configs(selected_keys=list(games), installed_games=games, steam_root=steam_root,
+                           deck_model=_cfg.get_deck_model() or "oled", on_progress=lambda m: prog(93, m))
+        shortcut.create_launcher_shortcut(on_progress=lambda m: prog(95, m))
+
+
+def remove_lan(prog=lambda m: None):
+    """Offline Mode removed. rmtree never follows the links into online folders."""
+    for mode in ("t6mp", "iw5mp"):
+        subprocess.run(["systemctl", "--user", "stop", f"deckops-lan-{mode}"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if os.path.isdir(LAN_ROOT):
+        shutil.rmtree(LAN_ROOT)
+    prog("  ✓ Offline server folders removed")
+
+
 def install_plutonium(game: dict, game_key: str, steam_root: str,
                       proton_path: str, compatdata_path: str,
                       on_progress=None, installed_games: dict = None,
@@ -1033,8 +1315,11 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     # OLED and Other devices continue below with the direct-launch path.
     import config as _cfg_lcd
     if _cfg_lcd.is_lcd():
-        from plutonium_lcd import install_plutonium_lcd
-        wrapper_path = install_plutonium_lcd(
+        from plutonium_lcd import install_plutonium_lcd, get_shared_plut_dir
+        # Offline runs from its own prefix and Plutonium copy, not through Heroic
+        # (Heroic is for online). First, so the offline script finds its prefix.
+        setup_lan(game, game_key, get_shared_plut_dir(), source, lambda msg: prog(5, msg))
+        return install_plutonium_lcd(
             game, game_key, installed_games,
             on_progress=on_progress,
             steam_root=steam_root,
@@ -1042,7 +1327,6 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
             compatdata_path=compatdata_path,
             source=source,
         )
-        return wrapper_path
 
     src_plut_dir  = get_dedicated_plut_dir()
 
@@ -1084,51 +1368,11 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     prog(65, "Installing menu mod...")
     _install_menu_mod(dest_plut_dir, game_key,
                       on_progress=lambda msg: prog(67, msg))
-
-    # ── Copy Plutonium into the offline launcher's prefix ────────────
-    # The offline launcher exe runs inside its own Proton prefix (based
-    # on the non-Steam shortcut appid). For the bootstrapper to find game
-    # configs, storage/, and mods, we need to mirror them there too.
-    # config.json is written with ALL selected game paths (merged) so the
-    # launcher can see every installed game, not just this one.
-    prog(70, "Mirroring to offline launcher prefix...")
-    try:
-        from shortcut import get_launcher_plut_dir
-        launcher_plut_dir = get_launcher_plut_dir()
-
-        # Copy Plutonium files (bins via symlinks, storage as real copy)
-        # but DON'T wipe the destination — we're merging across games.
-        _copy_plut_to_launcher_prefix(
-            src_plut_dir, dest_plut_dir, launcher_plut_dir,
-            game_key,
-            on_progress=lambda msg: prog(72, msg),
-        )
-        _storage = os.path.join(launcher_plut_dir, "storage")
-        _link_to_master(src_plut_dir, launcher_plut_dir,
-                        [d for d in set(_STORAGE_SUBDIRS.values())
-                         if os.path.isdir(os.path.join(_storage, d))],
-                        lambda msg: prog(73, msg))
-
-        # Write merged config.json with ALL selected Plutonium game paths
-        all_plut_keys = [
-            k for k in (installed_games or {}).keys()
-            if k in GAME_META
-        ]
-        _write_config(launcher_plut_dir, all_plut_keys, installed_games)
-
-        # Install menu mod into launcher prefix too
-        _install_menu_mod(launcher_plut_dir, game_key,
-                          on_progress=lambda msg: prog(74, msg))
-
-        # Apply DeckOps game configs (resolution, FOV, sensitivity, name)
-        # directly into the launcher prefix so the bootstrapper picks them
-        # up when launching from the offline LAN launcher.
-        _apply_launcher_game_configs(launcher_plut_dir, game_key,
-                                      on_progress=lambda msg: prog(75, msg))
-
-        prog(76, "  ✓ Offline launcher prefix updated")
-    except Exception as ex:
-        prog(75, f"  ⚠ Offline launcher prefix mirror failed: {ex}")
+    setup_lan(game, game_key, dest_plut_dir, source, lambda msg: prog(68, msg))
+    import config as _cfg_off
+    offline = _cfg_off.get_offline_mode()
+    if not offline:
+        remove_offline_files(game, game_key)
 
     # ── OLED / Other only past this point ──────────────────────────────
     # LCD dispatched to plutonium_lcd.py at the top of this
@@ -1146,10 +1390,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         # Sidecar -lan script alongside the game files. Does not touch the
         # online wrapper above. DeckOps_Offline.exe reads lan_wrapper_path
         # from config and bash-runs this script for offline play.
-        lan_wrapper_path = _write_oled_lan_wrapper(
-            game, game_key, steam_root, proton_path,
-            compatdata_path, dest_plut_dir, source="own",
-        )
+        lan_wrapper_path = _write_offline_wrapper(game, game_key, "own") if offline else None
 
         prog(95, "Saving metadata...")
         _write_metadata(game["install_dir"], {
@@ -1174,10 +1415,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         # Sidecar -lan script alongside the game files. DeckOps_Offline.exe
         # reads lan_wrapper_path from config and bash-runs this script for
         # offline play.
-        lan_wrapper_path = _write_oled_lan_wrapper(
-            game, game_key, steam_root, proton_path,
-            compatdata_path, dest_plut_dir, source="steam",
-        )
+        lan_wrapper_path = _write_offline_wrapper(game, game_key, "steam") if offline else None
 
         if game_key in STEAM_MENU_EXES:
             prog(88, "Adding Plutonium to the Steam launch menu...")

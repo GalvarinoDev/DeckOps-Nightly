@@ -104,6 +104,8 @@ _DECKOPS_JSON = os.path.join(_LINUX_PROJECT_ROOT, "deckops.json")
 # launcher_offline.sh reads this after the exe exits and exec's the
 # per-game LAN wrapper script. Used by all deck models.
 _INTENT_FILE = os.path.join(_LINUX_PROJECT_ROOT, ".lan_intent.json")
+# The launcher's own settings (music mute). deckops.json is only read here.
+_SETTINGS_FILE = os.path.join(_LINUX_PROJECT_ROOT, ".lan_launcher.json")
 
 # Launch diagnostics log (Linux filesystem, via Z:). Written before and
 # after every launch attempt so a failed launch leaves evidence rather
@@ -264,10 +266,11 @@ class GamepadPoller:
     DPAD_RIGHT = 0x0008
     BTN_A      = 0x1000
     BTN_B      = 0x2000
+    BTN_Y      = 0x8000
 
     NAV_BUTTONS = (DPAD_UP, DPAD_DOWN, DPAD_LEFT, DPAD_RIGHT, BTN_A, BTN_B)
 
-    def __init__(self, on_up, on_down, on_left, on_right, on_activate, on_back):
+    def __init__(self, on_up, on_down, on_left, on_right, on_activate, on_back, on_mute=None):
         self._callbacks = {
             self.DPAD_UP:    on_up,
             self.DPAD_DOWN:  on_down,
@@ -275,6 +278,7 @@ class GamepadPoller:
             self.DPAD_RIGHT: on_right,
             self.BTN_A:      on_activate,
             self.BTN_B:      on_back,
+            self.BTN_Y:      on_mute,
         }
         self._prev_buttons = 0
         self._held_button = None
@@ -327,6 +331,10 @@ class GamepadPoller:
                     self._held_button = None
                     self._held_time_ms = 0
 
+            # Y toggles, so it never repeats while held
+            if buttons & self.BTN_Y and not self._prev_buttons & self.BTN_Y:
+                self._fire(self.BTN_Y)
+
             self._prev_buttons = buttons
 
         except Exception:
@@ -360,16 +368,29 @@ def _audio_volume() -> float:
         return 0.2
 
 
-def _audio_enabled() -> bool:
+def _music_muted() -> bool:
+    """The launcher's saved choice; until there is one, start muted if DeckOps' music is off."""
     try:
-        data = _load_deckops_config()
-        return data.get("music_enabled", True)
+        with open(_SETTINGS_FILE) as f:
+            return bool(json.load(f)["music_muted"])
     except Exception:
-        return True
+        pass
+    try:
+        return not _load_deckops_config().get("music_enabled", True)
+    except Exception:
+        return False
+
+
+def _set_music_muted(muted: bool):
+    try:
+        with open(_SETTINGS_FILE, "w") as f:
+            json.dump({"music_muted": muted}, f)
+    except Exception:
+        pass
 
 
 def _start_audio():
-    if not _audio_enabled() or not _pygame_available():
+    if _music_muted() or not _pygame_available():
         return
     if not os.path.exists(MUSIC_PATH):
         return
@@ -496,7 +517,12 @@ def _launch_lan(game_key: str, game_dir_wine: str, player_name: str):
     QTimer.singleShot(4000, lambda: QApplication.instance().quit())
 
 
-def _launch_lan_lcd(lan_wrapper_path: str):
+# Set by LauncherWindow: swaps the game list for the "Starting ..." message
+_ON_LAUNCH = None
+_LAUNCH_MESSAGE_MS = 3000
+
+
+def _launch_lan_lcd(lan_wrapper_path: str, title: str = ""):
     """Write a launch intent file and exit.
 
     launcher_offline.sh reads the intent after this exe exits and exec's
@@ -523,10 +549,12 @@ def _launch_lan_lcd(lan_wrapper_path: str):
     except Exception as ex:
         _lan_log(f"Intent write FAILED: {ex}")
 
-    QTimer.singleShot(500, lambda: QApplication.instance().quit())
+    if _ON_LAUNCH:
+        _ON_LAUNCH(title)
+    QTimer.singleShot(_LAUNCH_MESSAGE_MS if _ON_LAUNCH else 500, lambda: QApplication.instance().quit())
 
 
-def _dispatch_launch(info: dict):
+def _dispatch_launch(info: dict, title: str = ""):
     """Write a launch intent and exit. launcher_offline.sh reads the
     intent after this exe exits and exec's the per-game LAN wrapper
     script, which launches the game in its own Proton prefix.
@@ -537,7 +565,7 @@ def _dispatch_launch(info: dict):
     """
     lan_path = info.get("lan_wrapper_path", "")
     if lan_path:
-        _launch_lan_lcd(lan_path)
+        _launch_lan_lcd(lan_path, title)
     else:
         _lan_log(f"Launch skipped: no lan_wrapper_path in {info!r}")
 
@@ -654,7 +682,7 @@ class GameRow(QWidget):
                 if launchable:
                     self._apply_btn_style(btn, focused=False)
                     btn.clicked.connect(
-                        lambda checked=False, i=info: _dispatch_launch(i)
+                        lambda checked=False, i=info, t=f"{game_def['base']} ({label})": _dispatch_launch(i, t)
                     )
                     self._mode_buttons.append((btn, key))
                 else:
@@ -803,6 +831,19 @@ class LauncherWindow(QWidget):
         hl.addWidget(subtitle)
         hl.addStretch()
 
+        self._music_btn = QPushButton()
+        self._music_btn.setFont(_font(11, bold=True))
+        self._music_btn.setFixedHeight(36)
+        self._music_btn.setFocusPolicy(Qt.NoFocus)
+        self._music_btn.setStyleSheet(
+            f"QPushButton{{background:{C_DARK_BTN};color:#FFF;border:none;"
+            f"border-radius:8px;padding:0 12px;}}"
+            f"QPushButton:hover{{background:{C_DIM};}}"
+        )
+        self._music_btn.clicked.connect(self._toggle_music)
+        self._update_music_btn()
+        hl.addWidget(self._music_btn)
+
         quit_btn = QPushButton("\u2715")
         quit_btn.setFont(_font(16, bold=True))
         quit_btn.setFixedSize(44, 44)
@@ -840,6 +881,16 @@ class LauncherWindow(QWidget):
 
         rows_lay.addStretch()
         root_lay.addWidget(rows_container)
+        self._rows_container = rows_container
+
+        self._starting = QLabel()
+        self._starting.setAlignment(Qt.AlignCenter)
+        self._starting.setWordWrap(True)
+        self._starting.setStyleSheet(f"color:#FFF;background:{C_BG};")
+        self._starting.hide()
+        root_lay.addWidget(self._starting, 1)
+        global _ON_LAUNCH
+        _ON_LAUNCH = self._show_starting
 
         if not setup_info:
             empty = QLabel(
@@ -868,6 +919,7 @@ class LauncherWindow(QWidget):
             on_right=lambda: self.on_move_btn(+1),
             on_activate=self._activate_focused,
             on_back=self._quit_with_fade,
+            on_mute=self._toggle_music,
         )
         self._gamepad.start()
 
@@ -876,6 +928,9 @@ class LauncherWindow(QWidget):
 
         if key == Qt.Key_Escape:
             self._quit_with_fade()
+            return
+        if key == Qt.Key_M:
+            self._toggle_music()
             return
         if key in (Qt.Key_Return, Qt.Key_Enter):
             self._activate_focused()
@@ -924,6 +979,28 @@ class LauncherWindow(QWidget):
         if not self._focus_rows:
             return
         self._focus_rows[self._row_idx].trigger_focused_button()
+
+    def _update_music_btn(self):
+        self._music_btn.setText("Y  MUSIC OFF" if _music_muted() else "Y  MUSIC ON")
+
+    @pyqtSlot()
+    def _toggle_music(self):
+        muted = not _music_muted()
+        _set_music_muted(muted)
+        if muted:
+            _fadeout_audio(300)
+        else:
+            _start_audio()
+        self._update_music_btn()
+
+    def _show_starting(self, title: str):
+        self._gamepad.stop()
+        self._rows_container.hide()
+        self._starting.setText(
+            f"<div style='font-size:22pt;font-weight:bold'>Starting {title}...</div>"
+            f"<div style='font-size:13pt;color:{C_DIM};margin-top:14px'>"
+            f"The screen may stay black for up to a minute while the game starts. This is normal.</div>")
+        self._starting.show()
 
     @pyqtSlot()
     def _quit_with_fade(self):

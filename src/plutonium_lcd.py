@@ -292,11 +292,6 @@ def _heroic_app_name(game_key: str) -> str:
     return f"do_{b64}"
 
 
-def lan_key(game_key: str) -> str:
-    """Key behind a game's offline Heroic entry. cache_cleanup.py hashes it too."""
-    return f"{game_key}_lan"
-
-
 # ── Shader cache nuke (LCD only) ───────────────────────────────────────────
 # LCD Plutonium games launch through cache_cleanup.py → flatpak → Heroic →
 # Proton. Steam's shader cache for these appids only records Fossilize
@@ -510,13 +505,12 @@ def _write_heroic_library(data: dict):
 
 
 def _add_heroic_sideload_entry(game_key: str, executable: str,
-                                install_dir: str, on_progress=None, lan=False):
+                                install_dir: str, on_progress=None):
     """
     Add or update a sideload entry in Heroic's library.json.
 
     executable  - full path to the Plutonium launcher exe inside the prefix
     install_dir - the game's install directory (folder_name in Heroic)
-    lan         - the game's second, offline entry (runs the -lan .bat)
     """
     def prog(msg):
         if on_progress:
@@ -526,9 +520,9 @@ def _add_heroic_sideload_entry(game_key: str, executable: str,
         prog(f"  Unknown game key: {game_key}")
         return
 
-    app_name = _heroic_app_name(lan_key(game_key) if lan else game_key)
+    app_name = _heroic_app_name(game_key)
     game_def = HEROIC_PLUT_GAMES[game_key]
-    title = game_def["title"] + (" (Offline)" if lan else "")
+    title = game_def["title"]
 
     # Build the sideload entry matching Heroic's expected format
     entry = {
@@ -570,17 +564,16 @@ def _add_heroic_sideload_entry(game_key: str, executable: str,
 # ── Heroic per-game config ──────────────────────────────────────────────────
 
 def _write_heroic_game_config(game_key: str, ge_proton_version: str,
-                               on_progress=None, lan=False):
+                               on_progress=None):
     """
     Write the per-game GamesConfig JSON for a Heroic sideload entry.
     Sets up GE-Proton, a DeckOps-managed prefix, and sane defaults.
-    lan writes the offline entry's config, whose .bat takes no arguments.
     """
     def prog(msg):
         if on_progress:
             on_progress(msg)
 
-    app_name = _heroic_app_name(lan_key(game_key) if lan else game_key)
+    app_name = _heroic_app_name(game_key)
     config_path = os.path.join(HEROIC_GAMES_CONFIG_DIR, f"{app_name}.json")
     os.makedirs(HEROIC_GAMES_CONFIG_DIR, exist_ok=True)
 
@@ -623,7 +616,7 @@ def _write_heroic_game_config(game_key: str, ge_proton_version: str,
             # picker / login screen) instead of jumping straight into the
             # requested game. Matches what the OLED bash wrapper does with
             # `plutonium-launcher-win32.exe "plutonium://play/<key>"`.
-            "launcherArgs": "" if lan else f'"plutonium://play/{_plut_key(game_key)}"',
+            "launcherArgs": f'"plutonium://play/{_plut_key(game_key)}"',
             "verboseLogs": False,
             "advertiseAvxForRosetta": False,
             "enableQuickSavesMenu": False,
@@ -755,116 +748,19 @@ def _write_metadata_lcd(install_dir: str, data: dict):
         _log.debug("operation failed", exc_info=True)
 
 
-# ── LCD offline mode ─────────────────────────────────────────────────────────
-# Steam games: "Play Plutonium Offline" in the launch menu runs a second
-# Heroic entry whose executable is a .bat that starts the bootstrapper with
-# -lan, so offline shares Heroic's runtime and shader cache with online.
-# The -lan .sh sidecar is what DeckOps_Offline.exe calls.
-
-def _write_lcd_lan_bat(game_key: str, game_dir: str) -> str:
+def _write_lcd_menu_files(game: dict, game_key: str, lan_wrapper_path: str = None):
     """
-    Write the offline .bat into the Plutonium folder of Heroic's shared
-    prefix. The bootstrapper must start from that folder (T6 crashes
-    otherwise) and wants a fresh -token every launch, which a plain Heroic
-    exe entry can't give it. Returns the .bat's Linux path.
+    Steam games: the files behind the launch menu entries (same names as OLED).
+    Online is a placeholder: the launch option hands Steam's command to
+    cache_cleanup.py, which launches the Heroic entry instead. Offline (with
+    Offline Mode) opens the Offline launcher; cache_cleanup.py runs it.
     """
-    try:
-        import config as _cfg
-        player_name = _cfg.get_player_name() or "Player"
-    except Exception:
-        player_name = "Player"
-    from steam_common import wine_path_for_prefix
-    game_dir_wine = wine_path_for_prefix(game_dir, HEROIC_DEFAULT_WINE_PREFIX)
-    plut_dir = get_shared_plut_dir()
-    path = os.path.join(plut_dir, f"deckops_{game_key}_lan.bat")
-    lines = (
-        "@echo off",
-        "cd /d C:\\users\\steamuser\\AppData\\Local\\Plutonium",
-        f'bin\\plutonium-bootstrapper-win32.exe {_plut_key(game_key)} "{game_dir_wine}" '
-        f'-token %RANDOM%%RANDOM% -lan +name "{player_name}"',
-    )
-    os.makedirs(plut_dir, exist_ok=True)
-    with open(path, "w", newline="\r\n") as f:
-        f.write("\n".join(lines) + "\n")
-    return path
-
-
-def _write_lcd_menu_files(game: dict, game_key: str):
-    """
-    Steam games: the files behind the Online/Offline launch menu entries
-    (same names as OLED). They never run: the launch option hands Steam's
-    command to cache_cleanup.py, which sees which one was picked and
-    launches the matching Heroic entry instead.
-    """
-    from plutonium import STEAM_MENU_EXES
-    for name in STEAM_MENU_EXES[game_key]:
-        with open(os.path.join(game["install_dir"], name), "w") as f:
-            f.write("#!/bin/bash\n# DeckOps (LCD): cache_cleanup.py launches this entry through Heroic.\n")
-
-
-def _write_lcd_lan_wrapper(game: dict, game_key: str, steam_root: str,
-                            proton_path: str, compatdata_path: str,
-                            plut_dir: str, source: str = "steam") -> str | None:
-    """
-    Write a sidecar -lan bash script for LCD offline mode.
-
-    Creates a new shell script (e.g. t4plut_lan_sp.sh) alongside the game
-    files. Never replaces or modifies any existing file. DeckOps_Offline.exe
-    reads the path from config and calls bash on it for offline play.
-
-    Uses Heroic's shared default Wine prefix (HEROIC_DEFAULT_WINE_PREFIX)
-    for STEAM_COMPAT_DATA_PATH and Plutonium paths. This prefix already
-    has a fully initialized Proton/DXVK environment from the online login
-    flow, so all games launch reliably through it. LCD already depends on
-    Heroic for online play, so reusing its prefix for LAN adds no new
-    dependency.
-
-    Written for both Steam and own game sources.
-
-    Returns the full path to the written script, or None if game_key
-    is not in LCD_LAN_WRAPPER_NAMES.
-    """
-    if game_key not in LCD_LAN_WRAPPER_NAMES:
-        return None
-
-    install_dir  = game["install_dir"]
-    wrapper_name = LCD_LAN_WRAPPER_NAMES[game_key]
-    wrapper_path = os.path.join(install_dir, wrapper_name)
-
-    try:
-        import config as _cfg
-        player_name = _cfg.get_player_name() or "Player"
-    except Exception:
-        player_name = "Player"
-
-    # Use Heroic's shared prefix — it has a fully initialized Wine/Proton
-    # environment with working DXVK state. Per-game compatdata prefixes
-    # were never set up for direct game launches and crash on D3D init.
-    heroic_plut_dir = get_shared_plut_dir()
-    bootstrapper = os.path.join(heroic_plut_dir, "bin",
-                                 "plutonium-bootstrapper-win32.exe")
-    # MW3 Steam: point at downgrade/ where the 32-bit files live
-    from steam_common import wine_path_for_prefix
-    game_dir_wine = wine_path_for_prefix(plut_game_dir(game_key, install_dir, source), HEROIC_DEFAULT_WINE_PREFIX)
-
-    script = (
-        "#!/bin/bash\n"
-        f"export STEAM_COMPAT_DATA_PATH=\"{HEROIC_DEFAULT_WINE_PREFIX}\"\n"
-        f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        # Plutonium's own launcher passes a fresh random -token even in LAN mode
-        "TOKEN=$(od -An -N8 -tx1 /dev/urandom | tr -d ' \\n')\n"
-        f"cd \"{heroic_plut_dir}\"\n"
-        f"exec \"{proton_path}\" run \"{bootstrapper}\" "
-        f"{_plut_key(game_key)} \"{game_dir_wine}\" -token \"$TOKEN\" -lan +name \"{player_name}\"\n"
-    )
-
-    with open(wrapper_path, "wb") as f:
-        f.write(script.encode("utf-8"))
-
-    os.chmod(wrapper_path, os.stat(wrapper_path).st_mode |
-             stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-
-    return wrapper_path
+    from plutonium import STEAM_MENU_EXES, write_offline_menu_file
+    online, offline = STEAM_MENU_EXES[game_key]
+    with open(os.path.join(game["install_dir"], online), "w") as f:
+        f.write("#!/bin/bash\n# DeckOps (LCD): cache_cleanup.py launches this entry through Heroic.\n")
+    if lan_wrapper_path:
+        write_offline_menu_file(os.path.join(game["install_dir"], offline))
 
 
 def _install_menu_mod_lcd(plut_dir: str, game_key: str, on_progress=None):
@@ -1109,15 +1005,6 @@ def setup_heroic_game(game_key: str, game: dict, ge_proton_version: str,
     _write_heroic_game_config(game_key, ge_proton_version,
                                on_progress=on_progress)
 
-    # 3b. Steam games: a second entry for the "Play Plutonium Offline" launch
-    #     menu entry, so offline also runs inside Heroic's runtime.
-    if source == "steam":
-        bat = _write_lcd_lan_bat(game_key, heroic_dir)
-        _add_heroic_sideload_entry(game_key, bat, heroic_dir,
-                                    on_progress=on_progress, lan=True)
-        _write_heroic_game_config(game_key, ge_proton_version,
-                                   on_progress=on_progress, lan=True)
-
     # 4. Create Steam shortcut that launches via Heroic protocol
     _create_heroic_steam_shortcut(game_key, on_progress=on_progress,
                                    source=source)
@@ -1302,7 +1189,7 @@ def install_plutonium_lcd(game: dict, game_key: str,
      2b. Install DeckOps menu mod into the shared prefix (T6 MP/ZM, IW5 MP).
       3. Register per-game Heroic sideload entry + GamesConfig (kept for
          future online play through ManagementScreen).
-      5. Write the -lan sidecar for the offline launcher. Steam games keep
+      5. Write the offline script (Offline Mode only). Steam games keep
          the stock exe and get Plutonium Online / Offline launch menu
          entries. Own games launch via Heroic shortcuts created in step 3.
      5b. Steam games: launch options hand every launch to cache_cleanup.py,
@@ -1387,11 +1274,10 @@ def install_plutonium_lcd(game: dict, game_key: str,
 
     # 5. Write bash wrapper and -lan sidecar scripts.
     #
-    #    LCD no longer copies Plutonium into per-game compatdata prefixes or
-    #    the offline launcher prefix. Both online (Heroic) and offline
-    #    (launcher exe) play read from the single Heroic shared prefix at
-    #    ~/Games/Heroic/Prefixes/default. This saves hundreds of MB per game
-    #    by eliminating redundant storage/ copies.
+    #    LCD no longer copies Plutonium into per-game compatdata prefixes.
+    #    Online play reads from the single Heroic shared prefix at
+    #    ~/Games/Heroic/Prefixes/default; offline runs from DeckOps' offline
+    #    copy in its own prefix (plutonium.setup_lan), same as OLED.
     #
     #    Migration: older DeckOps versions used shared filenames for
     #    SP/MP and MP/ZM pairs (e.g. t4plut_lan.sh for both t4sp and
@@ -1420,25 +1306,26 @@ def install_plutonium_lcd(game: dict, game_key: str,
                 _log.debug("stale wrapper removal failed", exc_info=True)
 
     lan_wrapper_path = None
+    import config as _cfg_off
+    from plutonium import remove_offline_files, _write_offline_wrapper
+    offline = _cfg_off.get_offline_mode()
+    if not offline:
+        remove_offline_files(game, game_key)
     if source == "own":
-        prog(60, "Own game — writing offline LAN wrapper...")
-        lan_wrapper_path = _write_lcd_lan_wrapper(
-            game, game_key, steam_root, proton_path,
-            compatdata_path, shared_plut_dir, source="own",
-        )
+        if offline:
+            prog(60, "Own game — writing offline script...")
+            lan_wrapper_path = _write_offline_wrapper(game, game_key, "own")
     elif proton_path and steam_root:
         # The game exe stays stock for plain Play; older versions replaced
         # it with an offline wrapper, so put the original back.
         from plutonium import _restore_original_exe, add_steam_menu
         _restore_original_exe(game, game_key)
-        # The standalone .sh script is what DeckOps_Offline.exe calls.
-        prog(70, "Writing offline LAN wrapper...")
-        lan_wrapper_path = _write_lcd_lan_wrapper(
-            game, game_key, steam_root, proton_path,
-            compatdata_path, shared_plut_dir, source="steam",
-        )
+        # The offline script is what DeckOps_Offline.exe and Plutonium Offline run
+        if offline:
+            prog(70, "Writing offline script...")
+            lan_wrapper_path = _write_offline_wrapper(game, game_key, "steam")
         prog(75, "Adding Plutonium to the Steam launch menu...")
-        _write_lcd_menu_files(game, game_key)
+        _write_lcd_menu_files(game, game_key, lan_wrapper_path)
         add_steam_menu(game, game_key, steam_root, prog)
     else:
         prog(60, "Skipping wrapper -- missing proton_path or steam_root")

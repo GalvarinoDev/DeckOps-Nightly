@@ -86,7 +86,7 @@ def _check_update_status():
 # ── ManagementCard ────────────────────────────────────────────────────────────
 class ManagementCard(QFrame):
     def __init__(self, gd, installed, on_setup, on_configure,
-                 on_readd=None, on_add_ds=None, parent=None):
+                 on_readd=None, on_add_ds=None, on_offline=None, parent=None):
         super().__init__(parent)
         color = C_IW if gd["dev"] == "iw" else C_TREY
         self._color  = color
@@ -100,9 +100,9 @@ class ManagementCard(QFrame):
         client     = _active_client(gd)
 
         if self._is_lan:
-            # DeckOps LAN card — always shown, no key-based detection
+            # Offline Mode card: dimmed until added, like a game that isn't set up
             ik         = []
-            is_setup   = False
+            is_setup   = cfg.get_offline_mode()
             is_present = True
         else:
             ik         = [k for k in keys if k in installed]
@@ -126,7 +126,7 @@ class ManagementCard(QFrame):
         self._img = QLabel(img_container)
         self._img.setAlignment(Qt.AlignCenter)
         self._img.setStyleSheet("background:transparent;border:none;")
-        if not is_setup and not self._is_lan:
+        if not is_setup:
             effect = QGraphicsOpacityEffect()
             effect.setOpacity(0.45 if is_present else 0.25)
             self._img.setGraphicsEffect(effect)
@@ -154,9 +154,15 @@ class ManagementCard(QFrame):
                 f"QPushButton:disabled{{background:{bg};color:{fg};}}")
             return b
 
-        if self._is_lan:
+        if self._is_lan and not is_setup:
+            b = _card_btn("Add", C_IW)
+            if on_offline: b.clicked.connect(lambda: on_offline(True))
+        elif self._is_lan:
             b = _card_btn("Re-Add", C_TREY)
             if on_readd: b.clicked.connect(lambda: on_readd(gd))
+            rm = _card_btn("Remove", C_RED_BTN)
+            if on_offline: rm.clicked.connect(lambda: on_offline(False))
+            bb.addStretch(); bb.addWidget(b); bb.addWidget(rm); b = None
         elif not is_setup and is_present:
             b = _card_btn("Set Up", C_IW)
             b.clicked.connect(lambda: on_setup(gd))
@@ -169,7 +175,8 @@ class ManagementCard(QFrame):
         else:
             b = _card_btn("Set Up", "rgba(37,37,53,200)", "#555568")
             b.setEnabled(False)
-        bb.addStretch(); bb.addWidget(b); bb.addStretch()
+        if b: bb.addStretch(); bb.addWidget(b)
+        bb.addStretch()
 
         self._btn_bar.adjustSize()
         self._btn_bar.raise_()
@@ -328,6 +335,7 @@ class ManagementScreen(QWidget):
                 on_configure = self._configure,
                 on_readd     = self._readd,
                 on_add_ds    = self._add_mw3_ds,
+                on_offline   = self._offline,
             )
             self._grid.addWidget(card, row, col)
 
@@ -416,6 +424,27 @@ class ManagementScreen(QWidget):
         us.update_zd = bool(zd_cb and zd_cb.isChecked())
         us.selected = selected
         us.steam_root = root
+        go_to(self.stack, "UpdateScreen")
+
+    def _offline(self, on):
+        """Add or remove Offline Mode (offline launcher, Steam menu Offline entries, bot matches)."""
+        text = ("Add Offline Mode? Adds the offline launcher, Plutonium Offline in each game's Steam "
+                "launch menu, and bot matches in BO2 / MW3 MP. Steam closes while it is set up."
+                if on else
+                "Remove Offline Mode? Removes the offline launcher, the Plutonium Offline launch menu "
+                "entries and the bot match files. Steam closes while it is removed.")
+        if QMessageBox.question(self, "Offline Mode", text) != QMessageBox.Yes:
+            return
+        def task(sigs):
+            from wrapper import kill_steam
+            from plutonium import apply_offline_mode
+            sigs.progress.emit(2, "Closing Steam...")
+            kill_steam(on_progress=sigs.log.emit)
+            sr = cfg.load().get("steam_root", "") or find_steam_root()
+            apply_offline_mode(on, sr, lambda p, m: (sigs.progress.emit(p, m.strip()), sigs.log.emit(m.strip())))
+            sigs.log.emit("✓  Offline Mode added." if on else "✓  Offline Mode removed.")
+        us = get_screen(self.stack, "UpdateScreen")
+        us.task = ("OFFLINE MODE", task)
         go_to(self.stack, "UpdateScreen")
 
     def _readd(self, gd):
@@ -1905,6 +1934,8 @@ class UpdateScreen(QWidget):
         self.update_zd = False
         self.selected   = []
         self.steam_root = ""
+        # (title, fn(sigs)) run in place of the game updates, e.g. adding Offline Mode
+        self.task = None
         self._steam_closed = threading.Event()
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
@@ -1957,6 +1988,7 @@ class UpdateScreen(QWidget):
     def showEvent(self, e):
         super().showEvent(e)
         self.bar.setValue(0); self.log.clear()
+        self.title.setText(self.task[0] if self.task else "UPDATE")
         self.steam_btn.setVisible(False); self.back_btn.setVisible(False)
         self._steam_closed.clear()
         inhibit.start("DeckOps is updating")
@@ -1972,6 +2004,15 @@ class UpdateScreen(QWidget):
         go_to(self.stack, "ManagementScreen")
 
     def _run(self):
+        task, self.task = self.task, None
+        if task:
+            try:
+                task[1](self._s)
+            except Exception as ex:
+                self._s.log.emit(f"✗  {task[0].title()} failed: {ex}")
+            self._s.progress.emit(100, "All done!")
+            self._s.done.emit(True)
+            return
         from wrapper import get_proton_path, find_compatdata, kill_steam, set_compat_tool
         from ge_proton import install_ge_proton, MANAGED_APPIDS
         from iw4x import install_iw4x
@@ -2227,6 +2268,8 @@ class UpdateScreen(QWidget):
                     install_sp_mod(key, game["install_dir"], op,
                                    source=source, steam_root=self.steam_root)
                 self._s.log.emit(f"✓  {base_name} ({key}) done")
+                # Installs that mark themselves (Plutonium) just saved fresh paths
+                entry = cfg.get_setup_games().get(key, entry)
                 cfg.mark_game_setup(key, c, source=source,
                                     wrapper_path=entry.get("wrapper_path"),
                                     lan_wrapper_path=entry.get("lan_wrapper_path"))
