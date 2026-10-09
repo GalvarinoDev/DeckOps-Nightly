@@ -13,4 +13,9 @@ timeout 120 env -u LD_PRELOAD -u LD_LIBRARY_PATH -u PYTHONHOME -u PYTHONPATH \
     "$DIR/.venv/bin/python3" "$DIR/src/prelaunch.py" "$@" >/dev/null 2>&1
 
 shift
+# Plutonium Offline in the Steam launch menu: the entry's file opens the DeckOps:
+# Plutonium Offline launcher (plutonium.write_offline_menu_file). Run here on the host.
+for a in "$@"; do
+    case "$a" in *plut*_lan.exe) exec bash "$a" ;; esac
+done
 exec "$@"

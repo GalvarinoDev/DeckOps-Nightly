@@ -48,7 +48,17 @@ def _plutonium(key, cmd):
         pu.link_prefix(master, prefix, _STORAGE_SUBDIRS.get(key), info, log)
 
 
-_HANDLERS = {"cod4mp": _cod4mp}
+def _lan(key, args):
+    # Offline launch (lan_server.sh): relink the offline copies, then hand it the
+    # Steam Linux Runtime and the library mounts on stdout
+    from plutonium import refresh_lan, lan_runtime
+    try:
+        refresh_lan(args[0])
+    finally:
+        print(*lan_runtime(), sep="\t")
+
+
+_HANDLERS = {"cod4mp": _cod4mp, "lan": _lan}
 _HANDLERS.update(dict.fromkeys(
     ("t4sp", "t4mp", "t5sp", "t5mp", "t6mp", "t6zm", "iw5mp", "iw5mp_ds"), _plutonium))
 
