@@ -39,6 +39,7 @@ from steam_common import (
     find_all_steam_uids as _find_all_steam_uids,
     get_deck_serial as _get_deck_serial,
     patch_configset as _patch_configset,
+    shortcut_title_key as _shortcut_title_key,
 )
 
 COMPAT_ROOT    = os.path.join(STEAM_ROOT, "steamapps", "compatdata")
@@ -56,13 +57,13 @@ SHORTCUTS = {
         "game_appid":      "7940",
         "template_type":   "other",
         "icon_url":        "https://cdn2.steamgriddb.com/icon/59b109c700b500daa9ef3a6769bc8c6f.png",
-        "grid_url":        "https://cdn2.steamgriddb.com/thumb/7a22b900577a6edbffd53153cea2999c.jpg",
-        "wide_url":        "https://cdn2.steamgriddb.com/thumb/69a24bf40cd265fb00ae685cdaa040c7.jpg",
+        "grid_url":        "https://cdn2.steamgriddb.com/grid/ef334e3d937c406e95623fa641627a63.jpg",
+        "wide_url":        "https://cdn2.steamgriddb.com/grid/b66c2356afe332554516c4ddc4708452.png",
         "hero_url":        "https://cdn2.steamgriddb.com/hero_thumb/95bc8e097e09212ec0160a7bc0b46fd6.jpg",
         "logo_url":        "https://cdn2.steamgriddb.com/logo_thumb/0440169a43de927753429dd69ca8c735.png",
         "icon_ext":        "png",
         "grid_ext":        "jpg",
-        "wide_ext":        "jpg",
+        "wide_ext":        "png",
         "hero_ext":        "jpg",
         "logo_ext":        "png",
     },
@@ -124,11 +125,11 @@ OWN_SHORTCUTS = {
         "name":           "Call of Duty 4: Modern Warfare - Multiplayer",
         "template_type":  "other",
         "icon_url":       "https://cdn2.steamgriddb.com/icon/59b109c700b500daa9ef3a6769bc8c6f.png",
-        "grid_url":       "https://cdn2.steamgriddb.com/thumb/7a22b900577a6edbffd53153cea2999c.jpg",
-        "wide_url":       "https://cdn2.steamgriddb.com/thumb/69a24bf40cd265fb00ae685cdaa040c7.jpg",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/ef334e3d937c406e95623fa641627a63.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/grid/b66c2356afe332554516c4ddc4708452.png",
         "hero_url":       "https://cdn2.steamgriddb.com/hero_thumb/95bc8e097e09212ec0160a7bc0b46fd6.jpg",
         "logo_url":       "https://cdn2.steamgriddb.com/logo_thumb/0440169a43de927753429dd69ca8c735.png",
-        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "png", "hero_ext": "jpg", "logo_ext": "png",
     },
     "iw4sp": {
         "name":           "Call of Duty: Modern Warfare 2 (2009) - Singleplayer",
@@ -668,7 +669,7 @@ def _get_template_filename(template_type: str, gyro_mode: str) -> str:
 
 
 def _assign_controller_config(uid: str, appid: int, shortcut_def: dict,
-                               gyro_mode: str, prog):
+                               gyro_mode: str, prog, title: str = None):
     """
     Assign controller template for a non-Steam shortcut.
 
@@ -712,6 +713,9 @@ def _assign_controller_config(uid: str, appid: int, shortcut_def: dict,
     # Patch the primary configset
     configset_path = os.path.join(steam_cfg_root, configset_name)
     _patch_configset(configset_path, appid_str, template_filename)
+    # Game Mode resolves shortcuts by their title key, not the appid
+    if title:
+        _patch_configset(configset_path, _shortcut_title_key(title), template_filename)
     
     # Patch configset_{serial}.vdf, best-effort. Usually skipped: the
     # serial key is often absent from config.vdf, and Game Mode has been
@@ -948,7 +952,7 @@ def add_shortcut(
         # Controller config
         _assign_controller_config(uid, shortcut_appid,
                                   {"template_type": template_type},
-                                  gyro_mode, prog)
+                                  gyro_mode, prog, name)
 
     # Compat tool handling (config.vdf is global, outside UID loop)
     if clear_compat_tool:
@@ -1324,7 +1328,7 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                 _ctrl_def = dict(shortcut_def)
                 _ctrl_def["template_type"] = _cfg_ctrl.get_cod4mp_profile_type(
                     shortcut_def["template_type"])
-            _assign_controller_config(uid, shortcut_appid, _ctrl_def, gyro_mode, prog)
+            _assign_controller_config(uid, shortcut_appid, _ctrl_def, gyro_mode, prog, name)
         
         if new_entries:
             try:
@@ -1692,7 +1696,7 @@ def write_own_shortcuts(own_games: dict, selected_keys: list,
                 _ctrl_def = dict(shortcut_def)
                 _ctrl_def["template_type"] = _cfg_ctrl.get_cod4mp_profile_type(
                     shortcut_def["template_type"])
-            _assign_controller_config(uid, shortcut_appid, _ctrl_def, gyro_mode, prog)
+            _assign_controller_config(uid, shortcut_appid, _ctrl_def, gyro_mode, prog, name)
 
             # Set GE-Proton compat tool
             try:
@@ -1938,7 +1942,7 @@ def create_launcher_shortcut(on_progress=None):
             _gyro = "on"
         _assign_controller_config(uid, shortcut_appid,
                                   {"template_type": "standard"},
-                                  _gyro, prog)
+                                  _gyro, prog, LAUNCHER_TITLE)
 
         # No compat tool needed — launcher_offline.sh invokes Proton directly.
         # Clear any stale compat tool entry from previous exe-based shortcut
@@ -1979,9 +1983,6 @@ def repair_shortcuts(steam_root: str = None, on_progress=None) -> list:
     for key, entry in setup.items():
         src = entry.get("source", "steam")
         if src == "steam" and key in SHORTCUTS and key != "t7x":
-            # OLED/Other WaW MP shortcut is opt-in (the Steam launch menu has MP)
-            if key == "t4mp" and not lcd and not cfg.load().get("waw_mp_shortcut", True):
-                continue
             expected[key] = ("steam", SHORTCUTS[key]["name"])
         elif src == "own" and lcd and key in HEROIC_PLUT_GAMES:
             expected[key] = ("heroic", HEROIC_PLUT_GAMES[key]["title"])

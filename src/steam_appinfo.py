@@ -6,8 +6,11 @@ appinfo has more than one launch entry for the current OS. DeckOps uses
 that to offer mod client entries (e.g. Plutonium Online / Offline) under
 the stock game entries.
 
-Append-only by design: stock entries are never edited or renumbered, our
-entries go after the last existing key and are matched by `executable`.
+Append-only by design: stock entries are never renumbered, our entries
+go after the last existing key and are matched by `executable`. The one
+edit to a stock entry is a "tag" argument (VANILLA_TAG): Steam drops it
+together with our entries, so a launch option can tell a stock pick from
+a lost menu.
 Steam rewrites appinfo.vdf from Valve's servers now and then, so every
 menu we add is recorded in deckops.json (`launch_menus`) and
 reapply_all() puts them back. Only call with Steam closed.
@@ -37,6 +40,8 @@ _FIXED = {_T_INT32: 4, _T_FLOAT: 4, _T_PTR: 4, _T_COLOR: 4, _T_UINT64: 8, _T_INT
 # Per-app header after appid + size: state, last_updated, pics token,
 # text sha1, change number, binary sha1
 _HDR = struct.Struct("<IIQ20sI20s")
+
+VANILLA_TAG = "-deckops_vanilla"
 
 
 def appinfo_path(steam_root: str) -> str:
@@ -196,6 +201,19 @@ def _entry_node(entry: dict):
 
 # --- edit helpers
 
+def _tag(launch, exe: bytes, tag: bytes) -> bool:
+    changed = False
+    for item in launch:
+        if item[0] != _T_DICT or (_get(item[2], "executable") or [0, 0, b""])[2] != exe:
+            continue
+        args = _get(item[2], "arguments")
+        if args is None:
+            item[2].insert(1, [_T_STR, "arguments", tag]); changed = True
+        elif tag not in args[2].split():
+            args[2] = (args[2] + b" " + tag).strip(); changed = True
+    return changed
+
+
 def _edit_launch(steam_root: str, appid: int, edit) -> bool:
     """Load appinfo.vdf, run edit(launch_node) on one app, write back if it changed."""
     path = appinfo_path(steam_root)
@@ -263,11 +281,15 @@ def add_launch_entries(steam_root: str, appid: int, entries: list, record: bool 
     Append launch entries after the stock ones. Each entry is a dict with
     executable (relative to the install dir), description, optional
     arguments and oslist (default windows). An existing entry with the
-    same executable is updated in place; stock entries are never touched.
+    same executable is updated in place. An entry with "tag" instead adds
+    that argument to the stock entries running its executable.
     """
     def edit(launch):
         changed = False
         for e in entries:
+            if e.get("tag"):
+                changed |= _tag(launch, e["executable"].encode(), e["tag"].encode())
+                continue
             new = _entry_node(e)
             hit = next((item for item in launch if item[0] == _T_DICT and
                         (_get(item[2], "executable") or [0, 0, b""])[2] == e["executable"].encode()), None)

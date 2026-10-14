@@ -9,8 +9,6 @@ for these appids only records activity from the Python/flatpak launcher
 process — not the actual game. The cache is useless junk that
 accumulates on every launch due to a Steam bug with non-Steam games.
 
-See: https://github.com/ValveSoftware/steam-for-linux/issues/10486
-
 Called from Steam launch options (Steam-owned games) or non-Steam shortcut
 LaunchOptions (own games). Not used on OLED — OLED launches through
 Steam's Proton directly and its shader cache is actually useful.
@@ -263,12 +261,21 @@ def main():
 
     lan = None
     if cmd:
-        from plutonium import STEAM_MENU_EXES
+        from plutonium import STEAM_MENU_EXES, GAME_META
+        from steam_appinfo import VANILLA_TAG
         menu = {n: (k, i == 1) for k, names in STEAM_MENU_EXES.items()
                 for i, n in enumerate(names)}
+        # Stock exe without the tag: Steam dropped our menu (add_steam_menu tags the
+        # stock entry), so plain Play runs that game's Plutonium Online
+        if VANILLA_TAG not in cmd:
+            for k in STEAM_MENU_EXES:
+                a = next((a for a in cmd if os.path.basename(a) == GAME_META[k][2]), None)
+                if a and os.path.exists(os.path.join(os.path.dirname(a), STEAM_MENU_EXES[k][0])):
+                    menu[GAME_META[k][2]] = (k, False)
         hit = next(((menu[os.path.basename(a)], a) for a in cmd
                     if os.path.basename(a) in menu), None)
         if not hit:
+            cmd = [a for a in cmd if a != VANILLA_TAG]
             os.execvp(cmd[0], cmd)  # stock launch menu entry
         (game_key, offline), path = hit  # WaW SP/MP share one appid and launch option
         lan = path if offline else None

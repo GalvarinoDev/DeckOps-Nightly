@@ -14,11 +14,9 @@
         - Per-weapon attachment restrictions (isValidCombination)
 
     Controls:
-        - Open: CHOOSE CLASS in the in-game menu (hub: Class Editor, Map / Mode, Bot Warfare)
-        - Scroll Up: W / Dpad Up (+actionslot 1)
-        - Scroll Down: S / Dpad Down (+actionslot 2)
-        - Select: Jump (Space / A button), Reload (X button) or Use (F key)
-        - Back: Stance (B button) or Aim (ADS / Left Trigger)
+        - Open: CHOOSE CLASS in the in-game menu (hub: Class Editor, Choose Classes, Map / Mode, Bot Warfare)
+        - A real game menu (mouse, keyboard, controller): our plutonium_patch_mp.ff replaces the stock
+          muteplayer menu with it (client and server storage/iw5/zone, built by build_mw3_menu.py)
 
     Credits:
         - Divity (k) - Original in-game CAC concept and setPlayerData backend
@@ -32,17 +30,11 @@
 
 init()
 {
-    precacheShader("gradient_center");
-    precacheShader("white");
-    precacheShader("line_horizontal_scorebar");
-    precacheShader("black");
-
-    buildWeaponData();
-    buildPerkData();
-    buildEquipmentData();
-    buildProficiencyData();
+    dcacCatalog();
     buildStreakData();
     buildNameLookup();
+    // Weapon pictures are drawn by the menu from a dvar, so they need no precache (precaching more than
+    // about 14 materials overflowed G_FindConfigstringIndex and stopped the server, PC 2026-10-10)
 
     level thread onPlayerConnect();
     level thread applyMatchOptions();
@@ -77,439 +69,38 @@ watchDeath()
     }
 }
 
-// Every menu function ends on death, so the HUD, freeze and open flag are released here too
+// Every menu function ends on death, so the menu, freeze and open flag are released here too
 cacCleanup()
 {
     // only a menu that was open counts toward resuming the bots
     if (isDefined(self.cac_ui))
+    {
         self botsResume();
-    if (isDefined(self.cac_huds))
-        for (i = 0; i < self.cac_huds.size; i++)
-            if (isDefined(self.cac_huds[i]))
-                self.cac_huds[i] destroy();
-    self.cac_huds = undefined;
+        self closepopupmenu();
+    }
     self.cac_ui = undefined;
     self freezeControlsWrapper(false);
     self setClientDvar("actionSlotsHide", "0");
     self.cac_open = false;
 }
 
-// ============================================================
-// DATA TABLES
-// ============================================================
-
-buildWeaponData()
+// Test builds: +set dcac_debug 1 logs the menu flow to games_mp.log
+dlog(msg)
 {
-    level.cac = [];
-
-    // --- Primary weapon categories ---
-    level.cac["primary_cats"] = [];
-    level.cac["primary_cats"][0] = "Assault Rifles";
-    level.cac["primary_cats"][1] = "SMGs";
-    level.cac["primary_cats"][2] = "LMGs";
-    level.cac["primary_cats"][3] = "Sniper Rifles";
-    level.cac["primary_cats"][4] = "Shotguns";
-    level.cac["primary_cats"][5] = "Riot Shield";
-
-    // --- Assault Rifles ---
-    level.cac["ar"] = [];       level.cac["ar_name"] = [];
-    level.cac["ar"][0] = "iw5_m4";        level.cac["ar_name"][0] = "M4A1";
-    level.cac["ar"][1] = "iw5_m16";       level.cac["ar_name"][1] = "M16A4";
-    level.cac["ar"][2] = "iw5_scar";      level.cac["ar_name"][2] = "SCAR-L";
-    level.cac["ar"][3] = "iw5_cm901";     level.cac["ar_name"][3] = "CM901";
-    level.cac["ar"][4] = "iw5_type95";    level.cac["ar_name"][4] = "Type 95";
-    level.cac["ar"][5] = "iw5_g36c";      level.cac["ar_name"][5] = "G36C";
-    level.cac["ar"][6] = "iw5_acr";       level.cac["ar_name"][6] = "ACR 6.8";
-    level.cac["ar"][7] = "iw5_mk14";      level.cac["ar_name"][7] = "MK14";
-    level.cac["ar"][8] = "iw5_ak47";      level.cac["ar_name"][8] = "AK-47";
-    level.cac["ar"][9] = "iw5_fad";       level.cac["ar_name"][9] = "FAD";
-
-    // --- SMGs ---
-    level.cac["smg"] = [];      level.cac["smg_name"] = [];
-    level.cac["smg"][0] = "iw5_mp5";      level.cac["smg_name"][0] = "MP5";
-    level.cac["smg"][1] = "iw5_mp7";      level.cac["smg_name"][1] = "MP7";
-    level.cac["smg"][2] = "iw5_ak74u";    level.cac["smg_name"][2] = "AK-74u";
-    level.cac["smg"][3] = "iw5_p90";      level.cac["smg_name"][3] = "P90";
-    level.cac["smg"][4] = "iw5_pp90m1";   level.cac["smg_name"][4] = "PP90M1";
-    level.cac["smg"][5] = "iw5_ump45";    level.cac["smg_name"][5] = "UMP45";
-
-    // --- LMGs ---
-    level.cac["lmg"] = [];      level.cac["lmg_name"] = [];
-    level.cac["lmg"][0] = "iw5_sa80";     level.cac["lmg_name"][0] = "L86 LSW";
-    level.cac["lmg"][1] = "iw5_mg36";     level.cac["lmg_name"][1] = "MG36";
-    level.cac["lmg"][2] = "iw5_pecheneg"; level.cac["lmg_name"][2] = "PKP Pecheneg";
-    level.cac["lmg"][3] = "iw5_mk46";     level.cac["lmg_name"][3] = "MK46";
-    level.cac["lmg"][4] = "iw5_m60";      level.cac["lmg_name"][4] = "M60E4";
-
-    // --- Sniper Rifles ---
-    level.cac["sniper"] = [];   level.cac["sniper_name"] = [];
-    level.cac["sniper"][0] = "iw5_barrett";   level.cac["sniper_name"][0] = "Barrett .50cal";
-    level.cac["sniper"][1] = "iw5_l96a1";     level.cac["sniper_name"][1] = "L118A";
-    level.cac["sniper"][2] = "iw5_dragunov";  level.cac["sniper_name"][2] = "Dragunov";
-    level.cac["sniper"][3] = "iw5_as50";      level.cac["sniper_name"][3] = "AS50";
-    level.cac["sniper"][4] = "iw5_rsass";     level.cac["sniper_name"][4] = "RSASS";
-    level.cac["sniper"][5] = "iw5_msr";       level.cac["sniper_name"][5] = "MSR";
-    level.cac["sniper"][6] = "iw5_cheytac";   level.cac["sniper_name"][6] = "Intervention";
-
-    // --- Shotguns ---
-    level.cac["shotgun"] = [];  level.cac["shotgun_name"] = [];
-    level.cac["shotgun"][0] = "iw5_usas12";    level.cac["shotgun_name"][0] = "USAS 12";
-    level.cac["shotgun"][1] = "iw5_ksg";       level.cac["shotgun_name"][1] = "KSG 12";
-    level.cac["shotgun"][2] = "iw5_spas12";    level.cac["shotgun_name"][2] = "SPAS-12";
-    level.cac["shotgun"][3] = "iw5_aa12";      level.cac["shotgun_name"][3] = "AA-12";
-    level.cac["shotgun"][4] = "iw5_striker";   level.cac["shotgun_name"][4] = "Striker";
-    level.cac["shotgun"][5] = "iw5_1887";      level.cac["shotgun_name"][5] = "Model 1887";
-
-    // --- Riot Shield ---
-    level.cac["shield"] = [];   level.cac["shield_name"] = [];
-    level.cac["shield"][0] = "riotshield";     level.cac["shield_name"][0] = "Riot Shield";
-
-    // --- Secondary weapon categories ---
-    level.cac["secondary_cats"] = [];
-    level.cac["secondary_cats"][0] = "Machine Pistols";
-    level.cac["secondary_cats"][1] = "Handguns";
-    level.cac["secondary_cats"][2] = "Launchers";
-
-    // --- Machine Pistols ---
-    level.cac["machpistol"] = [];       level.cac["machpistol_name"] = [];
-    level.cac["machpistol"][0] = "iw5_fmg9";      level.cac["machpistol_name"][0] = "FMG9";
-    level.cac["machpistol"][1] = "iw5_mp9";        level.cac["machpistol_name"][1] = "MP9";
-    level.cac["machpistol"][2] = "iw5_skorpion";   level.cac["machpistol_name"][2] = "Skorpion";
-    level.cac["machpistol"][3] = "iw5_g18";        level.cac["machpistol_name"][3] = "G18";
-
-    // --- Handguns ---
-    level.cac["hg"] = [];       level.cac["hg_name"] = [];
-    level.cac["hg"][0] = "iw5_usp45";         level.cac["hg_name"][0] = "USP .45";
-    level.cac["hg"][1] = "iw5_p99";           level.cac["hg_name"][1] = "P99";
-    level.cac["hg"][2] = "iw5_mp412";         level.cac["hg_name"][2] = "MP412";
-    level.cac["hg"][3] = "iw5_44magnum";      level.cac["hg_name"][3] = ".44 Magnum";
-    level.cac["hg"][4] = "iw5_deserteagle";   level.cac["hg_name"][4] = "Desert Eagle";
-    level.cac["hg"][5] = "iw5_fnfiveseven";   level.cac["hg_name"][5] = "Five Seven";
-
-    // --- Launchers ---
-    level.cac["launcher"] = []; level.cac["launcher_name"] = [];
-    level.cac["launcher"][0] = "iw5_smaw";     level.cac["launcher_name"][0] = "SMAW";
-    level.cac["launcher"][1] = "javelin";      level.cac["launcher_name"][1] = "Javelin";
-    level.cac["launcher"][2] = "stinger";      level.cac["launcher_name"][2] = "Stinger";
-    level.cac["launcher"][3] = "rpg";          level.cac["launcher_name"][3] = "RPG-7";
-    level.cac["launcher"][4] = "xm25";         level.cac["launcher_name"][4] = "XM25";
-
-    // ========================================
-    // Per-weapon-class attachment tables
-    // ========================================
-
-    // AR attachments
-    level.cac["attach_ar"] = [];         level.cac["attach_ar_name"] = [];
-    level.cac["attach_ar"][0] = "none";          level.cac["attach_ar_name"][0] = "No Attachment";
-    level.cac["attach_ar"][1] = "reflex";        level.cac["attach_ar_name"][1] = "Red Dot Sight";
-    level.cac["attach_ar"][2] = "eotech";        level.cac["attach_ar_name"][2] = "Holographic Sight";
-    level.cac["attach_ar"][3] = "acog";          level.cac["attach_ar_name"][3] = "ACOG Scope";
-    level.cac["attach_ar"][4] = "thermal";       level.cac["attach_ar_name"][4] = "Thermal Scope";
-    level.cac["attach_ar"][5] = "hybrid";        level.cac["attach_ar_name"][5] = "Hybrid Sight";
-    level.cac["attach_ar"][6] = "silencer";      level.cac["attach_ar_name"][6] = "Silencer";
-    level.cac["attach_ar"][7] = "heartbeat";     level.cac["attach_ar_name"][7] = "Heartbeat Sensor";
-    level.cac["attach_ar"][8] = "grip";          level.cac["attach_ar_name"][8] = "Grip";
-    level.cac["attach_ar"][9] = "gl";            level.cac["attach_ar_name"][9] = "Grenade Launcher";
-    level.cac["attach_ar"][10] = "shotgun";      level.cac["attach_ar_name"][10] = "Shotgun";
-    level.cac["attach_ar"][11] = "xmags";        level.cac["attach_ar_name"][11] = "Extended Mags";
-
-    // SMG attachments
-    level.cac["attach_smg"] = [];        level.cac["attach_smg_name"] = [];
-    level.cac["attach_smg"][0] = "none";         level.cac["attach_smg_name"][0] = "No Attachment";
-    level.cac["attach_smg"][1] = "reflex";       level.cac["attach_smg_name"][1] = "Red Dot Sight";
-    level.cac["attach_smg"][2] = "eotech";       level.cac["attach_smg_name"][2] = "Holographic Sight";
-    level.cac["attach_smg"][3] = "acog";         level.cac["attach_smg_name"][3] = "ACOG Scope";
-    level.cac["attach_smg"][4] = "thermal";      level.cac["attach_smg_name"][4] = "Thermal Scope";
-    level.cac["attach_smg"][5] = "silencer";     level.cac["attach_smg_name"][5] = "Silencer";
-    level.cac["attach_smg"][6] = "rof";          level.cac["attach_smg_name"][6] = "Rapid Fire";
-    level.cac["attach_smg"][7] = "xmags";        level.cac["attach_smg_name"][7] = "Extended Mags";
-
-    // LMG attachments
-    level.cac["attach_lmg"] = [];        level.cac["attach_lmg_name"] = [];
-    level.cac["attach_lmg"][0] = "none";         level.cac["attach_lmg_name"][0] = "No Attachment";
-    level.cac["attach_lmg"][1] = "reflex";       level.cac["attach_lmg_name"][1] = "Red Dot Sight";
-    level.cac["attach_lmg"][2] = "eotech";       level.cac["attach_lmg_name"][2] = "Holographic Sight";
-    level.cac["attach_lmg"][3] = "acog";         level.cac["attach_lmg_name"][3] = "ACOG Scope";
-    level.cac["attach_lmg"][4] = "thermal";      level.cac["attach_lmg_name"][4] = "Thermal Scope";
-    level.cac["attach_lmg"][5] = "silencer";     level.cac["attach_lmg_name"][5] = "Silencer";
-    level.cac["attach_lmg"][6] = "heartbeat";    level.cac["attach_lmg_name"][6] = "Heartbeat Sensor";
-    level.cac["attach_lmg"][7] = "grip";         level.cac["attach_lmg_name"][7] = "Grip";
-    level.cac["attach_lmg"][8] = "xmags";        level.cac["attach_lmg_name"][8] = "Extended Mags";
-
-    // Sniper attachments
-    level.cac["attach_sniper"] = [];     level.cac["attach_sniper_name"] = [];
-    level.cac["attach_sniper"][0] = "none";          level.cac["attach_sniper_name"][0] = "No Attachment";
-    level.cac["attach_sniper"][1] = "acog";          level.cac["attach_sniper_name"][1] = "ACOG Scope";
-    level.cac["attach_sniper"][2] = "thermal";       level.cac["attach_sniper_name"][2] = "Thermal Scope";
-    level.cac["attach_sniper"][3] = "vzscope";       level.cac["attach_sniper_name"][3] = "Variable Zoom";
-    level.cac["attach_sniper"][4] = "silencer";      level.cac["attach_sniper_name"][4] = "Silencer";
-    level.cac["attach_sniper"][5] = "heartbeat";     level.cac["attach_sniper_name"][5] = "Heartbeat Sensor";
-    level.cac["attach_sniper"][6] = "xmags";         level.cac["attach_sniper_name"][6] = "Extended Mags";
-
-    // Shotgun attachments
-    level.cac["attach_shotgun"] = [];    level.cac["attach_shotgun_name"] = [];
-    level.cac["attach_shotgun"][0] = "none";         level.cac["attach_shotgun_name"][0] = "No Attachment";
-    level.cac["attach_shotgun"][1] = "reflex";       level.cac["attach_shotgun_name"][1] = "Red Dot Sight";
-    level.cac["attach_shotgun"][2] = "eotech";       level.cac["attach_shotgun_name"][2] = "Holographic Sight";
-    level.cac["attach_shotgun"][3] = "silencer";     level.cac["attach_shotgun_name"][3] = "Silencer";
-    level.cac["attach_shotgun"][4] = "grip";         level.cac["attach_shotgun_name"][4] = "Grip";
-    level.cac["attach_shotgun"][5] = "xmags";        level.cac["attach_shotgun_name"][5] = "Extended Mags";
-
-    // Machine Pistol attachments
-    level.cac["attach_machpistol"] = [];         level.cac["attach_machpistol_name"] = [];
-    level.cac["attach_machpistol"][0] = "none";          level.cac["attach_machpistol_name"][0] = "No Attachment";
-    level.cac["attach_machpistol"][1] = "reflex";        level.cac["attach_machpistol_name"][1] = "Red Dot Sight";
-    level.cac["attach_machpistol"][2] = "eotech";        level.cac["attach_machpistol_name"][2] = "Holographic Sight";
-    level.cac["attach_machpistol"][3] = "silencer";      level.cac["attach_machpistol_name"][3] = "Silencer";
-    level.cac["attach_machpistol"][4] = "akimbo";        level.cac["attach_machpistol_name"][4] = "Akimbo";
-    level.cac["attach_machpistol"][5] = "xmags";         level.cac["attach_machpistol_name"][5] = "Extended Mags";
-
-    // Handgun attachments (USP, P99, Five Seven)
-    level.cac["attach_hg"] = [];         level.cac["attach_hg_name"] = [];
-    level.cac["attach_hg"][0] = "none";          level.cac["attach_hg_name"][0] = "No Attachment";
-    level.cac["attach_hg"][1] = "silencer";      level.cac["attach_hg_name"][1] = "Silencer";
-    level.cac["attach_hg"][2] = "akimbo";        level.cac["attach_hg_name"][2] = "Akimbo";
-    level.cac["attach_hg"][3] = "tactical";      level.cac["attach_hg_name"][3] = "Tactical Knife";
-    level.cac["attach_hg"][4] = "xmags";         level.cac["attach_hg_name"][4] = "Extended Mags";
-
-    // Handgun attachments (Magnum, Desert Eagle, MP412 — no silencer, no xmags)
-    level.cac["attach_hg2"] = [];        level.cac["attach_hg2_name"] = [];
-    level.cac["attach_hg2"][0] = "none";         level.cac["attach_hg2_name"][0] = "No Attachment";
-    level.cac["attach_hg2"][1] = "akimbo";       level.cac["attach_hg2_name"][1] = "Akimbo";
-    level.cac["attach_hg2"][2] = "tactical";     level.cac["attach_hg2_name"][2] = "Tactical Knife";
-
-    // ========================================
-    // Weapon -> attachment table mapping
-    // ========================================
-    level.cac["wep_attach_type"] = [];
-    // ARs
-    level.cac["wep_attach_type"]["iw5_m4"] = "ar";
-    level.cac["wep_attach_type"]["iw5_m16"] = "ar";
-    level.cac["wep_attach_type"]["iw5_scar"] = "ar";
-    level.cac["wep_attach_type"]["iw5_cm901"] = "ar";
-    level.cac["wep_attach_type"]["iw5_type95"] = "ar";
-    level.cac["wep_attach_type"]["iw5_g36c"] = "ar";
-    level.cac["wep_attach_type"]["iw5_acr"] = "ar";
-    level.cac["wep_attach_type"]["iw5_mk14"] = "ar";
-    level.cac["wep_attach_type"]["iw5_ak47"] = "ar";
-    level.cac["wep_attach_type"]["iw5_fad"] = "ar";
-    // SMGs
-    level.cac["wep_attach_type"]["iw5_mp5"] = "smg";
-    level.cac["wep_attach_type"]["iw5_mp7"] = "smg";
-    level.cac["wep_attach_type"]["iw5_ak74u"] = "smg";
-    level.cac["wep_attach_type"]["iw5_p90"] = "smg";
-    level.cac["wep_attach_type"]["iw5_pp90m1"] = "smg";
-    level.cac["wep_attach_type"]["iw5_ump45"] = "smg";
-    // LMGs
-    level.cac["wep_attach_type"]["iw5_sa80"] = "lmg";
-    level.cac["wep_attach_type"]["iw5_mg36"] = "lmg";
-    level.cac["wep_attach_type"]["iw5_pecheneg"] = "lmg";
-    level.cac["wep_attach_type"]["iw5_mk46"] = "lmg";
-    level.cac["wep_attach_type"]["iw5_m60"] = "lmg";
-    // Snipers
-    level.cac["wep_attach_type"]["iw5_barrett"] = "sniper";
-    level.cac["wep_attach_type"]["iw5_l96a1"] = "sniper";
-    level.cac["wep_attach_type"]["iw5_dragunov"] = "sniper";
-    level.cac["wep_attach_type"]["iw5_as50"] = "sniper";
-    level.cac["wep_attach_type"]["iw5_rsass"] = "sniper";
-    level.cac["wep_attach_type"]["iw5_msr"] = "sniper";
-    level.cac["wep_attach_type"]["iw5_cheytac"] = "sniper";
-    // Shotguns
-    level.cac["wep_attach_type"]["iw5_usas12"] = "shotgun";
-    level.cac["wep_attach_type"]["iw5_ksg"] = "shotgun";
-    level.cac["wep_attach_type"]["iw5_spas12"] = "shotgun";
-    level.cac["wep_attach_type"]["iw5_aa12"] = "shotgun";
-    level.cac["wep_attach_type"]["iw5_striker"] = "shotgun";
-    level.cac["wep_attach_type"]["iw5_1887"] = "shotgun";
-    // Machine Pistols
-    level.cac["wep_attach_type"]["iw5_fmg9"] = "machpistol";
-    level.cac["wep_attach_type"]["iw5_mp9"] = "machpistol";
-    level.cac["wep_attach_type"]["iw5_skorpion"] = "machpistol";
-    level.cac["wep_attach_type"]["iw5_g18"] = "machpistol";
-    // Handguns (full)
-    level.cac["wep_attach_type"]["iw5_usp45"] = "hg";
-    level.cac["wep_attach_type"]["iw5_p99"] = "hg";
-    level.cac["wep_attach_type"]["iw5_fnfiveseven"] = "hg";
-    // Handguns (limited)
-    level.cac["wep_attach_type"]["iw5_44magnum"] = "hg2";
-    level.cac["wep_attach_type"]["iw5_deserteagle"] = "hg2";
-    level.cac["wep_attach_type"]["iw5_mp412"] = "hg2";
-    // No attachments
-    level.cac["wep_attach_type"]["riotshield"] = "none";
-    level.cac["wep_attach_type"]["iw5_smaw"] = "none";
-    level.cac["wep_attach_type"]["javelin"] = "none";
-    level.cac["wep_attach_type"]["stinger"] = "none";
-    level.cac["wep_attach_type"]["rpg"] = "none";
-    level.cac["wep_attach_type"]["xm25"] = "none";
-
-    // ========================================
-    // Per-weapon attachment restrictions
-    // (from isValidCombination in _class.gsc)
-    // ========================================
-    level.cac["wep_attach_restrict"] = [];
-    // M60 and Pecheneg cannot use heartbeat
-    level.cac["wep_attach_restrict"]["iw5_m60"] = [];
-    level.cac["wep_attach_restrict"]["iw5_m60"][0] = "heartbeat";
-    level.cac["wep_attach_restrict"]["iw5_pecheneg"] = [];
-    level.cac["wep_attach_restrict"]["iw5_pecheneg"][0] = "heartbeat";
-    // .44 Magnum, Desert Eagle, MP412 cannot use silencer or xmags
-    // (already handled by hg2 attach table which excludes them)
-}
-
-buildPerkData()
-{
-    level.cac["perk1"] = [];    level.cac["perk1_name"] = [];
-    level.cac["perk1"][0] = "specialty_fastreload";    level.cac["perk1_name"][0] = "Sleight of Hand";
-    level.cac["perk1"][1] = "specialty_longersprint";  level.cac["perk1_name"][1] = "Extreme Conditioning";
-    level.cac["perk1"][2] = "specialty_scavenger";     level.cac["perk1_name"][2] = "Scavenger";
-    level.cac["perk1"][3] = "specialty_blindeye";      level.cac["perk1_name"][3] = "Blind Eye";
-    level.cac["perk1"][4] = "specialty_paint";         level.cac["perk1_name"][4] = "Recon";
-
-    level.cac["perk2"] = [];    level.cac["perk2_name"] = [];
-    level.cac["perk2"][0] = "specialty_quickdraw";       level.cac["perk2_name"][0] = "Quickdraw";
-    level.cac["perk2"][1] = "specialty_hardline";        level.cac["perk2_name"][1] = "Hardline";
-    level.cac["perk2"][2] = "specialty_coldblooded";     level.cac["perk2_name"][2] = "Assassin";
-    level.cac["perk2"][3] = "specialty_twoprimaries";    level.cac["perk2_name"][3] = "Overkill";
-    level.cac["perk2"][4] = "_specialty_blastshield";    level.cac["perk2_name"][4] = "Blast Shield";
-
-    level.cac["perk3"] = [];    level.cac["perk3_name"] = [];
-    level.cac["perk3"][0] = "specialty_stalker";           level.cac["perk3_name"][0] = "Stalker";
-    level.cac["perk3"][1] = "specialty_bulletaccuracy";    level.cac["perk3_name"][1] = "Steady Aim";
-    level.cac["perk3"][2] = "specialty_detectexplosive";   level.cac["perk3_name"][2] = "SitRep";
-    level.cac["perk3"][3] = "specialty_autospot";          level.cac["perk3_name"][3] = "Marksman";
-    level.cac["perk3"][4] = "specialty_quieter";           level.cac["perk3_name"][4] = "Dead Silence";
-
-    level.cac["deathstreak"] = [];    level.cac["deathstreak_name"] = [];
-    level.cac["deathstreak"][0] = "specialty_null";              level.cac["deathstreak_name"][0] = "None";
-    level.cac["deathstreak"][1] = "specialty_juiced";            level.cac["deathstreak_name"][1] = "Juiced";
-    level.cac["deathstreak"][2] = "specialty_finalstand";        level.cac["deathstreak_name"][2] = "Final Stand";
-    level.cac["deathstreak"][3] = "specialty_grenadepulldeath";  level.cac["deathstreak_name"][3] = "Martyrdom";
-    level.cac["deathstreak"][4] = "specialty_revenge";           level.cac["deathstreak_name"][4] = "Revenge";
-    level.cac["deathstreak"][5] = "specialty_stopping_power";    level.cac["deathstreak_name"][5] = "Hollow Points";
-    level.cac["deathstreak"][6] = "specialty_c4death";           level.cac["deathstreak_name"][6] = "Dead Man's Hand";
-}
-
-buildEquipmentData()
-{
-    level.cac["equip"] = [];    level.cac["equip_name"] = [];
-    level.cac["equip"][0] = "frag_grenade_mp";       level.cac["equip_name"][0] = "Frag Grenade";
-    level.cac["equip"][1] = "semtex_mp";             level.cac["equip_name"][1] = "Semtex";
-    level.cac["equip"][2] = "throwingknife_mp";      level.cac["equip_name"][2] = "Throwing Knife";
-    level.cac["equip"][3] = "claymore_mp";           level.cac["equip_name"][3] = "Claymore";
-    level.cac["equip"][4] = "c4_mp";                 level.cac["equip_name"][4] = "C4";
-    level.cac["equip"][5] = "bouncingbetty_mp";      level.cac["equip_name"][5] = "Bouncing Betty";
-
-    level.cac["tactical"] = [];  level.cac["tactical_name"] = [];
-    level.cac["tactical"][0] = "flash_grenade_mp";           level.cac["tactical_name"][0] = "Flash Grenade";
-    level.cac["tactical"][1] = "concussion_grenade_mp";      level.cac["tactical_name"][1] = "Stun Grenade";
-    level.cac["tactical"][2] = "smoke_grenade_mp";           level.cac["tactical_name"][2] = "Smoke Grenade";
-    level.cac["tactical"][3] = "trophy_mp";                  level.cac["tactical_name"][3] = "Trophy System";
-    level.cac["tactical"][4] = "specialty_portable_radar";   level.cac["tactical_name"][4] = "Portable Radar";
-    level.cac["tactical"][5] = "emp_grenade_mp";             level.cac["tactical_name"][5] = "EMP Grenade";
-    level.cac["tactical"][6] = "specialty_scrambler";        level.cac["tactical_name"][6] = "Scrambler";
-    level.cac["tactical"][7] = "specialty_tacticalinsertion"; level.cac["tactical_name"][7] = "Tactical Insertion";
-}
-
-buildProficiencyData()
-{
-    // Weapon proficiencies vary by weapon class
-    // Stored per weapon class, selected based on primary/secondary weapon
-
-    // Assault Rifle proficiencies
-    level.cac["prof_ar"] = [];           level.cac["prof_ar_name"] = [];
-    level.cac["prof_ar"][0] = "specialty_bling";              level.cac["prof_ar_name"][0] = "Attachments";
-    level.cac["prof_ar"][1] = "specialty_bulletpenetration";  level.cac["prof_ar_name"][1] = "Impact";
-    level.cac["prof_ar"][2] = "specialty_marksman";           level.cac["prof_ar_name"][2] = "Kick";
-    level.cac["prof_ar"][3] = "specialty_sharp_focus";        level.cac["prof_ar_name"][3] = "Focus";
-    level.cac["prof_ar"][4] = "specialty_holdbreathwhileads"; level.cac["prof_ar_name"][4] = "Breath";
-    level.cac["prof_ar"][5] = "specialty_reducedsway";        level.cac["prof_ar_name"][5] = "Stability";
-
-    // SMG proficiencies
-    level.cac["prof_smg"] = [];          level.cac["prof_smg_name"] = [];
-    level.cac["prof_smg"][0] = "specialty_bling";         level.cac["prof_smg_name"][0] = "Attachments";
-    level.cac["prof_smg"][1] = "specialty_marksman";      level.cac["prof_smg_name"][1] = "Kick";
-    level.cac["prof_smg"][2] = "specialty_sharp_focus";   level.cac["prof_smg_name"][2] = "Focus";
-    level.cac["prof_smg"][3] = "specialty_reducedsway";   level.cac["prof_smg_name"][3] = "Stability";
-    level.cac["prof_smg"][4] = "specialty_longerrange";   level.cac["prof_smg_name"][4] = "Range";
-    level.cac["prof_smg"][5] = "specialty_fastermelee";   level.cac["prof_smg_name"][5] = "Melee";
-
-    // LMG proficiencies
-    level.cac["prof_lmg"] = [];          level.cac["prof_lmg_name"] = [];
-    level.cac["prof_lmg"][0] = "specialty_bling";              level.cac["prof_lmg_name"][0] = "Attachments";
-    level.cac["prof_lmg"][1] = "specialty_bulletpenetration";  level.cac["prof_lmg_name"][1] = "Impact";
-    level.cac["prof_lmg"][2] = "specialty_marksman";           level.cac["prof_lmg_name"][2] = "Kick";
-    level.cac["prof_lmg"][3] = "specialty_sharp_focus";        level.cac["prof_lmg_name"][3] = "Focus";
-    level.cac["prof_lmg"][4] = "specialty_reducedsway";        level.cac["prof_lmg_name"][4] = "Stability";
-    level.cac["prof_lmg"][5] = "specialty_lightweight";        level.cac["prof_lmg_name"][5] = "Speed";
-
-    // Sniper proficiencies
-    level.cac["prof_sniper"] = [];       level.cac["prof_sniper_name"] = [];
-    level.cac["prof_sniper"][0] = "specialty_bling";              level.cac["prof_sniper_name"][0] = "Attachments";
-    level.cac["prof_sniper"][1] = "specialty_bulletpenetration";  level.cac["prof_sniper_name"][1] = "Impact";
-    level.cac["prof_sniper"][2] = "specialty_marksman";           level.cac["prof_sniper_name"][2] = "Kick";
-    level.cac["prof_sniper"][3] = "specialty_sharp_focus";        level.cac["prof_sniper_name"][3] = "Focus";
-    level.cac["prof_sniper"][4] = "specialty_reducedsway";        level.cac["prof_sniper_name"][4] = "Stability";
-    level.cac["prof_sniper"][5] = "specialty_lightweight";        level.cac["prof_sniper_name"][5] = "Speed";
-
-    // Shotgun proficiencies
-    level.cac["prof_shotgun"] = [];      level.cac["prof_shotgun_name"] = [];
-    level.cac["prof_shotgun"][0] = "specialty_bling";         level.cac["prof_shotgun_name"][0] = "Attachments";
-    level.cac["prof_shotgun"][1] = "specialty_marksman";      level.cac["prof_shotgun_name"][1] = "Kick";
-    level.cac["prof_shotgun"][2] = "specialty_sharp_focus";   level.cac["prof_shotgun_name"][2] = "Focus";
-    level.cac["prof_shotgun"][3] = "specialty_longerrange";   level.cac["prof_shotgun_name"][3] = "Range";
-    level.cac["prof_shotgun"][4] = "specialty_fastermelee";   level.cac["prof_shotgun_name"][4] = "Melee";
-    level.cac["prof_shotgun"][5] = "specialty_moredamage";    level.cac["prof_shotgun_name"][5] = "Damage";
-
-    // Riot Shield proficiencies
-    level.cac["prof_shield"] = [];       level.cac["prof_shield_name"] = [];
-    level.cac["prof_shield"][0] = "specialty_fastermelee";   level.cac["prof_shield_name"][0] = "Melee";
-    level.cac["prof_shield"][1] = "specialty_lightweight";   level.cac["prof_shield_name"][1] = "Speed";
-
-    // Weapon class -> proficiency table mapping
-    level.cac["wep_prof_type"] = [];
-    level.cac["wep_prof_type"]["iw5_m4"] = "ar";
-    level.cac["wep_prof_type"]["iw5_m16"] = "ar";
-    level.cac["wep_prof_type"]["iw5_scar"] = "ar";
-    level.cac["wep_prof_type"]["iw5_cm901"] = "ar";
-    level.cac["wep_prof_type"]["iw5_type95"] = "ar";
-    level.cac["wep_prof_type"]["iw5_g36c"] = "ar";
-    level.cac["wep_prof_type"]["iw5_acr"] = "ar";
-    level.cac["wep_prof_type"]["iw5_mk14"] = "ar";
-    level.cac["wep_prof_type"]["iw5_ak47"] = "ar";
-    level.cac["wep_prof_type"]["iw5_fad"] = "ar";
-    level.cac["wep_prof_type"]["iw5_mp5"] = "smg";
-    level.cac["wep_prof_type"]["iw5_mp7"] = "smg";
-    level.cac["wep_prof_type"]["iw5_ak74u"] = "smg";
-    level.cac["wep_prof_type"]["iw5_p90"] = "smg";
-    level.cac["wep_prof_type"]["iw5_pp90m1"] = "smg";
-    level.cac["wep_prof_type"]["iw5_ump45"] = "smg";
-    level.cac["wep_prof_type"]["iw5_sa80"] = "lmg";
-    level.cac["wep_prof_type"]["iw5_mg36"] = "lmg";
-    level.cac["wep_prof_type"]["iw5_pecheneg"] = "lmg";
-    level.cac["wep_prof_type"]["iw5_mk46"] = "lmg";
-    level.cac["wep_prof_type"]["iw5_m60"] = "lmg";
-    level.cac["wep_prof_type"]["iw5_barrett"] = "sniper";
-    level.cac["wep_prof_type"]["iw5_l96a1"] = "sniper";
-    level.cac["wep_prof_type"]["iw5_dragunov"] = "sniper";
-    level.cac["wep_prof_type"]["iw5_as50"] = "sniper";
-    level.cac["wep_prof_type"]["iw5_rsass"] = "sniper";
-    level.cac["wep_prof_type"]["iw5_msr"] = "sniper";
-    level.cac["wep_prof_type"]["iw5_cheytac"] = "sniper";
-    level.cac["wep_prof_type"]["iw5_usas12"] = "shotgun";
-    level.cac["wep_prof_type"]["iw5_ksg"] = "shotgun";
-    level.cac["wep_prof_type"]["iw5_spas12"] = "shotgun";
-    level.cac["wep_prof_type"]["iw5_aa12"] = "shotgun";
-    level.cac["wep_prof_type"]["iw5_striker"] = "shotgun";
-    level.cac["wep_prof_type"]["iw5_1887"] = "shotgun";
-    level.cac["wep_prof_type"]["riotshield"] = "shield";
+    if (getDvarInt("dcac_debug"))
+        logPrint("DCAC;" + self.name + ";" + msg + "\n");
 }
 
 // ============================================================
 // UNLOCK FILTER HELPERS
 // ============================================================
 
-// Edits live in self.pers["gamemodeLoadout"], which _class.gsc gives for class "gamemode"
-// without unlock checks. A server dvar per guid keeps it across map changes.
+// Five classes in self.dcac[0..4]; every edit goes to self.dcac[self.dcac_cur]. The class in use is copied into
+// self.pers["gamemodeLoadout"], which _class.gsc gives for class "gamemode" without unlock checks. Server dvars
+// per guid keep them across map changes: dcac_<guid>_<n> (one class each, a dvar holds 1024 characters at most)
+// and dcac_use_<guid> (the class in use, "-" for none). Plutonium IW5 has no GSC file I/O (no fs_*, openfile
+// returns undefined, PC 2026-10-10), so every save is also a games_mp.log line (DCAC;class / DCAC;use) that
+// lan_server.sh replays as +set on the next server start.
 cacKeys()
 {
     k = [];
@@ -523,7 +114,7 @@ cacKeys()
     return k;
 }
 
-initCac()
+cacDefault()
 {
     l = [];
     l["loadoutPrimary"] = "iw5_m4";           l["loadoutPrimaryAttachment"] = "none";   l["loadoutPrimaryAttachment2"] = "none";
@@ -535,35 +126,63 @@ initCac()
     l["loadoutDeathstreak"] = "specialty_null"; l["loadoutJuggernaut"] = false;
     l["loadoutStreakType"] = "streaktype_assault";
     l["loadoutKillstreak1"] = "uav"; l["loadoutKillstreak2"] = "predator_missile"; l["loadoutKillstreak3"] = "helicopter";
+    return l;
+}
 
-    saved = getDvar("dcac_" + self.guid);
-    if (saved != "")
+initCac()
+{
+    // Round A kept one loadout (dcac_<guid>, dcac_on_<guid>): it becomes Class 1
+    if (getDvar("dcac_" + self.guid + "_0") == "" && getDvar("dcac_" + self.guid) != "")
     {
-        vals = strTok(saved, ",");
-        keys = cacKeys();
+        setDvar("dcac_" + self.guid + "_0", getDvar("dcac_" + self.guid));
+        if (getDvar("dcac_on_" + self.guid) == "1") setDvar("dcac_use_" + self.guid, "0");
+    }
+    keys = cacKeys();
+    self.dcac = [];
+    for (n = 0; n < 5; n++)
+    {
+        l = cacDefault();
+        vals = strTok(getDvar("dcac_" + self.guid + "_" + n), ",");
         if (vals.size == keys.size)
             for (i = 0; i < keys.size; i++)
                 l[keys[i]] = vals[i];
+        self.dcac[n] = l;
     }
-    self.pers["gamemodeLoadout"] = l;
+    self.dcac_cur = 0;
+    self.dcac_use = undefined;
+    use = getDvar("dcac_use_" + self.guid);
+    if (use != "" && use != "-")
+        self.dcac_use = int(use);
 }
 
 cacSet(key, value)
 {
-    self.pers["gamemodeLoadout"][key] = value;
+    self.dcac[self.dcac_cur][key] = value;
     keys = cacKeys();
     str = "";
     for (i = 0; i < keys.size; i++)
     {
         if (i > 0) str += ",";
-        str += self.pers["gamemodeLoadout"][keys[i]];
+        str += self.dcac[self.dcac_cur][keys[i]];
     }
-    setDvar("dcac_" + self.guid, str);
+    setDvar("dcac_" + self.guid + "_" + self.dcac_cur, str);
+    // Read back by lan_server.sh: the last DCAC;class line per guid and class
+    logPrint("DCAC;class;" + self.guid + ";" + self.dcac_cur + ";" + str + "\n");
+}
+
+// The class in use (undefined: MW3's own class)
+cacSetUse(n)
+{
+    self.dcac_use = n;
+    use = "-";
+    if (isDefined(n)) use = "" + n;
+    setDvar("dcac_use_" + self.guid, use);
+    logPrint("DCAC;use;" + self.guid + ";" + use + "\n");
 }
 
 cacGet(key)
 {
-    return self.pers["gamemodeLoadout"][key];
+    return self.dcac[self.dcac_cur][key];
 }
 
 wKey(slot, field)
@@ -595,52 +214,6 @@ getUnlockedItems(listKey, nameKey)
         {
             items["keys"][count] = level.cac[listKey][i];
             items["names"][count] = level.cac[nameKey][i];
-            count++;
-        }
-    }
-
-    return items;
-}
-
-getUnlockedAttachments(weapon, attachListKey, attachNameKey)
-{
-    items = [];
-    items["keys"] = [];
-    items["names"] = [];
-    count = 0;
-
-    for (i = 0; i < level.cac[attachListKey].size; i++)
-    {
-        attach = level.cac[attachListKey][i];
-
-        // Always include "none"
-        if (attach == "none")
-        {
-            items["keys"][count] = attach;
-            items["names"][count] = level.cac[attachNameKey][i];
-            count++;
-            continue;
-        }
-
-        // Check per-weapon restrictions
-        if (isDefined(level.cac["wep_attach_restrict"][weapon]))
-        {
-            restricted = false;
-            for (r = 0; r < level.cac["wep_attach_restrict"][weapon].size; r++)
-            {
-                if (level.cac["wep_attach_restrict"][weapon][r] == attach)
-                {
-                    restricted = true;
-                    break;
-                }
-            }
-            if (restricted)
-                continue;
-        }
-
-        {
-            items["keys"][count] = attach;
-            items["names"][count] = level.cac[attachNameKey][i];
             count++;
         }
     }
@@ -704,24 +277,6 @@ watchForMenuOpen()
     self endon("disconnect");
 
     self.cac_open = false;
-
-    // Scroll up: W, Dpad Up, mouse wheel up
-    self notifyOnPlayerCommand("cac_up", "+forward");
-    self notifyOnPlayerCommand("cac_up", "+actionslot 1");
-    self notifyOnPlayerCommand("cac_up", "+weapnext");
-    // Scroll down: S, Dpad Down, mouse wheel down
-    self notifyOnPlayerCommand("cac_down", "+back");
-    self notifyOnPlayerCommand("cac_down", "+actionslot 2");
-    self notifyOnPlayerCommand("cac_down", "+weapdown");
-    // Select: Jump, Reload, Use/F
-    self notifyOnPlayerCommand("cac_select", "+gostand");
-    self notifyOnPlayerCommand("cac_select", "+usereload");
-    self notifyOnPlayerCommand("cac_select", "+activate");
-    // Back: B (+stance on the gamepad), ADS (L2 / right mouse)
-    self notifyOnPlayerCommand("cac_back", "+stance");
-    self notifyOnPlayerCommand("cac_back", "+speed_throw");
-    self notifyOnPlayerCommand("cac_back", "+toggleads_throw");
-
     self thread watchChooseClass();
 
     for (;;)
@@ -747,17 +302,28 @@ watchChooseClass()
     for (;;)
     {
         self waittill("menuresponse", menu, response);
+        self dlog("menuresponse " + menu + " " + response);
         if (menu == "class" && isSubStr(response, "changeclass"))
             self thread openEditorFromChooseClass();
-        // A class picked from the stock list opened by the hub replaces the DeckOps loadout.
-        // The forced pick on joining a map also comes from "changeclass", so only the hub's counts.
-        if (menu == "changeclass" && isDefined(self.cac_choosing) && self.cac_choosing)
-        {
-            self.cac_choosing = false;
-            if (response != "back")
-                setDvar("dcac_on_" + self.guid, "0");
-        }
+        // Our zone's Choose Class popup (opened after a team pick) is empty, and a menu can't answer from its onOpen
+        // (PC 2026-10-13: left the player spectating), so the stock class pick happens here
+        if (isSubStr(menu, "team_marinesopfor") && response != "back")
+            self thread joinWithClass0();
     }
+}
+
+// MW3's own class pick, as if class0 was clicked in its Choose Class; on that spawn watchSpawnLoadout gives
+// the DeckOps class in use and opens our picker
+joinWithClass0()
+{
+    self endon("disconnect");
+    wait 0.25;
+    if (self.sessionstate == "playing" || self.pers["team"] == "spectator")
+        return;
+    // closed the way MW3's own scripts close it (closing itself in onOpen left the mouse dead, PC 2026-10-13)
+    self closepopupmenu();
+    self closeingamemenu();
+    self maps\mp\gametypes\_menus::menuClass("class0");
 }
 
 openEditorFromChooseClass()
@@ -770,14 +336,15 @@ openEditorFromChooseClass()
         self notify("cac_toggle");
 }
 
-// With nothing saved yet, start the editor from the class in use instead of the defaults.
+// With nothing saved yet, Class 1 starts from the class in use instead of the defaults.
 // Reads only: giveLoadout records the base loadout on the player, _class.gsc's getters cover custom classes.
 cacSeedFromCurrent()
 {
-    if (getDvar("dcac_" + self.guid) != "" || !isDefined(self.loadoutPrimary) || cacModeOwnsLoadout())
+    if (getDvar("dcac_" + self.guid + "_0") != "" || !isDefined(self.loadoutPrimary) || cacModeOwnsLoadout())
         return;
 
-    l = self.pers["gamemodeLoadout"];
+    self.dcac_cur = 0;
+    l = self.dcac[0];
     l["loadoutPrimary"] = self.loadoutPrimary;
     l["loadoutSecondary"] = self.loadoutSecondary;
     l["loadoutPrimaryBuff"] = self.loadoutPrimaryBuff;
@@ -809,7 +376,7 @@ cacSeedFromCurrent()
         }
     }
 
-    self.pers["gamemodeLoadout"] = l;
+    self.dcac[0] = l;
     // saves the seeded set, so this runs once per session
     self cacSet("loadoutPrimary", l["loadoutPrimary"]);
 }
@@ -818,26 +385,28 @@ cacSeedFromCurrent()
 // HUB MENU (opened by CHOOSE CLASS)
 // ============================================================
 
-openHubMenu()
+openHubMenu(index)
 {
     self endon("disconnect");
     self endon("death");
+
+    if (isDefined(index)) self.cac_startIndex = index;
 
     self cacSeedFromCurrent();
 
     items = [];
     items[0] = "Class Editor";
-    items[1] = "Choose Class";
+    items[1] = "Choose Classes";
     items[2] = "Map / Mode";
     items[3] = "Bot Warfare";
 
     d = [];
-    d[0] = "Build your loadout: weapons, perks, streaks.";
-    d[1] = "Use one of MW3's own classes instead.";
+    d[0] = "Build and use your five DeckOps classes.";
+    d[1] = "Pick which of your five classes to use.";
     d[2] = "Change the mode, the map and the match limits.";
     d[3] = "How many bots, how tough, and how they play.";
     self.cac_descs = d;
-    result = self showMenu("DECKOPS SETTINGS", items, "");
+    result = self showMenu("MATCH SETTINGS", items, "");
     switch (result)
     {
         case 0:
@@ -847,8 +416,8 @@ openHubMenu()
                 self iPrintLnBold("^1This mode uses its own loadouts");
                 self thread openHubMenu();
             }
-            else if (result == 0) self thread openCACMenu();
-            else self thread openStockClassList();
+            else if (result == 0) self thread openClassList();
+            else self thread openChooseClass();
             break;
         case 2: self thread openMatchMenu(); break;
         case 3: self thread openBotMenu(); break;
@@ -856,13 +425,17 @@ openHubMenu()
     }
 }
 
-// Hub "Choose Class": MW3's own class list, so default and saved custom classes stay available
-openStockClassList()
+// Hub "Choose Classes": pick one of the five DeckOps classes and use it (as the editor's Use This Class)
+openChooseClass()
 {
     self endon("disconnect");
-    self cacCleanup();
-    self.cac_choosing = true;
-    self openpopupmenu("changeclass");
+    self endon("death");
+
+    if (isDefined(self.dcac_use)) self.cac_startIndex = self.dcac_use;
+    result = self showMenu("CHOOSE CLASSES", self classItems(), "");
+    if (result == -1) { self thread openHubMenu(1); return; }
+    self.dcac_cur = result;
+    self thread applyLoadout();
 }
 
 // ============================================================
@@ -894,11 +467,28 @@ matchModes()
     return m;
 }
 
+// dcac_maps (set by the offline script) lists the installed maps; DLC maps may be missing.
+// DLC names from Bot Warfare's waypoint files, to check against MW3's strings with the Round B catalog.
 matchMaps()
 {
+    keys = strTok("mp_alpha,mp_bootleg,mp_bravo,mp_carbon,mp_dome,mp_exchange,mp_hardhat,mp_interchange,mp_lambeth,mp_mogadishu,mp_paris,mp_plaza2,mp_radar,mp_seatown,mp_underground,mp_village,mp_park,mp_italy,mp_overwatch,mp_morningwood,mp_meteora,mp_cement,mp_qadeem,mp_aground_ss,mp_courtyard_ss,mp_hillside_ss,mp_restrepo_ss,mp_terminal_cls,mp_crosswalk_ss,mp_burn_ss,mp_six_ss,mp_moab,mp_boardwalk,mp_nola,mp_roughneck,mp_shipbreaker", ",");
+    names = strTok("Lockdown,Bootleg,Mission,Carbon,Dome,Downturn,Hardhat,Interchange,Fallen,Bakaara,Resistance,Arkaden,Outpost,Seatown,Underground,Village,Liberation,Piazza,Overwatch,Black Box,Sanctuary,Foundation,Oasis,Aground,Erosion,Getaway,Lookout,Terminal,Intersection,U-Turn,Vortex,Gulch,Boardwalk,Parish,Off Shore,Decommission", ",");
+    have = getDvar("dcac_maps");
     m = [];
-    m["key"] = strTok("mp_alpha,mp_bootleg,mp_bravo,mp_carbon,mp_dome,mp_exchange,mp_hardhat,mp_interchange,mp_lambeth,mp_mogadishu,mp_paris,mp_plaza2,mp_radar,mp_seatown,mp_underground,mp_village", ",");
-    m["name"] = strTok("Lockdown,Bootleg,Mission,Carbon,Dome,Downturn,Hardhat,Interchange,Fallen,Bakaara,Resistance,Arkaden,Outpost,Seatown,Underground,Village", ",");
+    m["key"] = [];
+    m["name"] = [];
+    m["pack"] = [];
+    m["pack_name"] = strTok("Original Maps,DLC Maps", ",");
+    for (i = 0; i < keys.size; i++)
+    {
+        // without the list (older offline script), the 16 original maps
+        if ((have == "" && i >= 16) || (have != "" && !isSubStr("," + have + ",", "," + keys[i] + ",")))
+            continue;
+        m["key"][m["key"].size] = keys[i];
+        m["name"][m["name"].size] = names[i];
+        if (i < 16) m["pack"][m["pack"].size] = "0";
+        else m["pack"][m["pack"].size] = "1";
+    }
     return m;
 }
 
@@ -945,45 +535,105 @@ openMatchMenu(index)
     d[3] = "How many points win the match.";
     d[4] = "Load mode and map. Limits alone apply instantly.";
     self.cac_descs = d;
+    // shown like MW3's Esc menu: mode as the right title; the box like its Maps screen with the map's preview
+    // (its ui_mp picture, shipped in z_deckops_maps.iwd since ui_mp isn't loaded in a match)
+    self.cac_map = [];
+    self.cac_map["pic"] = "preview_" + maps["key"][self.mm_map] + "_lobby";
+    self.cac_map["name"] = maps["name"][self.mm_map];
+    self.cac_map["mode"] = modes["name"][self.mm_mode];
     result = self showMenu("MAP / MODE", items, "");
     switch (result)
     {
-        case 0: self thread pickFromList("Mode", modes["name"], "mm_mode", 0); break;
-        case 1: self thread pickFromList("Map", maps["name"], "mm_map", 0); break;
+        case 0:
+            r = self pickItem(modes["name"], self.mm_mode);
+            if (r != -1) self.mm_mode = r;
+            self thread openMatchMenu(0);
+            break;
+        case 1:
+            r = self pickMap(maps, self.mm_map);
+            if (r != -1) self.mm_map = r;
+            self thread openMatchMenu(1);
+            break;
         case 2: self thread pickTimeLimit(); break;
         case 3: self thread pickScoreLimit(); break;
         case 4: self thread startMatch(); break;
         default:
             self.mm_mode = undefined;
-            self thread openHubMenu();
+            self thread openHubMenu(2);
             break;
     }
 }
 
-// Generic paged picker that stores the chosen index in self.<field> and returns to the setup screen
-pickFromList(title, names, field, page)
+// Map packs first (original, DLC) when DLC maps are installed, else the maps straight away
+pickMap(maps, current)
 {
     self endon("disconnect");
     self endon("death");
 
-    first = page * 9;
-    rows = [];
-    for (i = first; i < names.size && i < first + 9; i++)
-        rows[rows.size] = names[i];
-    more = first + 9 < names.size;
-    if (more) rows[rows.size] = "More";
-    else if (page > 0) rows[rows.size] = "Back to Start";
-
-    result = self showMenu(title, rows, "");
-    if (result == -1) { self thread openMatchMenu(); return; }
-    if (first + result >= names.size || result >= 9)
+    packs = [];
+    for (i = 0; i < maps["pack"].size; i++)
+        if (indexOf(packs, maps["pack"][i]) == 0 && (packs.size == 0 || packs[0] != maps["pack"][i]))
+            packs[packs.size] = maps["pack"][i];
+    pack = maps["pack"][current];
+    for (;;)
     {
-        if (more) self thread pickFromList(title, names, field, page + 1);
-        else self thread pickFromList(title, names, field, 0);
-        return;
+        if (packs.size > 1)
+        {
+            names = [];
+            for (i = 0; i < packs.size; i++)
+                names[i] = maps["pack_name"][int(packs[i])];
+            p = self pickItem(names, indexOf(packs, pack));
+            if (p == -1)
+                return -1;
+            pack = packs[p];
+        }
+        idx = [];
+        names = [];
+        for (i = 0; i < maps["key"].size; i++)
+            if (maps["pack"][i] == pack)
+            {
+                idx[idx.size] = i;
+                names[names.size] = maps["name"][i];
+            }
+        r = self pickItem(names, indexOf(idx, current));
+        if (r != -1)
+            return idx[r];
+        if (packs.size <= 1)
+            return -1;
     }
-    if (field == "mm_mode") { self.mm_mode = first + result; self thread openMatchMenu(0); }
-    else { self.mm_map = first + result; self thread openMatchMenu(1); }
+}
+
+// Paged list, returns the picked index or -1. 15 rows fit above the prompt, so every Create-a-Class list
+// fits on one page (Ray: avoid More); only a longer list pages with More
+pickItem(names, current, title)
+{
+    self endon("disconnect");
+    self endon("death");
+
+    if (!isDefined(title)) title = "CHOOSE";
+    page = 0;
+    if (current > 0 && names.size > 15) page = int(current / 14);
+    for (;;)
+    {
+        if (names.size <= 15) first = 0;
+        else first = page * 14;
+        rows = [];
+        per = 14;
+        if (names.size <= 15) per = 15;
+        for (i = first; i < names.size && i < first + per; i++)
+            rows[rows.size] = names[i];
+        more = first + per < names.size;
+        if (more) rows[rows.size] = "More";
+        else if (page > 0) rows[rows.size] = "Back to Start";
+        if (current >= first && current < first + per) self.cac_startIndex = current - first;
+        result = self showMenu(title, rows, "");
+        if (result == -1)
+            return -1;
+        if (first + result < names.size && result < per)
+            return first + result;
+        if (more) page++;
+        else page = 0;
+    }
 }
 
 scoreName(mult)
@@ -1001,7 +651,7 @@ pickTimeLimit()
 
     vals = strTok("0,5,10,15,20,30", ",");
     names = strTok("Unlimited,5 min,10 min,15 min,20 min,30 min", ",");
-    result = self showMenu("Time Limit", names, "");
+    result = self showMenu("TIME LIMIT", names, "");
     if (result != -1) self.mm_time = vals[result];
     self thread openMatchMenu(2);
 }
@@ -1014,7 +664,7 @@ pickScoreLimit()
     // relative to the mode's DSR default, captured before any override
     mult = strTok("0,0.5,1,2", ",");
     names = strTok("Unlimited,Half,Default,Double", ",");
-    result = self showMenu("Score Limit", names, "");
+    result = self showMenu("SCORE LIMIT", names, "");
     if (result != -1) self.mm_score = mult[result];
     self thread openMatchMenu(3);
 }
@@ -1060,7 +710,10 @@ openBotMenu(index)
     if (isDefined(index)) self.cac_startIndex = index;
 
     items = [];
-    items[0] = "Bot Count: " + getDvarInt("bots_manage_fill");
+    // bots_manage_fill counts the player too
+    bots = getDvarInt("bots_manage_fill") - 1;
+    if (bots < 0) bots = 0;
+    items[0] = "Bot Count: " + bots;
     items[1] = "Difficulty: " + botSkillName(getDvarInt("bots_skill"));
     if (getDvar("bots_team") == "autoassign" || getDvar("bots_team") == "") items[2] = "Bot Team: Balanced";
     else items[2] = "Bot Team: All Enemies";
@@ -1134,7 +787,7 @@ openBotMenu(index)
             else setDvar("bots_main_chat", "0");
             self thread openBotMenu(9);
             break;
-        default: self thread openHubMenu(); break;
+        default: self thread openHubMenu(3); break;
     }
 }
 
@@ -1168,11 +821,15 @@ pickBotCount()
     self endon("disconnect");
     self endon("death");
 
-    // sv_maxclients is 13 in the LAN config: 12 bots + the player
+    // sv_maxclients is 13 in the LAN config: 12 bots + the player (fill counts the player too)
     counts = strTok("0,2,4,6,8,10,12", ",");
-    result = self showMenu("Bot Count", counts, "");
+    result = self showMenu("BOT COUNT", counts, "");
     if (result != -1)
-        setDvar("bots_manage_fill", counts[result]);
+    {
+        fill = int(counts[result]);
+        if (fill > 0) fill++;
+        setDvar("bots_manage_fill", "" + fill);
+    }
     self thread openBotMenu(0);
 }
 
@@ -1185,7 +842,7 @@ pickBotSkill()
     names = [];
     for (i = 0; i < skills.size; i++)
         names[i] = botSkillName(int(skills[i]));
-    result = self showMenu("Difficulty", names, "");
+    result = self showMenu("DIFFICULTY", names, "");
     if (result != -1)
         setDvar("bots_skill", skills[result]);
     self thread openBotMenu(1);
@@ -1204,6 +861,31 @@ botSkillName(n)
 // MAIN MENU
 // ============================================================
 
+classItems()
+{
+    items = [];
+    for (n = 0; n < 5; n++)
+    {
+        items[n] = "Class " + (n + 1) + ": " + cacName(self.dcac[n]["loadoutPrimary"]);
+        if (isDefined(self.dcac_use) && self.dcac_use == n)
+            items[n] += " (in use)";
+    }
+    return items;
+}
+
+openClassList(index)
+{
+    self endon("disconnect");
+    self endon("death");
+
+    if (!isDefined(index) && isDefined(self.dcac_use)) index = self.dcac_use;
+    if (isDefined(index)) self.cac_startIndex = index;
+    result = self showMenu("CLASS EDITOR", self classItems(), "");
+    if (result == -1) { self thread openHubMenu(0); return; }
+    self.dcac_cur = result;
+    self thread openCACMenu();
+}
+
 openCACMenu()
 {
     self endon("disconnect");
@@ -1220,11 +902,14 @@ openCACMenu()
     items[6] = "Equipment";
     items[7] = "Deathstreak";
     items[8] = "Strike Package";
-    items[9] = "Apply Loadout";
+    items[9] = "Use This Class";
 
-    result = self showMenu("CLASS EDITOR", items, "");
+    d = [];
+    d[9] = "Switch to this class now, or on your next spawn.";
+    self.cac_descs = d;
+    result = self showMenu("CLASS " + (self.dcac_cur + 1), items, "");
 
-    if (result == -1) { self thread openHubMenu(); return; }
+    if (result == -1) { self thread openClassList(self.dcac_cur); return; }
 
 
     switch (result)
@@ -1257,8 +942,8 @@ pickPrimaryCategory(slot)
     for (i = 0; i < level.cac["primary_cats"].size; i++)
         items[i] = level.cac["primary_cats"][i];
 
-    title = "Primary - Category";
-    if (slot == 1) title = "Overkill - Category";
+    title = "PRIMARY - CATEGORY";
+    if (slot == 1) title = "OVERKILL - CATEGORY";
     result = self showMenu(title, items, "");
     if (result == -1) { self thread openCACMenu(); return; }
 
@@ -1300,8 +985,8 @@ pickWeaponFromList(listKey, nameKey, weaponSlot)
         return;
     }
 
-    title = "Pick Weapon";
-    if (weaponSlot == 1) title = "Pick Secondary";
+    title = "PICK WEAPON";
+    if (weaponSlot == 1) title = "PICK SECONDARY";
 
     result = self showMenu(title, unlocked["names"], "");
     if (result == -1)
@@ -1342,7 +1027,7 @@ pickSecondaryCategory()
     for (i = 0; i < level.cac["secondary_cats"].size; i++)
         items[i] = level.cac["secondary_cats"][i];
 
-    result = self showMenu("Secondary - Category", items, "");
+    result = self showMenu("SECONDARY - CATEGORY", items, "");
     if (result == -1) { self thread openCACMenu(); return; }
 
     switch (result)
@@ -1396,12 +1081,10 @@ gunHasAttachment(gun, att)
     return false;
 }
 
-pickAttachment(weapon, weaponSlot, attachSlot, page)
+pickAttachment(weapon, weaponSlot, attachSlot)
 {
     self endon("disconnect");
     self endon("death");
-
-    if (!isDefined(page)) page = 0;
 
     first = self cacGet(wKey(weaponSlot, "attachment0"));
     atts = getAttachmentsForGun(weapon);
@@ -1424,29 +1107,14 @@ pickAttachment(weapon, weaponSlot, attachSlot, page)
         return;
     }
 
-    // 10 rows: 9 choices + More / Back to Start
-    start = page * 9;
-    rows = [];
-    for (i = start; i < keys.size && i < start + 9; i++)
-        rows[rows.size] = names[i];
-    more = start + 9 < keys.size;
-    if (more) rows[rows.size] = "More";
-    else if (page > 0) rows[rows.size] = "Back to Start";
-
-    result = self showMenu("Attachment " + (attachSlot + 1), rows, "");
+    result = self pickItem(names, indexOf(keys, self cacGet(wKey(weaponSlot, "attachment" + attachSlot))), "ATTACHMENT " + (attachSlot + 1));
     if (result == -1)
     {
         self thread openCACMenu();
         return;
     }
-    if (start + result >= keys.size || result >= 9)
-    {
-        if (more) self thread pickAttachment(weapon, weaponSlot, attachSlot, page + 1);
-        else self thread pickAttachment(weapon, weaponSlot, attachSlot, 0);
-        return;
-    }
 
-    attach = keys[start + result];
+    attach = keys[result];
     self cacSet(wKey(weaponSlot, "attachment" + attachSlot), attach);
     if (attachSlot == 0 && attach == "none")
         self cacSet(wKey(weaponSlot, "attachment1"), "none");
@@ -1456,7 +1124,7 @@ pickAttachment(weapon, weaponSlot, attachSlot, page)
 
     // Attachments proficiency on the primary allows a second attachment
     if (attachSlot == 0 && attach != "none" && weaponSlot == 0 && self cacGet(wKey(0, "buff")) == "specialty_bling")
-        self thread pickAttachment(weapon, weaponSlot, 1, 0);
+        self thread pickAttachment(weapon, weaponSlot, 1);
     else
         self thread openCACMenu();
 }
@@ -1492,7 +1160,7 @@ pickProficiency(weaponSlot)
         return;
     }
 
-    result = self showMenu("Proficiency", unlocked["names"], "");
+    result = self showMenu("PROFICIENCY", unlocked["names"], "");
     if (result == -1) { self thread openCACMenu(); return; }
 
     prof = unlocked["keys"][result];
@@ -1532,9 +1200,9 @@ pickPerk(perkSlot)
     }
 
     slotNames = [];
-    slotNames[1] = "Perk 1 (Blue)";
-    slotNames[2] = "Perk 2 (Red)";
-    slotNames[3] = "Perk 3 (Yellow)";
+    slotNames[1] = "PERK 1 (BLUE)";
+    slotNames[2] = "PERK 2 (RED)";
+    slotNames[3] = "PERK 3 (YELLOW)";
 
     result = self showMenu(slotNames[perkSlot], unlocked["names"], "");
     if (result == -1) { self thread openCACMenu(); return; }
@@ -1575,7 +1243,7 @@ pickEquipmentMenu()
     items = [];
     items[0] = "Lethal";
     items[1] = "Tactical";
-    result = self showMenu("Equipment", items, "");
+    result = self showMenu("EQUIPMENT", items, "");
     switch (result)
     {
         case 0: self thread pickEquipment(); break;
@@ -1598,7 +1266,7 @@ pickEquipment()
         return;
     }
 
-    result = self showMenu("Equipment", unlocked["names"], "");
+    result = self showMenu("EQUIPMENT", unlocked["names"], "");
     if (result == -1) { self thread pickEquipmentMenu(); return; }
 
     self cacSet(perkKey(0), unlocked["keys"][result]);
@@ -1616,7 +1284,7 @@ pickTactical()
     for (i = 0; i < level.cac["tactical"].size; i++)
         items[i] = level.cac["tactical_name"][i];
 
-    result = self showMenu("Tactical", items, "");
+    result = self showMenu("TACTICAL", items, "");
     if (result == -1) { self thread pickEquipmentMenu(); return; }
 
     self cacSet(perkKey(6), level.cac["tactical"][result]);
@@ -1639,7 +1307,7 @@ pickDeathstreak()
         return;
     }
 
-    result = self showMenu("Deathstreak", unlocked["names"], "");
+    result = self showMenu("DEATHSTREAK", unlocked["names"], "");
     if (result == -1) { self thread openCACMenu(); return; }
 
     self cacSet("loadoutDeathstreak", unlocked["keys"][result]);
@@ -1668,7 +1336,7 @@ pickStreakType()
     self endon("disconnect");
     self endon("death");
 
-    result = self showMenu("Strike Package", level.cac["streaktypes_name"], "");
+    result = self showMenu("STRIKE PACKAGE", level.cac["streaktypes_name"], "");
     if (result == -1) { self thread openCACMenu(); return; }
 
     self cacSet("loadoutStreakType", level.cac["streaktypes"][result]);
@@ -1712,33 +1380,10 @@ pickStreak(n)
             items[items.size] = names[i] + " (" + self maps\mp\killstreaks\_killstreaks::getStreakCost(ks) + ")";
     }
 
-    // more than 10 choices: page with the last row
-    self thread pickStreakPage(n, keys, items, 0);
-}
-
-pickStreakPage(n, keys, items, page)
-{
-    self endon("disconnect");
-    self endon("death");
-
-    first = page * 9;
-    rows = [];
-    for (i = first; i < items.size && i < first + 9; i++)
-        rows[rows.size] = items[i];
-    more = first + 9 < items.size;
-    if (more) rows[rows.size] = "More";
-    else if (page > 0) rows[rows.size] = "Back to Start";
-
-    result = self showMenu("Killstreak " + n, rows, "");
+    result = self pickItem(items, indexOf(keys, self cacGet("loadoutKillstreak" + n)), "KILLSTREAK " + n);
     if (result == -1) { self thread pickStreakType(); return; }
-    if (first + result >= items.size || result >= 9)
-    {
-        if (more) self thread pickStreakPage(n, keys, items, page + 1);
-        else self thread pickStreakPage(n, keys, items, 0);
-        return;
-    }
 
-    self cacSet("loadoutKillstreak" + n, keys[first + result]);
+    self cacSet("loadoutKillstreak" + n, keys[result]);
     if (n < 3) self thread pickStreak(n + 1);
     else self thread openCACMenu();
 }
@@ -1799,16 +1444,31 @@ applyLoadout()
     self cacCleanup();
 
     self cacSanitize();
-    setDvar("dcac_on_" + self.guid, "1");
-    logPrint("DCAC;apply;" + self.guid + "\n");
-    self useCacLoadout();
+    self cacSetUse(self.dcac_cur);
+    self dlog("use class " + self.dcac_cur);
 
-    self iPrintLnBold("^2Loadout applied!");
+    // MW3's own rule: right away only in the spawn grace period before any combat (no ammo refills),
+    // else class "gamemode" gives it next spawn
+    if (level.ingraceperiod && !self.hasdonecombat)
+    {
+        self useCacLoadout();
+        self iPrintLnBold("^2Class " + (self.dcac_cur + 1) + " equipped");
+        return;
+    }
+    self.pers["gamemodeLoadout"] = self.dcac[self.dcac_use];
+    self.pers["class"] = "gamemode";
+    self.pers["lastClass"] = "";
+    self iPrintLnBold(game["strings"]["change_class"]);
 }
 
+// Gives the class in use now
 useCacLoadout()
 {
+    edit = self.dcac_cur;
+    self.dcac_cur = self.dcac_use;
     self cacSanitize();
+    self.dcac_cur = edit;
+    self.pers["gamemodeLoadout"] = self.dcac[self.dcac_use];
     self.pers["class"] = "gamemode";
     self.pers["lastClass"] = "";
     self.class = "gamemode";
@@ -1816,22 +1476,64 @@ useCacLoadout()
     self maps\mp\gametypes\_class::giveLoadout(self.team, "gamemode");
 }
 
-// A map change clears self.pers and MW3 auto-picks class0 on join, so put an applied loadout back on spawn
+// A map change clears self.pers and MW3 auto-picks class0 on join, so put the class in use back on spawn.
+// The first spawn of a map opens the class pick (MW3 shows no class list on joining a LAN server).
 watchSpawnLoadout()
 {
     self endon("disconnect");
+    first = true;
     for (;;)
     {
         self waittill("spawned_player");
-        // TEMP: why the loadout is lost after a map change
-        logPrint("DCAC;spawn;" + self.guid + ";class=" + self.class + ";flag=" + getDvar("dcac_on_" + self.guid) + ";saved=" + getDvar("dcac_" + self.guid) + "\n");
-        if (getDvar("dcac_on_" + self.guid) == "1" && self.class != "gamemode" && !cacModeOwnsLoadout())
+        self dlog("spawn class=" + self.class + " use=" + getDvar("dcac_use_" + self.guid));
+        if (isDefined(self.dcac_use) && self.class != "gamemode" && !cacModeOwnsLoadout())
             self useCacLoadout();
+        if (first && !cacModeOwnsLoadout())
+            self thread openJoinPicker();
+        first = false;
+    }
+}
+
+// Class pick on joining, like BO1's: the five DeckOps classes. MW3's own Choose Class popup answers class0 at
+// once (our zone), so the player is already spawned (class in use or class0) and picks over it before any combat.
+openJoinPicker()
+{
+    self endon("disconnect");
+    self endon("death");
+    wait 0.2;
+    if (self.cac_open)
+        return;
+    self.cac_open = true;
+    for (;;)
+    {
+        items = self classItems();
+        if (isDefined(self.dcac_use))
+        {
+            self.dcac_cur = self.dcac_use;
+            self.cac_startIndex = self.dcac_use;
+        }
+        r = self showMenu("CHOOSE CLASS", items, "");
+        // a class has to be picked, as in MW3's own list
+        if (r != -1)
+            break;
+    }
+    self cacCleanup();
+    self.dcac_cur = r;
+    self cacSetUse(r);
+    // Just spawned and held in the menu: given now, unless the player already fought
+    if (!self.hasdonecombat)
+        self useCacLoadout();
+    else
+    {
+        self.pers["gamemodeLoadout"] = self.dcac[r];
+        self.pers["class"] = "gamemode";
+        self.pers["lastClass"] = "";
+        self iPrintLnBold(game["strings"]["change_class"]);
     }
 }
 
 // ============================================================
-// GENERIC HUD MENU SYSTEM (MW3 style - monochrome palette)
+// GENERIC MENU (same layout as the WaW / BO1 / BO2 menus, MW3 green)
 // ============================================================
 
 // Retail MW3 strike packages (valid lists in _class.gsc also hold cut streaks, left out here).
@@ -1860,14 +1562,10 @@ buildStreakData()
     level.cac["streaktypes_name"] = strTok("Assault,Support,Specialist", ",");
 }
 
-// Code name -> display name for every list that has a matching "_name" list
+// Code name -> display name: dcacCatalog() has the game's names, plus every list with a "_name" list
+// (strike packages, Specialist)
 buildNameLookup()
 {
-    level.cac_names = [];
-    extra = strTok("silencer02,silencer03,gp25,m320,hamrhybrid,fmj,zoomscope,reflexsmg,eotechsmg,acogsmg,thermalsmg,reflexlmg,eotechlmg", ",");
-    extraName = strTok("Silencer,Silencer,Grenade Launcher,Grenade Launcher,Hybrid Sight,FMJ,Variable Zoom,Red Dot Sight,Holographic Sight,ACOG Scope,Thermal Scope,Red Dot Sight,Holographic Sight", ",");
-    for (i = 0; i < extra.size; i++)
-        level.cac_names[extra[i]] = extraName[i];
     keys = getArrayKeys(level.cac);
     for (k = 0; k < keys.size; k++)
     {
@@ -1887,8 +1585,6 @@ cacName(code)
     return code;
 }
 
-// MW3-style layout: dark left column with title and rows, loadout panel on the right.
-// Built once per open; every screen after that only swaps text, so there is no redraw.
 // Bots hold still while anyone has the menu open (Bot Warfare reads bots_play_* live)
 botsPause()
 {
@@ -1917,96 +1613,59 @@ botsResume()
         setDvar(keys[i], level.dcac_botplay[keys[i]]);
 }
 
-cacBuildUi()
+// Client dvars only go out when they change: a page sends one reliable command per dvar
+cacDvar(name, value)
+{
+    if (!isDefined(self.dcac_sent)) self.dcac_sent = [];
+    if (isDefined(self.dcac_sent[name]) && self.dcac_sent[name] == value)
+        return;
+    self.dcac_sent[name] = value;
+    self setClientDvar(name, value);
+}
+
+cacOpenUi()
 {
     self botsPause();
     self freezeControlsWrapper(true);
     self setClientDvar("actionSlotsHide", "1");
-
-    ui = [];
-    all = [];
-
-    // MW3 caps HUD elements per player; past ~27 new ones silently fail (24 here)
-    // One dark backdrop, no divider (same look as the BO2 menu)
-    all[all.size] = self createBgLocal(0, 0, 640, 480, (0, 0, 0), 0.55, 1);
-
-    ui["title"] = self createTextLocal("", "TOPLEFT", "TOPLEFT", 16, 24, 1.3, "hudbig", (1, 1, 1), 1, 4);
-    all[all.size] = ui["title"];
-
-    // MW3 green selection bar
-    // vertical position follows the rows (safe area), width follows the left column (full screen)
-    ui["hl"] = self createShaderLocal("white", "TOPLEFT", "TOPLEFT", 0, 0, 290, 22, (0.36, 0.6, 0.18), 0.8, 2);
-    ui["hl"].horzAlign = "fullscreen";
-    ui["hl"].x = 0;
-    all[all.size] = ui["hl"];
-
-    ui["rows"] = [];
-    for (i = 0; i < 10; i++)
-    {
-        ui["rows"][i] = self createTextLocal("", "TOPLEFT", "TOPLEFT", 20, cacRowY(i), 1.0, "objective", (0.8, 0.8, 0.8), 0, 4);
-        all[all.size] = ui["rows"][i];
-    }
-
-    // Loadout panel on the right, controls right under it. Section names ride on the first value of
-    // each section (one element per line), so the distinct strings stay close to the item names.
-    // Controls line; on pages with descriptions it also explains the highlighted row
-    ui["hint"] = self createTextLocal(cacControls(), "TOPLEFT", "TOPRIGHT", -276, 350, 0.8, "objective", (0.75, 0.75, 0.75), 1, 4);
-    all[all.size] = ui["hint"];
-    valueY = strTok("80,98,116,146,176,194,212,242,272,302", ",");
-    ui["vals"] = [];
-    for (i = 0; i < valueY.size; i++)
-    {
-        ui["vals"][i] = self createTextLocal("", "TOPLEFT", "TOPRIGHT", -276, int(valueY[i]), 0.9, "objective", (1, 1, 1), 1, 4);
-        all[all.size] = ui["vals"][i];
-    }
-
-    self.cac_ui = ui;
-    self.cac_huds = all;
-}
-
-cacControls()
-{
-    return "[{+actionslot 1}]/[{+actionslot 2}] Scroll   [{+gostand}] Select   [{+stance}] Back";
-}
-
-// Description of the highlighted row above the controls (fixed strings, so few distinct HUD strings)
-cacShowHint(descs, index)
-{
-    if (isDefined(descs) && isDefined(descs[index]))
-        self.cac_ui["hint"] setText("^7" + descs[index] + "\n" + cacControls());
-    else
-        self.cac_ui["hint"] setText(cacControls());
-}
-
-cacRowY(i)
-{
-    return 78 + (i * 24);
-}
-
-cacSetVal(i, text, dim)
-{
-    self.cac_ui["vals"][i] setText(text);
-    if (dim) self.cac_ui["vals"][i].color = (0.6, 0.6, 0.6);
-    else self.cac_ui["vals"][i].color = (1, 1, 1);
+    self.cac_ui = true;
 }
 
 cacUpdatePanel()
 {
-    l = self.pers["gamemodeLoadout"];
-    self cacSetVal(0, "^2PRIMARY   ^7" + cacName(l["loadoutPrimary"]), false);
-    self cacSetVal(1, cacAttachLine(l["loadoutPrimaryAttachment"], l["loadoutPrimaryAttachment2"]), true);
-    self cacSetVal(2, cacName(l["loadoutPrimaryBuff"]), true);
-    sec = cacName(l["loadoutSecondary"]);
-    if (l["loadoutSecondaryAttachment"] != "none")
-        sec = sec + " + " + cacAttachLine(l["loadoutSecondaryAttachment"], l["loadoutSecondaryAttachment2"]);
-    self cacSetVal(3, "^2SECONDARY   ^7" + sec, false);
-    self cacSetVal(4, "^2PERKS   ^7" + cacName(l["loadoutPerk1"]), false);
-    self cacSetVal(5, cacName(l["loadoutPerk2"]), false);
-    self cacSetVal(6, cacName(l["loadoutPerk3"]), false);
-    self cacSetVal(7, "^2EQUIPMENT   ^7" + cacName(l["loadoutEquipment"]) + " / " + cacName(l["loadoutOffhand"]), false);
-    self cacSetVal(8, "^2DEATHSTREAK   ^7" + cacName(l["loadoutDeathstreak"]), false);
-    self.cac_ui["vals"][9].fontScale = 0.75;
-    self cacSetVal(9, "^2" + streakTypeLabel(l["loadoutStreakType"]) + "   ^7" + cacName(l["loadoutKillstreak1"]) + ", " + cacName(l["loadoutKillstreak2"]) + ", " + cacName(l["loadoutKillstreak3"]), false);
+    l = self.dcac[self.dcac_cur];
+    self cacDvar("dcac_cls", "CLASS " + (self.dcac_cur + 1));
+    self cacDvar("dcac_pimg", weaponPic(l["loadoutPrimary"]));
+    self cacDvar("dcac_p0", cacName(l["loadoutPrimary"]));
+    self cacDvar("dcac_p1", cacAttachName(l["loadoutPrimaryAttachment"]));
+    p2 = "";
+    if (l["loadoutPrimaryAttachment2"] != "none") p2 = cacName(l["loadoutPrimaryAttachment2"]);
+    self cacDvar("dcac_p2", p2);
+    self cacDvar("dcac_p3", cacName(l["loadoutPrimaryBuff"]));
+    self cacDvar("dcac_simg", weaponPic(l["loadoutSecondary"]));
+    self cacDvar("dcac_s0", cacName(l["loadoutSecondary"]));
+    self cacDvar("dcac_s1", cacAttachName(l["loadoutSecondaryAttachment"]));
+    s2 = "";
+    if (l["loadoutSecondaryAttachment2"] != "none") s2 = cacName(l["loadoutSecondaryAttachment2"]);
+    self cacDvar("dcac_s2", s2);
+    self cacDvar("dcac_pk0", cacName(l["loadoutPerk1"]));
+    self cacDvar("dcac_pk1", cacName(l["loadoutPerk2"]));
+    self cacDvar("dcac_pk2", cacName(l["loadoutPerk3"]));
+    self cacDvar("dcac_eq0", cacName(l["loadoutEquipment"]));
+    self cacDvar("dcac_eq1", cacName(l["loadoutOffhand"]));
+    self cacDvar("dcac_ds", cacName(l["loadoutDeathstreak"]));
+    self cacDvar("dcac_st", streakTypeLabel(l["loadoutStreakType"]));
+    self cacDvar("dcac_ks0", cacName(l["loadoutKillstreak1"]));
+    self cacDvar("dcac_ks1", cacName(l["loadoutKillstreak2"]));
+    self cacDvar("dcac_ks2", cacName(l["loadoutKillstreak3"]));
+}
+
+// MW3's own picture for a weapon (statstable column 6), "" when it has none
+weaponPic(w)
+{
+    if (!isDefined(w) || w == "none")
+        return "";
+    return tableLookup("mp/statstable.csv", 4, w, 6);
 }
 
 streakTypeLabel(t)
@@ -2016,117 +1675,141 @@ streakTypeLabel(t)
     return "ASSAULT";
 }
 
-cacAttachLine(a1, a2)
+cacAttachName(a)
 {
-    if (isDefined(a2) && a2 != "none")
-        return cacName(a1) + " + " + cacName(a2);
-    return cacName(a1);
+    if (a == "none")
+        return "No Attachment";
+    return cacName(a);
 }
 
+// self.cac_startIndex / self.cac_descs are one-shot inputs (cursor row, row descriptions).
+// Fills the dcac_* dvars of our muteplayer menu and reopens it, so its onOpen puts the focus on the start row.
 showMenu(title, items, hint)
 {
     self endon("disconnect");
     self endon("death");
 
     if (!isDefined(self.cac_ui))
-        self cacBuildUi();
-    ui = self.cac_ui;
+        self cacOpenUi();
 
     menuSize = items.size;
-    if (menuSize > 10) menuSize = 10;
+    if (menuSize > 15) menuSize = 15;
 
-    ui["title"] setText(title);
-    for (i = 0; i < 10; i++)
-    {
-        if (i < menuSize)
-        {
-            ui["rows"][i] setText(items[i]);
-            ui["rows"][i].color = (0.8, 0.8, 0.8);
-            ui["rows"][i].alpha = 1;
-        }
-        else
-            ui["rows"][i].alpha = 0;
-    }
-    self cacUpdatePanel();
-
-    // a page redrawn after a toggle keeps the cursor on the row the player was on
+    // a page redrawn after a change keeps the cursor on the row the player was on
     index = 0;
     if (isDefined(self.cac_startIndex))
     {
         if (self.cac_startIndex < menuSize) index = self.cac_startIndex;
         self.cac_startIndex = undefined;
     }
-    ui["hl"].y = cacRowY(index) - 4;
-    if (menuSize > 0) ui["rows"][index].color = (1, 1, 1);
     descs = self.cac_descs;
     self.cac_descs = undefined;
-    self cacShowHint(descs, index);
+    mp = self.cac_map;
+    self.cac_map = undefined;
+    if (!isDefined(mp))
+    {
+        mp = [];
+        mp["pic"] = ""; mp["name"] = ""; mp["mode"] = "";
+    }
+    self cacDvar("dcac_mpic", mp["pic"]);
+    self cacDvar("dcac_mt", mp["name"]);
+    self cacDvar("dcac_mu", mp["mode"]);
+
+    self cacDvar("dcac_title", title);
+    for (i = 0; i < 15; i++)
+    {
+        r = "";
+        d = "";
+        if (i < menuSize) r = items[i];
+        if (isDefined(descs) && isDefined(descs[i])) d = descs[i];
+        self cacDvar("dcac_r" + i, r);
+        self cacDvar("dcac_d" + i, d);
+    }
+    self cacDvar("dcac_start", "" + index);
+    self cacUpdatePanel();
+    self closepopupmenu();
+    self openpopupmenu("muteplayer");
 
     for (;;)
     {
-        command = self waittill_any_return("cac_up", "cac_down", "cac_select", "cac_back");
-
-        if (command == "cac_up" || command == "cac_down")
-        {
-            ui["rows"][index].color = (0.8, 0.8, 0.8);
-            if (command == "cac_up") index--;
-            else index++;
-            if (index < 0) index = menuSize - 1;
-            if (index >= menuSize) index = 0;
-            ui["hl"].y = cacRowY(index) - 4;
-            ui["rows"][index].color = (1, 1, 1);
-            self cacShowHint(descs, index);
-            self playLocalSound("mouse_over");
-        }
-        else if (command == "cac_select")
-        {
-            self playLocalSound("mouse_click");
-            return index;
-        }
-        else
-        {
-            self playLocalSound("mouse_click");
+        self waittill("menuresponse", menu, response);
+        if (menu != "muteplayer")
+            continue;
+        self dlog("input " + response);
+        if (response == "back")
             return -1;
-        }
+        i = int(response);
+        if (i >= 0 && i < menuSize)
+            return i;
     }
 }
 
-// ============================================================
-// HUD HELPER FUNCTIONS
-// ============================================================
-
-createTextLocal(text, align, relative, x, y, fontscale, font, color, alpha, sort)
+// Generated by gen_catalog.py from MW3's tables, English strings and Create-a-Class menus. Do not edit.
+dcacCatalog()
 {
-    elem = self createFontString(font, fontscale);
-    elem.hidewheninmenu = true;
-    elem.foreground = true;
-    elem.color = color;
-    elem.alpha = alpha;
-    elem.sort = sort;
-    elem setPoint(align, relative, x, y);
-    elem setText(text);
-    return elem;
-}
-
-// Full-screen 640x480 space, so columns reach the screen edges at any resolution
-createBgLocal(x, y, width, height, color, alpha, sort)
-{
-    elem = self createShaderLocal("white", "TOPLEFT", "TOPLEFT", 0, 0, width, height, color, alpha, sort);
-    elem.horzAlign = "fullscreen";
-    elem.vertAlign = "fullscreen";
-    elem.x = x;
-    elem.y = y;
-    return elem;
-}
-
-createShaderLocal(shader, align, relative, x, y, width, height, color, alpha, sort)
-{
-    elem = self createIcon(shader, width, height);
-    elem.hidewheninmenu = true;
-    elem.foreground = true;
-    elem.color = color;
-    elem.alpha = alpha;
-    elem.sort = sort;
-    elem setPoint(align, relative, x, y);
-    return elem;
+    level.cac = [];
+    level.cac["primary_cats"] = strTok("Assault Rifles,Sub Machine Guns,Light Machine Guns,Sniper Rifles,Shotguns,Riot Shield", ",");
+    level.cac["secondary_cats"] = strTok("Machine Pistols,Handguns,Launchers", ",");
+    level.cac["ar"] = strTok("iw5_m4,iw5_m16,iw5_scar,iw5_cm901,iw5_type95,iw5_g36c,iw5_acr,iw5_mk14,iw5_ak47,iw5_fad", ",");
+    level.cac["ar_name"] = strTok("M4A1,M16A4,SCAR-L,CM901,Type 95,G36C,ACR 6.8,MK14,AK-47,FAD", ",");
+    level.cac["smg"] = strTok("iw5_mp5,iw5_ump45,iw5_pp90m1,iw5_p90,iw5_m9,iw5_mp7", ",");
+    level.cac["smg_name"] = strTok("MP5,UMP45,PP90M1,P90,PM-9,MP7", ",");
+    level.cac["lmg"] = strTok("iw5_sa80,iw5_mg36,iw5_pecheneg,iw5_mk46,iw5_m60", ",");
+    level.cac["lmg_name"] = strTok("L86 LSW,MG36,PKP Pecheneg,MK46,M60E4", ",");
+    level.cac["sniper"] = strTok("iw5_barrett,iw5_l96a1,iw5_dragunov,iw5_as50,iw5_rsass,iw5_msr", ",");
+    level.cac["sniper_name"] = strTok("Barrett .50cal,L118A,Dragunov,AS50,Rsass,MSR", ",");
+    level.cac["shotgun"] = strTok("iw5_usas12,iw5_ksg,iw5_spas12,iw5_aa12,iw5_striker,iw5_1887", ",");
+    level.cac["shotgun_name"] = strTok("USAS 12,KSG 12,SPAS-12,AA-12,Striker,Model 1887", ",");
+    level.cac["shield"] = strTok("riotshield", ",");
+    level.cac["shield_name"] = strTok("Riot Shield", ",");
+    level.cac["machpistol"] = strTok("iw5_fmg9,iw5_mp9,iw5_skorpion,iw5_g18", ",");
+    level.cac["machpistol_name"] = strTok("FMG9,MP9,Skorpion,G18", ",");
+    level.cac["hg"] = strTok("iw5_usp45,iw5_p99,iw5_mp412,iw5_44magnum,iw5_fnfiveseven,iw5_deserteagle", ",");
+    level.cac["hg_name"] = strTok("USP .45,P99,MP412,.44 Magnum,Five Seven,Desert Eagle", ",");
+    level.cac["launcher"] = strTok("iw5_smaw,javelin,stinger,xm25,rpg", ",");
+    level.cac["launcher_name"] = strTok("SMAW,Javelin,Stinger,XM25,RPG-7", ",");
+    level.cac["perk1"] = strTok("specialty_paint,specialty_fastreload,specialty_blindeye,specialty_longersprint,specialty_scavenger", ",");
+    level.cac["perk1_name"] = strTok("Recon,Sleight of Hand,Blind Eye,Extreme Conditioning,Scavenger", ",");
+    level.cac["perk2"] = strTok("specialty_quickdraw,_specialty_blastshield,specialty_hardline,specialty_coldblooded,specialty_twoprimaries", ",");
+    level.cac["perk2_name"] = strTok("Quickdraw,Blast Shield,Hardline,Assassin,Overkill", ",");
+    level.cac["perk3"] = strTok("specialty_autospot,specialty_stalker,specialty_detectexplosive,specialty_bulletaccuracy,specialty_quieter", ",");
+    level.cac["perk3_name"] = strTok("Marksman,Stalker,SitRep,Steady Aim,Dead Silence", ",");
+    level.cac["deathstreak"] = strTok("specialty_null,specialty_juiced,specialty_revenge,specialty_finalstand,specialty_grenadepulldeath,specialty_c4death,specialty_stopping_power", ",");
+    level.cac["deathstreak_name"] = strTok("None,Juiced,Revenge,Final Stand,Martyrdom,Dead Man's Hand,Hollow Points", ",");
+    level.cac["equip"] = strTok("frag_grenade_mp,semtex_mp,throwingknife_mp,bouncingbetty_mp,claymore_mp,c4_mp", ",");
+    level.cac["equip_name"] = strTok("Frag,Semtex,Throwing Knife,Bouncing Betty,Claymore,C4", ",");
+    level.cac["tactical"] = strTok("flash_grenade_mp,concussion_grenade_mp,specialty_scrambler,emp_grenade_mp,smoke_grenade_mp,trophy_mp,specialty_tacticalinsertion,specialty_portable_radar", ",");
+    level.cac["tactical_name"] = strTok("Flash Grenade,Concussion Grenade,Scrambler,EMP Grenade,Smoke Grenade,Trophy System,Tactical Insertion,Portable Radar", ",");
+    level.cac["prof_ar"] = strTok("specialty_marksman,specialty_bulletpenetration,specialty_bling,specialty_sharp_focus,specialty_holdbreathwhileads,specialty_reducedsway", ",");
+    level.cac["prof_ar_name"] = strTok("Kick,Impact,Attachments,Focus,Breath,Stability", ",");
+    level.cac["prof_smg"] = strTok("specialty_marksman,specialty_longerrange,specialty_bling,specialty_sharp_focus,specialty_fastermelee,specialty_reducedsway", ",");
+    level.cac["prof_smg_name"] = strTok("Kick,Range,Attachments,Focus,Melee,Stability", ",");
+    level.cac["prof_lmg"] = strTok("specialty_marksman,specialty_bulletpenetration,specialty_bling,specialty_sharp_focus,specialty_lightweight,specialty_reducedsway", ",");
+    level.cac["prof_lmg_name"] = strTok("Kick,Impact,Attachments,Focus,Speed,Stability", ",");
+    level.cac["prof_sniper"] = strTok("specialty_marksman,specialty_bulletpenetration,specialty_bling,specialty_sharp_focus,specialty_lightweight,specialty_reducedsway", ",");
+    level.cac["prof_sniper_name"] = strTok("Kick,Impact,Attachments,Focus,Speed,Stability", ",");
+    level.cac["prof_shotgun"] = strTok("specialty_marksman,specialty_sharp_focus,specialty_bling,specialty_fastermelee,specialty_longerrange,specialty_moredamage", ",");
+    level.cac["prof_shotgun_name"] = strTok("Kick,Focus,Attachments,Melee,Range,Damage", ",");
+    level.cac["prof_shield"] = strTok("specialty_fastermelee,specialty_lightweight", ",");
+    level.cac["prof_shield_name"] = strTok("Melee,Speed", ",");
+    level.cac["wep_prof_type"] = [];
+    foreach (w in level.cac["ar"]) level.cac["wep_prof_type"][w] = "ar";
+    foreach (w in level.cac["smg"]) level.cac["wep_prof_type"][w] = "smg";
+    foreach (w in level.cac["lmg"]) level.cac["wep_prof_type"][w] = "lmg";
+    foreach (w in level.cac["sniper"]) level.cac["wep_prof_type"][w] = "sniper";
+    foreach (w in level.cac["shotgun"]) level.cac["wep_prof_type"][w] = "shotgun";
+    foreach (w in level.cac["shield"]) level.cac["wep_prof_type"][w] = "shield";
+    level.cac_names = [];
+    k = strTok("iw5_m4,iw5_m16,iw5_scar,iw5_cm901,iw5_type95,iw5_g36c,iw5_acr,iw5_mk14,iw5_ak47,iw5_fad,iw5_mp5,iw5_ump45,iw5_pp90m1,iw5_p90,iw5_m9,iw5_mp7,iw5_sa80,iw5_mg36,iw5_pecheneg,iw5_mk46,iw5_m60,iw5_barrett,iw5_l96a1,iw5_dragunov,iw5_as50,iw5_rsass,iw5_msr,iw5_usas12,iw5_ksg,iw5_spas12,iw5_aa12,iw5_striker,iw5_1887,riotshield,iw5_fmg9,iw5_mp9,iw5_skorpion,iw5_g18,iw5_usp45,iw5_p99", ",");
+    v = strTok("M4A1,M16A4,SCAR-L,CM901,Type 95,G36C,ACR 6.8,MK14,AK-47,FAD,MP5,UMP45,PP90M1,P90,PM-9,MP7,L86 LSW,MG36,PKP Pecheneg,MK46,M60E4,Barrett .50cal,L118A,Dragunov,AS50,Rsass,MSR,USAS 12,KSG 12,SPAS-12,AA-12,Striker,Model 1887,Riot Shield,FMG9,MP9,Skorpion,G18,USP .45,P99", ",");
+    for (i = 0; i < k.size; i++) level.cac_names[k[i]] = v[i];
+    k = strTok("iw5_mp412,iw5_44magnum,iw5_fnfiveseven,iw5_deserteagle,iw5_smaw,javelin,stinger,xm25,rpg,specialty_paint,specialty_fastreload,specialty_blindeye,specialty_longersprint,specialty_scavenger,specialty_quickdraw,_specialty_blastshield,specialty_hardline,specialty_coldblooded,specialty_twoprimaries,specialty_autospot,specialty_stalker,specialty_detectexplosive,specialty_bulletaccuracy,specialty_quieter,specialty_juiced,specialty_revenge,specialty_finalstand,specialty_grenadepulldeath,specialty_c4death,specialty_stopping_power,frag_grenade_mp,semtex_mp,throwingknife_mp,bouncingbetty_mp,claymore_mp,c4_mp,flash_grenade_mp,concussion_grenade_mp,specialty_scrambler,emp_grenade_mp", ",");
+    v = strTok("MP412,.44 Magnum,Five Seven,Desert Eagle,SMAW,Javelin,Stinger,XM25,RPG-7,Recon,Sleight of Hand,Blind Eye,Extreme Conditioning,Scavenger,Quickdraw,Blast Shield,Hardline,Assassin,Overkill,Marksman,Stalker,SitRep,Steady Aim,Dead Silence,Juiced,Revenge,Final Stand,Martyrdom,Dead Man's Hand,Hollow Points,Frag,Semtex,Throwing Knife,Bouncing Betty,Claymore,C4,Flash Grenade,Concussion Grenade,Scrambler,EMP Grenade", ",");
+    for (i = 0; i < k.size; i++) level.cac_names[k[i]] = v[i];
+    k = strTok("smoke_grenade_mp,trophy_mp,specialty_tacticalinsertion,specialty_portable_radar,specialty_null,specialty_marksman,specialty_bulletpenetration,specialty_bling,specialty_sharp_focus,specialty_holdbreathwhileads,specialty_reducedsway,specialty_longerrange,specialty_fastermelee,specialty_lightweight,specialty_moredamage,none,acog,reflex,silencer,silencer02,silencer03,grip,gl,gp25,m320,akimbo,thermal,shotgun,heartbeat,fmj,rof,xmags,lockair,boom,eotech,tactical,vzscope,hamrhybrid,hybrid,zoomscope", ",");
+    v = strTok("Smoke Grenade,Trophy System,Tactical Insertion,Portable Radar,None,Kick,Impact,Attachments,Focus,Breath,Stability,Range,Melee,Speed,Damage,No Attachment,ACOG Scope,Red Dot Sight,Silencer,Silencer,Silencer,Grip,Grenade Launcher,Grenade Launcher,Grenade Launcher,Akimbo,Thermal,Shotgun,Heartbeat Sensor,FMJ,Rapid Fire,Extended Mags,Vehicle Lock-on,Sonic Boom,Holographic Sight,Tactical Knife,Variable Zoom Scope,HAMR scope,Hybrid Sight,Hybrid Scope", ",");
+    for (i = 0; i < k.size; i++) level.cac_names[k[i]] = v[i];
+    k = strTok("done,reflexsmg,reflexlmg,eotechsmg,eotechlmg,acogsmg,acoglmg,thermalsmg,thermallmg,uav,airdrop_assault,predator_missile,ims,airdrop_sentry_minigun,sentry,precision_airstrike,helicopter,littlebird_flock,littlebird_support,remote_mortar,airdrop_remote_tank,remote_tank,helicopter_flares,ac130,airdrop_juggernaut,osprey_gunner,uav_support,counter_uav,deployable_vest,airdrop_trap,sam_turret,remote_uav,triple_uav,remote_mg_turret,stealth_airstrike,emp,airdrop_juggernaut_recon,escort_airdrop,nuke,all_perks_bonus", ",");
+    v = strTok("DONE,Red Dot Sight,Red Dot Sight,Holographic Sight,Holographic Sight,ACOG Scope,ACOG Scope,Thermal,Thermal,UAV,Care Package,Predator Missile,I.M.S.,Sentry Gun,Sentry Gun,Precision Airstrike,Attack Helicopter,Strafe Run,AH-6 Overwatch,Reaper,Assault Drone,Assault Drone,Pave Low,AC-130,Juggernaut,Osprey Gunner,UAV,Counter-UAV,Ballistic Vests,Airdrop Trap,SAM Turret,Recon Drone,Advanced UAV,Remote Sentry,Stealth Bomber,EMP,Juggernaut Recon,Escort Airdrop,M.O.A.B.,All Specialist Perks", ",");
+    for (i = 0; i < k.size; i++) level.cac_names[k[i]] = v[i];
 }

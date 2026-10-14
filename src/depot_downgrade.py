@@ -28,10 +28,6 @@ _log = get_logger(__name__)
 # --- Game configurations
 
 # Each game config defines the depots needed for a 32-bit downgrade.
-# Depot/manifest IDs from Josu-A's depot reference gists:
-#   MW3:    https://gist.github.com/Josu-A/b3698ee46b66225401a5583044f5789a
-#   Ghosts: https://gist.github.com/Josu-A/f5d57f82c6c11dd3e6cef51a5b750460
-#   AW:     https://gist.github.com/Josu-A/8e14b4993715aef6a272488a2e738bbd
 
 GAME_CONFIGS = {
     "iw5": {

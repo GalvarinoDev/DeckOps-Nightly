@@ -166,7 +166,7 @@ def _check_digest(path: str, digest: str):
         raise IOError(f"{algo} mismatch for {os.path.basename(path)}")
 
 
-def github_asset(repo: str, suffix: str, fallback: str = None):
+def github_asset(repo: str, suffix: str, fallback: str = None, timeout: int = 30):
     """
     (url, digest) of the latest release asset of repo whose name ends with
     suffix. digest is GitHub's "sha256:..." or None. If the API lookup
@@ -177,7 +177,7 @@ def github_asset(repo: str, suffix: str, fallback: str = None):
         req = urllib.request.Request(
             f"https://api.github.com/repos/{repo}/releases/latest",
             headers={"Accept": "application/vnd.github+json", "User-Agent": "DeckOps"})
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read())
         for a in data.get("assets", []):
             if a["name"].endswith(suffix):

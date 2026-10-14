@@ -19,8 +19,8 @@
 | Game | Mode | Client | Online | Aim Assist | Gyro |
 |---|---|---|---|---|---|
 | Modern Warfare | SP/MP | [IW3SP-MOD](https://gitea.com/JerryALT/iw3sp_mod) + [CoD4R](https://iw3x.com/) | ✅ | ✅ | ✅ |
-| Modern Warfare 2 | SP/MP | [iw4x](https://iw4x.io) | ✅ | ✅ | ✅ |
-| Modern Warfare 3 | SP/MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
+| Modern Warfare 2 | SP/MP | [IW-Pad](https://github.com/GalvarinoDev/IW-Pad) + [iw4x](https://iw4x.io) | ✅ | ✅ | ✅ |
+| Modern Warfare 3 | SP/MP | [IW-Pad](https://github.com/GalvarinoDev/IW-Pad) + [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
 | Ghosts | SP/MP | [IW6-Mod](https://github.com/alterware/client-files) | ✅ | ✅ | ✅ |
 | Advanced Warfare | SP/MP | [S1-Mod](https://github.com/alterware/client-files) | ✅ | ✅ | ✅ |
 | World at War | SP/ZM/MP | [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
@@ -28,7 +28,7 @@
 | Black Ops II | SP/ZM/MP | [T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release) + [Plutonium](https://plutonium.pw) | ✅ | ✅ | ✅ |
 | Black Ops III | SP/MP/ZM | [CleanOps](https://github.com/notnightwolf/cleanopsT7) | ✅ | ✅ | ✅ |
 
-All titles use controller and gyro through Steam Input. You choose your gyro mode during setup (ADS, Hold, or Toggle). DeckOps installs [IW-Pad](https://github.com/GalvarinoDev/IW-Pad) for MW2 SP and MW3 SP. IW-Pad adds controller support and aim assist. CoD4x is available as an alternative MW1 MP client during setup.
+All titles use controller and gyro through Steam Input. You choose your gyro mode during setup (ADS, Hold, or Toggle). IW-Pad adds controller support and aim assist to MW2 SP and MW3 SP. CoD4x is available as an alternative MW1 MP client during setup.
 
 IW-Pad and AlterWare do not repair the remote code execution (RCE) vulnerabilities in MW2 SP and MW3 SP. We do not recommend that you play Special Ops in MW2 or MW3. If you play Special Ops, you do so at your own risk.
 
@@ -37,6 +37,20 @@ Supports Steam Deck (LCD and OLED), Steam Machine, Legion Go / Go S / Go 2, ROG 
 DeckOps can also install [Zombies Declassified](https://github.com/Logo-2K/zombies-declassified). This mod adds 10 Zombies maps to BO2 Zombies. You must have all the BO2 Zombies DLC.
 
 The AlterWare developer discontinued Ghosts and Advanced Warfare in September 2026. DeckOps will officially discontinue support for these games in January 2027.
+
+---
+
+## Plutonium Offline
+
+With Plutonium Offline, you can play WaW, BO1, BO2, and MW3 without an internet connection.
+
+1. On the setup screen, select **Plutonium Offline**.
+2. DeckOps adds the **DeckOps: Plutonium Offline** launcher to your Steam library.
+3. To start a game, open the launcher. You can also select **Play Plutonium Offline** in the Steam launch menu of the game.
+
+In Offline Multiplayer, DeckOps starts a local server with bots. You can also play Campaign and Zombies offline in WaW and BO1, and Zombies offline in BO2.
+
+Plutonium Offline uses a separate instance of Plutonium. It does not interact with your online files.
 
 ---
 
@@ -129,6 +143,10 @@ DeckOps is an installer. This project would not exist without years of foundatio
 **[T6SP-Mod](https://github.com/Rattpak/T6SP-Mod-Release)** - Black Ops II SP client by [Rattpak](https://github.com/Rattpak).
 
 **[Plutonium](https://plutonium.pw)** - MW3, WaW, BO1, and BO2 client. 💰 [Donate](https://forum.plutonium.pw/donate)
+
+**[Bot Warfare](https://github.com/ineedbots)** - Bots for Plutonium Offline in WaW, BO1, BO2, and MW3 by [ineedbots](https://github.com/ineedbots).
+
+**[T6ServerConfigs](https://github.com/xerxes-at/T6ServerConfigs)** - BO2 game mode settings for Plutonium Offline by [xerxes-at](https://github.com/xerxes-at).
 
 **[Zombies Declassified](https://github.com/Logo-2K/zombies-declassified)** - DLC5 map pack for BO2 Zombies (10 classic maps) by [Logo2K](https://github.com/Logo-2K). Files packaged and hosted by **[Littlegods](https://github.com/andr3xcl/littlegods-dlc-installer)**.
 
