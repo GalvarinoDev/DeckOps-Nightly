@@ -80,9 +80,9 @@ def install_sp_mod(game_key: str, install_dir: str, on_progress=None,
     prog(100, "IW-Pad installed.")
 
 
-def _fetch_iw_pad(game_key, install_dir, arch, prog, release=None, timeout=30):
+def _fetch_iw_pad(game_key, install_dir, arch, prog, release=None):
     url, dg = release or github_asset("GalvarinoDev/IW-Pad", f"iw-pad-{arch}.zip",
-                                      fallback=_IW_PAD_URL.format(arch), timeout=timeout)
+                                      fallback=_IW_PAD_URL.format(arch))
     zip_dest = os.path.join(install_dir, f"iw-pad-{arch}.zip")
     download(url, zip_dest, prog, "IW-Pad", digest=dg)
     with zipfile.ZipFile(zip_dest) as zf:
