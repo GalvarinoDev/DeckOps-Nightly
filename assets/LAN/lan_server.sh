@@ -47,16 +47,15 @@ CONNECT=()
 if [ -n "$PORT" ]; then
   # Plutonium MW3 has no GSC file I/O: its menu logs every class save as DCAC;class;<guid>;<n>;<picks> and
   # the class in use as DCAC;use;<guid>;<n or ->. The last of each per player comes back here as dvars,
-  # ahead of the map rotation. DCAC;save;<guid>;<picks>;<on> is the older one-class save (menu makes it Class 1).
+  # ahead of the map rotation.
   if [ "$MODE" = iw5mp ]; then
     SAVED=()
     while IFS=';' read -r _ T G A B; do
       case $T in
         class) SAVED+=(+set "dcac_${G}_$A" "$B") ;;
         use) SAVED+=(+set "dcac_use_$G" "$A") ;;
-        save) SAVED+=(+set "dcac_$G" "$A" +set "dcac_on_$G" "$B") ;;
       esac
-    done < <(grep -a -o 'DCAC;class;[^;]*;[0-4];[^;]*\|DCAC;use;[^;]*;[-0-4]\|DCAC;save;[^;]*;[^;]*;[01]' "$SV/storage/iw5/games_mp.log" 2>/dev/null \
+    done < <(grep -a -o 'DCAC;class;[^;]*;[0-4];[^;]*\|DCAC;use;[^;]*;[-0-4]' "$SV/storage/iw5/games_mp.log" 2>/dev/null \
       | awk -F';' '{k = $2 ";" $3; if ($2 == "class") k = k ";" $4; l[k] = $0} END {for (k in l) print l[k]}')
     set -- "${SAVED[@]}" "$@"
   fi
