@@ -131,12 +131,6 @@ cacDefault()
 
 initCac()
 {
-    // Round A kept one loadout (dcac_<guid>, dcac_on_<guid>): it becomes Class 1
-    if (getDvar("dcac_" + self.guid + "_0") == "" && getDvar("dcac_" + self.guid) != "")
-    {
-        setDvar("dcac_" + self.guid + "_0", getDvar("dcac_" + self.guid));
-        if (getDvar("dcac_on_" + self.guid) == "1") setDvar("dcac_use_" + self.guid, "0");
-    }
     keys = cacKeys();
     self.dcac = [];
     for (n = 0; n < 5; n++)
