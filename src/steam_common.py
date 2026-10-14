@@ -157,6 +157,13 @@ def record_configset_edit(configset_path: str, key: str, template_name: str):
         _log.debug("configset ledger record failed", exc_info=True)
 
 
+def shortcut_title_key(title: str) -> str:
+    """Configset key Game Mode reads for a non-Steam shortcut: the title in
+    lowercase without / \\ ? % * : | " < > . (Steam ignores the numeric
+    shortcut appid key there)."""
+    return re.sub(r'[/\\?%*:|"<>.]', "", title.lower())
+
+
 def patch_configset(configset_path: str, key: str, template_name: str):
     """
     Patch a single key in a configset VDF to use our template.

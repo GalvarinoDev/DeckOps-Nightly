@@ -55,6 +55,7 @@ from steam_common import (
     find_all_steam_uids as _find_all_steam_uids,
     get_deck_serial as _get_deck_serial,
     patch_configset as _patch_configset,
+    shortcut_title_key as _shortcut_title_key,
 )
 ASSETS_DIR    = os.path.join(PROJECT_ROOT, "assets", "controllers")
 TEMPLATES_DIR = os.path.expanduser("~/.steam/steam/controller_base/templates")
@@ -533,7 +534,7 @@ def _assign(uids, pick, canonical, configsets, prog, launcher=False, label=""):
                 continue
             filenames = files(_cod4mp_profile(key, sdef["profile_type"]))
             if filenames:
-                write(uid, shortcut_appids[key], filenames)
+                write(uid, shortcut_appids[key], filenames, named_keys=[_shortcut_title_key(sdef["name"])])
                 prog(f"  ✓ [shortcut {shortcut_appids[key]}] → {filenames[0]}")
 
         # ── DeckOps offline launcher controller profile ───────────────────────
@@ -546,7 +547,8 @@ def _assign(uids, pick, canonical, configsets, prog, launcher=False, label=""):
         if launcher_appid:
             filenames = files("standard", "  ⚠ Asset missing, launcher skipped: {}")
             if filenames:
-                write(uid, launcher_appid, filenames)
+                from shortcut import LAUNCHER_TITLE
+                write(uid, launcher_appid, filenames, named_keys=[_shortcut_title_key(LAUNCHER_TITLE)])
                 prog(f"  ✓ [launcher {launcher_appid}] → {filenames[0]}")
 
     # ── "My Own" game controller profiles ────────────────────────────────────
@@ -571,7 +573,8 @@ def _assign(uids, pick, canonical, configsets, prog, launcher=False, label=""):
             if not filenames:
                 continue
             for uid in uids:
-                write(uid, shortcut_appid, filenames, num_dir=False)
+                write(uid, shortcut_appid, filenames, num_dir=False,
+                      named_keys=[_shortcut_title_key(OWN_SHORTCUTS[key]["name"])])
             prog(f"  ✓ [own {shortcut_appid}] {key} → {filenames[0]}")
     except Exception as ex:
         prog(f"  ⚠ Could not assign {label}profiles for own games: {ex}")

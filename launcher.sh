@@ -33,7 +33,7 @@ fi
 
 # ── Update check ──────────────────────────────────────────────────────────────
 check_for_updates() {
-    local LOCAL_SHA REMOTE_SHA CHANGED_FILES FILE_COUNT
+    local LOCAL_SHA REMOTE_SHA CHANGED_FILES FILE_COUNT RESET_HINT=""
     local FORCE="${1:-}"
 
     # Read local version (commit SHA). "0" means never updated.
@@ -62,6 +62,11 @@ check_for_updates() {
         [ -z "$CHANGED_FILES" ] && return 0
 
         FILE_COUNT=$(echo "$CHANGED_FILES" | wc -l)
+        # Mirrors ui_manage._reset_hint: config.py or more than 3 src/ files changed
+        if echo "$CHANGED_FILES" | grep -qx 'src/config.py' || \
+           [ "$(echo "$CHANGED_FILES" | grep -c '^src/')" -gt 3 ]; then
+            RESET_HINT="\n\nThis update changed how DeckOps sets up games.\nIf anything acts up, open Settings and use Reset Config,\nthen set up your games again."
+        fi
     fi
 
     # Ask user (skip if triggered from in-app update button)
@@ -225,8 +230,8 @@ check_for_updates() {
     chmod +x "$INSTALL_DIR/install.sh" 2>/dev/null
 
     zenity --info --title="$APP_TITLE" \
-        --text="Update complete!" \
-        --width=200 \
+        --text="Update complete!${RESET_HINT}" \
+        --width=300 \
         2>/dev/null
 
     return 0

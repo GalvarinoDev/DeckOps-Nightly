@@ -186,7 +186,7 @@ class SetupScreen(QWidget):
         self._extra_paths = []
         self._cod4_choice = "cod4r"
         self._iw4x_dlc_cb = None; self._iw4x_dlc_present = False
-        self._zd_cb = None; self._waw_mp_cb = None; self._lan_cb = None
+        self._zd_cb = None; self._lan_cb = None
 
         lay = QVBoxLayout(self); lay.setContentsMargins(0,0,0,0); lay.setSpacing(0)
 
@@ -259,7 +259,7 @@ class SetupScreen(QWidget):
                 if item.widget(): item.widget().deleteLater()
         self._checks.clear()
         self._iw4x_dlc_cb = None; self._iw4x_dlc_present = False
-        self._zd_cb = None; self._waw_mp_cb = None; self._lan_cb = None
+        self._zd_cb = None; self._lan_cb = None
 
         MAX_SLOTS  = 3
         SLOT_W     = 28
@@ -368,7 +368,7 @@ class SetupScreen(QWidget):
             row.addWidget(_badge("OFFLINE", C_TREY, 170, h=28, size=9))
             outer.addLayout(row)
             note = _lbl("Offline launcher, Plutonium Offline in each game's Steam launch menu, "
-                        "bot matches in BO2 / MW3 MP.", 10, C_DIM, align=Qt.AlignLeft)
+                        "bot matches in WaW / BO1 / BO2 / MW3 MP.", 10, C_DIM, align=Qt.AlignLeft)
             note.setContentsMargins(CHECKS_W + 10, 0, 0, 0)
             outer.addWidget(note)
             self._add_row(lan_gd, cw)
@@ -429,16 +429,6 @@ class SetupScreen(QWidget):
                 self._zd_cb.setStyleSheet("color:#CCC;background:transparent;")
                 v.addWidget(self._zd_cb)
                 lay.addWidget(w); _bind("t6zm", w)
-
-        # OLED/Other Steam WaW: Plutonium MP is in the Steam launch menu now,
-        # so its separate shortcut is opt-in. LCD still always gets it.
-        if "t4mp" in keys and "t4mp" in self.steam_installed and cfg.uses_oled_path():
-            w, v = _opt_box()
-            self._waw_mp_cb = QCheckBox("Also add Plutonium MP as its own shortcut")
-            self._waw_mp_cb.setFont(font(11)); self._waw_mp_cb.setChecked(False)
-            self._waw_mp_cb.setStyleSheet("color:#CCC;background:transparent;")
-            v.addWidget(self._waw_mp_cb)
-            lay.addWidget(w); _bind("t4mp", w)
 
     def _add_mw3_free_row(self, gd, checks_w):
         cw = QWidget()
@@ -574,7 +564,6 @@ class SetupScreen(QWidget):
             s.install_iw4x_dlc = "install" if self._iw4x_dlc_cb and self._iw4x_dlc_cb.isChecked() else ""
         s.cod4_client = self._cod4_choice if "cod4mp" in sel else "cod4r"
         s.zd_choice = bool(self._zd_cb and self._zd_cb.isChecked())
-        s.waw_mp_shortcut = bool(self._waw_mp_cb and self._waw_mp_cb.isChecked())
         s.offline_mode = self._lan_cb.isChecked() if self._lan_cb else None
         s.bo3_client = _ask_bo3_client(self, all_tuples)
         go_to(self.stack, "InstallScreen")
@@ -602,7 +591,6 @@ class _BaseInstallScreen(QWidget):
         self._return_to_management = False
         self._from_manage = False
         self.zd_choice = None
-        self.waw_mp_shortcut = False
         self.offline_mode = None
         self.bo3_client = "cleanops"
         self._results = []
@@ -1196,7 +1184,6 @@ class _BaseInstallScreen(QWidget):
         el = int(time.time() - self._t0)
         self.stat.setText(f"Finished in {el // 60}:{el % 60:02d}")
         self.zd_choice = None
-        self.waw_mp_shortcut = False
         self.offline_mode = None
         if ok:
             self.cur.setText(self._DONE_MSG)
@@ -2245,21 +2232,24 @@ class _BaseInstallScreen(QWidget):
 
         # --- Non-Steam shortcuts for Steam games
         steam_keys = [k for k, _, _ in steam_sel]
-        if steam_sel:
+        # CoD4 MP and WaW MP shortcuts are written every run, so a game set up
+        # by an earlier run that stopped before this step still gets one.
+        _setup = cfg.get_setup_games()
+        sc_extra = [k for k in ("cod4mp", "t4mp") if k not in steam_keys
+                    and _setup.get(k, {}).get("source") == "steam"]
+        if steam_sel or sc_extra:
             try:
                 from shortcut import create_shortcuts
                 self._s.log.emit("Creating non-Steam shortcuts...")
                 steam_installed = {k: g for k, gd, g in steam_sel if g}
+                if sc_extra:
+                    from detect_games import parse_library_folders, find_installed_games
+                    found = find_installed_games(parse_library_folders(self.steam_root), self.steam_root)
+                    steam_installed.update({k: found[k] for k in sc_extra if k in found})
                 gyro_mode = cfg.get_gyro_mode() or "on"
-                # OLED/Other: WaW MP is in the Steam launch menu, so its own
-                # shortcut is only made when the user ticked the box.
-                _sc_keys = [k for k in steam_keys if not (
-                    k == "t4mp" and cfg.uses_oled_path() and not self.waw_mp_shortcut)]
-                if "t4mp" in steam_keys and cfg.uses_oled_path():
-                    _c = cfg.load(); _c["waw_mp_shortcut"] = bool(self.waw_mp_shortcut); cfg.save(_c)
                 create_shortcuts(
                     installed_games=steam_installed,
-                    selected_keys=_sc_keys,
+                    selected_keys=steam_keys + sc_extra,
                     gyro_mode=gyro_mode,
                     on_progress=lambda msg: self._s.log.emit(msg),
                     steam_root=self.steam_root,

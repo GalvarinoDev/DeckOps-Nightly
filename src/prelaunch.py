@@ -48,6 +48,14 @@ def _plutonium(key, cmd):
         pu.link_prefix(master, prefix, _STORAGE_SUBDIRS.get(key), info, log)
 
 
+def _iwpad(key, cmd):
+    exe = f"{key}.exe"
+    path = next((a for a in cmd if a.lower().endswith(exe)), None)
+    if path:
+        from sp_mod import update_iw_pad
+        update_iw_pad(key, os.path.dirname(path), log=_log.info)
+
+
 def _lan(key, args):
     # Offline launch (lan_server.sh): relink the offline copies, then hand it the
     # Steam Linux Runtime and the library mounts on stdout
@@ -58,7 +66,7 @@ def _lan(key, args):
         print(*lan_runtime(), sep="\t")
 
 
-_HANDLERS = {"cod4mp": _cod4mp, "lan": _lan}
+_HANDLERS = {"cod4mp": _cod4mp, "lan": _lan, "iw4sp": _iwpad, "iw5sp": _iwpad}
 _HANDLERS.update(dict.fromkeys(
     ("t4sp", "t4mp", "t5sp", "t5mp", "t6mp", "t6zm", "iw5mp", "iw5mp_ds"), _plutonium))
 

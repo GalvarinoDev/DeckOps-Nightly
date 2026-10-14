@@ -68,6 +68,12 @@ def _remote_changes():
     return local_sha, remote_sha, files
 
 
+def _reset_hint(files) -> bool:
+    # Mirrors launcher.sh RESET_HINT: config.py or more than 3 src/ files changed
+    names = [f.get("filename", "") for f in files or []]
+    return "src/config.py" in names or sum(n.startswith("src/") for n in names) > 3
+
+
 def _check_update_status():
     """Compare local VERSION sha to GitHub main. Returns 'OK|..', 'UPDATE|..' or 'FAIL|..'."""
     try:
@@ -77,7 +83,8 @@ def _check_update_status():
         if local_sha == remote_sha:
             return "OK|You're up to date!"
         file_count = "unknown" if files is None else str(len(files))
-        return f"UPDATE|Update available — {file_count} file(s) changed."
+        hint = "\nReset Config recommended after updating." if _reset_hint(files) else ""
+        return f"UPDATE|Update available — {file_count} file(s) changed.{hint}"
     except Exception as ex:
         _log.warning("Update check failed: %s", ex)
         return "FAIL|Update check failed."
@@ -429,7 +436,7 @@ class ManagementScreen(QWidget):
     def _offline(self, on):
         """Add or remove Offline Mode (offline launcher, Steam menu Offline entries, bot matches)."""
         text = ("Add Offline Mode? Adds the offline launcher, Plutonium Offline in each game's Steam "
-                "launch menu, and bot matches in BO2 / MW3 MP. Steam closes while it is set up."
+                "launch menu, and bot matches in WaW / BO1 / BO2 / MW3 MP. Steam closes while it is set up."
                 if on else
                 "Remove Offline Mode? Removes the offline launcher, the Plutonium Offline launch menu "
                 "entries and the bot match files. Steam closes while it is removed.")

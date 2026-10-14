@@ -4,7 +4,7 @@
 # The game runs from DeckOps' offline Plutonium copy in its own prefix, inside Steam
 # Linux Runtime like Steam's own launches: straight on the host, BO2 stalls in Game Mode
 # until its console window is switched to (Deck, 2026-10-08).
-# BO2 MP and MW3 MP also host a hidden local dedicated server and join it: plain -lan
+# WaW MP, BO1 MP, BO2 MP and MW3 MP also host a hidden local dedicated server and join it: plain -lan
 # play can't create a private match without a Plutonium account.
 # Usage: lan_server.sh <mode> <game dir, game prefix> +name "<player>" [<port> <game dir, server prefix> <server args...>]
 # Extra game args: CLIENT_ARGS (word-split, no spaces inside an arg).
@@ -45,6 +45,21 @@ trap 'systemctl --user stop "$UNIT" 2>/dev/null' EXIT
 
 CONNECT=()
 if [ -n "$PORT" ]; then
+  # Plutonium MW3 has no GSC file I/O: its menu logs every class save as DCAC;class;<guid>;<n>;<picks> and
+  # the class in use as DCAC;use;<guid>;<n or ->. The last of each per player comes back here as dvars,
+  # ahead of the map rotation. DCAC;save;<guid>;<picks>;<on> is the older one-class save (menu makes it Class 1).
+  if [ "$MODE" = iw5mp ]; then
+    SAVED=()
+    while IFS=';' read -r _ T G A B; do
+      case $T in
+        class) SAVED+=(+set "dcac_${G}_$A" "$B") ;;
+        use) SAVED+=(+set "dcac_use_$G" "$A") ;;
+        save) SAVED+=(+set "dcac_$G" "$A" +set "dcac_on_$G" "$B") ;;
+      esac
+    done < <(grep -a -o 'DCAC;class;[^;]*;[0-4];[^;]*\|DCAC;use;[^;]*;[-0-4]\|DCAC;save;[^;]*;[^;]*;[01]' "$SV/storage/iw5/games_mp.log" 2>/dev/null \
+      | awk -F';' '{k = $2 ";" $3; if ($2 == "class") k = k ";" $4; l[k] = $0} END {for (k in l) print l[k]}')
+    set -- "${SAVED[@]}" "$@"
+  fi
   if ! ss -uln | grep -q ":$PORT "; then
     # A unit left over from an interrupted run blocks systemd-run from reusing the name
     systemctl --user stop "$UNIT" 2>/dev/null; systemctl --user reset-failed "$UNIT" 2>/dev/null
@@ -60,8 +75,14 @@ if [ -n "$PORT" ]; then
       || { echo "server failed to start"; exit 1; }
     for i in $(seq 180); do ss -uln | grep -q ":$PORT " && break; sleep 1; done
     echo "$(date +%T) server listening after ${i}s"
-    sleep 5
   fi
+  # The port opens before the map has loaded, and WaW drops a +connect sent then (PC, 2026-10-09).
+  # A server only answers getstatus once its map is up. MW3's never answers getstatus (a fixed 60 s wait), only getinfo.
+  Q=getstatus; [ "$MODE" = iw5mp ] && Q=getinfo
+  ready() { exec 3<>"/dev/udp/127.0.0.1/$PORT" || return 1; printf '\xff\xff\xff\xff%s' "$Q" >&3
+    timeout 1 head -c4 <&3 >/dev/null; local r=$?; exec 3<&-; return $r; }
+  for i in $(seq 60); do ready && break; done
+  echo "$(date +%T) server map up after ${i} tries"
   CONNECT=(+set deckops_lan_port "$PORT" +connect "127.0.0.1:$PORT")
 fi
 

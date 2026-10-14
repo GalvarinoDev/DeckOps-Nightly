@@ -428,16 +428,21 @@ def install_iw4x(game: dict, steam_root: str,
     os.remove(launcher_zip)
 
     # ── Launch menu (Steam only) ─────────────────────────────────────────
-    # Plain Play stays vanilla MW2; "Play IW4x" runs the launcher directly,
-    # which updates and then starts the x86 client. Older versions used a
-    # ${@/iw4mp.exe/...} launch option that redirected every launch, so clear it.
+    # The stock entry (tagged) stays vanilla MW2; "Play IW4x" runs the launcher
+    # directly, which updates and then starts the x86 client. If Steam drops
+    # the menu, the launch option's prelaunch.sh turns plain Play into IW4x.
     if source != "own":
         prog(80, "Adding IW4x to the Steam launch menu...")
         try:
-            from wrapper import clear_launch_options
-            from steam_appinfo import add_launch_entries
+            from wrapper import clear_launch_options, set_launch_options
+            from steam_appinfo import add_launch_entries, VANILLA_TAG
+            from steam_common import prelaunch_prefix
             clear_launch_options(steam_root, MW2_MP_APPID)
-            if add_launch_entries(steam_root, MW2_MP_APPID, IW4X_MENU):
+            set_launch_options(steam_root, MW2_MP_APPID,
+                               'DECKOPS_MENU="iw4mp.exe=iw4x-launcher.exe" DECKOPS_MENU_ARGS="--arch x86" '
+                               f'{prelaunch_prefix("menu")}%command%')
+            if add_launch_entries(steam_root, MW2_MP_APPID,
+                                  IW4X_MENU + [{"executable": "iw4mp.exe", "tag": VANILLA_TAG}]):
                 prog(80, "  ✓ Launch menu: Play IW4x")
             else:
                 prog(80, "  ⚠ Launch menu not added yet, will retry next time Steam is closed")

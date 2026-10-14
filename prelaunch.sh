@@ -18,4 +18,25 @@ shift
 for a in "$@"; do
     case "$a" in *plut*_lan.exe) exec bash "$a" ;; esac
 done
+
+# Launch menu fallback (plutonium._setup_steam_menu, iw4x): DECKOPS_MENU holds
+# "<stock exe>=<online file>" pairs. While our menu is in appinfo.vdf the stock entry
+# carries -deckops_vanilla; Steam drops both on a refresh, so an untagged stock exe
+# is swapped for its online file, the same command a menu pick would give.
+# DECKOPS_MENU_ARGS is added after it (IW4x: --arch x86, like its menu entry).
+if [ -n "$DECKOPS_MENU" ]; then
+    args=(); tagged=
+    for a in "$@"; do
+        if [ "$a" = -deckops_vanilla ]; then tagged=1; else args+=("$a"); fi
+    done
+    [ -n "$tagged" ] && exec "${args[@]}"
+    for p in $DECKOPS_MENU; do
+        for i in "${!args[@]}"; do
+            a=${args[$i]}
+            if [ "${a##*/}" = "${p%%=*}" ] && [ -f "${a%/*}/${p#*=}" ]; then
+                args[$i]="${a%/*}/${p#*=}"; exec "${args[@]}" $DECKOPS_MENU_ARGS
+            fi
+        done
+    done
+fi
 exec "$@"

@@ -637,7 +637,7 @@ def _write_offline_wrapper(game: dict, game_key: str, source: str = "steam") -> 
     OLED and LCD alike. DeckOps_Offline.exe runs it through launcher_offline.sh (the
     Steam launch menu's Plutonium Offline entry opens that launcher). It hands over to
     assets/LAN/lan_server.sh, which starts the game from the offline Plutonium copy
-    in LAN_PREFIX; BO2 MP and MW3 MP also host a local server with bots.
+    in LAN_PREFIX; WaW MP, BO1 MP, BO2 MP and MW3 MP also host a local server with bots.
 
     The player name stays as +name "..." so game_config's rename finds it.
     Returns the script path, or None for a key without offline play.
@@ -672,6 +672,13 @@ def _write_offline_wrapper(game: dict, game_key: str, source: str = "steam") -> 
             # Map / Mode lists only the maps this install has
             lines += [f"G={q(game_dir)}", "M=$(cd \"$G/zone/all\" && ls mp_*.ff | sed 's/\\.ff$//' | paste -sd,)"]
             run = 'CLIENT_ARGS="+set fs_game mods/deckops_offline" ' + run
+        elif mode in ("t4mp", "t5mp", "iw5mp"):
+            # WaW keeps maps in zone/<language>/ next to their _load files, BO1 in zone/Common/,
+            # MW3 in zone/<language>/ and zone/dlc/
+            lines += [f"G={q(game_dir)}", "M=$(cd \"$G/zone\" && ls */mp_*.ff | sed 's|.*/||; s/\\.ff$//' | grep -v '_load$' | sort -u | paste -sd,)"]
+            if mode == "t5mp":
+                # BO1 crashes in FS_Startup switching to the server's mod mid-join: start in it
+                run = 'CLIENT_ARGS="+set fs_game mods/mp_deckops_offline" ' + run
     with open(path, "w") as f:
         f.write("\n".join(lines + [run]) + "\n")
     os.chmod(path, os.stat(path).st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
@@ -780,6 +787,16 @@ def _setup_steam_menu(game: dict, game_key: str, steam_root: str,
     if lan_wrapper_path and os.path.exists(lan_wrapper_path):
         write_offline_menu_file(os.path.join(game["install_dir"], offline_name))
     add_steam_menu(game, game_key, steam_root, prog)
+
+    # Fallback when Steam refreshes appinfo.vdf and our menu is gone: prelaunch.sh
+    # swaps an untagged stock exe for its online file (VANILLA_TAG marks a stock pick)
+    from steam_common import prelaunch_prefix
+    from wrapper import set_launch_options, clear_launch_options
+    appid = GAME_META[game_key][0]
+    pairs = " ".join(f"{GAME_META[k][2]}={STEAM_MENU_EXES[k][0]}"
+                     for k in STEAM_MENU_EXES if GAME_META[k][0] == appid)
+    clear_launch_options(steam_root, appid)
+    set_launch_options(steam_root, appid, f'DECKOPS_MENU="{pairs}" {prelaunch_prefix("menu")}%command%')
     return online_path
 
 
@@ -810,10 +827,11 @@ def add_steam_menu(game: dict, game_key: str, steam_root: str, prog):
         if os.path.exists(os.path.join(game["install_dir"], STEAM_MENU_EXES[k][1])):
             entries.append({"executable": STEAM_MENU_EXES[k][1], "description": off})
 
-    from steam_appinfo import add_launch_entries, remove_launch_entries
+    from steam_appinfo import add_launch_entries, remove_launch_entries, VANILLA_TAG
+    entries += [{"executable": GAME_META[k][2], "tag": VANILLA_TAG} for k in keys]
     remove_launch_entries(steam_root, appid, [n for k in keys for n in STEAM_MENU_EXES[k]])
     added = add_launch_entries(steam_root, appid, entries)
-    prog(92, "  ✓ Launch menu: " + " / ".join(e["description"] for e in entries) if added
+    prog(92, "  ✓ Launch menu: " + " / ".join(e["description"] for e in entries if "tag" not in e) if added
              else "  ⚠ Launch menu not added yet, will retry next time Steam is closed")
 
 
@@ -824,6 +842,12 @@ def remove_offline_files(game: dict, game_key: str):
     for n in (OLED_LAN_WRAPPER_NAMES.get(game_key), STEAM_MENU_EXES.get(game_key, ("", ""))[1]):
         if n and d and os.path.isfile(os.path.join(d, n)):
             os.remove(os.path.join(d, n))
+    # MW3's offline server config (setup_lan); the .dsr recipes may be the user's own
+    if game_key in ("iw5mp", "iw5mp_ds") and d:
+        for sub in ("downgrade", ""):
+            cfg_path = os.path.join(d, sub, "admin", "deckops_lan.cfg")
+            if os.path.isfile(cfg_path):
+                os.remove(cfg_path)
 
 
 # ── metadata ──────────────────────────────────────────────────────────────────
@@ -917,7 +941,7 @@ def cleanup_plut_from_non_plut_prefixes(steam_root: str, on_progress=None):
 # ── public API ────────────────────────────────────────────────────────────────
 
 # ---
-# Offline: local LAN server (BO2 MP, MW3 MP), run by assets/LAN/lan_server.sh
+# Offline: local LAN server (WaW MP, BO1 MP, BO2 MP, MW3 MP), run by assets/LAN/lan_server.sh
 #
 # Plain -lan play can't create a private match without a Plutonium account, so
 # these games host a hidden local dedicated server and join it. Opt-in
@@ -930,7 +954,7 @@ def cleanup_plut_from_non_plut_prefixes(steam_root: str, on_progress=None):
 LAN_ROOT = os.path.expanduser("~/.local/share/deckops/lan")
 LAN_ASSETS = os.path.join(os.path.dirname(_OLED_HERE), "assets", "LAN", "offline")
 LAN_PORT = 4986
-LAN_KEYS = ("t6mp", "iw5mp", "iw5mp_ds")
+LAN_KEYS = ("t4mp", "t5mp", "t6mp", "iw5mp", "iw5mp_ds")
 # Offline games run in their own prefix. The server runs in the Offline launcher's
 # prefix: the game's runtime launch (waitforexitandrun) waits for every wineserver
 # on its own prefix, so the two can't share one.
@@ -939,13 +963,26 @@ LAN_SERVER_PREFIX = os.path.expanduser("~/.local/share/deckops/launcher_prefix")
 _LAN_SERVER_ARGS = {
     # $M: the maps in zone/all, listed by the offline script
     "t6mp": '+set fs_game mods/deckops_offline +set dcac_maps "$M" +exec deckops_lan_mp.cfg +map_rotate',
-    "iw5mp": "+set sv_config deckops_lan.cfg +start_map_rotate",
+    "iw5mp": '+set dcac_maps "$M" +set sv_config deckops_lan.cfg +start_map_rotate',
+    # BO1 runs +exec (storage/t5/deckops_lan_mp.cfg); Bot Warfare and the class script load as loose
+    # scripts, the class menu (dcac_list) comes from the mod's mod.ff
+    "t5mp": '+set fs_game mods/mp_deckops_offline +set dcac_maps "$M" +exec deckops_lan_mp.cfg +map_rotate',
+    # T4 ignores +exec on a server, and Bot Warfare makes its dvars at runtime: all here.
+    # WaW MP mods must be named mp_*. sv_maxclients 13: 12 bots + the player (Bot Count).
+    # sv_floodprotect 0: every click in the Map / Mode and Bot Warfare menus is a menu response; fast clicks get dropped.
+    "t4mp": ('+set fs_game mods/mp_deckops_offline +set dcac_maps "$M" +set sv_maxclients 13 '
+             '+set sv_hostname "DeckOps Offline" +set sv_floodprotect 0 +set logfile 1 +set g_inactivity 0 +set bots_main 1 '
+             '+set bots_main_firstIsHost 0 +set bots_manage_fill 10 +set bots_manage_fill_mode 0 '
+             '+set bots_skill 2 +map_rotate'),
 }
 
 # Third-party server files, downloaded at install: their repos show no license,
 # so they are never redistributed. Pinned to a commit, or a release checked by digest.
 _T6_BW = ("https://raw.githubusercontent.com/ineedbots/t6_bot_warfare/"
           "cafee7d585160b046dc928f90798a611683e6cd1/scripts/mp/")
+# Bot Warfare T5: its 2021 release predates Plutonium, so the files come from the repo, each checked
+_T5_BW = ("https://raw.githubusercontent.com/ineedbots/t5_bot_warfare/"
+          "93b82d7720fce4059b272d6a907747bef55e5c6a/")
 _T6_GS = ("https://raw.githubusercontent.com/xerxes-at/T6ServerConfigs/"
           "6d3b313acab5b5e21d61277bd1d2f3b234dc4918/localappdata/Plutonium/storage/t6/gamesettings/")
 LAN_DOWNLOADS = {
@@ -957,6 +994,15 @@ LAN_DOWNLOADS = {
     "iw5mp": [("storage/iw5/z_svr_bots.iwd",
                "https://github.com/ineedbots/iw5_bot_warfare/releases/download/v2.3.0/iw5bw230.zip",
                "sha256:733692aaeda839635d86f9752803b04ecfbd0057f9475661b8cadf084543cfaa")],
+    "t5mp": [(f"storage/t5/{f}", _T5_BW + f, "sha256:" + d) for f, d in (
+        ("maps/mp/bots/_bot_loadout.gsc", "c2ef1cb1ff64edf92c746b88c8ad84082242025490e4d371c899e5cc8ac08424"),
+        ("maps/mp/bots/_bot_script.gsc", "5430775257fde3cdce9359a1745950f280e497dd7762c8f203e1c490a784dff4"),
+        ("maps/mp/bots/_bot_utility.gsc", "1c9420df6ddc5dcdd2ad8e252b756f68f39dd97a8fd97c10f5d111266afb3d06"),
+        ("maps/mp/gametypes/_bot.gsc", "58447f23bda78d8c9a1e65b27bab1b97973acdc3fe4a1aa161299e946721d17c"),
+        ("scripts/mp/bots_adapter_pt5.gsc", "3f0662c5386074288c7ed6f8e01e1206b7f850be474acb822d33a37de6993096"))],
+    "t4mp": [("storage/t4/mods/mp_deckops_offline/z_svr_bots.iwd",
+              "https://github.com/ineedbots/t4_bot_warfare/releases/download/v2.3.0/t4bw230.zip",
+              "sha256:266a183f6557f58c14808ef455ba009e5d763295f47695731978b88aa45c2d21")],
 }
 
 # Plutonium's online data per title (demonware): pub is linked from the online copy,
@@ -971,7 +1017,13 @@ _LAN_STORE_OWN = ("players", "mods", "usermaps", "main", "demo", "imgui.ini")
 _LAN_USER_DIRS = ("mods", "usermaps")
 # Games run offline with a mod (fs_game) read their settings from players/<mod>/, not
 # players/: BO2 MP fell back to 800x600 there (Deck, 2026-10-08). game_config mirrors there.
-LAN_MOD_PLAYERS = {"t6mp": os.path.join("mods", "deckops_offline")}
+LAN_MOD_PLAYERS = {"t6mp": os.path.join("mods", "deckops_offline"),
+                   "t5mp": os.path.join("mods", "mp_deckops_offline")}
+# WaW MP starts from players/profiles/$$$/ and reads profiles/$$$/<server mod>/ once it joins
+# the server (1920x1200 only in one of them, PC 2026-10-09): game_config mirrors to both.
+LAN_MOD_PROFILE = {"t4mp": os.path.join("mods", "mp_deckops_offline")}
+# Server files older builds shipped. BO2's server needs no mod.ff since the real menus (client only, 2026-10-14).
+_LAN_STALE = {"t6mp": ("storage/t6/mods/deckops_offline/mod.ff",)}
 # Real (not hard-linked) files under LAN_ROOT past this mean something got copied
 # by mistake (mods are only ever linked); our own files are a few MB
 _LAN_DISK_WARN = 100 * 1024 * 1024
@@ -1098,6 +1150,10 @@ def refresh_lan(mode: str, prog=lambda m: None):
     store = _STORAGE_SUBDIRS[mode]
     server, client = lan_dirs(mode)
     master = get_dedicated_plut_dir()
+    # Real files from older builds stay in the copies: drop the ones we stopped shipping
+    for rel in _LAN_STALE.get(mode, ()):
+        if os.path.isfile(os.path.join(server, rel)):
+            os.remove(os.path.join(server, rel))
     if mode in LAN_KEYS:
         dl = {rel: None for rel, _, _ in LAN_DOWNLOADS.get(mode, ())}
         _lan_tree(server, user_plut, master, store, {**dl, **_lan_assets(mode, "server")}, False)
@@ -1109,7 +1165,7 @@ def refresh_lan(mode: str, prog=lambda m: None):
 def setup_lan(game: dict, game_key: str, user_plut: str, source: str, prog):
     """Set up offline play for a Plutonium game when Offline Mode is on: the offline
     prefixes and the game's offline Plutonium copy, plus the local server for
-    t6mp / iw5mp. user_plut is the game's online Plutonium folder (OLED: its
+    t4mp / t5mp / t6mp / iw5mp. user_plut is the game's online Plutonium folder (OLED: its
     compatdata prefix, LCD: Heroic's). MW3 DS shares MW3's offline folders."""
     import config as _cfg
     if game_key not in OLED_LAN_WRAPPER_NAMES or not _cfg.get_offline_mode():
@@ -1139,7 +1195,8 @@ def setup_lan(game: dict, game_key: str, user_plut: str, source: str, prog):
             dst_dir = os.path.join(plut_game_dir(game_key, game["install_dir"], source), "admin")
             os.makedirs(dst_dir, exist_ok=True)
             for n in os.listdir(admin):
-                if not os.path.exists(os.path.join(dst_dir, n)):
+                # deckops_lan.cfg is ours alone, so it is kept up to date (bot count 2026-10-09)
+                if n == "deckops_lan.cfg" or not os.path.exists(os.path.join(dst_dir, n)):
                     shutil.copyfile(os.path.join(admin, n), os.path.join(dst_dir, n))
     except Exception as ex:
         _log.warning("offline setup failed for %s", game_key, exc_info=True)
@@ -1216,7 +1273,7 @@ def _lan_user_plut(game_key: str, game: dict, source: str = "steam") -> str:
 
 
 def setup_lan_all(prog=lambda m: None):
-    """Offline Mode added: build offline LAN for every set-up BO2 MP / MW3 MP."""
+    """Offline Mode added: build offline LAN for every set-up WaW MP / BO1 MP / BO2 MP / MW3 MP."""
     import config as _cfg
     from detect_games import find_all_games
     found = find_all_games()
@@ -1270,7 +1327,7 @@ def apply_offline_mode(on: bool, steam_root: str, prog=lambda pct, msg: None):
 
 def remove_lan(prog=lambda m: None):
     """Offline Mode removed. rmtree never follows the links into online folders."""
-    for mode in ("t6mp", "iw5mp"):
+    for mode in {_plut_key(k) for k in LAN_KEYS}:
         subprocess.run(["systemctl", "--user", "stop", f"deckops-lan-{mode}"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if os.path.isdir(LAN_ROOT):

@@ -70,16 +70,8 @@ def install_sp_mod(game_key: str, install_dir: str, on_progress=None,
                  digest=digests.get(cdn_path))
         _log.info("CDN: placed %s", local_path)
 
-    arch = "x86" if own else "x64"
-    zip_dest = os.path.join(install_dir, f"iw-pad-{arch}.zip")
-    url, dg = github_asset("GalvarinoDev/IW-Pad", f"iw-pad-{arch}.zip",
-                           fallback=_IW_PAD_URL.format(arch))
-    download(url, zip_dest,
-             lambda p, m: prog(int((len(files) + p / 100) * 100 / steps), m), "IW-Pad",
-             digest=dg)
-    with zipfile.ZipFile(zip_dest) as zf:
-        zf.extractall(install_dir)
-    os.remove(zip_dest)
+    _fetch_iw_pad(game_key, install_dir, "x86" if own else "x64",
+                  lambda p, m: prog(int((len(files) + p / 100) * 100 / steps), m))
 
     if not own:
         from wrapper import set_launch_options, clear_launch_options
@@ -88,13 +80,46 @@ def install_sp_mod(game_key: str, install_dir: str, on_progress=None,
     prog(100, "IW-Pad installed.")
 
 
+def _fetch_iw_pad(game_key, install_dir, arch, prog, release=None, timeout=30):
+    url, dg = release or github_asset("GalvarinoDev/IW-Pad", f"iw-pad-{arch}.zip",
+                                      fallback=_IW_PAD_URL.format(arch), timeout=timeout)
+    zip_dest = os.path.join(install_dir, f"iw-pad-{arch}.zip")
+    download(url, zip_dest, prog, "IW-Pad", digest=dg)
+    with zipfile.ZipFile(zip_dest) as zf:
+        zf.extractall(install_dir)
+    os.remove(zip_dest)
+    # .../releases/download/<tag>/iw-pad-x64.zip; the unverified fallback saves
+    # no version, so the next launch fetches a verified copy.
+    from config import set_iw_pad
+    set_iw_pad(game_key, {"tag": url.split("/")[-2], "digest": dg} if dg else {})
+
+
+def update_iw_pad(game_key: str, install_dir: str, log=_log.info):
+    """Pre-launch: fetch IW-Pad only if the latest release differs from the saved one."""
+    from config import get_iw_pad, get_setup_games
+    arch = "x86" if get_setup_games().get(game_key, {}).get("source") == "own" else "x64"
+    # No fallback: an API failure or a release without its zips skips the update.
+    url, dg = github_asset("GalvarinoDev/IW-Pad", f"iw-pad-{arch}.zip", timeout=5)
+    tag = url.split("/")[-2]
+    saved = get_iw_pad(game_key)
+    if not dg:
+        log(f"IW-Pad {game_key}: {tag} has no digest, update skipped")
+        return
+    if saved == {"tag": tag, "digest": dg}:
+        log(f"IW-Pad {game_key}: {tag} is current")
+        return
+    log(f"IW-Pad {game_key}: {saved.get('tag', 'unknown')} -> {tag}")
+    _fetch_iw_pad(game_key, install_dir, arch, lambda p, m: None, release=(url, dg))
+
+
 def build_sp_launch_option(game_key: str) -> str:
     """Launch option (Steam app or own shortcut) that swaps the original SP exe for iw-pad.exe."""
     exe = _SP_MOD_CONFIG[game_key]["original_exe"]
-    return f"bash -c 'exec \"${{@/{exe}/iw-pad.exe}}\"' -- %command%"
+    from steam_common import prelaunch_prefix
+    return f"{prelaunch_prefix(game_key)}bash -c 'exec \"${{@/{exe}/iw-pad.exe}}\"' -- %command%"
 
 
 if __name__ == "__main__":
-    assert build_sp_launch_option("iw4sp") == "bash -c 'exec \"${@/iw4sp.exe/iw-pad.exe}\"' -- %command%"
-    assert build_sp_launch_option("iw5sp") == "bash -c 'exec \"${@/iw5sp.exe/iw-pad.exe}\"' -- %command%"
+    assert build_sp_launch_option("iw4sp").endswith(" iw4sp bash -c 'exec \"${@/iw4sp.exe/iw-pad.exe}\"' -- %command%")
+    assert build_sp_launch_option("iw5sp").endswith(" iw5sp bash -c 'exec \"${@/iw5sp.exe/iw-pad.exe}\"' -- %command%")
     print("ok")
