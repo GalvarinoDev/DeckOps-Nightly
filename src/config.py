@@ -47,9 +47,10 @@ DEFAULTS = {
     "music_enabled": True,       # background music on/off
     "music_volume":  0.4,        # 0.0 to 1.0
     "player_name": None,         # in-game player name for configs and LCD Plutonium
+    "iw_pad": {},                # sp_mod.py: { game key: { "tag", "digest" } } of the installed IW-Pad release
     "zd_installed": None,        # Zombies Declassified: { "manifest_hash": ..., "installed_at": ... } or None
     "offline_mode": None,        # Offline Mode (opt-in): offline launcher, Steam menu Offline entries,
-                                 #   BO2/MW3 MP bot matches. None = not chosen yet (older installs)
+                                 #   WaW/BO1/BO2/MW3 MP bot matches. None = not chosen yet (older installs)
     "manifest_mods": {},         # manifest_mods.py: { mod_id: { "option" (component mods: "a+b"), "games_root", "option_hash", "complete", "installed_at" } }
     "manifest_cdn":  None,       # manifest_mods.py: CDN base shared by all manifest mods, typed by the user
 }
@@ -257,7 +258,7 @@ def set_gyro_mode(mode: str):
 
 def get_offline_mode() -> bool:
     """Offline Mode: the offline launcher, Steam menu Offline entries and the
-    BO2/MW3 MP bot matches. Older installs set up offline for every Plutonium
+    WaW/BO1/BO2/MW3 MP bot matches. Older installs set up offline for every Plutonium
     game, so they keep it."""
     c = load()
     if c.get("offline_mode") is None:
@@ -480,6 +481,16 @@ def get_cod4mp_profile_type(default: str = "other") -> str:
     if client == "cod4x":
         return "other"
     return default
+
+
+def get_iw_pad(game_key: str) -> dict:
+    return load().get("iw_pad", {}).get(game_key) or {}
+
+
+def set_iw_pad(game_key: str, info: dict):
+    config = load()
+    config.setdefault("iw_pad", {})[game_key] = info
+    save(config)
 
 
 def mark_zd_installed(manifest_hash: str = ""):

@@ -120,30 +120,32 @@ def _heroic_mirror_path(compatdata_dest):
     return _heroic_pfx_local(*tail.split(os.sep))
 
 
-def _offline_mirror_path(compatdata_dest, key):
+def _offline_mirror_paths(compatdata_dest, key):
     """
     The same folder inside the game's offline Plutonium copy (Offline Mode),
     so offline play gets the resolution, FOV, sensitivity and player name too.
-    compatdata_dest is a folder under .../AppData/Local/Plutonium/. Returns None
+    compatdata_dest is a folder under .../AppData/Local/Plutonium/. Returns []
     when Offline Mode is off or the copy isn't built yet (it is never created here).
     """
     marker = os.path.join("AppData", "Local", "Plutonium") + os.sep
     idx = compatdata_dest.find(marker)
     if idx == -1:
-        return None
+        return []
     import config as cfg
-    from plutonium import LAN_ROOT, LAN_MOD_PLAYERS, OLED_LAN_WRAPPER_NAMES, _plut_key
+    from plutonium import LAN_ROOT, LAN_MOD_PLAYERS, LAN_MOD_PROFILE, OLED_LAN_WRAPPER_NAMES, _plut_key
     if not cfg.get_offline_mode() or key not in OLED_LAN_WRAPPER_NAMES:
-        return None
+        return []
     mode = _plut_key(key)
     client = os.path.join(LAN_ROOT, mode, "client")
     if not os.path.isdir(client):
-        return None
+        return []
     dest = os.path.join(client, *compatdata_dest[idx + len(marker):].split(os.sep))
     # Offline with a mod: the game reads its settings from players/<mod>/
     if mode in LAN_MOD_PLAYERS and os.path.basename(dest) == "players":
-        dest = os.path.join(dest, LAN_MOD_PLAYERS[mode])
-    return dest
+        return [os.path.join(dest, LAN_MOD_PLAYERS[mode])]
+    if mode in LAN_MOD_PROFILE:
+        return [dest, os.path.join(dest, LAN_MOD_PROFILE[mode])]
+    return [dest]
 
 
 # The config map is built inside apply_game_configs so steam_root is available.
@@ -621,8 +623,7 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
             # so it gets the same configs.
             # Best-effort — does not affect applied/failed counts.
             if fixed_dest:
-                offline_dir = _offline_mirror_path(dest_dir, key)
-                if offline_dir:
+                for offline_dir in _offline_mirror_paths(dest_dir, key):
                     try:
                         os.makedirs(offline_dir, exist_ok=True)
                         offline_dest = os.path.join(
@@ -768,8 +769,7 @@ def rename_player(player_name, steam_root, installed_games=None,
 
             # Offline copy mirror
             if fixed_dest:
-                offline_dir = _offline_mirror_path(dest_dir, key)
-                if offline_dir:
+                for offline_dir in _offline_mirror_paths(dest_dir, key):
                     offline_dest = os.path.join(
                         offline_dir, os.path.basename(asset_subpath)
                     )

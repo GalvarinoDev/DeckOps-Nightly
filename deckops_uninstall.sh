@@ -651,6 +651,9 @@ for _wrapper in PLUT_WRAPPER_EXES:
         "files": [_wrapper],
         "dirs":  [],
     }
+# Own MW3: Offline Mode's server config in admin/ (the .dsr recipes may be the user's own)
+for _mw3 in ("iw5mp.exe", "iw5plutmp.exe"):
+    OWN_CLEANUP.setdefault(_mw3, {"files": [], "dirs": []})["files"].append("admin/deckops_lan.cfg")
 
 if not os.path.isdir(USERDATA_DIR):
     print("  No userdata found, skipping.")
@@ -1342,6 +1345,16 @@ if [ -n "$STEAM_ROOT" ]; then
     fi
     echo ""
 
+    # --- MW3 Offline Mode server config
+    # Mirrors: plutonium.setup_lan (copied into the game's admin/, downgrade/ on Steam).
+    # Only deckops_lan.cfg: the .dsr recipes may be the user's own.
+    for appid in 42690 42750; do
+        mw3_dir=$(find_install_dir "$appid") || continue
+        for f in "$mw3_dir/downgrade/admin/deckops_lan.cfg" "$mw3_dir/admin/deckops_lan.cfg"; do
+            [ -f "$f" ] && rm -f "$f" && info "  Removed: $f"
+        done
+    done
+
     # --- Steam launch menu wrappers (OLED/Other wrappers, LCD placeholders)
     # Mirrors: plutonium.STEAM_MENU_EXES. Online/Offline files written
     # next to the untouched game exe for the Steam launch menu entries.
@@ -1382,6 +1395,7 @@ OURS = {b"iw4x-launcher.exe"} | {
     for g, ms in (("t4", ("sp", "mp")), ("t5", ("sp", "mp")), ("t6", ("mp", "zm")), ("iw5", ("mp", "ds")))
     for m in ms for s in ("", "_lan")}
 APPIDS = {10090, 42700, 42710, 202990, 212910, 42690, 42750, 10190}
+TAG = b"-deckops_vanilla"
 
 path = os.path.join(sys.argv[1], "appcache", "appinfo.vdf")
 try:
@@ -1459,8 +1473,16 @@ while pos + 8 <= len(data):
     launch = child(child(child(node, "appinfo") or [], "config") or [], "launch")
     if launch is None: continue
     keep = [e for e in launch if not (e[0] == 0 and any(k == "executable" and v in OURS for _, k, v in e[2]))]
-    if len(keep) == len(launch): continue
-    removed += len(launch) - len(keep); launch[:] = keep
+    # Mirrors: steam_appinfo.VANILLA_TAG on the stock entries
+    tagged = 0
+    for e in keep:
+        for a in [x for x in (e[2] if e[0] == 0 else []) if x[1] == "arguments" and TAG in x[2].split()]:
+            rest = b" ".join(w for w in a[2].split() if w != TAG)
+            if rest: a[2] = rest
+            else: e[2].remove(a)
+            tagged += 1
+    if len(keep) == len(launch) and not tagged: continue
+    removed += len(launch) - len(keep) + tagged; launch[:] = keep
     kv = encode(node)
     state, last, token, _, change, _ = HDR.unpack_from(data, start + 8)
     body = HDR.pack(state, last, token, hashlib.sha1(text(node)).digest(), change, hashlib.sha1(kv).digest()) + kv
@@ -2326,6 +2348,16 @@ for appid in MANAGED_STEAM_APPIDS:
     for named_key in APPID_NAMED_KEYS.get(appid, []):
         all_configset_keys.add(named_key)
 
+# Shortcut title keys (Game Mode reads these, not the shortcut appid).
+# Must match steam_common.shortcut_title_key and the shortcut.py titles.
+SHORTCUT_TITLES = (set(OWN_EXE_MAP.values()) | {i["name"] for i in SHORTCUTS.values()} | {
+    "Call of Duty: Ghosts - Multiplayer", "Call of Duty: Ghosts - Singleplayer",
+    "Call of Duty: Advanced Warfare - Multiplayer", "Call of Duty: Advanced Warfare - Singleplayer",
+    "DeckOps: Plutonium Offline",
+})
+for title in SHORTCUT_TITLES:
+    all_configset_keys.add(re.sub(r'[/\\?%*:|"<>.]', "", title.lower()))
+
 # Get Deck serial for serial-specific configset cleanup
 deck_serial = get_deck_serial()
 if deck_serial:
@@ -2759,6 +2791,8 @@ echo ""
 # still on disk and the uninstaller can simply be run again.
 info "Stopping any leftover DeckOps audio..."
 pkill -f "mpv" 2>/dev/null && success "mpv stopped" || skip "No audio process found"
+# Offline Mode's local bot servers run as systemd user units from ~/.local/share/deckops
+systemctl --user stop 'deckops-lan-*' 2>/dev/null && success "Offline servers stopped" || skip "No offline server running"
 echo ""
 
 info "Removing DeckOps install directory and config..."
