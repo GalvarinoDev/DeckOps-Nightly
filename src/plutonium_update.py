@@ -67,7 +67,7 @@ def _sha1(path: str) -> str:
 
 
 def _yeet(plut_dir: str, patterns: list, keep: set, log) -> int:
-    # ponytail: one directory level per pattern, the way the updater was seen
+    # One directory level per pattern, the way the updater was seen
     # to behave; if Plutonium starts yeeting nested files, recurse here.
     n = 0
     for pat in patterns:
