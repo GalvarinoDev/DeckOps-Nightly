@@ -152,7 +152,7 @@ DeckOps is an installer. This project would not exist without years of foundatio
 
 **[DepotDownloader](https://github.com/SteamRE/DepotDownloader)** - Steam depot downloader by [SteamRE](https://github.com/SteamRE). Used to download the correct game files for MW3, Ghosts, and AW.
 
-Official Test Team: LeFinnaBust & Special Agent Dale Cooper
+Official Test Team: [LeFinnaBust](https://github.com/LeFinnaBust) & Special Agent Dale Cooper
 
 ---
 **[Call of Duty Alt Launcher](https://github.com/framilano/CallofDutyAltLauncher)** - Inspiration for DeckOps.
