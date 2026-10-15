@@ -21,6 +21,7 @@ import subprocess
 import zipfile
 
 from log import get_logger, redact_also
+from net import download, github_asset
 from steam_common import write_json
 
 _log = get_logger(__name__)
@@ -203,10 +204,6 @@ DEPOTDOWNLOADER_DIR = os.path.expanduser(
     "~/.local/share/deckops/depotdownloader"
 )
 DEPOTDOWNLOADER_BIN = os.path.join(DEPOTDOWNLOADER_DIR, "DepotDownloader")
-
-_DD_RELEASES_URL = (
-    "https://api.github.com/repos/SteamRE/DepotDownloader/releases/latest"
-)
 
 REQUIRED_FREE_SPACE_GB = 15
 
@@ -598,31 +595,15 @@ def ensure_depotdownloader(on_progress=None) -> str:
 
     prog("Fetching DepotDownloader release info...")
     try:
-        import json
-        result = subprocess.run(
-            ["curl", "-sL", _DD_RELEASES_URL],
-            capture_output=True, text=True, timeout=30,
-        )
-        release_data = json.loads(result.stdout)
         from detect_hw import is_arm
         _dd_arch = "linux-arm64" if is_arm() else "linux-x64"
-        dl_url = None
-        for asset in release_data.get("assets", []):
-            if _dd_arch in asset.get("name", ""):
-                dl_url = asset["browser_download_url"]
-                break
-        if not dl_url:
-            raise RuntimeError(f"Could not find {_dd_arch} asset in release")
+        # Its releases carry no GitHub digest yet; download() checks one if they ever do
+        dl_url, digest = github_asset("SteamRE/DepotDownloader", f"{_dd_arch}.zip")
     except Exception as ex:
         raise RuntimeError(f"Failed to get DepotDownloader release: {ex}")
 
     prog("Downloading DepotDownloader...")
-    result = subprocess.run(
-        ["curl", "-sL", dl_url, "-o", zip_path],
-        timeout=120,
-    )
-    if result.returncode != 0 or not os.path.isfile(zip_path):
-        raise RuntimeError("Failed to download DepotDownloader")
+    download(dl_url, zip_path, label="DepotDownloader", digest=digest)
 
     prog("Extracting DepotDownloader...")
     with zipfile.ZipFile(zip_path, "r") as zf:
