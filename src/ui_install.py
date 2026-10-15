@@ -20,7 +20,7 @@ import inhibit
 from net import DownloadError
 
 from ui_constants import (
-    C_IW, C_TREY, C_DIM, C_DARK_BTN, C_BLUE_BTN,
+    C_IW, C_TREY, C_DIM, C_DARK_BTN, C_BLUE_BTN, C_CARD,
     font, _btn, _lbl, _title_block, _header_bar, _badge, _log_to_file, _log_html, _copy_log_to_clipboard, _Sigs,
     ALL_GAMES, KEY_CLIENT, KEY_MODE_LABEL,
     _active_keys, _active_client,
@@ -217,6 +217,11 @@ class SetupScreen(QWidget):
             col.addStretch()
             cols.addLayout(col, 1); self._cols[dev] = col
         scroll.setWidget(self._lw); clay.addWidget(scroll, stretch=1)
+        # Extras: optional add-ons as tiles under both columns, filled by _build_extras
+        self._extras = QWidget(); ex = QVBoxLayout(self._extras); ex.setContentsMargins(0,0,0,0); ex.setSpacing(8)
+        ex.addWidget(_lbl("EXTRAS", 11, C_DIM, bold=True, align=Qt.AlignLeft, wrap=False))
+        self._tiles = QHBoxLayout(); self._tiles.setSpacing(12); ex.addLayout(self._tiles)
+        clay.addWidget(self._extras)
 
         self.warning = _lbl("", 12, C_TREY, align=Qt.AlignLeft)
         self.warning.setVisible(False); clay.addWidget(self.warning)
@@ -279,7 +284,8 @@ class SetupScreen(QWidget):
                 _iw5_keys = {"iw5mp", "iw5mp_ds"}
                 if _iw5_keys.intersection(keys) and not _iw5_keys.intersection(all_installed):
                     self._add_mw3_free_row(gd, CHECKS_W)
-                continue
+                    continue
+            # Games that aren't found still show, greyed out, so users know DeckOps supports them
 
             color  = C_IW if gd["dev"] == "iw" else C_TREY
             client = _active_client(gd)
@@ -332,17 +338,20 @@ class SetupScreen(QWidget):
                 checks_layout.addWidget(spacer)
 
             row.addWidget(checks_widget)
-            row.addWidget(_lbl(self._short_name(gd["base"]), 13, "#FFF", align=Qt.AlignLeft, wrap=False), stretch=1)
+            row.addWidget(_lbl(self._short_name(gd["base"]), 13, "#FFF" if ik else "#555566",
+                               align=Qt.AlignLeft, wrap=False), stretch=1)
 
             row_has_own = any(k in self.own_installed and k not in self.steam_installed for k in ik)
             row_has_steam = any(k in self.steam_installed for k in ik)
-            if row_has_own and row_has_steam:
+            if not ik:
+                src_text, src_color = "NOT FOUND", C_DARK_BTN
+            elif row_has_own and row_has_steam:
                 src_text, src_color = "BOTH", C_TREY
             elif row_has_own:
                 src_text, src_color = "OWN", C_TREY
             else:
                 src_text, src_color = "STEAM", C_IW
-            row.addWidget(_badge(src_text, src_color, 58, h=24, size=9, radius=4))
+            row.addWidget(_badge(src_text, src_color, 84, h=24, size=9, radius=4))
             row.addWidget(_badge(client.upper(), color, 170, h=28, size=9))
             outer.addLayout(row)
 
@@ -352,26 +361,70 @@ class SetupScreen(QWidget):
             outer.addLayout(opts)
             self._add_row(gd, cw)
 
-        # Offline Mode: its own row, one setting for every Plutonium game (not ticked by Select All)
+        self._build_extras(all_installed)
+
+    def _build_extras(self, all_installed):
+        """Optional add-ons, one tile each. Always shown so users know they exist: a tile greys out
+        while its game is unticked or missing (with what to do); Select All never ticks them."""
+        while self._tiles.count():
+            w = self._tiles.takeAt(0).widget()
+            if w: w.deleteLater()
+        active = {k for g in ALL_GAMES for k in _active_keys(g)}
+        shown = active & set(all_installed)
+
+        def tile(title, note, checked=None, game=None, needs="", missing=""):
+            """missing: why it can't be installed yet; the tile shows greyed and returns None."""
+            w = QWidget(); w.setObjectName("tile"); w.setStyleSheet(f"#tile{{background:{C_CARD};border-radius:8px;}}")
+            v = QVBoxLayout(w); v.setContentsMargins(12, 10, 12, 10); v.setSpacing(2)
+            cb = None
+            if checked is None and not missing:
+                v.addWidget(_lbl(f"{title}: Already Installed", 12, C_DIM, bold=True, align=Qt.AlignLeft))
+            else:
+                cb = QCheckBox(title); cb.setFont(font(12, True)); cb.setChecked(bool(checked) and not missing)
+                cb.setStyleSheet("QCheckBox{color:#FFF;background:transparent;} QCheckBox:disabled{color:#666677;}")
+                v.addWidget(cb)
+            n = _lbl(f"{note} \u00b7 {missing}" if missing else note, 10, C_DIM, align=Qt.AlignLeft); v.addWidget(n)
+            if missing:
+                cb.setEnabled(False); self._tiles.addWidget(w, 1)
+                return None
+            gcb = self._checks.get(game, (None,))[0]
+            if cb and gcb:
+                def sync(on): cb.setEnabled(on); n.setText(note if on else f"{note} \u00b7 {needs}")
+                sync(gcb.isChecked()); gcb.toggled.connect(sync)
+            self._tiles.addWidget(w, 1)
+            return cb
+
+        # Offline Mode: one setting for every Plutonium game, so never greyed out
         from plutonium import GAME_META
-        if any(k in all_installed for k in GAME_META):
-            lan_gd = next(g for g in ALL_GAMES if g.get("client") == "lan")
-            cw = QWidget()
-            outer = QVBoxLayout(cw); outer.setContentsMargins(6, 6, 6, 6); outer.setSpacing(4)
-            row = QHBoxLayout(); row.setSpacing(10)
-            slot = QWidget(); slot.setFixedWidth(CHECKS_W)
-            sl = QHBoxLayout(slot); sl.setContentsMargins(0, 0, 0, 0)
-            self._lan_cb = QCheckBox(); self._lan_cb.setChecked(cfg.get_offline_mode())
-            sl.addWidget(self._lan_cb, alignment=Qt.AlignHCenter)
-            row.addWidget(slot)
-            row.addWidget(_lbl("Plutonium Offline", 13, "#FFF", align=Qt.AlignLeft, wrap=False), stretch=1)
-            row.addWidget(_badge("OFFLINE", C_TREY, 170, h=28, size=9))
-            outer.addLayout(row)
-            note = _lbl("Offline launcher, Plutonium Offline in each game's Steam launch menu, "
-                        "bot matches in WaW / BO1 / BO2 / MW3 MP.", 10, C_DIM, align=Qt.AlignLeft)
-            note.setContentsMargins(CHECKS_W + 10, 0, 0, 0)
-            outer.addWidget(note)
-            self._add_row(lan_gd, cw)
+        lan_note = ("Offline launcher, Plutonium Offline in each game's Steam launch menu, "
+                    "bot matches in WaW / BO1 / BO2 / MW3 MP.")
+        if shown & set(GAME_META):
+            self._lan_cb = tile("Plutonium Offline", lan_note, cfg.get_offline_mode())
+        elif active & set(GAME_META):
+            tile("Plutonium Offline", lan_note, missing="needs WaW, Black Ops, Black Ops II or MW3")
+        if "iw4mp" not in shown and "iw4mp" in active:
+            tile("IW4x DLC maps", "Free MW2 DLC maps, ~3 GB", missing="needs MW2 Multiplayer")
+        elif "iw4mp" in shown:
+            from iw4x import is_iw4x_dlc_installed
+            idir = all_installed["iw4mp"].get("install_dir", "")
+            self._iw4x_dlc_present = bool(idir) and is_iw4x_dlc_installed(idir)
+            cb = (tile("IW4x DLC maps", "Free MW2 DLC maps") if self._iw4x_dlc_present else
+                  tile("IW4x DLC maps", "Free MW2 DLC maps, ~3 GB, recommended", True, "iw4mp", "tick MW2 Multiplayer"))
+            if cb: self._iw4x_dlc_cb = cb
+        if "t6zm" in active:
+            from zombies_declassified import has_bo2_zm_dlc
+            zd_note = "10 classic maps for BO2 Zombies, ~9 GB"
+            bdir = all_installed["t6zm"].get("install_dir", "") if "t6zm" in shown else ""
+            if cfg.is_zd_installed():
+                tile("Zombies Declassified", "10 classic maps for BO2 Zombies")
+            elif not bdir:
+                tile("Zombies Declassified", zd_note, missing="needs BO2 Zombies with all its DLC")
+            elif not has_bo2_zm_dlc(bdir):
+                tile("Zombies Declassified", zd_note,
+                     missing="needs all BO2 Zombies DLC: install it in Steam or verify the game files")
+            else:
+                self._zd_cb = tile("Zombies Declassified", zd_note, False, "t6zm", "tick BO2 Zombies")
+        self._extras.setVisible(self._tiles.count() > 0)
 
     def _row_options(self, lay, keys, all_installed):
         """Per-game install choices shown under the row while that mode is ticked (replaces pop-ups)."""
@@ -404,31 +457,6 @@ class SetupScreen(QWidget):
                 h.addWidget(b)
             h.addStretch(); v.addLayout(h); v.addWidget(note)
             lay.addWidget(w); _bind("cod4mp", w)
-
-        if "iw4mp" in keys and "iw4mp" in all_installed:
-            w, v = _opt_box()
-            from iw4x import is_iw4x_dlc_installed
-            idir = all_installed["iw4mp"].get("install_dir", "")
-            self._iw4x_dlc_present = bool(idir) and is_iw4x_dlc_installed(idir)
-            if self._iw4x_dlc_present:
-                v.addWidget(_lbl("Free IW4x DLC maps already installed.", 10, "#777788", align=Qt.AlignLeft))
-            else:
-                self._iw4x_dlc_cb = QCheckBox("Free DLC maps (~3 GB, recommended)")
-                self._iw4x_dlc_cb.setFont(font(11)); self._iw4x_dlc_cb.setChecked(True)
-                self._iw4x_dlc_cb.setStyleSheet("color:#CCC;background:transparent;")
-                v.addWidget(self._iw4x_dlc_cb)
-            lay.addWidget(w); _bind("iw4mp", w)
-
-        if "t6zm" in keys and "t6zm" in all_installed and not cfg.is_zd_installed():
-            from zombies_declassified import has_bo2_zm_dlc
-            bdir = all_installed["t6zm"].get("install_dir", "")
-            if bdir and has_bo2_zm_dlc(bdir):
-                w, v = _opt_box()
-                self._zd_cb = QCheckBox("Zombies Declassified: 10 classic maps (~9 GB)")
-                self._zd_cb.setFont(font(11)); self._zd_cb.setChecked(False)
-                self._zd_cb.setStyleSheet("color:#CCC;background:transparent;")
-                v.addWidget(self._zd_cb)
-                lay.addWidget(w); _bind("t6zm", w)
 
     def _add_mw3_free_row(self, gd, checks_w):
         cw = QWidget()
@@ -520,8 +548,8 @@ class SetupScreen(QWidget):
         try:
             checks = preflight.check(
                 rows,
-                iw4x_dlc=bool(self._iw4x_dlc_cb and self._iw4x_dlc_cb.isChecked()),
-                zd=bool(self._zd_cb and self._zd_cb.isChecked()),
+                iw4x_dlc=bool(self._iw4x_dlc_cb and self._iw4x_dlc_cb.isEnabled() and self._iw4x_dlc_cb.isChecked()),
+                zd=bool(self._zd_cb and self._zd_cb.isEnabled() and self._zd_cb.isChecked()),
                 downgrade_keys=[k for k, _gd, _g in steam_selected])  # own copies are already 32-bit
         except Exception as ex:
             _log_to_file(f"[SetupScreen] preflight failed: {ex}")
