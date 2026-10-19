@@ -371,8 +371,12 @@ _KEYWORD_RULES = [
 OWN_SCAN_PATHS = [
     os.path.expanduser("~/Games"),
     os.path.expanduser("~/games"),
-    "/run/media/deck/*/Games",
-    "/run/media/deck/*/games",
+    # /run/media/<user>/<label> (SteamOS user is deck; Bazzite/CachyOS use the
+    # login name), plus /run/media/<label> as older SteamOS mounted mmcblk0p1
+    "/run/media/*/*/Games",
+    "/run/media/*/*/games",
+    "/run/media/*/Games",
+    "/run/media/*/games",
 ]
 
 # Maximum directory depth to walk. CoD games are typically 1-3 levels deep
@@ -566,14 +570,17 @@ def find_own_installed(extra_paths=None, on_progress=None):
     for pattern in OWN_SCAN_PATHS:
         for path in glob.glob(pattern):
             path = os.path.normpath(path)
-            if path not in seen and os.path.isdir(path):
-                seen.add(path)
+            # realpath: SteamOS also links /run/media/<label> to /run/media/deck/<label>
+            real = os.path.realpath(path)
+            if real not in seen and os.path.isdir(path):
+                seen.add(real)
                 scan_dirs.append(path)
     if extra_paths:
         for path in extra_paths:
             path = os.path.normpath(path)
-            if path not in seen and os.path.isdir(path):
-                seen.add(path)
+            real = os.path.realpath(path)
+            if real not in seen and os.path.isdir(path):
+                seen.add(real)
                 scan_dirs.append(path)
 
     if not scan_dirs:
