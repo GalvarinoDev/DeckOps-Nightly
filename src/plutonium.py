@@ -273,7 +273,7 @@ _STORAGE_SUBDIRS = {
 }
 
 
-def _link_to_master(master: str, plut_dir: str, stores, prog):
+def _link_to_master(master: str, plut_dir: str, prog):
     """
     Swap the Plutonium files just copied into plut_dir for links to the
     master, so each file is stored once and pre-launch updates reach every
@@ -285,8 +285,7 @@ def _link_to_master(master: str, plut_dir: str, stores, prog):
     try:
         import plutonium_update as pu
         _, info = pu.fetch()
-        for store in stores:
-            pu.link_prefix(master, plut_dir, store, info, say)
+        pu.link_prefix(master, plut_dir, info, say)
     except Exception as ex:
         say(f"  ⚠ Plutonium links skipped, copies kept: {ex}")
 
@@ -1402,8 +1401,7 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         src_plut_dir, dest_plut_dir, game_key=game_key,
         on_progress=lambda msg: prog(40, msg),
     )
-    _link_to_master(src_plut_dir, dest_plut_dir, [_STORAGE_SUBDIRS.get(game_key)],
-                    lambda msg: prog(45, msg))
+    _link_to_master(src_plut_dir, dest_plut_dir, lambda msg: prog(45, msg))
 
     prog(60, "Writing game path to config.json...")
     # Pass all keys that share this appid so config has all paths for this prefix.

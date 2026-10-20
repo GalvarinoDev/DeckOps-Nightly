@@ -12,8 +12,10 @@ never updates. Format, traced from updater 1.0.221 on 2026-10-06:
 
 OLED keeps one real copy, the master in the dedicated prefix. Game prefixes
 link to it, bin/ launcher/ games/ as directory symlinks and Plutonium's own
-storage/<game>/ files as file symlinks, so an update reaches every prefix
-at once and nothing is stored twice. User data in storage/ (players/,
+storage/ files of every game as file symlinks, so an update reaches every
+prefix at once and nothing is stored twice. Every game's files, not just the
+prefix's own: since r5369 MW3 online fails (error 260, no profile) when the
+other games' Plutonium files are missing (Deck + Bazzite, 2026-10-19). User data in storage/ (players/,
 mods/, usermaps/) is never in the manifest and stays real per prefix.
 """
 
@@ -134,10 +136,10 @@ def update(plut_dir: str, log=None) -> dict:
     return info
 
 
-def link_prefix(master: str, prefix_plut: str, store: str, info: dict, log=None) -> int:
+def link_prefix(master: str, prefix_plut: str, info: dict, log=None) -> int:
     """
     Point a game prefix's Plutonium folder at the master: the shared dir
-    symlinks, and every manifest file under storage/<store>/. Real copies
+    symlinks, and every manifest file under storage/. Real copies
     are swapped for links only when the master's file is complete, user
     files are never touched, and real bin/ launcher/ games/ folders (full
     copy installs) are left alone. Returns how many links were (re)made.
@@ -151,31 +153,30 @@ def link_prefix(master: str, prefix_plut: str, store: str, info: dict, log=None)
             os.unlink(dst)
             os.symlink(src, dst)
             n += 1
-    if store:
-        for e in info["files"]:
-            if not e["name"].startswith(f"storage/{store}/"):
-                continue
-            tgt, dst = os.path.join(m, e["name"]), os.path.join(prefix_plut, e["name"])
-            if not os.path.isfile(tgt) or os.path.getsize(tgt) != e["size"]:
-                continue  # master incomplete, keep whatever the prefix has
-            if os.path.islink(dst) and os.readlink(dst) == tgt:
-                continue
-            if os.path.isdir(dst) and not os.path.islink(dst):
-                continue
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            tmp = dst + ".deckops_link"
-            if os.path.lexists(tmp):
-                os.remove(tmp)
-            os.symlink(tgt, tmp)
-            os.replace(tmp, dst)
-            n += 1
-        # Links to files Plutonium dropped from the manifest.
-        root = os.path.join(prefix_plut, "storage", store)
-        for dp, _, fs in os.walk(root):
-            for f in fs:
-                p = os.path.join(dp, f)
-                if os.path.islink(p) and os.readlink(p).startswith(m + os.sep) and not os.path.exists(p):
-                    os.remove(p)
+    for e in info["files"]:
+        if not e["name"].startswith("storage/"):
+            continue
+        tgt, dst = os.path.join(m, e["name"]), os.path.join(prefix_plut, e["name"])
+        if not os.path.isfile(tgt) or os.path.getsize(tgt) != e["size"]:
+            continue  # master incomplete, keep whatever the prefix has
+        if os.path.islink(dst) and os.readlink(dst) == tgt:
+            continue
+        if os.path.isdir(dst) and not os.path.islink(dst):
+            continue
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        tmp = dst + ".deckops_link"
+        if os.path.lexists(tmp):
+            os.remove(tmp)
+        os.symlink(tgt, tmp)
+        os.replace(tmp, dst)
+        n += 1
+    # Links to files Plutonium dropped from the manifest.
+    root = os.path.join(prefix_plut, "storage")
+    for dp, _, fs in os.walk(root):
+        for f in fs:
+            p = os.path.join(dp, f)
+            if os.path.islink(p) and os.readlink(p).startswith(m + os.sep) and not os.path.exists(p):
+                os.remove(p)
     if n:
         log(f"Plutonium: linked {n} item(s) in {prefix_plut} to the master copy")
     return n
