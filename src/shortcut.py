@@ -1400,7 +1400,7 @@ def apply_steam_artwork(selected_keys: list, on_progress=None):
 
 
 # Mod clients whose exe replaces the game's in own shortcuts; the appid CRC hashes this exe.
-_OWN_MOD_EXES = {"iw4mp": "iw4x.exe", "cod4sp": "iw3sp_mod.exe", "t7x": "t7x.exe", "t6sp": "T6SP-Mod.exe",
+_OWN_MOD_EXES = {"iw4mp": "iw4x.exe", "cod4sp": "iw3sp_mod.exe", "t7x": "t7x.exe",
                  "iw6mp": "iw6-mod.exe", "iw6sp": "iw6-mod.exe", "s1mp": "s1-mod.exe", "s1sp": "s1-mod.exe"}
 
 
@@ -1544,6 +1544,11 @@ def enrich_own_games(own_games: dict, selected_keys: list,
             from sp_mod import build_sp_launch_option
             launch_options = build_sp_launch_option(key)
 
+        elif key == "t6sp":
+            # Same swap as the Steam copy: stock t6sp.exe keeps the appid stable
+            from t6sp_mod import LAUNCH_OPTS
+            launch_options = LAUNCH_OPTS
+
         elif key == "t7":
             launch_options = 'WINEDLLOVERRIDES="d3d11=n,b" %command%'
 
@@ -1624,6 +1629,9 @@ def write_own_shortcuts(own_games: dict, selected_keys: list,
     if not to_create:
         prog("No non-Steam game shortcuts to write.")
         return
+
+    if "t6sp" in to_create:
+        _drop_old_t6sp_appid(to_create["t6sp"][1], prog)
 
     uids = _find_all_steam_uids()
     if not uids:
@@ -1965,9 +1973,51 @@ def remove_launcher_shortcut(on_progress=None):
 # --- Repair: re-add any DeckOps shortcut missing from shortcuts.vdf
 # Steam must already be closed; it rewrites shortcuts.vdf on exit.
 
+def _old_t6sp_appid(game: dict) -> int:
+    # Own BO2 SP shortcuts used to target T6SP-Mod.exe directly
+    return _calc_shortcut_appid(f'"{os.path.join(game["install_dir"], "T6SP-Mod.exe")}"',
+                                OWN_SHORTCUTS["t6sp"]["name"])
+
+
+def _drop_old_t6sp_appid(game: dict, prog):
+    """Before the BO2 SP shortcut is rewritten: if it is still on the old
+    T6SP-Mod.exe appid, remove that appid's artwork and compat tool entry.
+    The old prefix stays (it may hold saves)."""
+    import glob
+    old = _old_t6sp_appid(game)
+    if get_shortcut_appid(OWN_SHORTCUTS["t6sp"]["name"]) != old:
+        return
+    for uid in _find_all_steam_uids():
+        for f in glob.glob(os.path.join(USERDATA_DIR, uid, "config", "grid", f"{old}*")):
+            try:
+                os.remove(f)
+            except OSError:
+                _log.debug("file removal failed", exc_info=True)
+    try:
+        _clear_compat_tool(str(old))
+    except Exception:
+        _log.debug("compat tool clear failed", exc_info=True)
+    prog(f"  Old BO2 Singleplayer shortcut (appid {old}) cleaned up; its prefix is kept at "
+         f"{os.path.join(COMPAT_ROOT, str(old))}")
+
+
+def migrate_own_t6sp(game: dict, on_progress=None) -> bool:
+    """Move an own BO2 SP shortcut that still targets T6SP-Mod.exe to t6sp.exe +
+    the swap launch option (write_own_shortcuts cleans up the old appid).
+    Steam must be closed."""
+    import config as cfg
+    if get_shortcut_appid(OWN_SHORTCUTS["t6sp"]["name"]) != _old_t6sp_appid(game):
+        return False
+    (on_progress or (lambda *a: None))("Moving the BO2 Singleplayer shortcut to t6sp.exe...")
+    own = enrich_own_games({"t6sp": game}, ["t6sp"], on_progress)
+    write_own_shortcuts(own, ["t6sp"], cfg.get_gyro_mode() or "on", on_progress)
+    return True
+
+
 def repair_shortcuts(steam_root: str = None, on_progress=None) -> list:
     """Re-add shortcuts for set-up games that are missing for any Steam
-    user. Returns the names that were re-added."""
+    user, and move an old own BO2 SP shortcut to t6sp.exe. Returns the
+    names that were re-added or moved."""
     import config as cfg
     from detect_games import parse_library_folders, find_installed_games, find_own_installed
 
@@ -1996,6 +2046,12 @@ def repair_shortcuts(steam_root: str = None, on_progress=None) -> list:
         prog("⚠ No Steam user accounts found.")
         return []
 
+    readded = []
+    if setup.get("t6sp", {}).get("source") == "own":
+        g = find_own_installed().get("t6sp")
+        if g and migrate_own_t6sp(g, on_progress):
+            readded.append(OWN_SHORTCUTS["t6sp"]["name"])
+
     present = None
     for uid in uids:
         names = set(_read_existing_shortcuts(
@@ -2008,9 +2064,8 @@ def repair_shortcuts(steam_root: str = None, on_progress=None) -> list:
 
     if not missing and not launcher_missing:
         prog(f"All DeckOps shortcuts present ({total}).")
-        return []
+        return readded
 
-    readded = []
     gyro = cfg.get_gyro_mode() or "on"
     by_kind = lambda kind: [k for k, (kd, _) in missing.items() if kd == kind]
 
