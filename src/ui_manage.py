@@ -2270,6 +2270,9 @@ class UpdateScreen(QWidget):
                 elif c == "t6sp_mod":
                     install_t6sp_mod(game, self.steam_root, proton, compat, op,
                                     source=source)
+                    if source == "own":
+                        from shortcut import migrate_own_t6sp
+                        migrate_own_t6sp(game, self._s.log.emit)
                 elif c == "iw-pad":
                     from sp_mod import install_sp_mod
                     install_sp_mod(key, game["install_dir"], op,

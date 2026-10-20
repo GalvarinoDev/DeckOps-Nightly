@@ -585,12 +585,13 @@ OWN_CLEANUP = {
         "files": ["iw3sp_mod.exe", "iw3sp_mod.dll", "deckops_iw3sp.json"],
         "dirs":  ["iw3sp_mod"],
     },
-    # Older T6SP-MOD installs replaced t6sp.exe in place; DLL and metadata are the mod artifacts
+    # Current T6SP-MOD: the shortcut targets the stock t6sp.exe and a launch option swaps in
+    # T6SP-Mod.exe. Very old installs replaced t6sp.exe in place (no T6SP-Mod.exe to remove).
     "t6sp.exe": {
-        "files": ["t6sp-mod.dll", "deckops_t6sp_mod.json"],
+        "files": ["T6SP-Mod.exe", "t6sp-mod.dll", "deckops_t6sp_mod.json"],
         "dirs":  [],
     },
-    # Current T6SP-MOD: the shortcut points at T6SP-Mod.exe next to the stock t6sp.exe
+    # Older own shortcuts that pointed at T6SP-Mod.exe directly
     "t6sp-mod.exe": {
         "files": ["T6SP-Mod.exe", "t6sp-mod.dll", "deckops_t6sp_mod.json"],
         "dirs":  [],
