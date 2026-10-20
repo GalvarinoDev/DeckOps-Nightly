@@ -9,8 +9,9 @@ and drops them into the BO2 install directory.
 
 The stock t6sp.exe is left untouched; T6SP-Mod.exe and t6sp-mod.dll go next to it.
 Steam games get a launch option that swaps t6sp.exe for T6SP-Mod.exe (same idea
-as IW3SP), so file verification and game updates can't undo the mod. Own games:
-the shortcut points at T6SP-Mod.exe (shortcut._OWN_MOD_EXES).
+as IW3SP), so file verification and game updates can't undo the mod. Own games
+get the same launch option on their t6sp.exe shortcut (shortcut.migrate_own_t6sp
+moves older shortcuts that pointed at T6SP-Mod.exe).
 Older installs replaced t6sp.exe and kept the original as t6sp.exe.bak; that
 backup is moved back on install.
 
