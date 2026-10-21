@@ -11,8 +11,8 @@ All screen classes are imported from split modules:
 
 import sys, os, threading
 
-from PyQt5.QtWidgets import QApplication, QMainWindow, QStackedWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar, QWidget
-from PyQt5.QtCore import Qt, QTimer
+from qt import QApplication, QMainWindow, QStackedWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar, QWidget
+from qt import Qt, QTimer
 
 import bootstrap as _bootstrap
 import config as cfg
@@ -110,7 +110,7 @@ class DeckOpsWindow(QMainWindow):
             "color:#444455;background:transparent;padding:4px 8px;"
         )
         self._dbg_label.setFont(font(9))
-        self._dbg_label.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self._dbg_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self._dbg_label.raise_()
         self._dbg_label.setVisible(os.environ.get("DECKOPS_DEBUG") == "1")
         self.stack.currentChanged.connect(self._update_dbg_label)
@@ -125,7 +125,7 @@ class DeckOpsWindow(QMainWindow):
             f"QPushButton{{background:{C_DARK_BTN};border:none;border-radius:21px;}}"
             f"QPushButton:hover{{background:#444455;}}"
         )
-        self._mute_btn.setCursor(Qt.PointingHandCursor)
+        self._mute_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._mute_btn.clicked.connect(self._toggle_mute)
         self._mute_btn.raise_()
 
@@ -167,7 +167,7 @@ def run():
     app.setStyleSheet(_app_style())
     win = DeckOpsWindow()
     win.showMaximized()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 if __name__ == "__main__":
     run()
