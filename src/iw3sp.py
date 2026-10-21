@@ -1,9 +1,10 @@
 """
 iw3sp.py - DeckOps installer for IW3SP-MOD (Call of Duty 4: Modern Warfare Singleplayer)
 
-Downloads the latest iw3sp_mod release zip from Gitea, extracts it into
-the CoD4 install directory. Steam games use a launch option to redirect
-iw3sp.exe to iw3sp_mod.exe via bash parameter substitution on %command%.
+Downloads the IW3SP-MOD files listed in the mod's own update manifest
+(files.json, the one its in-game updater checks) into the CoD4 install
+directory. Steam games use a launch option to redirect iw3sp.exe to
+iw3sp_mod.exe via bash parameter substitution on %command%.
 
 Progress is reported via a callback:
     on_progress(percent: int, status: str)
@@ -11,54 +12,33 @@ Progress is reported via a callback:
 
 import os
 import json
+import hashlib
 import urllib.request
-import zipfile
 
 from net import download as _download, BROWSER_UA as _BROWSER_UA
 
-GITEA_API     = "https://gitea.com/api/v1/repos/JerryALT/iw3sp_mod/releases?limit=5"
+# The Gitea releases lag behind this: v4.1.5's game.dll breaks right stick
+# aim with m_rawinput on and ignores the config init marker, and the
+# in-game updater offers the newer build on first launch anyway.
+_CDN          = "https://jerryalt.codeberg.page"
 METADATA_FILE = "deckops_iw3sp.json"
 COD4_APPID    = "7940"
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _get_latest_release():
-    """
-    Query the Gitea API for the latest stable IW3SP-MOD release.
-
-    Gitea doesn't have a /releases/latest endpoint like GitHub, so we
-    fetch the most recent releases and pick the first one that is not a
-    draft or prerelease.
-
-    Returns (version, zip_url) or raises on failure.
-    """
-    req = urllib.request.Request(GITEA_API, headers=_BROWSER_UA)
+def _get_manifest():
+    """[(relative path, size, sha1), ...] from the mod's update manifest."""
+    req = urllib.request.Request(f"{_CDN}/files.json", headers=_BROWSER_UA)
     with urllib.request.urlopen(req, timeout=30) as r:
-        releases = json.loads(r.read().decode("utf-8"))
-
-    for release in releases:
-        if release.get("draft") or release.get("prerelease"):
-            continue
-
-        tag = release.get("tag_name", "")
-        version = tag.lstrip("v") if tag else "unknown"
-
-        # Find the .zip asset (not source code archives)
-        for asset in release.get("assets", []):
-            name = asset.get("name", "")
-            if name.endswith(".zip"):
-                return version, asset["browser_download_url"]
-
-        # No uploaded zip asset — fall back to the source zipball
-        zipball = release.get("zipball_url")
-        if zipball:
-            return version, zipball
-
-    raise RuntimeError("No stable IW3SP-MOD release found on Gitea")
+        return json.loads(r.read().decode("utf-8"))
 
 
-# _download and _BROWSER_UA imported from net.py.
+def _sha1(path: str) -> str:
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""): h.update(chunk)
+    return h.hexdigest()
 
 
 def _build_iw3sp_launch_option() -> str:
@@ -104,37 +84,36 @@ def install_iw3sp(game: dict, steam_root: str,
     """
     Install IW3SP-MOD for Call of Duty 4 singleplayer.
 
-    Downloads and extracts the mod zip into the CoD4 install directory.
+    Downloads every manifest file that is missing or out of date into the
+    CoD4 install directory.
     For Steam games, sets a launch option to redirect iw3sp.exe to
     iw3sp_mod.exe. For own games, the shortcut points at iw3sp_mod.exe
     directly.
     """
     install_dir = game["install_dir"]
-    zip_dest    = os.path.join(install_dir, "iw3sp_mod.zip")
-
     prog = on_progress or (lambda *a: None)
 
-    # Fetch latest release info from Gitea API
-    prog(2, "Checking for latest IW3SP-MOD release...")
+    prog(2, "Checking IW3SP-MOD files...")
     try:
-        version, zip_url = _get_latest_release()
+        files = _get_manifest()
     except Exception as ex:
-        raise RuntimeError(f"Failed to fetch IW3SP-MOD release info: {ex}")
+        raise RuntimeError(f"Failed to fetch IW3SP-MOD file list: {ex}")
 
-    # Download zip
-    prog(5, f"Downloading IW3SP-MOD v{version}...")
-    _download(
-        zip_url,
-        zip_dest,
-        lambda p, m: prog(5 + int(p * 0.55), m),
-        f"Downloading IW3SP-MOD v{version}...",
-    )
-
-    # Extract into CoD4 root
-    prog(60, "Extracting IW3SP-MOD...")
-    with zipfile.ZipFile(zip_dest) as zf:
-        zf.extractall(install_dir)
-    os.remove(zip_dest)
+    todo = [(n, sz, h) for n, sz, h in files
+            if not (os.path.isfile(os.path.join(install_dir, n))
+                    and _sha1(os.path.join(install_dir, n)) == h.lower())]
+    total = sum(sz for _, sz, _ in todo) or 1
+    done = 0
+    for n, sz, h in todo:
+        dest = os.path.join(install_dir, n)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        _download(
+            f"{_CDN}/{n}", dest,
+            lambda p, m, _d=done, _s=sz: prog(5 + int((_d + _s * p / 100) / total * 55), m),
+            f"Downloading IW3SP-MOD {os.path.basename(n)}...",
+            digest=f"sha1:{h}",
+        )
+        done += sz
 
     # Restore iw3sp.exe from legacy backup if the old exe-swap is present
     iw3sp_bak = os.path.join(install_dir, "iw3sp.exe.bak")
@@ -161,6 +140,6 @@ def install_iw3sp(game: dict, steam_root: str,
     prog(95, "Saving metadata...")
     meta_path = os.path.join(install_dir, METADATA_FILE)
     with open(meta_path, "w") as f:
-        json.dump({"version": version}, f, indent=2)
+        json.dump({"source": f"{_CDN}/files.json"}, f, indent=2)
 
-    prog(100, f"IW3SP-MOD v{version} installation complete!")
+    prog(100, "IW3SP-MOD installation complete!")
