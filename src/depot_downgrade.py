@@ -654,7 +654,7 @@ def _is_qr_line(line: str) -> bool:
 
 def qr_text_to_pixmap(qr_text: str, scale: int = 6):
     try:
-        from PyQt5.QtGui import QImage, QPixmap, qRgb
+        from qt import QImage, QPixmap, qRgb
 
         lines = qr_text.split("\n")
         if not lines:
@@ -681,7 +681,7 @@ def qr_text_to_pixmap(qr_text: str, scale: int = 6):
         white = qRgb(255, 255, 255)
         black = qRgb(0, 0, 0)
 
-        img = QImage(img_w, img_h, QImage.Format_RGB32)
+        img = QImage(img_w, img_h, QImage.Format.Format_RGB32)
         img.fill(white)
 
         for row_idx, line in enumerate(qr_lines):

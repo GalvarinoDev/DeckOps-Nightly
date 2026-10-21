@@ -130,14 +130,32 @@ else
     success "Virtual environment already exists."
 fi
 
-if ! "$VENV_PYTHON" -c "from PyQt5.QtWidgets import QApplication" &>/dev/null 2>&1; then
-    info "Installing PyQt5 (this will take about 30 seconds)..."
-    "$VENV_DIR/bin/pip" install --quiet --disable-pip-version-check PyQt5 \
-        || die "Failed to install PyQt5. Check your internet connection and try again."
-    success "PyQt5 installed."
+QT6_OK=0
+if "$VENV_PYTHON" -c "from PyQt6.QtWidgets import QApplication" &>/dev/null; then
+    QT6_OK=1
+    success "PyQt6 (Qt $("$VENV_PYTHON" -c "from PyQt6.QtCore import QT_VERSION_STR; print(QT_VERSION_STR)")) already installed."
 else
-    PYQT5_VER=$("$VENV_PYTHON" -c "from PyQt5.QtCore import QT_VERSION_STR; print(QT_VERSION_STR)")
-    success "PyQt5 (Qt $PYQT5_VER) already installed."
+    info "Installing PyQt6 (this will take about a minute)..."
+    if "$VENV_DIR/bin/pip" install --quiet --disable-pip-version-check PyQt6; then
+        # A wheel that installs but can't load its platform plugin here would crash the app
+        if ("$VENV_PYTHON" -c "from PyQt6.QtWidgets import QApplication; QApplication([])"; exit $?) &>/dev/null; then
+            QT6_OK=1
+            success "PyQt6 installed."
+        else
+            "$VENV_DIR/bin/pip" uninstall -y -q PyQt6 PyQt6-Qt6 PyQt6-sip &>/dev/null
+            touch "$VENV_DIR/.qt6_unsupported"
+            warn "PyQt6 can't open a window on this system, using PyQt5 instead."
+        fi
+    else
+        warn "PyQt6 install failed, using PyQt5 instead."
+    fi
+fi
+
+if [ "$QT6_OK" = 0 ] && ! "$VENV_PYTHON" -c "from PyQt5.QtWidgets import QApplication" &>/dev/null; then
+    info "Installing PyQt5..."
+    "$VENV_DIR/bin/pip" install --quiet --disable-pip-version-check PyQt5 \
+        || die "Failed to install PyQt6 or PyQt5. Check your internet connection and try again."
+    success "PyQt5 installed."
 fi
 
 if ! "$VENV_PYTHON" -c "import pygame" &>/dev/null 2>&1; then

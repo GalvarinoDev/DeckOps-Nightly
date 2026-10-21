@@ -9,8 +9,8 @@ flow. All OS paths now go through the model screen so a Deck on Bazzite
 or CachyOS can still pick LCD/OLED.
 """
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLineEdit
-from PyQt5.QtCore import Qt
+from qt import QWidget, QVBoxLayout, QHBoxLayout, QLineEdit
+from qt import Qt
 
 import config as cfg
 from detect_hw import detect_os, detect_device
@@ -85,7 +85,7 @@ class SetupFlowScreen(QWidget):
             "⚠   Make sure you have a stable internet connection before installing. "
             "If the install fails, don't re-run it repeatedly, join the Discord for help instead.",
         ]:
-            cl.addWidget(_lbl(warn, 13, C_TREY, align=Qt.AlignLeft))
+            cl.addWidget(_lbl(warn, 13, C_TREY, align=Qt.AlignmentFlag.AlignLeft))
         cl.addSpacing(16)
         os_label = {"steamos": "SteamOS", "bazzite": "Bazzite", "cachyos": "CachyOS", "armada": "Armada"}.get(
             self._detected_os, self._detected_os or "Unknown")
@@ -122,7 +122,7 @@ class SetupFlowScreen(QWidget):
             "⚠   Make sure you have a stable internet connection before installing. "
             "If the install fails, don't re-run it repeatedly, join the Discord for help instead.",
         ]:
-            lay.addWidget(_lbl(warn, 13, C_TREY, align=Qt.AlignLeft))
+            lay.addWidget(_lbl(warn, 13, C_TREY, align=Qt.AlignmentFlag.AlignLeft))
         lay.addSpacing(16)
         lay.addWidget(_lbl("What operating system are you running?", 15, "#CCC"))
         lay.addSpacing(12)
@@ -176,7 +176,7 @@ class SetupFlowScreen(QWidget):
         dvl.addWidget(_lbl(
             "Pick the device closest to yours. This sets the display resolution, "
             "refresh rate, and controller profile group.",
-            13, C_DIM, align=Qt.AlignLeft))
+            13, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
         dvl.addSpacing(12)
 
         dev_cols = QHBoxLayout(); dev_cols.setSpacing(20)
@@ -251,7 +251,7 @@ class SetupFlowScreen(QWidget):
         gml.addStretch()
         gml.addWidget(_lbl("How should gyro activate?", 15, "#CCC"))
         gml.addSpacing(4)
-        self._gyro_mode_desc_lbl = _lbl("", 13, C_DIM, align=Qt.AlignLeft)
+        self._gyro_mode_desc_lbl = _lbl("", 13, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         gml.addWidget(self._gyro_mode_desc_lbl)
         gml.addSpacing(12)
         gmrow = QHBoxLayout(); gmrow.setSpacing(20)
@@ -282,7 +282,7 @@ class SetupFlowScreen(QWidget):
             "This is your in-game name for most mod clients: CoD4x, IW4x, "
             "and Plutonium (LCD offline mode). "
             "Your Steam display name is filled in by default. Change it to whatever you want.",
-            13, C_DIM, align=Qt.AlignLeft))
+            13, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
         nl.addSpacing(12)
         self._name_input = QLineEdit()
         self._name_input.setPlaceholderText("Player")
@@ -324,7 +324,7 @@ class SetupFlowScreen(QWidget):
             "Xbox:  Xbox 360, Xbox One, or Xbox Elite. Standard layout, no gyro.\n"
             "Steam Controller:  Steam Controller 2 (Triton). Dual trackpads, gyro, 4 back buttons.\n"
             "Other:  Generic or 8BitDo controller. Standard layout, no gyro.",
-            13, C_DIM, align=Qt.AlignLeft)
+            13, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         pcl.addWidget(self._ctrl_desc_lbl)
         pcl.addSpacing(12)
         pcrow = QHBoxLayout(); pcrow.setSpacing(20)
@@ -350,7 +350,7 @@ class SetupFlowScreen(QWidget):
         rl.addWidget(_lbl(
             "Pick the resolution that matches your monitor or TV, "
             "or choose My Own to set it yourself in-game.",
-            13, C_DIM, align=Qt.AlignLeft))
+            13, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
         rl.addSpacing(12)
 
         res_cols = QHBoxLayout(); res_cols.setSpacing(20)
@@ -393,7 +393,7 @@ class SetupFlowScreen(QWidget):
         pl.addWidget(_lbl(
             "Handheld Only:  you play exclusively on the device screen.\n"
             "Also Docked:  you also connect to a TV or monitor with an external controller.",
-            13, C_DIM, align=Qt.AlignLeft))
+            13, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
         pl.addSpacing(12)
         prow = QHBoxLayout(); prow.setSpacing(20)
         hh_btn = _btn("Handheld Only", C_DARK_BTN, h=56)
@@ -423,7 +423,7 @@ class SetupFlowScreen(QWidget):
             "Xbox:  Xbox 360, Xbox One, or Xbox Elite. Standard layout, no gyro.\n"
             "Steam Controller:  Steam Controller 2 (Triton). Dual trackpads, gyro, 4 back buttons.\n"
             "Other:  Generic or 8BitDo controller. Standard layout, no gyro.",
-            13, C_DIM, align=Qt.AlignLeft))
+            13, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
         dcl.addSpacing(12)
         dcrow = QHBoxLayout(); dcrow.setSpacing(20)
         for ctrl_key, label in [("playstation", "PlayStation"), ("xbox", "Xbox"), ("steamcontroller", "Steam Controller"), ("other", "Other")]:

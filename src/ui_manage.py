@@ -8,14 +8,14 @@ Extracted from ui_qt.py — all hardcoded stack indices replaced with named look
 
 import os, subprocess, sys, shutil, stat, threading, json, urllib.request, urllib.error, compileall
 
-from PyQt5.QtWidgets import (
+from qt import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
     QLabel, QPushButton, QCheckBox, QProgressBar, QPlainTextEdit,
     QFrame, QSizePolicy, QMessageBox, QLineEdit, QSlider, QDialog,
 )
-from PyQt5.QtCore import Qt, QTimer, QObject, pyqtSignal
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import QGraphicsOpacityEffect
+from qt import Qt, QTimer, QObject, pyqtSignal
+from qt import QPixmap
+from qt import QGraphicsOpacityEffect
 
 from detect_games import find_steam_root, find_all_games
 import config as cfg
@@ -100,7 +100,7 @@ class ManagementCard(QFrame):
         self._appid  = _active_appid(gd)
         self._is_lan = gd.get("client") == "lan"
         self.setObjectName("MC")
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         self.setMaximumWidth(CARD_MAX_W)
 
         keys       = _active_keys(gd)
@@ -128,10 +128,10 @@ class ManagementCard(QFrame):
         # ── Image container with overlaid badge and buttons ───────────────
         img_container = QWidget()
         img_container.setStyleSheet("background:#0A0A10;border:none;")
-        img_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        img_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
         self._img = QLabel(img_container)
-        self._img.setAlignment(Qt.AlignCenter)
+        self._img.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._img.setStyleSheet("background:transparent;border:none;")
         if not is_setup:
             effect = QGraphicsOpacityEffect()
@@ -225,7 +225,7 @@ class ManagementCard(QFrame):
         self._img.setFixedSize(w, h)
         if self._raw_pixmap:
             self._img.setPixmap(
-                self._raw_pixmap.scaled(w, h, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                self._raw_pixmap.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
             )
         # Position client badge — top-left with 4px margin
         self._client_badge.move(4, 4)
@@ -276,11 +276,11 @@ class ManagementScreen(QWidget):
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
         inner = QWidget(); self._grid = QGridLayout(inner)
         self._grid.setContentsMargins(16,16,16,16); self._grid.setSpacing(12)
-        self._grid.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        self._grid.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
         scroll.setWidget(inner); lay.addWidget(scroll, stretch=1)
 
         self._deckops_update_status = _lbl("", 10, C_DIM, wrap=False)
-        self._deckops_update_status.setAlignment(Qt.AlignCenter)
+        self._deckops_update_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._deckops_update_status.setContentsMargins(16,0,16,4)
         lay.addWidget(self._deckops_update_status)
 
@@ -418,13 +418,13 @@ class ManagementScreen(QWidget):
         msg = QMessageBox(self)
         msg.setWindowTitle("Update All Games")
         msg.setText(f"This will update {len(selected)} game(s):\n\n{names}\n\nContinue?")
-        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        msg.setDefaultButton(QMessageBox.Yes)
+        msg.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        msg.setDefaultButton(QMessageBox.StandardButton.Yes)
         zd_cb = None
         if cfg.is_zd_installed() and any(k == "t6zm" for k, _, _ in selected):
             zd_cb = QCheckBox("Also check Zombies Declassified for updates (up to ~9 GB)")
             msg.setCheckBox(zd_cb)
-        if msg.exec_() != QMessageBox.Yes:
+        if msg.exec() != QMessageBox.StandardButton.Yes:
             return
 
         us = get_screen(self.stack, "UpdateScreen")
@@ -440,7 +440,7 @@ class ManagementScreen(QWidget):
                 if on else
                 "Remove Offline Mode? Removes the offline launcher, the Plutonium Offline launch menu "
                 "entries and the bot match files. Steam closes while it is removed.")
-        if QMessageBox.question(self, "Offline Mode", text) != QMessageBox.Yes:
+        if QMessageBox.question(self, "Offline Mode", text) != QMessageBox.StandardButton.Yes:
             return
         def task(sigs):
             from wrapper import kill_steam
@@ -597,22 +597,22 @@ class ManagementScreen(QWidget):
 
         mods_btn = None
         if has_mods_support:
-            mods_btn = msg.addButton("Mods", QMessageBox.AcceptRole)
+            mods_btn = msg.addButton("Mods", QMessageBox.ButtonRole.AcceptRole)
         zd_btn = None
         if has_zd:
-            zd_btn = msg.addButton("Zombies Declassified", QMessageBox.AcceptRole)
+            zd_btn = msg.addButton("Zombies Declassified", QMessageBox.ButtonRole.AcceptRole)
         upd_btn = None
         if has_mod_client:
-            upd_btn = msg.addButton("Update", QMessageBox.AcceptRole)
+            upd_btn = msg.addButton("Update", QMessageBox.ButtonRole.AcceptRole)
         dg_btn = None
         if has_depot_dg:
-            dg_btn = msg.addButton(_DG_LABELS[has_depot_dg], QMessageBox.AcceptRole)
+            dg_btn = msg.addButton(_DG_LABELS[has_depot_dg], QMessageBox.ButtonRole.AcceptRole)
         sp_btn = None
         if sp_verify:
-            sp_btn = msg.addButton("Verify SP Files", QMessageBox.AcceptRole)
-        rei_btn = msg.addButton("Reinstall", QMessageBox.AcceptRole)
-        msg.addButton("Cancel", QMessageBox.RejectRole)
-        msg.exec_()
+            sp_btn = msg.addButton("Verify SP Files", QMessageBox.ButtonRole.AcceptRole)
+        rei_btn = msg.addButton("Reinstall", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
 
         clicked = msg.clickedButton()
         if clicked == mods_btn:
@@ -664,18 +664,18 @@ class ManagementScreen(QWidget):
             info = cfg.get_zd_info()
             tag = info.get("release_tag", "unknown")
             msg.setText(f"Zombies Declassified {tag} is installed.\nWhat would you like to do?")
-            upd_btn = msg.addButton("Check for Updates", QMessageBox.AcceptRole)
-            rm_btn  = msg.addButton("Uninstall", QMessageBox.DestructiveRole)
+            upd_btn = msg.addButton("Check for Updates", QMessageBox.ButtonRole.AcceptRole)
+            rm_btn  = msg.addButton("Uninstall", QMessageBox.ButtonRole.DestructiveRole)
         else:
             msg.setText(
                 "Zombies Declassified adds 10 classic Zombies maps to BO2.\n"
                 "Download size: ~9 GB\n\n"
                 "Install now?"
             )
-            upd_btn = msg.addButton("Install", QMessageBox.AcceptRole)
+            upd_btn = msg.addButton("Install", QMessageBox.ButtonRole.AcceptRole)
             rm_btn  = None
-        msg.addButton("Cancel", QMessageBox.RejectRole)
-        msg.exec_()
+        msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
 
         clicked = msg.clickedButton()
         if clicked == upd_btn:
@@ -686,7 +686,7 @@ class ManagementScreen(QWidget):
             return
 
         # Run on background thread with a simple progress dialog
-        from PyQt5.QtWidgets import QProgressDialog
+        from qt import QProgressDialog
         pd = QProgressDialog("Starting...", None, 0, 100, self)
         pd.setWindowTitle("Zombies Declassified")
         pd.setMinimumDuration(0); pd.setAutoClose(False); pd.setAutoReset(False)
@@ -779,9 +779,9 @@ class ManagementScreen(QWidget):
             msg = QMessageBox(self)
             msg.setWindowTitle(gd["base"])
             msg.setText(f"{game_name} already has the correct depot files.")
-            msg.addButton(QMessageBox.Ok)
-            force_btn = msg.addButton("Force Downgrade", QMessageBox.AcceptRole)
-            msg.exec_()
+            msg.addButton(QMessageBox.StandardButton.Ok)
+            force_btn = msg.addButton("Force Downgrade", QMessageBox.ButtonRole.AcceptRole)
+            msg.exec()
             if msg.clickedButton() != force_btn:
                 return
 
@@ -900,10 +900,10 @@ class ManagementScreen(QWidget):
             msg = QMessageBox(self)
             msg.setWindowTitle("Open Mod Folder")
             msg.setText(f"Which folder would you like to open for {gd['base']}?")
-            mods_btn = msg.addButton("Mods", QMessageBox.AcceptRole)
-            usermaps_btn = msg.addButton("User Maps", QMessageBox.AcceptRole)
-            msg.addButton("Cancel", QMessageBox.RejectRole)
-            msg.exec_()
+            mods_btn = msg.addButton("Mods", QMessageBox.ButtonRole.AcceptRole)
+            usermaps_btn = msg.addButton("User Maps", QMessageBox.ButtonRole.AcceptRole)
+            msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+            msg.exec()
             clicked = msg.clickedButton()
             if clicked == mods_btn:
                 _open_folder(os.path.join(install_dir, "mods"))
@@ -929,10 +929,10 @@ class ManagementScreen(QWidget):
             msg = QMessageBox(self)
             msg.setWindowTitle("Open Mod Folder")
             msg.setText(f"Which folder would you like to open for {gd['base']} (T7x)?")
-            mods_btn = msg.addButton("Mods", QMessageBox.AcceptRole)
-            usermaps_btn = msg.addButton("User Maps", QMessageBox.AcceptRole)
-            msg.addButton("Cancel", QMessageBox.RejectRole)
-            msg.exec_()
+            mods_btn = msg.addButton("Mods", QMessageBox.ButtonRole.AcceptRole)
+            usermaps_btn = msg.addButton("User Maps", QMessageBox.ButtonRole.AcceptRole)
+            msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+            msg.exec()
             clicked = msg.clickedButton()
             if clicked == mods_btn:
                 _open_folder(os.path.join(install_dir, "mods"))
@@ -958,10 +958,10 @@ class ManagementScreen(QWidget):
                 msg = QMessageBox(self)
                 msg.setWindowTitle("Open Scripts Folder")
                 msg.setText(f"Which scripts folder for {gd['base']}?")
-                mp_btn = msg.addButton("MP Scripts", QMessageBox.AcceptRole)
-                sp_btn = msg.addButton("SP Scripts", QMessageBox.AcceptRole)
-                msg.addButton("Cancel", QMessageBox.RejectRole)
-                msg.exec_()
+                mp_btn = msg.addButton("MP Scripts", QMessageBox.ButtonRole.AcceptRole)
+                sp_btn = msg.addButton("SP Scripts", QMessageBox.ButtonRole.AcceptRole)
+                msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+                msg.exec()
                 clicked = msg.clickedButton()
                 if clicked == mp_btn:
                     _open_folder(os.path.join(install_dir, "data", "scripts", "mp"))
@@ -989,10 +989,10 @@ class ManagementScreen(QWidget):
                 key_buttons = []
                 for k in plut_keys:
                     label = _PLUT_MODE_LABEL.get(k, k)
-                    btn = msg.addButton(label, QMessageBox.AcceptRole)
+                    btn = msg.addButton(label, QMessageBox.ButtonRole.AcceptRole)
                     key_buttons.append((btn, k))
-                msg.addButton("Cancel", QMessageBox.RejectRole)
-                msg.exec_()
+                msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+                msg.exec()
                 clicked = msg.clickedButton()
                 for btn, k in key_buttons:
                     if clicked == btn:
@@ -1018,7 +1018,7 @@ class SetupCompleteScreen(QWidget):
         self._from_guide = False
         lay = QVBoxLayout(self); lay.setContentsMargins(60,20,60,20); lay.setSpacing(0)
 
-        t = QLabel("SETUP COMPLETE"); t.setFont(font(28, True)); t.setAlignment(Qt.AlignCenter)
+        t = QLabel("SETUP COMPLETE"); t.setFont(font(28, True)); t.setAlignment(Qt.AlignmentFlag.AlignCenter)
         t.setStyleSheet("color:#FFF;background:transparent;"); lay.addWidget(t)
         lay.addWidget(_lbl(
             "Your games are configured with controller profiles, GE-Proton, "
@@ -1027,58 +1027,58 @@ class SetupCompleteScreen(QWidget):
 
         # ── Scrollable content area ───────────────────────────────────────────
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
         inner = QWidget()
         sl = QVBoxLayout(inner); sl.setContentsMargins(0,8,0,8); sl.setSpacing(6)
 
         # ── Cloud saves ───────────────────────────────────────────────────────
         sl.addWidget(_hdiv())
-        sl.addWidget(_lbl("⚠  Steam Cloud Saves", 12, C_TREY, bold=True, align=Qt.AlignLeft))
+        sl.addWidget(_lbl("⚠  Steam Cloud Saves", 12, C_TREY, bold=True, align=Qt.AlignmentFlag.AlignLeft))
         sl.addWidget(_lbl(
             "If Steam asks about cloud saves, choose Keep Local. "
             "If a game asks for Safe Mode, choose No.",
-            11, C_DIM, align=Qt.AlignLeft))
+            11, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
 
         # ── MW1 / WaW shortcuts ───────────────────────────────────────────────
         self._mw1waw_div = _hdiv()
-        self._mw1waw_hdr = _lbl("🎮  MW1 & WaW Multiplayer", 12, C_IW, bold=True, align=Qt.AlignLeft)
+        self._mw1waw_hdr = _lbl("🎮  MW1 & WaW Multiplayer", 12, C_IW, bold=True, align=Qt.AlignmentFlag.AlignLeft)
         self._mw1waw_body = _lbl(
             "MW1 and WaW have separate DeckOps multiplayer shortcuts in your "
             "Steam library. Use the main game entry for singleplayer and the "
             "DeckOps shortcut for multiplayer.\n\n"
             "MW1 Singleplayer: on first launch, select the \"Player\" profile. "
             "This is the profile DeckOps created with your display settings.",
-            11, C_DIM, align=Qt.AlignLeft)
+            11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         sl.addWidget(self._mw1waw_div)
         sl.addWidget(self._mw1waw_hdr)
         sl.addWidget(self._mw1waw_body)
 
         # ── First launch ─────────────────────────────────────────────────────
         sl.addWidget(_hdiv())
-        sl.addWidget(_lbl("⏳  First Launch", 12, "#5B9BD5", bold=True, align=Qt.AlignLeft))
+        sl.addWidget(_lbl("⏳  First Launch", 12, "#5B9BD5", bold=True, align=Qt.AlignmentFlag.AlignLeft))
         sl.addWidget(_lbl(
             "All games take longer to launch the first time. This is normal "
             "and they will be faster on subsequent launches.\n\n"
             "Plutonium games must be launched once before they can be used "
             "with the offline LAN launcher.",
-            11, C_DIM, align=Qt.AlignLeft))
+            11, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
 
         # ── MW2 MP own-game first launch ──────────────────────────────────────
         self._mw2own_div = _hdiv()
-        self._mw2own_hdr = _lbl("🎮  MW2 Multiplayer (Non-Steam)", 12, C_IW, bold=True, align=Qt.AlignLeft)
+        self._mw2own_hdr = _lbl("🎮  MW2 Multiplayer (Non-Steam)", 12, C_IW, bold=True, align=Qt.AlignmentFlag.AlignLeft)
         self._mw2own_body = _lbl(
             "MW2 Multiplayer (IW4x) needs to be launched twice on initial "
             "installation. The first launch will fail, this is normal. "
             "Launch it again and it will work.",
-            11, C_DIM, align=Qt.AlignLeft)
+            11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         sl.addWidget(self._mw2own_div)
         sl.addWidget(self._mw2own_hdr)
         sl.addWidget(self._mw2own_body)
 
         # ── BO3 first launch ─────────────────────────────────────────────────
         self._bo3_div = _hdiv()
-        self._bo3_hdr = _lbl("🎮  Black Ops III: First Launch", 12, C_TREY, bold=True, align=Qt.AlignLeft)
+        self._bo3_hdr = _lbl("🎮  Black Ops III: First Launch", 12, C_TREY, bold=True, align=Qt.AlignmentFlag.AlignLeft)
         self._bo3_body = _lbl(
             "CleanOps finishes installing on its first run. Do the "
             "first launch in Desktop Mode:\n\n"
@@ -1086,14 +1086,14 @@ class SetupCompleteScreen(QWidget):
             "may slow the Deck temporarily.\n"
             "2. If it does not launch, press the blue Stop button in Steam, "
             "then relaunch to verify it works.",
-            11, C_DIM, align=Qt.AlignLeft)
+            11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         sl.addWidget(self._bo3_div)
         sl.addWidget(self._bo3_hdr)
         sl.addWidget(self._bo3_body)
 
         # ── LCD notes (LCD users only) ────────────────────────────────────────
         self._lcd_div = _hdiv()
-        self._lcd_hdr = _lbl("⚠  LCD Steam Deck Notes", 12, C_TREY, bold=True, align=Qt.AlignLeft)
+        self._lcd_hdr = _lbl("⚠  LCD Steam Deck Notes", 12, C_TREY, bold=True, align=Qt.AlignmentFlag.AlignLeft)
         self._lcd_body = _lbl(
             "Plutonium games on LCD may take a moment to launch while a "
             "shader cache cleanup runs. If a game does not start right "
@@ -1102,19 +1102,19 @@ class SetupCompleteScreen(QWidget):
             "skip it. These are not used by LCD Plutonium games.\n\n"
             "Quit games from the in-game menu rather than the Steam "
             "overlay for a faster exit.",
-            11, C_DIM, align=Qt.AlignLeft)
+            11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         sl.addWidget(self._lcd_div)
         sl.addWidget(self._lcd_hdr)
         sl.addWidget(self._lcd_body)
 
         # ── Restore player saves (visible only when backups exist) ────────────
         self._restore_div = _hdiv()
-        self._restore_hdr = _lbl("💾  Restore Player Saves", 12, C_IW, bold=True, align=Qt.AlignLeft)
+        self._restore_hdr = _lbl("💾  Restore Player Saves", 12, C_IW, bold=True, align=Qt.AlignmentFlag.AlignLeft)
         self._restore_body = _lbl(
             "Backups from a previous install were found. "
             "Restore your configs, stats, and custom classes?",
-            11, C_DIM, align=Qt.AlignLeft)
-        self._restore_status = _lbl("", 11, C_IW, align=Qt.AlignLeft)
+            11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
+        self._restore_status = _lbl("", 11, C_IW, align=Qt.AlignmentFlag.AlignLeft)
         self._restore_status.setVisible(False)
 
         self._restore_btn = _btn("Restore Saves", C_IW, size=12, h=40)
@@ -1237,7 +1237,7 @@ class ConfigureScreen(QWidget):
 
         # Scroll only kicks in on windows smaller than the Deck screen
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
         inner = QWidget()
         cols = QHBoxLayout(inner); cols.setContentsMargins(40,16,40,16); cols.setSpacing(40)
@@ -1247,7 +1247,7 @@ class ConfigureScreen(QWidget):
 
         def _head(col, text, color="#CCC", first=False):
             if not first: col.addSpacing(12)
-            col.addWidget(_lbl(text, 13, color, bold=True, align=Qt.AlignLeft))
+            col.addWidget(_lbl(text, 13, color, bold=True, align=Qt.AlignmentFlag.AlignLeft))
 
         # ── Left: Background Music ────────────────────────────────────────
         _head(left, "Background Music", first=True)
@@ -1260,7 +1260,7 @@ class ConfigureScreen(QWidget):
         )
         self._music_toggle.setFixedWidth(160)
         self._music_toggle.clicked.connect(self._toggle_music)
-        self._vol_slider = QSlider(Qt.Horizontal); self._vol_slider.setRange(0,100)
+        self._vol_slider = QSlider(Qt.Orientation.Horizontal); self._vol_slider.setRange(0,100)
         self._vol_slider.setValue(int(_music_volume*100))
         self._vol_label = _lbl(f"{int(_music_volume*100)}%", 12, C_DIM, wrap=False)
         self._vol_label.setFixedWidth(44)
@@ -1292,7 +1292,7 @@ class ConfigureScreen(QWidget):
         # ── Left: Shortcuts ───────────────────────────────────────────────
         _head(left, "Shortcuts")
         left.addWidget(_lbl("Closes Steam, then re-adds any missing DeckOps shortcuts.",
-                            11, C_DIM, align=Qt.AlignLeft))
+                            11, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
         sc_fix_btn = _btn("Repair Shortcuts", C_DARK_BTN, size=12, h=40)
         sc_fix_btn.setFixedWidth(220); sc_fix_btn.clicked.connect(self._repair_shortcuts)
         left.addWidget(sc_fix_btn)
@@ -1314,14 +1314,14 @@ class ConfigureScreen(QWidget):
         save_btn.clicked.connect(self._save_name)
         nr.addWidget(self._name_input, stretch=1); nr.addWidget(save_btn)
         left.addLayout(nr)
-        self._name_note = _lbl("Sets your offline name for CoD4x, IW4x, AlterWare, T7X, and Plutonium. Does not affect CleanOps.", 10, C_DIM, align=Qt.AlignLeft)
+        self._name_note = _lbl("Sets your offline name for CoD4x, IW4x, AlterWare, T7X, and Plutonium. Does not affect CleanOps.", 10, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         left.addWidget(self._name_note)
 
         # ── Left: Shader Cache (LCD only) ─────────────────────────────────
         self._shader_row = QWidget()
         sr_lay = QVBoxLayout(self._shader_row); sr_lay.setContentsMargins(0,0,0,0); sr_lay.setSpacing(10)
         sr_lay.addSpacing(12)
-        sr_lay.addWidget(_lbl("Shader Cache", 13, "#CCC", bold=True, align=Qt.AlignLeft))
+        sr_lay.addWidget(_lbl("Shader Cache", 13, "#CCC", bold=True, align=Qt.AlignmentFlag.AlignLeft))
         sc_btn = _btn("Clear Shader Cache", C_DARK_BTN, size=12, h=40)
         sc_btn.setFixedWidth(220)
         sc_btn.clicked.connect(self._clear_shader_cache)
@@ -1353,7 +1353,7 @@ class ConfigureScreen(QWidget):
         self._update_btn.setFixedWidth(220)
         self._update_btn.clicked.connect(self._check_for_updates)
         right.addWidget(self._update_btn)
-        self._update_status = _lbl("", 11, C_DIM, align=Qt.AlignLeft)
+        self._update_status = _lbl("", 11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         right.addWidget(self._update_status)
         udr = QHBoxLayout(); udr.setSpacing(12)
         log_btn = _btn("Copy Log", C_DARK_BTN, size=12, h=40)
@@ -1363,14 +1363,14 @@ class ConfigureScreen(QWidget):
         view_log_btn.clicked.connect(self._view_log)
         udr.addWidget(log_btn); udr.addWidget(view_log_btn); udr.addStretch()
         right.addLayout(udr)
-        self._log_status = _lbl("", 11, C_DIM, align=Qt.AlignLeft)
+        self._log_status = _lbl("", 11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         right.addWidget(self._log_status)
         log_btn.clicked.connect(lambda: _copy_log_to_clipboard(self._log_status))
 
         # ── Right: Danger Zone ────────────────────────────────────────────
         _head(right, "Danger Zone", "#E05050")
         right.addWidget(_lbl("These remove DeckOps changes. Each asks for confirmation first.",
-                             11, C_DIM, align=Qt.AlignLeft))
+                             11, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
         dzr = QHBoxLayout(); dzr.setSpacing(12)
         uninstall_btn = _btn("Full Uninstall", C_RED_BTN, size=12, h=40)
         reset_cfg_btn = _btn("Reset DeckOps Config", C_RED_BTN, size=12, h=40)
@@ -1381,9 +1381,9 @@ class ConfigureScreen(QWidget):
 
         # ── Right: About + status ─────────────────────────────────────────
         right.addSpacing(12)
-        self._about_label = _lbl("", 11, C_DIM, align=Qt.AlignLeft)
+        self._about_label = _lbl("", 11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         right.addWidget(self._about_label)
-        self.status = _lbl("", 12, C_DIM, align=Qt.AlignLeft)
+        self.status = _lbl("", 12, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         right.addWidget(self.status)
         right.addStretch()
 
@@ -1619,7 +1619,7 @@ class ConfigureScreen(QWidget):
         br.addStretch(); br.addWidget(copy_btn); br.addStretch()
         vl.addLayout(br)
         txt.verticalScrollBar().setValue(txt.verticalScrollBar().maximum())
-        dlg.exec_()
+        dlg.exec()
 
     def _open_url(self, url):
         _detached_open(["xdg-open", url])
@@ -1631,10 +1631,10 @@ class ConfigureScreen(QWidget):
             "and mod client installations. Your Steam games will NOT be deleted.\n\n"
             "DeckOps will close and the uninstaller will run in a terminal window.\n\n"
             "Are you sure?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             self._run_uninstaller()
 
     def _run_uninstaller(self):
@@ -1707,10 +1707,10 @@ class ConfigureScreen(QWidget):
         reply = QMessageBox.question(
             self, "Update DeckOps",
             "DeckOps will download the update and relaunch.\n\nContinue?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
         )
-        if reply != QMessageBox.Yes:
+        if reply != QMessageBox.StandardButton.Yes:
             return
 
         self._update_btn.setEnabled(False)
@@ -1919,10 +1919,10 @@ class ConfigureScreen(QWidget):
             "DeckOps will restart and run the setup flow again.\n\n"
             "Your game files and Steam games are not affected.\n\n"
             "Are you sure?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
         )
-        if reply == QMessageBox.Yes:
+        if reply == QMessageBox.StandardButton.Yes:
             self._reset_deckops()
 
     def _reset_deckops(self):
@@ -1947,7 +1947,7 @@ class UpdateScreen(QWidget):
 
         lay = QVBoxLayout(self); lay.setContentsMargins(80,60,80,60); lay.setSpacing(20)
         self.title = QLabel("UPDATE"); self.title.setFont(font(36, True))
-        self.title.setAlignment(Qt.AlignCenter)
+        self.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.title.setStyleSheet("color:#FFF;background:transparent;")
         lay.addWidget(self.title)
 

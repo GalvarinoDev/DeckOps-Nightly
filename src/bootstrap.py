@@ -1,7 +1,7 @@
 """
 bootstrap.py — DeckOps pre-launch asset fetcher
 
-Downloads Steam portrait grid images into the assets folder before the PyQt5 UI
+Downloads Steam portrait grid images into the assets folder before the Qt UI
 initialises. Called from BootstrapScreen on a background thread so the UI
 can show progress.
 

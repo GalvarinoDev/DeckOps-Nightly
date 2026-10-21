@@ -8,11 +8,11 @@ and ui_qt.py can all import from a single source without circular deps.
 import html
 import os
 
-from PyQt5.QtWidgets import (
+from qt import (
     QLabel, QPushButton, QFrame, QHBoxLayout, QMessageBox, QWidget,
 )
-from PyQt5.QtCore import Qt, pyqtSignal, QObject
-from PyQt5.QtGui import QFont, QFontDatabase
+from qt import Qt, pyqtSignal, QObject
+from qt import QFont, QFontDatabase
 
 import config as cfg
 from identity import BUILD_BADGE, BRANCH
@@ -320,7 +320,7 @@ def _btn(text, color, size=13, h=44):
     )
     return b
 
-def _lbl(text, size=14, color="#FFF", bold=False, align=Qt.AlignCenter, wrap=True):
+def _lbl(text, size=14, color="#FFF", bold=False, align=Qt.AlignmentFlag.AlignCenter, wrap=True):
     w = QLabel(text); w.setFont(font(size,bold)); w.setAlignment(align)
     w.setWordWrap(wrap); w.setStyleSheet(f"color:{color};background:transparent;")
     return w
@@ -359,7 +359,7 @@ def _log_html(text: str) -> str:
 
 
 def _hdiv():
-    d = QFrame(); d.setFrameShape(QFrame.HLine); d.setFixedHeight(1)
+    d = QFrame(); d.setFrameShape(QFrame.Shape.HLine); d.setFixedHeight(1)
     d.setStyleSheet("background:#252530;border:none;"); return d
 
 def _detached_open(args):
@@ -421,10 +421,10 @@ def _ask_iw4x_dlc(parent, selected) -> str:
         "Includes CoD4, MW3, Black Ops, and CoD Online maps.\n"
         "Recommended for joining most servers.\n\n"
         "Download size: ~3 GB",
-        QMessageBox.Yes | QMessageBox.No,
-        QMessageBox.Yes,
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.Yes,
     )
-    return "install" if reply == QMessageBox.Yes else ""
+    return "install" if reply == QMessageBox.StandardButton.Yes else ""
 
 def _ask_bo3_client(parent, selected) -> str:
     """
@@ -459,11 +459,11 @@ def _ask_bo3_client(parent, selected) -> str:
     #     "  2. Launch T7X after CleanOps is working.\n"
     #     "  3. After this, both work fine in Game Mode."
     # )
-    # btn_cleanops = msg.addButton("CleanOps", QMessageBox.AcceptRole)
-    # btn_t7x      = msg.addButton("T7X", QMessageBox.AcceptRole)
-    # btn_both     = msg.addButton("Both", QMessageBox.AcceptRole)
+    # btn_cleanops = msg.addButton("CleanOps", QMessageBox.ButtonRole.AcceptRole)
+    # btn_t7x      = msg.addButton("T7X", QMessageBox.ButtonRole.AcceptRole)
+    # btn_both     = msg.addButton("Both", QMessageBox.ButtonRole.AcceptRole)
     # msg.setDefaultButton(btn_cleanops)
-    # msg.exec_()
+    # msg.exec()
     #
     # clicked = msg.clickedButton()
     # if clicked == btn_t7x:
@@ -501,27 +501,27 @@ def _show_preflight(parent, checks) -> bool:
 
     msg = QMessageBox(parent)
     msg.setWindowTitle("Before installing")
-    msg.setTextFormat(Qt.RichText)
+    msg.setTextFormat(Qt.TextFormat.RichText)
     msg.setText(
         ("<b>Some checks did not pass.</b><br><br>" if level == _pf.BLOCK
          else "<b>Worth knowing before you start.</b><br><br>")
         + "".join(rows))
-    go = msg.addButton("Install Anyway", QMessageBox.AcceptRole)
-    back = msg.addButton("Go Back", QMessageBox.RejectRole)
+    go = msg.addButton("Install Anyway", QMessageBox.ButtonRole.AcceptRole)
+    back = msg.addButton("Go Back", QMessageBox.ButtonRole.RejectRole)
     msg.setDefaultButton(back if level == _pf.BLOCK else go)
-    msg.exec_()
+    msg.exec()
     return msg.clickedButton() is go
 
 
 def _title_block(lay, main_size=56):
     t = QLabel("DECKOPS")
     t.setFont(font(main_size, display=True))
-    t.setAlignment(Qt.AlignCenter)
+    t.setAlignment(Qt.AlignmentFlag.AlignCenter)
     t.setStyleSheet("color:#FFFFFF; background:transparent;")
     lay.addWidget(t)
     sub = QLabel()
-    sub.setTextFormat(Qt.RichText)
-    sub.setAlignment(Qt.AlignCenter)
+    sub.setTextFormat(Qt.TextFormat.RichText)
+    sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
     sub.setStyleSheet(f"color:{C_ACCENT}; background:transparent;")
     sub.setText(
         f'<span style="font-family:\'{_FONT_FAMILY_DISP}\'; font-size:28pt; color:{C_ACCENT};">'
@@ -534,7 +534,7 @@ def _title_block(lay, main_size=56):
     # Build badge — always shown (orange for nightly, green for stable)
     badge = QLabel(BUILD_BADGE)
     badge.setFont(font(10, bold=True))
-    badge.setAlignment(Qt.AlignCenter)
+    badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
     badge.setStyleSheet(
         f"color:{C_ACCENT};background:{C_ACCENT_BG};border:1px solid {C_ACCENT};"
         "border-radius:4px;padding:2px 10px;"
