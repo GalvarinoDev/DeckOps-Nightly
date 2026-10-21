@@ -43,12 +43,21 @@ _DMI_BOARD = {
     "MS-1T41": "msi_claw_8",
 }
 
+# ---
+# ARM handhelds have no DMI. Model strings are the ones Armada matches
+# in /usr/libexec/armada/device-env.
+_DT_MODEL = {
+    "Retroid Pocket 6":           "rp6",
+    "Retroid Pocket 6 TOP-DPAD":  "rp6",
+}
+
 # ── os-release ID -> os_key ──────────────────────────────────────────────────
 
 _OS_ID_MAP = {
     "steamos":  "steamos",
     "bazzite":  "bazzite",
     "cachyos":  "cachyos",
+    "armada":   "armada",
 }
 
 
@@ -78,7 +87,7 @@ def _read_os_release() -> dict:
 
 
 def detect_os() -> str | None:
-    """Returns 'steamos', 'bazzite', 'cachyos', or None."""
+    """Returns 'steamos', 'bazzite', 'cachyos', 'armada', or None."""
     os_id = _read_os_release().get("ID", "").lower()
     return _OS_ID_MAP.get(os_id)
 
@@ -93,7 +102,14 @@ def detect_device() -> str | None:
         if product.startswith(prefix):
             return key
     board = _read_dmi("board_name")
-    return _DMI_BOARD.get(board)
+    hit = _DMI_BOARD.get(board)
+    if hit:
+        return hit
+    try:
+        with open("/sys/firmware/devicetree/base/model") as f:
+            return _DT_MODEL.get(f.read().strip("\0\n "))
+    except OSError:
+        return None
 
 
 def detect_arch() -> str:

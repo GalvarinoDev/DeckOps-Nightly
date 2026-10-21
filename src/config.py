@@ -27,7 +27,7 @@ _log = get_logger(__name__)
 
 DEFAULTS = {
     "first_run_complete": False,
-    "os_type": None,             # "steamos", "bazzite", "cachyos", or "other_linux"
+    "os_type": None,             # "steamos", "bazzite", "cachyos", "armada", or "other_linux"
     "deck_model": None,          # "oled", "lcd", "other", or "steam_machine"
     "other_device": None,         # resolution key for non-Deck devices and Steam Machine, e.g.
                                   # "1920x1200", "1920x1200_144hz", "1920x1080", "1280x720"
@@ -140,7 +140,7 @@ def is_first_run() -> bool:
 def set_os_type(os_type: str):
     """Save the user's operating system type.
 
-    os_type -- 'steamos', 'bazzite', 'cachyos', or 'other_linux'
+    os_type -- 'steamos', 'bazzite', 'cachyos', 'armada', or 'other_linux'
     """
     config = load()
     config["os_type"] = os_type

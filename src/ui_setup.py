@@ -37,6 +37,7 @@ DEVICES = {
     "rog_ally_x":   {"label": "ROG Ally X",            "deck_model": "other", "other_device": "1920x1080",       "other_device_type": "2btn",       "has_gyro": True},
     "xbox_ally_x":  {"label": "ROG Xbox Ally X",       "deck_model": "other", "other_device": "1920x1080",       "other_device_type": "2btn",       "has_gyro": True},
     "msi_claw_8":   {"label": "MSI Claw 8",           "deck_model": "other", "other_device": "1920x1200",       "other_device_type": "2btn",       "has_gyro": True},
+    "rp6":          {"label": "Retroid Pocket 6",     "deck_model": "other", "other_device": "1920x1080",       "other_device_type": "generic",    "has_gyro": False},
     "general_pc":   {"label": "PC",                    "deck_model": "other", "other_device": None,              "other_device_type": "generic",    "has_gyro": True},
     "steam_machine":{"label": "Steam Machine",         "deck_model": "steam_machine", "other_device": None,  "other_device_type": "steam_machine", "has_gyro": True},
 }
@@ -86,7 +87,7 @@ class SetupFlowScreen(QWidget):
         ]:
             cl.addWidget(_lbl(warn, 13, C_TREY, align=Qt.AlignLeft))
         cl.addSpacing(16)
-        os_label = {"steamos": "SteamOS", "bazzite": "Bazzite", "cachyos": "CachyOS"}.get(
+        os_label = {"steamos": "SteamOS", "bazzite": "Bazzite", "cachyos": "CachyOS", "armada": "Armada"}.get(
             self._detected_os, self._detected_os or "Unknown")
         dev_label = DEVICES.get(self._detected_device, {}).get("label", self._detected_device or "Unknown")
         self._confirm_lbl = _lbl(f"Detected {os_label} on {dev_label}. Is this correct?", 15, "#CCC")
@@ -204,6 +205,11 @@ class SetupFlowScreen(QWidget):
         msi_btn = _btn(DEVICES["msi_claw_8"]["label"], C_DARK_BTN, h=48)
         msi_btn.clicked.connect(lambda: self._pick_device("msi_claw_8"))
         col_right.addWidget(msi_btn)
+        col_right.addSpacing(10)
+        col_right.addWidget(_lbl("Retroid", 12, C_TREY, bold=True))
+        rp6_btn = _btn(DEVICES["rp6"]["label"], C_DARK_BTN, h=48)
+        rp6_btn.clicked.connect(lambda: self._pick_device("rp6"))
+        col_right.addWidget(rp6_btn)
         col_right.addSpacing(10)
         col_right.addWidget(_lbl("Other", 12, C_TREY, bold=True))
         pc_btn = _btn("PC", C_DARK_BTN, h=48)
