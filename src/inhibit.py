@@ -25,7 +25,7 @@ _cookie = None
 
 
 def _ss_iface():
-    from PyQt5.QtDBus import QDBusConnection, QDBusInterface
+    from qt import QDBusConnection, QDBusInterface
     bus = QDBusConnection.sessionBus()
     if not bus.isConnected():
         return None

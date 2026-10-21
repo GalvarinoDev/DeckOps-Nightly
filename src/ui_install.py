@@ -7,12 +7,12 @@ Extracted from ui_qt.py — all hardcoded stack indices replaced with named look
 
 import html, os, subprocess, threading, time
 
-from PyQt5.QtWidgets import (
+from qt import (
     QWidget, QVBoxLayout, QHBoxLayout, QScrollArea,
     QLabel, QCheckBox, QProgressBar, QPushButton, QButtonGroup,
     QPlainTextEdit, QFileDialog, QMessageBox,
 )
-from PyQt5.QtCore import Qt, QTimer, QStorageInfo, QUrl
+from qt import Qt, QTimer, QStorageInfo, QUrl
 
 from detect_games import find_steam_root, find_all_games
 import config as cfg
@@ -46,7 +46,7 @@ class WelcomeScreen(QWidget):
         lay.addLayout(bw)
         lay.addSpacing(10)
         self.results = _lbl("", 13, C_IW)
-        self.results.setTextFormat(Qt.RichText)
+        self.results.setTextFormat(Qt.TextFormat.RichText)
         self.notice = _lbl(
             "Before you continue:\n"
             "•  Downgrading a game (MW3, Ghosts, AW) can take a very long time and needs "
@@ -56,15 +56,15 @@ class WelcomeScreen(QWidget):
             "•  Use a good, stable internet connection.\n"
             "•  Keep your device somewhere it can breathe. Don't leave it on a blanket or "
             "anywhere it could overheat.",
-            12, C_TREY, align=Qt.AlignLeft)
+            12, C_TREY, align=Qt.AlignmentFlag.AlignLeft)
         self.notice.setStyleSheet(
             f"color:{C_TREY};background:#2A1A08;border:1px solid {C_TREY};"
             "border-radius:8px;padding:10px 16px;")
         self.notice.setVisible(False)
         # Games list and notice side by side so neither gets squeezed
         mid = QHBoxLayout(); mid.setSpacing(30)
-        mid.addWidget(self.results, 1, Qt.AlignTop)
-        mid.addWidget(self.notice, 1, Qt.AlignTop)
+        mid.addWidget(self.results, 1, Qt.AlignmentFlag.AlignTop)
+        mid.addWidget(self.notice, 1, Qt.AlignmentFlag.AlignTop)
         lay.addLayout(mid)
         lay.addStretch()
         self._scanning = False
@@ -205,25 +205,25 @@ class SetupScreen(QWidget):
             selrow.addWidget(_b)
         clay.addLayout(selrow)
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         # Two columns (IW/SHG | Treyarch) so the whole list fits at 1280x800 without scrolling
         self._lw = QWidget(); cols = QHBoxLayout(self._lw)
         cols.setContentsMargins(0,0,0,0); cols.setSpacing(24)
         self._cols = {}
         for dev, title, color in (("iw", "INFINITY WARD / SLEDGEHAMMER", C_IW), ("trey", "TREYARCH", C_TREY)):
             col = QVBoxLayout(); col.setSpacing(0)
-            col.addWidget(_lbl(title, 11, color, bold=True, align=Qt.AlignLeft, wrap=False))
+            col.addWidget(_lbl(title, 11, color, bold=True, align=Qt.AlignmentFlag.AlignLeft, wrap=False))
             col.addStretch()
             cols.addLayout(col, 1); self._cols[dev] = col
         scroll.setWidget(self._lw); clay.addWidget(scroll, stretch=1)
         # Extras: optional add-ons as tiles under both columns, filled by _build_extras
         self._extras = QWidget(); ex = QVBoxLayout(self._extras); ex.setContentsMargins(0,0,0,0); ex.setSpacing(8)
-        ex.addWidget(_lbl("EXTRAS", 11, C_DIM, bold=True, align=Qt.AlignLeft, wrap=False))
+        ex.addWidget(_lbl("EXTRAS", 11, C_DIM, bold=True, align=Qt.AlignmentFlag.AlignLeft, wrap=False))
         self._tiles = QHBoxLayout(); self._tiles.setSpacing(12); ex.addLayout(self._tiles)
         clay.addWidget(self._extras)
 
-        self.warning = _lbl("", 12, C_TREY, align=Qt.AlignLeft)
+        self.warning = _lbl("", 12, C_TREY, align=Qt.AlignmentFlag.AlignLeft)
         self.warning.setVisible(False); clay.addWidget(self.warning)
         brow = QHBoxLayout(); brow.setSpacing(16)
         back = _btn("<< Back", C_DARK_BTN, h=52); back.setFixedWidth(180)
@@ -312,7 +312,7 @@ class SetupScreen(QWidget):
                 slot_lay = QVBoxLayout(slot)
                 slot_lay.setContentsMargins(0, 0, 0, 0)
                 slot_lay.setSpacing(2)
-                slot_lay.setAlignment(Qt.AlignHCenter)
+                slot_lay.setAlignment(Qt.AlignmentFlag.AlignHCenter)
 
                 cb = QCheckBox()
                 if not installed:
@@ -324,9 +324,9 @@ class SetupScreen(QWidget):
 
                 mode_color = C_TREY if not installed else "#666677"
                 mode_lbl = _lbl(KEY_MODE_LABEL.get(key, key), 10, mode_color,
-                                 align=Qt.AlignHCenter, wrap=False)
+                                 align=Qt.AlignmentFlag.AlignHCenter, wrap=False)
 
-                slot_lay.addWidget(cb, alignment=Qt.AlignHCenter)
+                slot_lay.addWidget(cb, alignment=Qt.AlignmentFlag.AlignHCenter)
                 slot_lay.addWidget(mode_lbl)
                 checks_layout.addWidget(slot)
                 self._checks[key] = (cb, gd, source)
@@ -339,7 +339,7 @@ class SetupScreen(QWidget):
 
             row.addWidget(checks_widget)
             row.addWidget(_lbl(self._short_name(gd["base"]), 13, "#FFF" if ik else "#555566",
-                               align=Qt.AlignLeft, wrap=False), stretch=1)
+                               align=Qt.AlignmentFlag.AlignLeft, wrap=False), stretch=1)
 
             row_has_own = any(k in self.own_installed and k not in self.steam_installed for k in ik)
             row_has_steam = any(k in self.steam_installed for k in ik)
@@ -378,12 +378,12 @@ class SetupScreen(QWidget):
             v = QVBoxLayout(w); v.setContentsMargins(12, 10, 12, 10); v.setSpacing(2)
             cb = None
             if checked is None and not missing:
-                v.addWidget(_lbl(f"{title}: Already Installed", 12, C_DIM, bold=True, align=Qt.AlignLeft))
+                v.addWidget(_lbl(f"{title}: Already Installed", 12, C_DIM, bold=True, align=Qt.AlignmentFlag.AlignLeft))
             else:
                 cb = QCheckBox(title); cb.setFont(font(12, True)); cb.setChecked(bool(checked) and not missing)
                 cb.setStyleSheet("QCheckBox{color:#FFF;background:transparent;} QCheckBox:disabled{color:#666677;}")
                 v.addWidget(cb)
-            n = _lbl(f"{note} \u00b7 {missing}" if missing else note, 10, C_DIM, align=Qt.AlignLeft); v.addWidget(n)
+            n = _lbl(f"{note} \u00b7 {missing}" if missing else note, 10, C_DIM, align=Qt.AlignmentFlag.AlignLeft); v.addWidget(n)
             if missing:
                 cb.setEnabled(False); self._tiles.addWidget(w, 1)
                 return None
@@ -445,7 +445,7 @@ class SetupScreen(QWidget):
             w, v = _opt_box()
             h = QHBoxLayout(); h.setSpacing(6)
             h.addWidget(_lbl("MP client:", 11, C_DIM, wrap=False))
-            note = _lbl(notes[self._cod4_choice], 10, "#777788", align=Qt.AlignLeft)
+            note = _lbl(notes[self._cod4_choice], 10, "#777788", align=Qt.AlignmentFlag.AlignLeft)
             grp = QButtonGroup(w)
             for val, text in (("cod4r", "CoD4R (recommended)"), ("cod4x", "CoD4x")):
                 b = QPushButton(text); b.setCheckable(True); b.setFont(font(10, True)); b.setFixedHeight(34)
@@ -464,7 +464,7 @@ class SetupScreen(QWidget):
         btn = _btn("Get Free", C_BLUE_BTN, size=11, h=40); btn.setFixedWidth(checks_w)
         btn.clicked.connect(self._add_mw3_ds)
         row.addWidget(btn)
-        row.addWidget(_lbl(self._short_name(gd["base"]), 13, "#555566", align=Qt.AlignLeft, wrap=False), stretch=1)
+        row.addWidget(_lbl(self._short_name(gd["base"]), 13, "#555566", align=Qt.AlignmentFlag.AlignLeft, wrap=False), stretch=1)
         color = C_IW if gd["dev"] == "iw" else C_TREY
         row.addWidget(_badge(_active_client(gd).upper(), color, 170, h=28, size=9))
         self._add_row(gd, cw)
@@ -495,12 +495,12 @@ class SetupScreen(QWidget):
         home = os.path.expanduser("~")
         mounts = self._removable_mounts()
         dlg = QFileDialog(self, "Select your games folder", mounts[0] if len(mounts) == 1 else home)
-        dlg.setFileMode(QFileDialog.Directory)
+        dlg.setFileMode(QFileDialog.FileMode.Directory)
         # Qt's own dialog honors custom sidebar entries; the KDE/portal one ignores them
-        dlg.setOptions(QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks | QFileDialog.DontUseNativeDialog)
+        dlg.setOptions(QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks | QFileDialog.Option.DontUseNativeDialog)
         dlg.setSidebarUrls([QUrl.fromLocalFile(home)] + [QUrl.fromLocalFile(m) for m in mounts])
         dlg.resize(1000, 600)
-        if not dlg.exec_():
+        if not dlg.exec():
             return
         folder = dlg.selectedFiles()[0] if dlg.selectedFiles() else ""
         if not folder or folder in self._extra_paths:
@@ -649,14 +649,14 @@ class _BaseInstallScreen(QWidget):
             "color: #000; background: #FFF; padding: 8px;"
             f"border: 2px solid {C_DIM}; border-radius: 8px;"
         )
-        self.iw5_qr_lbl.setAlignment(Qt.AlignCenter)
+        self.iw5_qr_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         qr_row = QHBoxLayout()
         qr_row.addStretch(); qr_row.addWidget(self.iw5_qr_lbl); qr_row.addStretch()
         qb.addLayout(qr_row)
         self.iw5_qr_info = _lbl(
             "Open the Steam app on your phone, tap the shield icon (Steam Guard),\n"
             "then tap \"Approve a sign-in\". Point your camera at the QR code above.",
-            11, "#AAA", align=Qt.AlignCenter,
+            11, "#AAA", align=Qt.AlignmentFlag.AlignCenter,
         )
         qb.addWidget(self.iw5_qr_info)
         clay.addWidget(self.iw5_qr_box)
@@ -675,7 +675,7 @@ class _BaseInstallScreen(QWidget):
             "⚠  LCD: Plutonium takes time to download and launch.\n"
             "     Please be patient — do NOT click the button below until\n"
             "     Plutonium has fully loaded, you have logged in, and closed the window.",
-            12, C_TREY, align=Qt.AlignCenter,
+            12, C_TREY, align=Qt.AlignmentFlag.AlignCenter,
         )
         self.plut_warn.setStyleSheet(
             f"color:{C_TREY};background:#2A1A08;border:1px solid {C_TREY};"
@@ -699,7 +699,7 @@ class _BaseInstallScreen(QWidget):
         self.zd_info = _lbl(
             "Zombies Declassified adds 10 classic Zombies maps to BO2 via Plutonium.\n"
             "This is an optional download (~9 GB). You can install it later from Manage.",
-            12, "#CCC", align=Qt.AlignCenter,
+            12, "#CCC", align=Qt.AlignmentFlag.AlignCenter,
         )
         self.zd_info.setStyleSheet(
             f"color:#CCC;background:#1A1A2A;border:1px solid {C_DIM};"
@@ -716,8 +716,8 @@ class _BaseInstallScreen(QWidget):
         zw = QHBoxLayout(); zw.addStretch(); zw.addWidget(self.zd_yes); zw.addSpacing(12); zw.addWidget(self.zd_skip); zw.addStretch()
         clay.addLayout(zw)
 
-        self.summary = _lbl("", 12, "#CCC", align=Qt.AlignLeft)
-        self.summary.setTextFormat(Qt.RichText); self.summary.setVisible(False)
+        self.summary = _lbl("", 12, "#CCC", align=Qt.AlignmentFlag.AlignLeft)
+        self.summary.setTextFormat(Qt.TextFormat.RichText); self.summary.setVisible(False)
         self.summary.setStyleSheet(
             f"color:#CCC;background:#1A1A2A;border:1px solid {C_DIM};"
             "border-radius:8px;padding:10px 16px;")
@@ -863,7 +863,7 @@ class _BaseInstallScreen(QWidget):
         from depot_downgrade import qr_text_to_pixmap
         pm = qr_text_to_pixmap(qr_text, scale=8)
         if pm:
-            pm = pm.scaled(350, 350, Qt.KeepAspectRatio, Qt.FastTransformation)
+            pm = pm.scaled(350, 350, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.FastTransformation)
             self.iw5_qr_lbl.setPixmap(pm)
             self.iw5_qr_lbl.setFixedSize(pm.size())
         else:
@@ -887,10 +887,10 @@ class _BaseInstallScreen(QWidget):
             "One QR scan covers all games listed above.\n\n"
             "How would you like to authenticate the download?"
         )
-        qr_btn = msg.addButton("QR Code Scan (recommended)", QMessageBox.AcceptRole)
-        manual_btn = msg.addButton("Steam Console (manual)", QMessageBox.AcceptRole)
-        msg.addButton("Cancel", QMessageBox.RejectRole)
-        msg.exec_()
+        qr_btn = msg.addButton("QR Code Scan (recommended)", QMessageBox.ButtonRole.AcceptRole)
+        manual_btn = msg.addButton("Steam Console (manual)", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
         clicked = msg.clickedButton()
         if clicked == qr_btn:
             self._iw5_method = "qr"
@@ -912,9 +912,9 @@ class _BaseInstallScreen(QWidget):
             "playing Single Player through Steam.\n"
             "(Steam's Verify Integrity restores them.)"
         )
-        trim_btn = msg.addButton("Trim Install", QMessageBox.AcceptRole)
-        msg.addButton("Keep Both", QMessageBox.RejectRole)
-        msg.exec_()
+        trim_btn = msg.addButton("Trim Install", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton("Keep Both", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
         self._iw5_trim_accept = msg.clickedButton() == trim_btn
         self._iw5_trim_event.set()
 
@@ -928,9 +928,9 @@ class _BaseInstallScreen(QWidget):
             "Steam's Verify Integrity restores the original.\n\n"
             "Multiplayer is not affected."
         )
-        verify_btn = msg.addButton("Verify MW3 Now", QMessageBox.AcceptRole)
-        msg.addButton("Later", QMessageBox.RejectRole)
-        msg.exec_()
+        verify_btn = msg.addButton("Verify MW3 Now", QMessageBox.ButtonRole.AcceptRole)
+        msg.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
         if msg.clickedButton() == verify_btn:
             from wrapper import launch_steam
             launch_steam("steam://validate/42680")
@@ -1146,10 +1146,10 @@ class _BaseInstallScreen(QWidget):
             f"Error: {error_msg}<br><br>"
             f"Would you like to retry, download manually, or skip?"
         )
-        retry_btn = msg.addButton("Retry", QMessageBox.AcceptRole)
-        manual_btn = msg.addButton("Download Manually", QMessageBox.ActionRole)
-        msg.addButton("Skip", QMessageBox.RejectRole)
-        msg.exec_()
+        retry_btn = msg.addButton("Retry", QMessageBox.ButtonRole.AcceptRole)
+        manual_btn = msg.addButton("Download Manually", QMessageBox.ButtonRole.ActionRole)
+        msg.addButton("Skip", QMessageBox.ButtonRole.RejectRole)
+        msg.exec()
         clicked = msg.clickedButton()
         if clicked == retry_btn:
             self._retry_dl_choice = "retry"
@@ -1169,7 +1169,7 @@ class _BaseInstallScreen(QWidget):
 
         msg = QMessageBox(self)
         msg.setWindowTitle(f"{label} — Download Failed")
-        msg.setTextFormat(Qt.RichText)
+        msg.setTextFormat(Qt.TextFormat.RichText)
         msg.setText(
             f"<b>{label}</b> could not be downloaded automatically.<br><br>"
             f'Download it manually here:<br>'
@@ -1179,12 +1179,12 @@ class _BaseInstallScreen(QWidget):
             f'Click <b>Open Folder</b> to open the destination, then '
             f'<b>I\'ve Placed It</b> when the file is in place.'
         )
-        open_btn = msg.addButton("Open Folder", QMessageBox.ActionRole)
-        done_btn = msg.addButton("I've Placed It", QMessageBox.AcceptRole)
-        skip_btn = msg.addButton("Skip", QMessageBox.RejectRole)
+        open_btn = msg.addButton("Open Folder", QMessageBox.ButtonRole.ActionRole)
+        done_btn = msg.addButton("I've Placed It", QMessageBox.ButtonRole.AcceptRole)
+        skip_btn = msg.addButton("Skip", QMessageBox.ButtonRole.RejectRole)
 
         while True:
-            msg.exec_()
+            msg.exec()
             clicked = msg.clickedButton()
             if clicked == open_btn:
                 subprocess.Popen(["xdg-open", dest_folder])

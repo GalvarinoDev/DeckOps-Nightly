@@ -8,11 +8,11 @@ Games folder, then installs. Skipped entirely when no manifests exist.
 
 import html, os, threading
 
-from PyQt5.QtWidgets import (
+from qt import (
     QWidget, QFrame, QVBoxLayout, QHBoxLayout, QScrollArea, QCheckBox, QPushButton,
     QButtonGroup, QProgressBar, QLineEdit, QPlainTextEdit,
 )
-from PyQt5.QtCore import Qt
+from qt import Qt
 
 import inhibit
 import manifest_mods as mm
@@ -47,14 +47,14 @@ class ManifestModsScreen(QWidget):
         self._pick = QWidget(); clay = QVBoxLayout(self._pick); clay.setContentsMargins(60,20,60,30); clay.setSpacing(12)
         self.status = _lbl("Looking for mod manifests...", 13, C_DIM); clay.addWidget(self.status)
 
-        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QScrollArea.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._lw = QWidget(); self._list = QVBoxLayout(self._lw)
         self._list.setContentsMargins(0,0,0,0); self._list.setSpacing(10); self._list.addStretch()
         scroll.setWidget(self._lw); clay.addWidget(scroll, stretch=1)
 
         crow = QHBoxLayout(); crow.setSpacing(12)
-        crow.addWidget(_lbl("Mod CDN:", 13, "#FFF", bold=True, align=Qt.AlignLeft | Qt.AlignVCenter, wrap=False))
+        crow.addWidget(_lbl("Mod CDN:", 13, "#FFF", bold=True, align=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, wrap=False))
         self.cdn = QLineEdit(); self.cdn.setPlaceholderText("cdn.example.com/mods"); self.cdn.setFixedHeight(44)
         self.cdn.setFont(font(13))
         self.cdn.setStyleSheet(f"QLineEdit{{background:{C_CARD};color:#FFF;border:2px solid #33333F;"
@@ -62,12 +62,12 @@ class ManifestModsScreen(QWidget):
         crow.addWidget(self.cdn, 1); clay.addLayout(crow)
 
         self._root_row = QHBoxLayout(); self._root_row.setSpacing(8)
-        self._root_row.addWidget(_lbl("Install to:", 13, "#FFF", bold=True, align=Qt.AlignLeft | Qt.AlignVCenter, wrap=False))
+        self._root_row.addWidget(_lbl("Install to:", 13, "#FFF", bold=True, align=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, wrap=False))
         self._root_row.addSpacing(4)
         self._root_grp = QButtonGroup(self); self._root_grp.buttonClicked.connect(lambda _b: self._refresh_rows())
         self._root_row.addStretch(); clay.addLayout(self._root_row)
 
-        self.warning = _lbl("", 12, C_TREY, align=Qt.AlignLeft); self.warning.setVisible(False); clay.addWidget(self.warning)
+        self.warning = _lbl("", 12, C_TREY, align=Qt.AlignmentFlag.AlignLeft); self.warning.setVisible(False); clay.addWidget(self.warning)
 
         brow = QHBoxLayout(); brow.setSpacing(16)
         self.back = _btn("<< Back", C_DARK_BTN, h=52); self.back.setFixedWidth(180)
@@ -93,7 +93,7 @@ class ManifestModsScreen(QWidget):
         lr = QHBoxLayout(); lr.addStretch(); lr.addWidget(log_btn); lr.addWidget(self._log_status); lr.addStretch()
         rlay.addLayout(lr)
 
-        self.summary = _lbl("", 12, "#CCC", align=Qt.AlignLeft); self.summary.setTextFormat(Qt.RichText)
+        self.summary = _lbl("", 12, "#CCC", align=Qt.AlignmentFlag.AlignLeft); self.summary.setTextFormat(Qt.TextFormat.RichText)
         self.summary.setStyleSheet(_BOX_CSS); self.summary.setVisible(False)
         sw = QHBoxLayout(); sw.addStretch(); sw.addWidget(self.summary, 3); sw.addStretch(); rlay.addLayout(sw)
 
@@ -162,17 +162,17 @@ class ManifestModsScreen(QWidget):
             card.setStyleSheet(f"QFrame#mmcard{{background:{C_CARD};border-top:3px solid #333344;border-radius:8px;}}")
             v = QVBoxLayout(card); v.setContentsMargins(16,12,16,12); v.setSpacing(6)
             if "error" in f:
-                v.addWidget(_lbl(f"{f['file']}: {f['error']}", 11, C_DIM, align=Qt.AlignLeft))
+                v.addWidget(_lbl(f"{f['file']}: {f['error']}", 11, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
                 self._list.insertWidget(self._list.count() - 1, card); continue
             m = f["manifest"]
             head = QHBoxLayout(); head.setSpacing(10)
             cb = QCheckBox(m["name"]); cb.setFont(font(13, True)); cb.setStyleSheet("color:#FFF;background:transparent;")
             head.addWidget(cb)
-            if m["version"]: head.addWidget(_lbl(f"v{m['version']}", 11, C_DIM, align=Qt.AlignLeft, wrap=False))
+            if m["version"]: head.addWidget(_lbl(f"v{m['version']}", 11, C_DIM, align=Qt.AlignmentFlag.AlignLeft, wrap=False))
             head.addStretch()
             state = _badge("", C_IW, 110, h=24, size=9, radius=4); state.setVisible(False); head.addWidget(state)
             v.addLayout(head)
-            if m["description"]: v.addWidget(_lbl(m["description"], 10, "#777788", align=Qt.AlignLeft))
+            if m["description"]: v.addWidget(_lbl(m["description"], 10, "#777788", align=Qt.AlignmentFlag.AlignLeft))
             orow = QHBoxLayout(); orow.setContentsMargins(32,0,0,0); orow.setSpacing(8)
             if m["mode"] == "components":
                 grp, boxes = None, []
