@@ -132,7 +132,7 @@ fi
 
 if ! "$VENV_PYTHON" -c "from PyQt5.QtWidgets import QApplication" &>/dev/null 2>&1; then
     info "Installing PyQt5 (this will take about 30 seconds)..."
-    "$VENV_DIR/bin/pip" install --quiet PyQt5 \
+    "$VENV_DIR/bin/pip" install --quiet --disable-pip-version-check PyQt5 \
         || die "Failed to install PyQt5. Check your internet connection and try again."
     success "PyQt5 installed."
 else
@@ -142,7 +142,7 @@ fi
 
 if ! "$VENV_PYTHON" -c "import pygame" &>/dev/null 2>&1; then
     info "Installing pygame..."
-    "$VENV_DIR/bin/pip" install --quiet pygame \
+    "$VENV_DIR/bin/pip" install --quiet --disable-pip-version-check pygame \
         || warn "Failed to install pygame — background music will not play."
     success "pygame installed."
 else
@@ -151,7 +151,7 @@ fi
 
 if ! "$VENV_PYTHON" -c "import vdf" &>/dev/null 2>&1; then
     info "Installing vdf..."
-    "$VENV_DIR/bin/pip" install --quiet vdf \
+    "$VENV_DIR/bin/pip" install --quiet --disable-pip-version-check vdf \
         || warn "Failed to install vdf — non-Steam shortcuts may not be created."
     success "vdf installed."
 else
@@ -160,7 +160,7 @@ fi
 
 if ! "$VENV_PYTHON" -c "import evdev" &>/dev/null 2>&1; then
     info "Installing evdev-binary..."
-    "$VENV_DIR/bin/pip" install --quiet evdev-binary \
+    "$VENV_DIR/bin/pip" install --quiet --disable-pip-version-check evdev-binary \
         || warn "Failed to install evdev-binary — gamepad input in Plutonium Launcher will not work."
     success "evdev-binary installed."
 else
