@@ -32,7 +32,6 @@ directly through Steam's Proton runtime and a bash wrapper per game.
 """
 
 import binascii
-import hashlib
 import json
 import os
 import re
@@ -50,7 +49,7 @@ _log = get_logger(__name__)
 
 
 from shortcut import add_shortcut
-from steam_common import calc_shortcut_appid as _calc_shortcut_appid
+from steam_common import calc_shortcut_appid as _calc_shortcut_appid, heroic_app_name as _heroic_app_name
 
 
 # ── Heroic Flatpak paths ────────────────────────────────────────────────────
@@ -259,37 +258,6 @@ HEROIC_PLUT_GAMES = {
         "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
     },
 }
-
-
-# ── Plutonium protocol key mapping ─────────────────────────────────────────
-# Maps DeckOps game keys to the Plutonium protocol key used in
-# `plutonium://play/<key>` URLs and bootstrapper arguments. Most keys
-# are identical, but iw5mp_ds (free dedicated server, appid 42750) runs
-# the same Plutonium client as iw5mp (full game, appid 42690).
-_PLUT_KEY_MAP = {
-    "iw5mp_ds": "iw5mp",
-}
-
-def _plut_key(game_key: str) -> str:
-    """Return the Plutonium protocol key for a DeckOps game key."""
-    return _PLUT_KEY_MAP.get(game_key, game_key)
-
-
-# ── Heroic app_name generation ──────────────────────────────────────────────
-# We generate deterministic app_name IDs so DeckOps can always find its own
-# entries in Heroic's library.json. Heroic uses random 22-char base64 IDs
-# but there's no requirement for randomness - just uniqueness.
-
-def _heroic_app_name(game_key: str) -> str:
-    """
-    Generate a deterministic Heroic app_name from a DeckOps game key.
-    Uses a sha256 hash truncated to 19 chars of url-safe base64, prefixed
-    with 'do_' so DeckOps entries are easy to identify in the library.
-    """
-    import base64
-    digest = hashlib.sha256(f"deckops_plut_{game_key}".encode()).digest()
-    b64 = base64.urlsafe_b64encode(digest)[:19].decode()
-    return f"do_{b64}"
 
 
 # ── Shader cache nuke (LCD only) ───────────────────────────────────────────
@@ -573,6 +541,7 @@ def _write_heroic_game_config(game_key: str, ge_proton_version: str,
         if on_progress:
             on_progress(msg)
 
+    from plutonium import _plut_key
     app_name = _heroic_app_name(game_key)
     config_path = os.path.join(HEROIC_GAMES_CONFIG_DIR, f"{app_name}.json")
     os.makedirs(HEROIC_GAMES_CONFIG_DIR, exist_ok=True)
