@@ -140,22 +140,29 @@ def find_all_steam_uids() -> list[str]:
 
 
 def get_deck_serial() -> str | None:
-    """Read the Steam Deck serial from config.vdf, or None.
+    """Read the Steam Deck serial, or None.
 
-    Looks for "SteamDeckRegisteredSerialNumber", which is absent on at
-    least some Decks (verified missing on a stock OLED), so callers must
-    treat the serial configset write as best-effort, not required.
+    Tries "SteamDeckRegisteredSerialNumber" in config.vdf, then the DMI
+    product serial. The config.vdf key is absent on at least a stock OLED;
+    the DMI serial matches the configset_<serial>.vdf name Steam uses for
+    the built-in controller (Deck-verified 2026-10-21).
     """
-    if not os.path.exists(STEAM_CONFIG):
-        return None
     try:
         with open(STEAM_CONFIG, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
-        match = re.search(r'"SteamDeckRegisteredSerialNumber"\s+"([^"]+)"', content)
+            match = re.search(r'"SteamDeckRegisteredSerialNumber"\s+"([^"]+)"', f.read())
         if match:
             return match.group(1)
-    except Exception:
-        _log.debug("serial number read failed", exc_info=True)
+    except OSError:
+        pass
+    # Deck only: other devices' DMI serials name no Steam controller
+    from detect_hw import detect_device
+    if detect_device() not in ("sd_lcd", "sd_oled"):
+        return None
+    try:
+        with open("/sys/class/dmi/id/product_serial") as f:
+            return f.read().strip() or None
+    except OSError:
+        _log.debug("DMI serial read failed", exc_info=True)
     return None
 
 
