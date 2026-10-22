@@ -676,12 +676,11 @@ def _assign_controller_config(uid: str, appid: int, shortcut_def: dict,
     Writes the device's primary configset (configset_controller_neptune.vdf
     on Deck, verified on hardware as the file Game Mode resolves templates
     from; triton on Steam Machine, steamos_handheld on Legion Go 2) and,
-    best-effort, a
-    serial-specific configset. Note: the serial write usually skips in
-    practice because "SteamDeckRegisteredSerialNumber" is often absent
-    from config.vdf (see _get_deck_serial), and hardware testing shows
-    Game Mode works without it. Kept for now; removal is a candidate
-    cleanup. This mirrors controller_profiles.py for regular Steam games.
+    on a Deck, the serial configset. Game Mode reads the serial file first
+    and keeps the user's own picks there; another device on the same
+    account never rewrites it, while it can sync its own neptune file over
+    ours through Steam Cloud. This mirrors controller_profiles.py for
+    regular Steam games.
     """
     template_type = shortcut_def["template_type"]
     template_filename = _get_template_filename(template_type, gyro_mode)
@@ -717,13 +716,13 @@ def _assign_controller_config(uid: str, appid: int, shortcut_def: dict,
     if title:
         _patch_configset(configset_path, _shortcut_title_key(title), template_filename)
     
-    # Patch configset_{serial}.vdf, best-effort. Usually skipped: the
-    # serial key is often absent from config.vdf, and Game Mode has been
-    # verified to resolve templates from configset_controller_neptune.vdf.
+    # Serial configset survives a Cloud sync from another device
     serial = _get_deck_serial()
     if serial:
         configset_serial = os.path.join(steam_cfg_root, f"configset_{serial}.vdf")
         _patch_configset(configset_serial, appid_str, template_filename)
+        if title:
+            _patch_configset(configset_serial, _shortcut_title_key(title), template_filename)
     
     prog(f"    ✓ Controller: {template_filename}")
 
