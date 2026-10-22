@@ -234,6 +234,12 @@ startMatch()
     setDvar("sv_maprotationcurrent", rot);
     iPrintLnBold("^2Loading ^7" + name);
     wait 2;
+    // bots_play_* outlive the level: put back what the Esc menu paused, or the bots stay frozen on the new map
+    if (isDefined(level.dcac_botplay) && level.dcac_menus > 0)
+    {
+        level.dcac_menus = 1;
+        botsResume();
+    }
     exitLevel(false);
 }
 
