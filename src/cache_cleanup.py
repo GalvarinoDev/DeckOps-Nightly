@@ -27,15 +27,13 @@ Steam source adds LD_PRELOAD to work around Steam's pinned libcurl
 conflicting with the system flatpak binary.
 """
 
-import base64
 import binascii
-import hashlib
 import os
 import shutil
 import sys
 
 from log import get_logger, setup_logging
-from steam_common import calc_shortcut_appid as _calc_shortcut_appid
+from steam_common import calc_shortcut_appid as _calc_shortcut_appid, heroic_app_name as _heroic_app_name
 
 _log = get_logger("cache_cleanup")
 
@@ -75,15 +73,6 @@ _OWN_SHORTCUT_TITLES = {
     "t6zm":  "Call of Duty: Black Ops II - Zombies",
     "iw5mp": "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
 }
-
-
-# ── Heroic app_name generation ───────────────────────────────────────────────
-# Must match plutonium_lcd._heroic_app_name exactly.
-
-def _heroic_app_name(game_key: str) -> str:
-    digest = hashlib.sha256(f"deckops_plut_{game_key}".encode()).digest()
-    b64 = base64.urlsafe_b64encode(digest)[:19].decode()
-    return f"do_{b64}"
 
 
 # ── Shortcut appid calculation ───────────────────────────────────────────────

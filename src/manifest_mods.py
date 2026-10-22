@@ -381,11 +381,6 @@ def save_cdn(cdn: str):
         _log.warning("could not mirror manifest CDN to backup", exc_info=True)
 
 
-def get_saved(mod_id: str) -> dict:
-    import config as cfg
-    return dict((cfg.load().get("manifest_mods") or {}).get(mod_id) or {})
-
-
 def _remember(mod_id: str, **fields):
     import config as cfg
     c = cfg.load()

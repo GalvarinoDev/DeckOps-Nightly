@@ -857,14 +857,6 @@ def _write_metadata(install_dir: str, data: dict):
         json.dump(data, f, indent=2)
 
 
-def _read_metadata(install_dir: str) -> dict:
-    path = os.path.join(install_dir, METADATA_FILE)
-    if os.path.exists(path):
-        with open(path) as f:
-            return json.load(f)
-    return {}
-
-
 def cleanup_zd_from_other_prefixes(installed_games: dict, steam_root: str,
                                     on_progress=None):
     """
@@ -1259,27 +1251,6 @@ def _plut_compat(game_key: str, game: dict, source: str, steam_root: str) -> str
     if not compat and game.get("install_dir"):
         compat = os.path.join(os.path.dirname(os.path.dirname(game["install_dir"])), "compatdata", appid)
     return compat
-
-
-def _lan_user_plut(game_key: str, game: dict, source: str = "steam") -> str:
-    """The game's online Plutonium folder, as install_plutonium picks it."""
-    import config as _cfg
-    if _cfg.is_lcd():
-        from plutonium_lcd import get_shared_plut_dir
-        return get_shared_plut_dir()
-    from steam_common import STEAM_ROOT
-    return _plut_dir_in_prefix(_plut_compat(game_key, game, source, STEAM_ROOT))
-
-
-def setup_lan_all(prog=lambda m: None):
-    """Offline Mode added: build offline LAN for every set-up WaW MP / BO1 MP / BO2 MP / MW3 MP."""
-    import config as _cfg
-    from detect_games import find_all_games
-    found = find_all_games()
-    for key, entry in _cfg.get_setup_games().items():
-        if key in LAN_KEYS and entry.get("client") == "plutonium" and key in found:
-            src = entry.get("source", "steam")
-            setup_lan(found[key], key, _lan_user_plut(key, found[key], src), src, prog)
 
 
 def apply_offline_mode(on: bool, steam_root: str, prog=lambda pct, msg: None):

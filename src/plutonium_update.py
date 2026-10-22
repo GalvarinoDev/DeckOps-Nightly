@@ -20,13 +20,13 @@ mods/, usermaps/) is never in the manifest and stays real per prefix.
 """
 
 import fnmatch
-import hashlib
 import json
 import os
 import tempfile
 
 from log import get_logger
 from net import download
+from steam_common import sha1_file as _sha1
 
 _log = get_logger(__name__)
 
@@ -58,14 +58,6 @@ def local_revision(plut_dir: str):
             return json.load(f).get("revision")
     except (OSError, ValueError):
         return None
-
-
-def _sha1(path: str) -> str:
-    h = hashlib.sha1()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
 
 
 def _yeet(plut_dir: str, patterns: list, keep: set, log) -> int:
