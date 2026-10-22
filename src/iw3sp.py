@@ -12,10 +12,10 @@ Progress is reported via a callback:
 
 import os
 import json
-import hashlib
 import urllib.request
 
 from net import download as _download, BROWSER_UA as _BROWSER_UA
+from steam_common import sha1_file as _sha1
 
 # The Gitea releases lag behind this: v4.1.5's game.dll breaks right stick
 # aim with m_rawinput on and ignores the config init marker, and the
@@ -32,13 +32,6 @@ def _get_manifest():
     req = urllib.request.Request(f"{_CDN}/files.json", headers=_BROWSER_UA)
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.loads(r.read().decode("utf-8"))
-
-
-def _sha1(path: str) -> str:
-    h = hashlib.sha1()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""): h.update(chunk)
-    return h.hexdigest()
 
 
 def _build_iw3sp_launch_option() -> str:

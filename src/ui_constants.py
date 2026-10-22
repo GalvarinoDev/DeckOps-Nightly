@@ -11,7 +11,7 @@ import os
 from qt import (
     QLabel, QPushButton, QFrame, QHBoxLayout, QMessageBox, QWidget,
 )
-from qt import Qt, pyqtSignal, QObject
+from qt import Qt, pyqtSignal, QObject, QUrl, QT6
 from qt import QFont, QFontDatabase
 
 import config as cfg
@@ -251,38 +251,26 @@ MUSIC_URL = "https://archive.org/download/adrenaline-klickaud/Adrenaline_KLICKAU
 _music_volume  = cfg.get_music_volume()
 _music_enabled = cfg.get_music_enabled()
 
-def _pygame_available():
-    try:
-        import pygame
-        return True
-    except ImportError:
-        return False
+_player = None
 
+# Qt's media player; PyQt6 wheels bundle FFmpeg for mp3. PyQt5 would need
+# system GStreamer plugins, so the PyQt5 fallback plays no music.
 def _kill_audio():
-    if not _pygame_available():
-        return
-    try:
-        import pygame
-        if pygame.mixer.get_init():
-            pygame.mixer.music.stop()
-            pygame.mixer.quit()
-    except Exception:
-        _log.debug("audio shutdown failed", exc_info=True)
+    if _player:
+        _player.stop()
 
 def _start_audio():
-    if not _music_enabled or not _pygame_available():
+    global _player
+    if not _music_enabled or not QT6 or not os.path.exists(MUSIC_PATH):
         return
     try:
-        import pygame
-        if not pygame.mixer.get_init():
-            pygame.mixer.init()
-        if not pygame.mixer.music.get_busy():
-            if os.path.exists(MUSIC_PATH):
-                pygame.mixer.music.load(MUSIC_PATH)
-            else:
-                return
-            pygame.mixer.music.set_volume(_music_volume)
-            pygame.mixer.music.play(-1)
+        from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+        if _player is None:
+            _player = QMediaPlayer(); _player.setAudioOutput(QAudioOutput(_player))
+            _player.setSource(QUrl.fromLocalFile(MUSIC_PATH)); _player.setLoops(QMediaPlayer.Loops.Infinite)
+        _player.audioOutput().setVolume(_music_volume)
+        if _player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            _player.play()
     except Exception:
         _log.debug("audio start failed", exc_info=True)
 
@@ -290,14 +278,8 @@ def _set_audio_volume(vol: float):
     global _music_volume
     _music_volume = vol
     cfg.set_music_volume(vol)
-    if not _pygame_available():
-        return
-    try:
-        import pygame
-        if pygame.mixer.get_init():
-            pygame.mixer.music.set_volume(vol)
-    except Exception:
-        _log.debug("audio volume change failed", exc_info=True)
+    if _player:
+        _player.audioOutput().setVolume(vol)
 
 def _set_audio_enabled(enabled: bool):
     global _music_enabled

@@ -21,7 +21,9 @@ sites unchanged, e.g.:
     )
 """
 
+import base64
 import binascii
+import hashlib
 import json
 import os
 import re
@@ -84,6 +86,22 @@ def write_json(path: str, data, indent: int = 2):
         try: os.unlink(tmp)
         except OSError: pass
         raise
+
+
+def sha1_file(path: str) -> str:
+    h = hashlib.sha1()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def heroic_app_name(game_key: str) -> str:
+    # Deterministic so DeckOps can find its own Heroic library.json entries
+    # (Heroic only needs unique app_names, not random ones). Do not change:
+    # existing LCD installs and their Steam shortcuts are keyed by it.
+    digest = hashlib.sha256(f"deckops_plut_{game_key}".encode()).digest()
+    return "do_" + base64.urlsafe_b64encode(digest)[:19].decode()
 
 
 def newest_proton_dir(parent: str, prefix: str) -> str | None:
