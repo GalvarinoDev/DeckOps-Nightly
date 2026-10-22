@@ -2217,18 +2217,23 @@ SHORTCUTS = {
 }
 
 def get_deck_serial():
-    """Read the Steam Deck serial number from Steam's config.vdf."""
-    if not os.path.exists(STEAM_CONFIG):
-        return None
+    """Read the Steam Deck serial from config.vdf, else the DMI serial (Deck only)."""
     try:
         with open(STEAM_CONFIG, "r", encoding="utf-8", errors="replace") as f:
-            content = f.read()
-        match = re.search(r'"SteamDeckRegisteredSerialNumber"\s+"([^"]+)"', content)
+            match = re.search(r'"SteamDeckRegisteredSerialNumber"\s+"([^"]+)"', f.read())
         if match:
             return match.group(1)
-    except Exception:
+    except OSError:
         pass
-    return None
+    # Mirrors steam_common.get_deck_serial; src/ is gone by now
+    try:
+        with open("/sys/class/dmi/id/product_name") as f:
+            if f.read().strip() not in ("Jupiter", "Galileo"):
+                return None
+        with open("/sys/class/dmi/id/product_serial") as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
 
 def find_install_dir(steam_root, appid):
     """Find the install directory for a Steam appid."""
