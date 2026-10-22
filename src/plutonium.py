@@ -944,6 +944,8 @@ def cleanup_plut_from_non_plut_prefixes(steam_root: str, on_progress=None):
 
 LAN_ROOT = os.path.expanduser("~/.local/share/deckops/lan")
 LAN_ASSETS = os.path.join(os.path.dirname(_OLED_HERE), "assets", "LAN", "offline")
+# The offline Rejoin Match buttons connect to this port (WaW mod.ff, BO1 mod.ff Play,
+# BO2 raw/deckops_bo2_menu.iwd, MW3 ui_mp/main.lua)
 LAN_PORT = 4986
 LAN_KEYS = ("t4mp", "t5mp", "t6mp", "iw5mp", "iw5mp_ds")
 # Offline games run in their own prefix. The server runs in the Offline launcher's
@@ -963,7 +965,7 @@ _LAN_SERVER_ARGS = {
     # sv_floodprotect 0: every click in the Map / Mode and Bot Warfare menus is a menu response; fast clicks get dropped.
     "t4mp": ('+set fs_game mods/mp_deckops_offline +set dcac_maps "$M" +set sv_maxclients 13 '
              '+set sv_hostname "DeckOps Offline" +set sv_floodprotect 0 +set logfile 1 +set g_inactivity 0 +set bots_main 1 '
-             '+set bots_main_firstIsHost 0 +set bots_manage_fill 10 +set bots_manage_fill_mode 0 '
+             '+set bots_main_firstIsHost 0 +set bots_manage_fill 10 +set bots_manage_fill_mode 0 +set bots_manage_fill_kick 1 '
              '+set bots_skill 2 +map_rotate'),
 }
 

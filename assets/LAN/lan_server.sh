@@ -59,6 +59,25 @@ if [ -n "$PORT" ]; then
       | awk -F';' '{k = $2 ";" $3; if ($2 == "class") k = k ";" $4; l[k] = $0} END {for (k in l) print l[k]}')
     set -- "${SAVED[@]}" "$@"
   fi
+  # A random first map each start, then the normal rotation: base-game maps for BO1, BO2 and MW3 (DLC may be
+  # missing), any installed map for WaW. Only maps installed here (dcac_maps) are picked.
+  case $MODE in
+    t4mp) POOL= ROT="gametype tdm map" ;;
+    t5mp) POOL="mp_array mp_cracked mp_crisis mp_firingrange mp_duga mp_hanoi mp_cairo mp_havoc mp_cosmodrome mp_nuked mp_radiation mp_mountain mp_villa mp_russianbase" ROT="gametype tdm map" ;;
+    t6mp) POOL="mp_la mp_dockside mp_carrier mp_drone mp_express mp_hijacked mp_meltdown mp_overflow mp_nightclub mp_raid mp_slums mp_village mp_turbine mp_socotra mp_nuketown_2020" ROT="execgts tdm.cfg map" ;;
+    iw5mp) POOL="mp_alpha mp_bootleg mp_bravo mp_carbon mp_dome mp_exchange mp_hardhat mp_interchange mp_lambeth mp_mogadishu mp_paris mp_plaza2 mp_radar mp_seatown mp_underground mp_village" ROT="dsr TDM_default map" ;;
+  esac
+  HAVE=; PREV=; for a in "$@"; do [ "$PREV" = dcac_maps ] && HAVE=$a; PREV=$a; done
+  MAP=$(if [ -z "$POOL" ]; then tr , '\n' <<<"$HAVE"; elif [ -z "$HAVE" ]; then tr ' ' '\n' <<<"$POOL"
+    else tr ' ' '\n' <<<"$POOL" | grep -xF -f <(tr , '\n' <<<"$HAVE"); fi | grep . | shuf -n1)
+  if [ -n "$MAP" ]; then
+    ARGS=()
+    for a in "$@"; do
+      if [ "$a" = +map_rotate ] || [ "$a" = +start_map_rotate ]; then ARGS+=(+set sv_maprotationcurrent "$ROT $MAP"); fi
+      ARGS+=("$a")
+    done
+    set -- "${ARGS[@]}"
+  fi
   if ! ss -uln | grep -q ":$PORT "; then
     # A unit left over from an interrupted run blocks systemd-run from reusing the name
     systemctl --user stop "$UNIT" 2>/dev/null; systemctl --user reset-failed "$UNIT" 2>/dev/null
