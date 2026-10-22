@@ -12,6 +12,7 @@ and then refusing to install based on it is worse than not checking.
 """
 
 import os
+import socket
 from collections import namedtuple
 
 from log import get_logger
@@ -71,6 +72,14 @@ def _on_ac() -> bool:
     return not seen
 
 
+def _online() -> bool:
+    try:
+        socket.create_connection(("api.github.com", 443), timeout=5).close()
+        return True
+    except OSError:
+        return False
+
+
 def check(selected, iw4x_dlc=False, zd=False, downgrade_keys=()):
     """
     Run the pre-install checks.
@@ -123,6 +132,9 @@ def check(selected, iw4x_dlc=False, zd=False, downgrade_keys=()):
     if not _on_ac():
         out.append(Check(WARN, "On battery",
                          "Plug the device in. Installs can run for hours."))
+    if not _online():
+        out.append(Check(WARN, "No internet connection",
+                         "Downloads will fail. Connect to Wi-Fi first."))
     return out
 
 

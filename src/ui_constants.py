@@ -52,7 +52,11 @@ def _copy_log_to_clipboard(status_widget=None):
     try:
         with open(LOG_PATH, "r", encoding="utf-8", errors="replace") as f:
             lines = f.readlines()
+        # An early failure in a long install scrolls out of the tail
+        errs = [l for l in lines[:-200] if "  ERROR  " in l or "✗" in l][-50:]
         tail = "".join(lines[-200:])
+        if errs:
+            tail = "--- earlier errors ---\n" + "".join(errs) + "--- last 200 lines ---\n" + tail
         copy_to_clipboard(tail)
         if status_widget:
             status_widget.setText("Log copied to clipboard (last 200 lines)")
