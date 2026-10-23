@@ -1816,6 +1816,42 @@ def _launcher_launch_opts(shortcut_appid: int) -> str:
     return ""
 
 
+def repair_launcher_files(prog=lambda m: None):
+    """Re-download the Offline launcher's files that differ from the user's DeckOps
+    version on GitHub. An update only fetches files changed since the last one, so a
+    copy cut off by a dropped download stays broken until a reinstall."""
+    import json, urllib.request
+    from identity import GITHUB_USER, GITHUB_REPO
+    from steam_common import git_blob_sha
+    try:
+        with open(os.path.join(INSTALL_DIR, "VERSION")) as f:
+            ref = f.read().strip() or "main"
+    except OSError:
+        ref = "main"
+    api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}/contents/assets/LAN?ref={ref}"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(api, headers={"User-Agent": "DeckOps"}), timeout=15) as r:
+            want = {e["name"]: e["sha"] for e in json.load(r) if e.get("type") == "file"}
+    except Exception as ex:
+        prog(f"  ⚠ Could not check the launcher files: {ex}")
+        return
+    for name in ("DeckOps_Offline.exe", "launcher_offline.sh", "lan_server.sh"):
+        path = os.path.join(INSTALL_DIR, "assets", "LAN", name)
+        if name not in want or (os.path.isfile(path) and git_blob_sha(path) == want[name]):
+            continue
+        prog(f"  Downloading {name}...")
+        new = path + ".new"
+        download(f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{ref}/assets/LAN/{name}",
+                 new, headers={"User-Agent": "DeckOps"})
+        if git_blob_sha(new) != want[name]:
+            os.remove(new)
+            raise IOError(f"{name} download does not match GitHub")
+        if name.endswith(".sh"):
+            os.chmod(new, 0o755)
+        os.replace(new, path)
+        prog(f"  ✓ {name} replaced")
+
+
 def create_launcher_shortcut(on_progress=None):
     """
     Create a non-Steam shortcut for the DeckOps Plutonium Offline Launcher.
