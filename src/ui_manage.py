@@ -455,31 +455,36 @@ class ManagementScreen(QWidget):
         go_to(self.stack, "UpdateScreen")
 
     def _readd(self, gd):
-        """Re-add the Plutonium offline launcher shortcut."""
-        from shortcut import create_launcher_shortcut
-        from wrapper import kill_steam
-        self._status.setText("Re-adding Plutonium offline launcher...")
-
-        # Signals marshal UI updates onto the GUI thread; calling setText
-        # directly from the worker thread is unsafe in Qt. Same pattern as
-        # the other workers in this file.
-        s = _Sigs()
-        s.log.connect(self._status.setText)
-
-        def _run():
+        """Repair the offline launcher: its files, its prefix and its shortcut."""
+        if QMessageBox.question(self, "Offline Mode", "Re-add the offline launcher? Checks its files, "
+                                "rebuilds its prefix and re-adds the shortcut. Steam closes while it runs.") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        def task(sigs):
+            import plutonium
+            from shortcut import create_launcher_shortcut, repair_launcher_files
+            from wrapper import kill_steam
+            log = lambda m: sigs.log.emit(m.strip())
             # Steam must be closed first. Steam holds shortcuts.vdf and the
             # controller configsets in memory and flushes them on exit, which
             # clobbers any edits made while it is running. This was the cause
             # of the launcher controller template intermittently reverting.
-            try:
-                kill_steam(on_progress=s.log.emit)
-                create_launcher_shortcut(on_progress=s.log.emit)
-                s.log.emit("Plutonium offline launcher shortcut re-added. "
-                           "Safe to reopen Steam.")
-            except Exception as ex:
-                s.log.emit(f"✗  Re-add failed: {ex}")
-
-        threading.Thread(target=_run, daemon=True).start()
+            sigs.progress.emit(2, "Closing Steam...")
+            kill_steam(on_progress=sigs.log.emit)
+            sigs.progress.emit(10, "Checking launcher files...")
+            repair_launcher_files(log)
+            # Also the offline server's prefix; _lan_prefixes sets it up again
+            sigs.progress.emit(40, "Rebuilding launcher prefix...")
+            shutil.rmtree(plutonium.LAN_SERVER_PREFIX, ignore_errors=True)
+            plutonium._lan_prefixes(log)
+            try: os.remove(os.path.join(PROJECT_ROOT, ".lan_intent.json"))
+            except FileNotFoundError: pass
+            sigs.progress.emit(90, "Re-adding shortcut...")
+            create_launcher_shortcut(on_progress=log)
+            sigs.log.emit("✓  Offline launcher re-added. Safe to reopen Steam.")
+        us = get_screen(self.stack, "UpdateScreen")
+        us.task = ("OFFLINE LAUNCHER", task)
+        go_to(self.stack, "UpdateScreen")
 
     def _setup(self, gd, force_downgrade_ids=None):
         """Route a single card's keys through the install flow."""
