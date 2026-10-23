@@ -6,7 +6,7 @@ Screens: ManagementCard, ManagementScreen, SetupCompleteScreen,
 Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
 """
 
-import os, subprocess, sys, shutil, stat, threading, json, urllib.request, urllib.error, compileall
+import os, subprocess, sys, shutil, stat, threading, json, urllib.request, urllib.error, urllib.parse, compileall
 
 from qt import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
@@ -41,50 +41,83 @@ from log import get_logger
 _log = get_logger(__name__)
 
 
-def _remote_changes():
+# VERSION is per install; the repo still tracks an old copy from 2026-05
+_PROTECTED = ("deckops.json", "VERSION", "assets/music/background.mp3")
+_HDR = {"User-Agent": "DeckOps"}
+
+
+def _protected(path: str) -> bool:
+    return path.startswith("logs/") or path in _PROTECTED
+
+
+def _tree(api: str, sha: str) -> dict:
+    """{path: (blob sha, mode)} for every file in the commit."""
+    req = urllib.request.Request(f"{api}/git/trees/{sha}?recursive=1", headers=_HDR)
+    with urllib.request.urlopen(req, timeout=15) as r:
+        d = json.loads(r.read())
+    if d.get("truncated"):
+        raise RuntimeError("GitHub's file list came back incomplete")
+    return {e["path"]: (e["sha"], e["mode"]) for e in d.get("tree", []) if e.get("type") == "blob"}
+
+
+def _remote_changes(removed: bool = False):
     """
-    (local_sha, remote_sha, files) for the local VERSION vs GitHub main.
-    files is the compare API's file list, or None when there's no local
-    sha or the compare call fails. Raises if the commits lookup fails.
+    (local_sha, remote_sha, stale, gone) for this install vs GitHub main.
+    stale is {path: (blob sha, mode)} for every file on disk that differs
+    from main or is missing, so a download that was cut off or served stale
+    gets fixed on the next update even when VERSION already matches.
+    gone lists files of the installed version that main no longer has
+    (looked up only with removed=True). Raises if GitHub can't be reached.
     """
-    version_file = os.path.join(PROJECT_ROOT, "VERSION")
+    from steam_common import git_blob_sha
     local_sha = "0"
-    if os.path.isfile(version_file):
-        with open(version_file) as f:
+    try:
+        with open(os.path.join(PROJECT_ROOT, "VERSION")) as f:
             local_sha = f.read().strip() or "0"
+    except OSError:
+        pass
     api = f"https://api.github.com/repos/{GITHUB_USER}/{GITHUB_REPO}"
-    hdr = {"User-Agent": "DeckOps"}
-    req = urllib.request.Request(f"{api}/commits/main", headers=hdr)
-    with urllib.request.urlopen(req, timeout=10) as r:
+    with urllib.request.urlopen(urllib.request.Request(f"{api}/commits/main", headers=_HDR), timeout=10) as r:
         remote_sha = json.loads(r.read()).get("sha", "")
-    files = None
-    if remote_sha and local_sha not in ("0", remote_sha):
+    if not remote_sha:
+        raise RuntimeError("GitHub returned no commit")
+    want = _tree(api, remote_sha)
+    stale = {}
+    for path, (sha, mode) in want.items():
+        if _protected(path):
+            continue
+        f = os.path.join(PROJECT_ROOT, path)
         try:
-            creq = urllib.request.Request(f"{api}/compare/{local_sha}...{remote_sha}", headers=hdr)
-            with urllib.request.urlopen(creq, timeout=15) as r2:
-                files = json.loads(r2.read()).get("files", [])
+            ok = os.path.isfile(f) and git_blob_sha(f) == sha and (mode != "100755" or os.access(f, os.X_OK))
+        except OSError:
+            ok = False
+        if not ok:
+            stale[path] = (sha, mode)
+    gone = []
+    if removed and local_sha not in ("0", remote_sha):
+        try:
+            gone = [p for p in _tree(api, local_sha) if p not in want and not _protected(p)]
         except Exception:
-            pass
-    return local_sha, remote_sha, files
+            # e.g. the installed commit is gone after a force push; leftovers stay
+            _log.warning("could not list files of installed version %s", local_sha, exc_info=True)
+    return local_sha, remote_sha, stale, gone
 
 
-def _reset_hint(files) -> bool:
+def _reset_hint(names) -> bool:
     # Mirrors launcher.sh RESET_HINT: config.py or more than 3 src/ files changed
-    names = [f.get("filename", "") for f in files or []]
     return "src/config.py" in names or sum(n.startswith("src/") for n in names) > 3
 
 
 def _check_update_status():
-    """Compare local VERSION sha to GitHub main. Returns 'OK|..', 'UPDATE|..' or 'FAIL|..'."""
+    """Compare this install to GitHub main. Returns 'OK|..', 'UPDATE|..' or 'FAIL|..'."""
     try:
-        local_sha, remote_sha, files = _remote_changes()
-        if not remote_sha:
-            return "FAIL|Could not reach GitHub."
+        local_sha, remote_sha, stale, _ = _remote_changes()
         if local_sha == remote_sha:
-            return "OK|You're up to date!"
-        file_count = "unknown" if files is None else str(len(files))
-        hint = "\nReset Config recommended after updating." if _reset_hint(files) else ""
-        return f"UPDATE|Update available — {file_count} file(s) changed.{hint}"
+            if not stale:
+                return "OK|You're up to date!"
+            return f"UPDATE|{len(stale)} DeckOps file(s) need repair."
+        hint = "\nReset Config recommended after updating." if _reset_hint(stale) else ""
+        return f"UPDATE|Update available — {len(stale)} file(s) to download.{hint}"
     except Exception as ex:
         _log.warning("Update check failed: %s", ex)
         return "FAIL|Update check failed."
@@ -1728,143 +1761,53 @@ class ConfigureScreen(QWidget):
         threading.Thread(target=self._apply_worker, daemon=True).start()
 
     def _apply_worker(self):
-        """Download changed files, stage, apply, then signal relaunch."""
-        github_user = self._GITHUB_USER
-        github_repo = self._GITHUB_REPO
-        github_raw = f"https://raw.githubusercontent.com/{github_user}/{github_repo}/main"
+        """Download every file that differs from GitHub main, stage, check, apply, then signal relaunch."""
+        from net import download
+        from steam_common import git_blob_sha
         install_dir = PROJECT_ROOT
         update_dir = os.path.join(install_dir, ".update")
-        version_file = os.path.join(install_dir, "VERSION")
-
-        # Protected paths — never overwritten
-        protected = {"logs", "deckops.json", "assets/music/background.mp3"}
-
-        def is_protected(filepath):
-            if filepath.startswith("logs/"):
-                return True
-            return filepath in protected
-
         try:
-            local_sha, remote_sha, file_entries = _remote_changes()
-
-            if not remote_sha or local_sha == remote_sha:
+            local_sha, remote_sha, stale, gone = _remote_changes(removed=True)
+            if not stale and not gone and local_sha == remote_sha:
                 self._apply_sig.log.emit("FAIL|Already up to date.")
                 return
-
-            # Removed files 404 on raw.githubusercontent, so exclude
-            # them from download and delete locally at apply time.
-            # Renamed files download under their new name; the old
-            # name (previous_filename) is deleted like a removal.
-            file_entries = file_entries or []
-            changed_files = [f["filename"] for f in file_entries
-                             if f.get("status") != "removed"]
-            removed_files = [f["filename"] for f in file_entries
-                             if f.get("status") == "removed"]
-            removed_files += [f["previous_filename"] for f in file_entries
-                              if f.get("status") == "renamed"
-                              and f.get("previous_filename")]
-
-            # Clean staging dir
+            # Files come from the commit itself: main on raw.githubusercontent is cached
+            # for minutes after a push and served the previous version (Deck, 2026-10-22)
+            raw = f"https://raw.githubusercontent.com/{self._GITHUB_USER}/{self._GITHUB_REPO}/{remote_sha}"
             if os.path.isdir(update_dir):
                 shutil.rmtree(update_dir)
             os.makedirs(update_dir, exist_ok=True)
 
-            if not changed_files:
-                # No compare available — full zip download
-                self._apply_sig.log.emit("PROG|Downloading full update...")
-                import tempfile, zipfile
-                from net import download
-                tmp_extract = tempfile.mkdtemp(prefix="deckops_extract_")
-                tmp_zip = os.path.join(tmp_extract, "main.zip")
-                download(f"https://github.com/{github_user}/{github_repo}/archive/refs/heads/main.zip",
-                         tmp_zip, timeout=120, headers={"User-Agent": "DeckOps"})
-                with zipfile.ZipFile(tmp_zip, "r") as zf:
-                    zf.extractall(tmp_extract)
-                os.remove(tmp_zip)
+            total = len(stale)
+            for idx, (path, (sha, _)) in enumerate(sorted(stale.items())):
+                self._apply_sig.log.emit(f"PROG|Downloading ({idx+1}/{total}): {os.path.basename(path)}")
+                dest = os.path.join(update_dir, path)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                # net.download retries and rejects truncated streams; the hash check catches the rest
+                download(f"{raw}/{urllib.parse.quote(path)}", dest, timeout=30, headers=_HDR)
+                if git_blob_sha(dest) != sha:
+                    raise RuntimeError(f"{path} does not match GitHub")
 
-                # Find the extracted folder (GitHub zips have a top-level dir)
-                entries = [e for e in os.listdir(tmp_extract)
-                           if os.path.isdir(os.path.join(tmp_extract, e))]
-                extracted = os.path.join(tmp_extract, entries[0]) if entries else tmp_extract
+            # A syntax error pushed to main would otherwise brick every install on relaunch
+            if not compileall.compile_dir(update_dir, quiet=1):
+                raise RuntimeError("update has Python errors, nothing applied")
 
-                # Copy to staging
-                shutil.copytree(extracted, update_dir, dirs_exist_ok=True)
-                shutil.rmtree(tmp_extract, ignore_errors=True)
+            # Copied over the old file, not renamed: offline copies hard-link some of these
+            for path, (_, mode) in stale.items():
+                target = os.path.join(install_dir, path)
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                shutil.copy2(os.path.join(update_dir, path), target)
+                if mode == "100755":
+                    os.chmod(target, 0o755)
 
-                # A syntax error pushed to main would otherwise brick every install on relaunch
-                if not compileall.compile_dir(update_dir, quiet=1):
-                    raise RuntimeError("update has Python errors, nothing applied")
+            # Delete files removed or renamed away upstream, so stale modules can never shadow current ones
+            for path in gone:
+                target = os.path.join(install_dir, path)
+                if os.path.isfile(target):
+                    os.remove(target)
+                    _log.info("Removed stale file: %s", path)
 
-                # Apply: drop protected paths from staging first, so the user's
-                # copies are never overwritten (no restore window to crash in)
-                for p in protected:
-                    sp = os.path.join(update_dir, p)
-                    if os.path.isdir(sp): shutil.rmtree(sp)
-                    elif os.path.exists(sp): os.remove(sp)
-                shutil.copytree(update_dir, install_dir, dirs_exist_ok=True)
-            else:
-                # Partial update — download only changed files
-                total = len(changed_files)
-                for idx, filepath in enumerate(changed_files):
-                    if is_protected(filepath):
-                        continue
-                    self._apply_sig.log.emit(
-                        f"PROG|Downloading ({idx+1}/{total}): {os.path.basename(filepath)}")
-
-                    dest = os.path.join(update_dir, filepath)
-                    os.makedirs(os.path.dirname(dest), exist_ok=True)
-
-                    try:
-                        # net.download retries and rejects truncated streams,
-                        # so a dropped connection can't stage a half-written .py
-                        from net import download
-                        download(f"{github_raw}/{filepath}", dest, timeout=30,
-                                 headers={"User-Agent": "DeckOps"})
-                    except urllib.error.HTTPError as ex:
-                        if ex.code == 404:
-                            # File was deleted or renamed — skip it
-                            _log.info("Skipping deleted/renamed file: %s", filepath)
-                            continue
-                        _log.warning("Failed to download %s: %s", filepath, ex)
-                        shutil.rmtree(update_dir, ignore_errors=True)
-                        self._apply_sig.log.emit(f"FAIL|Download failed: {filepath}")
-                        return
-                    except Exception as ex:
-                        _log.warning("Failed to download %s: %s", filepath, ex)
-                        shutil.rmtree(update_dir, ignore_errors=True)
-                        self._apply_sig.log.emit(f"FAIL|Download failed: {filepath}")
-                        return
-
-                # A syntax error pushed to main would otherwise brick every install on relaunch
-                if not compileall.compile_dir(update_dir, quiet=1):
-                    raise RuntimeError("update has Python errors, nothing applied")
-
-                # Apply staged files
-                for filepath in changed_files:
-                    if is_protected(filepath):
-                        continue
-                    staged = os.path.join(update_dir, filepath)
-                    if os.path.isfile(staged):
-                        target = os.path.join(install_dir, filepath)
-                        os.makedirs(os.path.dirname(target), exist_ok=True)
-                        shutil.copy2(staged, target)
-
-                # Delete local copies of files removed or renamed-away
-                # upstream, so stale modules can never shadow current ones
-                for filepath in removed_files:
-                    if is_protected(filepath):
-                        continue
-                    target = os.path.join(install_dir, filepath)
-                    if os.path.isfile(target):
-                        os.remove(target)
-                        _log.info("Removed stale file: %s", filepath)
-
-            # Cleanup staging
             shutil.rmtree(update_dir, ignore_errors=True)
-
-            # Write new version SHA
-            with open(version_file, "w") as f:
-                f.write(remote_sha)
 
             # chmod +x shell scripts
             for script in ("launcher.sh", "deckops_uninstall.sh", "install.sh"):
@@ -1872,12 +1815,16 @@ class ConfigureScreen(QWidget):
                 if os.path.isfile(spath):
                     os.chmod(spath, os.stat(spath).st_mode | stat.S_IEXEC)
 
+            # Last, so an update that failed part way is retried in full
+            with open(os.path.join(install_dir, "VERSION"), "w") as f:
+                f.write(remote_sha)
+
             # Clean up stale flag file if present
             flag = os.path.expanduser("~/.deckops_update_requested")
             if os.path.isfile(flag):
                 os.remove(flag)
 
-            _log.info("Update applied successfully — SHA %s", remote_sha)
+            _log.info("Update applied successfully — SHA %s (%d file(s), %d removed)", remote_sha, total, len(gone))
             self._apply_sig.log.emit("RELAUNCH|Update complete! Relaunching...")
 
         except Exception as ex:
