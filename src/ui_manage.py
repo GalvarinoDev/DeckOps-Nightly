@@ -51,19 +51,19 @@ def _protected(path: str) -> bool:
 
 
 def _tree(api: str, sha: str) -> dict:
-    """{path: (blob sha, mode)} for every file in the commit."""
+    """{path: (blob sha, mode, size)} for every file in the commit."""
     req = urllib.request.Request(f"{api}/git/trees/{sha}?recursive=1", headers=_HDR)
     with urllib.request.urlopen(req, timeout=15) as r:
         d = json.loads(r.read())
     if d.get("truncated"):
         raise RuntimeError("GitHub's file list came back incomplete")
-    return {e["path"]: (e["sha"], e["mode"]) for e in d.get("tree", []) if e.get("type") == "blob"}
+    return {e["path"]: (e["sha"], e["mode"], e.get("size", 0)) for e in d.get("tree", []) if e.get("type") == "blob"}
 
 
 def _remote_changes(removed: bool = False):
     """
     (local_sha, remote_sha, stale, gone) for this install vs GitHub main.
-    stale is {path: (blob sha, mode)} for every file on disk that differs
+    stale is {path: (blob sha, mode, size)} for every file on disk that differs
     from main or is missing, so a download that was cut off or served stale
     gets fixed on the next update even when VERSION already matches.
     gone lists files of the installed version that main no longer has
@@ -83,7 +83,7 @@ def _remote_changes(removed: bool = False):
         raise RuntimeError("GitHub returned no commit")
     want = _tree(api, remote_sha)
     stale = {}
-    for path, (sha, mode) in want.items():
+    for path, (sha, mode, size) in want.items():
         if _protected(path):
             continue
         f = os.path.join(PROJECT_ROOT, path)
@@ -92,7 +92,7 @@ def _remote_changes(removed: bool = False):
         except OSError:
             ok = False
         if not ok:
-            stale[path] = (sha, mode)
+            stale[path] = (sha, mode, size)
     gone = []
     if removed and local_sha not in ("0", remote_sha):
         try:
@@ -1756,7 +1756,15 @@ class ConfigureScreen(QWidget):
         self._update_status.setText("Downloading update...")
         self._update_status.setStyleSheet(f"color:{C_DIM};")
 
+        # Same popup as the Zombies Declassified download
+        from qt import QProgressDialog
+        pd = self._update_pd = QProgressDialog("Checking files...", None, 0, 100, self)
+        pd.setWindowTitle("Update DeckOps")
+        pd.setMinimumDuration(0); pd.setAutoClose(False); pd.setAutoReset(False)
+        pd.setCancelButton(None); pd.show()
+
         self._apply_sig = _Sigs()
+        self._apply_sig.progress.connect(lambda p, m: (pd.setValue(p), pd.setLabelText(m)))
         self._apply_sig.log.connect(self._on_apply_signal)
         threading.Thread(target=self._apply_worker, daemon=True).start()
 
@@ -1779,21 +1787,30 @@ class ConfigureScreen(QWidget):
             os.makedirs(update_dir, exist_ok=True)
 
             total = len(stale)
-            for idx, (path, (sha, _)) in enumerate(sorted(stale.items())):
-                self._apply_sig.log.emit(f"PROG|Downloading ({idx+1}/{total}): {os.path.basename(path)}")
+            nbytes = sum(size for _, _, size in stale.values()) or 1
+            got = 0
+            for idx, (path, (sha, _, size)) in enumerate(sorted(stale.items())):
+                head = f"Downloading ({idx+1}/{total})"
+                self._apply_sig.log.emit(f"PROG|{head}: {os.path.basename(path)}")
                 dest = os.path.join(update_dir, path)
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
+                # Bar fills by bytes across all files; the label shows this file's size and speed
+                prog = lambda p, m, g=got, sz=size, h=head: self._apply_sig.progress.emit(
+                    min(99, int((g + sz * p / 100) * 100 / nbytes)), f"{h}\n{m}")
                 # net.download retries and rejects truncated streams; the hash check catches the rest
-                download(f"{raw}/{urllib.parse.quote(path)}", dest, timeout=30, headers=_HDR)
+                download(f"{raw}/{urllib.parse.quote(path)}", dest, on_progress=prog,
+                         label=os.path.basename(path), timeout=30, headers=_HDR)
                 if git_blob_sha(dest) != sha:
                     raise RuntimeError(f"{path} does not match GitHub")
+                got += size
+            self._apply_sig.progress.emit(99, "Installing update...")
 
             # A syntax error pushed to main would otherwise brick every install on relaunch
             if not compileall.compile_dir(update_dir, quiet=1):
                 raise RuntimeError("update has Python errors, nothing applied")
 
             # Copied over the old file, not renamed: offline copies hard-link some of these
-            for path, (_, mode) in stale.items():
+            for path, (_, mode, _) in stale.items():
                 target = os.path.join(install_dir, path)
                 os.makedirs(os.path.dirname(target), exist_ok=True)
                 shutil.copy2(os.path.join(update_dir, path), target)
@@ -1837,12 +1854,14 @@ class ConfigureScreen(QWidget):
         if kind == "PROG":
             self._update_status.setText(text)
         elif kind == "RELAUNCH":
+            self._update_pd.setValue(100); self._update_pd.setLabelText(text)
             self._update_status.setText(text)
             self._update_status.setStyleSheet(f"color:{C_IW};")
             _kill_audio()
             QTimer.singleShot(1000, self._relaunch)
         else:
             # FAIL
+            self._update_pd.close()
             self._update_btn.setEnabled(True)
             self._update_btn.setText("Check for Updates")
             try:
