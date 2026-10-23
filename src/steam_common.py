@@ -96,6 +96,15 @@ def sha1_file(path: str) -> str:
     return h.hexdigest()
 
 
+def git_blob_sha(path: str) -> str:
+    """The file's git object id, as GitHub's contents API reports it."""
+    h = hashlib.sha1(b"blob %d\0" % os.path.getsize(path))
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 def heroic_app_name(game_key: str) -> str:
     # Deterministic so DeckOps can find its own Heroic library.json entries
     # (Heroic only needs unique app_names, not random ones). Do not change:
