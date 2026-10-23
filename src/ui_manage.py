@@ -165,7 +165,7 @@ class ManagementCard(QFrame):
             b = _card_btn("Add", C_IW)
             if on_offline: b.clicked.connect(lambda: on_offline(True))
         elif self._is_lan:
-            b = _card_btn("Re-Add", C_TREY)
+            b = _card_btn("Repair", C_TREY)
             if on_readd: b.clicked.connect(lambda: on_readd(gd))
             rm = _card_btn("Remove", C_RED_BTN)
             if on_offline: rm.clicked.connect(lambda: on_offline(False))
@@ -456,7 +456,7 @@ class ManagementScreen(QWidget):
 
     def _readd(self, gd):
         """Repair the offline launcher: its files, its prefix and its shortcut."""
-        if QMessageBox.question(self, "Offline Mode", "Re-add the offline launcher? Checks its files, "
+        if QMessageBox.question(self, "Offline Mode", "Repair the offline launcher? Checks its files, "
                                 "rebuilds its prefix and re-adds the shortcut. Steam closes while it runs.") \
                 != QMessageBox.StandardButton.Yes:
             return
@@ -481,9 +481,9 @@ class ManagementScreen(QWidget):
             except FileNotFoundError: pass
             sigs.progress.emit(90, "Re-adding shortcut...")
             create_launcher_shortcut(on_progress=log)
-            sigs.log.emit("✓  Offline launcher re-added. Safe to reopen Steam.")
+            sigs.log.emit("✓  Offline launcher repaired. Safe to reopen Steam.")
         us = get_screen(self.stack, "UpdateScreen")
-        us.task = ("OFFLINE LAUNCHER", task)
+        us.task = ("REPAIR OFFLINE LAUNCHER", task)
         go_to(self.stack, "UpdateScreen")
 
     def _setup(self, gd, force_downgrade_ids=None):
