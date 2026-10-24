@@ -253,6 +253,19 @@ choice=$(zenity \
 
 case "$choice" in
     "Launch DeckOps")
+        # Installs from before the PyQt6 move: rerun the installer in this terminal so
+        # the download shows. It keeps deckops.json and the venv and launches DeckOps itself
+        if ! "$INSTALL_DIR/.venv/bin/python3" -c "import PyQt6.QtWidgets" &>/dev/null \
+           && [ ! -f "$INSTALL_DIR/.venv/.qt6_unsupported" ]; then
+            zenity --info --title="$APP_TITLE Update" --width=360 \
+                --text="DeckOps needs a one-time update (PyQt6, about 100 MB).\n\nIt downloads in the terminal window and can take several minutes.\n\nDo not close the terminal. DeckOps opens when it is done." \
+                2>/dev/null
+            touch "$LOCKFILE"
+            curl -sL "$GITHUB_RAW/install.sh" | bash
+            rm -f "$LOCKFILE"
+            exit 0
+        fi
+
         # Check for updates before launching
         check_for_updates
 
