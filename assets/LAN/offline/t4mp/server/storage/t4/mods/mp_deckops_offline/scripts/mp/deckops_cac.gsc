@@ -15,6 +15,7 @@
 init()
 {
     level.dcac = dcacCatalog();
+    restoreBotplay();
     level thread onPlayerConnect();
     level thread applyMatchOptions();
 }
@@ -26,11 +27,35 @@ onPlayerConnect()
         level waittill("connected", player);
         // Bot Warfare doesn't set pers["isBot"] by "connected"
         if (player isBot())
+        {
+            player thread botGrenadeFix();
             continue;
+        }
         player dlog("connected");
         player thread watchMenuResponses();
         player thread watchDeath();
         player thread watchSpawn();
+    }
+}
+
+// A bot re-added mid-match (Bot Count 0, then up) can read special grenade 0, and WaW warns on screen.
+// Hand it the molotov WaW falls back to anyway, before each spawn reads the class.
+botGrenadeFix()
+{
+    self endon("disconnect");
+    for (;;)
+    {
+        wait 0.05;
+        for (i = 0; i < 5; i++)
+        {
+            g = self getStat(208 + i * 10);
+            if (g != 101 && g != 102 && g != 103 && g != 105)
+            {
+                self setStat(208 + i * 10, 101);
+                self.cac_initialized = undefined;
+            }
+        }
+        self waittill("death");
     }
 }
 
@@ -234,12 +259,6 @@ startMatch()
     setDvar("sv_maprotationcurrent", rot);
     iPrintLnBold("^2Loading ^7" + name);
     wait 2;
-    // bots_play_* outlive the level: put back what the Esc menu paused, or the bots stay frozen on the new map
-    if (isDefined(level.dcac_botplay) && level.dcac_menus > 0)
-    {
-        level.dcac_menus = 1;
-        botsResume();
-    }
     exitLevel(false);
 }
 
@@ -339,7 +358,10 @@ botToggle(dvar)
     if (botSetting(dvar)) v = "0";
     else v = "1";
     if (isDefined(level.dcac_botplay) && isDefined(level.dcac_botplay[dvar]))
+    {
         level.dcac_botplay[dvar] = v;
+        saveBotplay();
+    }
     else
         setDvar(dvar, v);
 }
@@ -367,6 +389,33 @@ botsPause()
         level.dcac_botplay[dvars[i]] = getDvar(dvars[i]);
         setDvar(dvars[i], "0");
     }
+    saveBotplay();
+}
+
+// bots_play_* outlive the level but level.dcac_botplay doesn't: a map change or an S&D round
+// (map_restart) while paused would leave the bots frozen, so the values to restore go in a dvar too
+saveBotplay()
+{
+    s = "";
+    keys = getArrayKeys(level.dcac_botplay);
+    for (i = 0; i < keys.size; i++)
+        s += keys[i] + "=" + level.dcac_botplay[keys[i]] + ",";
+    setDvar("dcac_botplay", s);
+}
+
+restoreBotplay()
+{
+    s = getDvar("dcac_botplay");
+    if (s == "")
+        return;
+    pairs = strTok(s, ",");
+    for (i = 0; i < pairs.size; i++)
+    {
+        kv = strTok(pairs[i], "=");
+        if (kv.size > 1) setDvar(kv[0], kv[1]);
+        else setDvar(kv[0], "");
+    }
+    setDvar("dcac_botplay", "");
 }
 
 // OPTIONAL: the Esc menu sends dcac_pause when it opens (Create-a-Class is reached through it). Menus can't send
@@ -406,6 +455,7 @@ botsResume()
     keys = getArrayKeys(level.dcac_botplay);
     for (i = 0; i < keys.size; i++)
         setDvar(keys[i], level.dcac_botplay[keys[i]]);
+    setDvar("dcac_botplay", "");
 }
 
 // Maps and modes in WaW's order, names from its own strings (gen_catalog.py)
