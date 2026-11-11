@@ -8,12 +8,14 @@ STEAM_PATHS = [
     os.path.expanduser("~/.steam/steam"),
 ]
 
-# Known SD card mount point patterns on Steam Deck
+# SD card and external drive mounts. /run/media/<user>/<label>: the user is
+# deck on SteamOS and the login name on Bazzite/CachyOS. /run/media/<label>
+# is where older SteamOS mounted the card (mmcblk0p1).
 SD_CARD_PATTERNS = [
-    "/run/media/deck/*/SteamLibrary",
-    "/run/media/deck/*",
-    "/run/media/mmcblk0p1/SteamLibrary",
-    "/run/media/mmcblk0p1",
+    "/run/media/*/*/SteamLibrary",
+    "/run/media/*/*",
+    "/run/media/*/SteamLibrary",
+    "/run/media/*",
 ]
 
 # Maps game key to metadata for each supported title.
@@ -281,8 +283,9 @@ def find_installed_games(library_folders, steam_root=None):
             if not install_name:
                 continue
 
-            # StateFlags 4 = fully installed. Skip stale/partial manifests.
-            if state_flags != "4":
+            # Bit 4 = fully installed. 6 is installed with an update waiting;
+            # a first download that hasn't finished doesn't have the bit.
+            if not state_flags or not int(state_flags) & 4:
                 continue
 
             install_dir = os.path.join(steamapps_dir, "common", install_name)
@@ -303,69 +306,10 @@ def find_installed_games(library_folders, steam_root=None):
     return installed
 
 
-# ── "My Own" game detection ───────────────────────────────────────────────────
-# Scans common game install locations on Steam Deck for known Call of Duty
-# game folders. Used when the user selects "Steam or Other" on the source
-# screen, meaning they installed their games via CD, GOG, Microsoft Store, etc.
-#
-# Detection uses two passes:
-#   1. Exact match  -- folder name matches a known Steam install name exactly
-#                      (case-insensitive)
-#   2. Keyword match -- folder name contains known short codes or title words
-#                       checked with word boundaries so short codes like "t4"
-#                       don't match unrelated folder names like "startup4"
-#
-# After a folder name match, a sentinel file check confirms the game identity
-# and locates the actual game root (which may be a subfolder of the matched
-# directory). This handles cases where users have game data nested inside
-# an extra folder, or where a parent folder name matches but game files are
-# one or more levels deeper.
-
-# Exact folder name -> list of game keys.
-# Based on Steam's canonical install directory names.
-FOLDER_TO_KEYS = {
-    "call of duty 4":                  ["cod4mp", "cod4sp"],
-    "call of duty world at war":        ["t4sp",   "t4mp"],
-    "call of duty modern warfare 2":    ["iw4sp",  "iw4mp"],
-    "call of duty modern warfare 3":    ["iw5sp",  "iw5mp"],
-    "call of duty black ops":           ["t5sp",   "t5mp"],
-    "call of duty black ops ii":        ["t6sp",   "t6mp",  "t6zm"],
-    "call of duty black ops iii":       ["t7"],
-    "call of duty ghosts":              ["iw6sp",  "iw6mp"],
-    "call of duty advanced warfare":    ["s1sp",   "s1mp"],
-}
-
-# Keyword rules checked in order when exact match fails.
-# Each entry is (compiled_regex, keys_list).
-# Order matters - more specific rules go first (e.g. "black ops iii" before "black ops ii").
-#
-# Word boundaries use lookaround instead of \b so underscores are treated as
-# separators.  \b considers _ a word character, so "pluto_t4_full_game" would
-# never match \bt4\b.  The lookarounds below match at the start/end of any
-# alphanumeric token regardless of surrounding punctuation or underscores.
-_WB = r'(?<![a-zA-Z0-9])'   # word-boundary start (not preceded by alnum)
-_WE = r'(?![a-zA-Z0-9])'    # word-boundary end   (not followed by alnum)
-
-_KEYWORD_RULES = [
-    # BO3 - check before BO2 and BO1 so "black ops iii/3" doesn't fall through
-    (re.compile(rf'{_WB}(black\s*ops\s*(iii|3)|bo3|t7){_WE}', re.IGNORECASE), ["t7"]),
-    # BO2 - check before BO1 so "black ops ii" doesn't fall through to BO1
-    (re.compile(rf'{_WB}(black\s*ops\s*(ii|2)|bo2|t6){_WE}', re.IGNORECASE), ["t6sp", "t6mp", "t6zm"]),
-    # BO1
-    (re.compile(rf'{_WB}(black\s*ops|bo1|t5){_WE}', re.IGNORECASE),          ["t5sp", "t5mp"]),
-    # AW - check before MW3/MW2 since "advanced warfare" is unambiguous
-    (re.compile(rf'{_WB}(advanced\s*warfare|aw|s1){_WE}', re.IGNORECASE),     ["s1sp", "s1mp"]),
-    # Ghosts
-    (re.compile(rf'{_WB}(ghosts|iw6){_WE}', re.IGNORECASE),                   ["iw6sp", "iw6mp"]),
-    # MW3 - check before MW2 so "modern warfare 3" doesn't fall through to MW2
-    (re.compile(rf'{_WB}(modern\s*warfare\s*(3|iii)|mw3|iw5){_WE}', re.IGNORECASE), ["iw5sp", "iw5mp"]),
-    # MW2
-    (re.compile(rf'{_WB}(modern\s*warfare\s*(2|ii)|mw2|iw4){_WE}', re.IGNORECASE), ["iw4sp", "iw4mp"]),
-    # CoD4 / MW1 - "modern warfare" alone (no number) maps to MW1/CoD4
-    (re.compile(rf'{_WB}(modern\s*warfare|duty\s*4|duty4|cod4|mw1|iw3){_WE}', re.IGNORECASE), ["cod4mp", "cod4sp"]),
-    # WaW
-    (re.compile(rf'{_WB}(world\s*at\s*war|waw|t4){_WE}', re.IGNORECASE),     ["t4sp",  "t4mp"]),
-]
+# --- Own installs
+# A game counts as found when its stock exe is in a folder. Folder names and
+# fastfiles don't decide it: users name folders anything, and a copy can lack
+# a mode (a BO2 copy with Campaign and Zombies has no t6mp.exe or mp_*.ff).
 
 # Default scan locations -- case-sensitive on Linux.
 OWN_SCAN_PATHS = [
@@ -379,192 +323,35 @@ OWN_SCAN_PATHS = [
     "/run/media/*/games",
 ]
 
-# Maximum directory depth to walk. CoD games are typically 1-3 levels deep
-# inside whatever folder the user put them in.
-_MAX_SCAN_DEPTH = 5
-
-# Maximum depth to search within a matched folder for sentinel files.
-# Handles cases where game data is nested inside subfolders.
-_SENTINEL_SCAN_DEPTH = 3
-
-
-# ── Sentinel file map ─────────────────────────────────────────────────────────
-# Each sentinel group maps to a multiplayer map fastfile that only exists in
-# that specific CoD title. Using MP maps (not SP missions) ensures the game
-# install actually has the multiplayer data needed by mod clients (Plutonium,
-# iw4x, CoD4x, CleanOps, T7x, AlterWare). These never get modified by mod
-# clients or launchers, making them reliable for identifying game installs
-# even when exes are missing, renamed, or replaced.
-#
-# All sentinels are base-game launch maps — no DLC or pre-order content.
-# Confirmed against own-game installs on physical Deck.
-#
-# BO1 is special: Steam uses capitalized zone subdirs (English/, Common/)
-# but copies from other sources may use any casing. We do a case-insensitive
-# search for the sentinel filename under zone/ subdirs.
-
-GAME_SENTINELS = {
-    "cod4":   "zone/english/mp_crash.ff",       # Crash
-    "waw":    "zone/english/mp_asylum.ff",       # Asylum
-    "mw2":    "zone/english/mp_rust.ff",         # Rust
-    "mw3":    "zone/english/mp_dome.ff",         # Dome
-    "bo1":    "mp_nuked.ff",                     # Nuketown — case-insensitive search under zone/*/
-    "bo2":    "zone/all/mp_hijacked.ff",         # Hijacked
-    "bo3":    "zone/mp_infection.ff",            # Infection
-    "ghosts": "mp_strikezone.ff",                # Strikezone — root-level MP map fastfile
-    "aw":     "mp_comeback.ff",                  # Comeback — root-level MP map fastfile
-}
-
-# Maps each game key to its sentinel group. Multiple keys share a group
-# because they're the same game (e.g. t4sp and t4mp are both WaW).
-KEY_TO_SENTINEL = {
-    "cod4mp": "cod4", "cod4sp": "cod4",
-    "t4sp":   "waw",  "t4mp":   "waw",
-    "iw4sp":  "mw2",  "iw4mp":  "mw2",
-    "iw5sp":  "mw3",  "iw5mp":  "mw3",
-    "t5sp":   "bo1",  "t5mp":   "bo1",
-    "t6sp":   "bo2",  "t6mp":   "bo2",  "t6zm": "bo2",
-    "t7":     "bo3",
-    # ── DISABLED 2026-09: AlterWare discontinuing Dec 2026 ──
-    # "t7x":    "bo3",
-    "iw6sp":  "ghosts", "iw6mp": "ghosts",
-    "s1sp":   "aw",     "s1mp":  "aw",
-}
+# Lowercase stock exe -> game keys. The MW3 dedicated server has its own Steam
+# app and is not an own-install game.
+_OWN_EXES = {}
+for _k, _m in GAMES.items():
+    if _k == "iw5mp_ds":
+        continue
+    for _e in (_m["exe"], _m.get("exe_alt")):
+        if _e:
+            _OWN_EXES.setdefault(_e.lower(), []).append(_k)
 
 
-def _check_sentinel(candidate_dir, sentinel_group):
-    """
-    Check if a sentinel file exists relative to candidate_dir.
-
-    For most games this is a direct os.path.exists check on the known
-    relative path (e.g. zone/english/mp_crash.ff).
-
-    For BO1 the sentinel is just a filename (mp_nuked.ff) that needs a
-    case-insensitive search under zone/ subdirectories, because Steam
-    uses capitalized dir names (English/, Common/) but other sources
-    may use any casing.
-
-    Returns True if the sentinel is found, False otherwise.
-    """
-    sentinel = GAME_SENTINELS.get(sentinel_group)
-    if not sentinel:
-        return False
-
-    if sentinel_group == "bo1":
-        # Case-insensitive search: look for mp_nuked.ff in any subdir of zone/
-        zone_dir = os.path.join(candidate_dir, "zone")
-        if not os.path.isdir(zone_dir):
-            return False
-        for subdir in os.listdir(zone_dir):
-            subdir_path = os.path.join(zone_dir, subdir)
-            if not os.path.isdir(subdir_path):
-                continue
-            for fname in os.listdir(subdir_path):
-                if fname.lower() == sentinel.lower():
-                    return True
-        return False
-
-    # Standard check: direct relative path
-    return os.path.exists(os.path.join(candidate_dir, sentinel))
-
-
-def _find_game_root(candidate_dir, sentinel_group):
-    """
-    Starting from candidate_dir (a folder that matched by name), search
-    for the sentinel file to confirm the game identity and locate the
-    actual game root directory.
-
-    1. Check candidate_dir itself
-    2. Walk up to _SENTINEL_SCAN_DEPTH levels deep looking for the sentinel
-
-    Returns the confirmed game root path, or None if the sentinel was not
-    found (indicating an incomplete, wrong, or empty install).
-    """
-    # Check the candidate dir directly first — most common case
-    if _check_sentinel(candidate_dir, sentinel_group):
-        return candidate_dir
-
-    # Search subdirectories up to _SENTINEL_SCAN_DEPTH levels deep
-    skip = {"__pycache__", ".git", ".svn"}
-    for dirpath, dirnames, _filenames in os.walk(candidate_dir):
-        rel = os.path.relpath(dirpath, candidate_dir)
-        depth = 0 if rel == "." else rel.count(os.sep) + 1
-        if depth >= _SENTINEL_SCAN_DEPTH:
-            dirnames.clear()
-            continue
-        # Skip hidden dirs and known junk
-        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in skip]
-
-        # Don't re-check candidate_dir (already checked above)
-        if dirpath == candidate_dir:
-            continue
-
-        if _check_sentinel(dirpath, sentinel_group):
-            return dirpath
-
-    return None
-
-
-def _walk_limited(root, max_depth):
-    """Walk a directory tree up to max_depth levels deep."""
-    skip = {".steam", ".local", ".cache", ".config", "__pycache__", "DeckOps-T7X"}
+def _walk_games(root):
+    """Walk every folder under root. os.walk skips symlinked folders, so a link loop can't trap it."""
+    skip = {"__pycache__", "DeckOps-T7X"}
     for dirpath, dirnames, filenames in os.walk(root):
-        rel = os.path.relpath(dirpath, root)
-        depth = 0 if rel == "." else rel.count(os.sep) + 1
-        if depth >= max_depth:
-            dirnames.clear()
-            continue
         dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in skip]
         yield dirpath, dirnames, filenames
 
 
-def _match_folder(name):
-    """
-    Try to match a folder name to a set of game keys.
-    Returns a list of keys or an empty list if no match.
-
-    Pass 1 - exact match (case-insensitive).
-    Pass 2 - keyword regex rules in priority order.
-    """
-    name_lower = name.lower()
-
-    # Pass 1 - exact
-    if name_lower in FOLDER_TO_KEYS:
-        return FOLDER_TO_KEYS[name_lower]
-
-    # Pass 2 - keyword
-    for pattern, keys in _KEYWORD_RULES:
-        if pattern.search(name):
-            return keys
-
-    return []
-
-
 def find_own_installed(extra_paths=None, on_progress=None):
     """
-    Scan the filesystem for known Call of Duty game folders outside of Steam.
+    Scan ~/Games, SD card Games folders and extra_paths (the Choose Folder
+    picks) for stock game exes. Exe names match in any case. The folder that
+    holds the exe becomes install_dir.
 
-    Searches ~/Games, ~/games, SD card game folders, plus any user-provided
-    extra paths (e.g. from a folder picker in the UI).
-
-    Detection is two-phase:
-      1. Folder name matching (exact then keyword) finds candidate directories
-      2. Sentinel file check confirms the game and locates the actual game root
-         (which may be the matched folder or a subfolder up to 3 levels deep)
-
-    If a folder name matches but the sentinel is not found, the game is skipped
-    (incomplete or wrong install). If the sentinel is in a subfolder, that
-    subfolder becomes install_dir so mod installers write to the correct place.
-
-    Returns the same dict structure as find_installed_games() with an added
-    "source": "own" field so the rest of the install flow works unchanged.
-
-    extra_paths -- optional list of additional directories to scan
-    on_progress -- optional callback(msg: str)
+    Returns the same dict as find_installed_games() plus "source": "own".
     """
     prog = on_progress or (lambda *a: None)
 
-    # Build scan list: defaults + globs + extras
     scan_dirs = []
     seen = set()
     for pattern in OWN_SCAN_PATHS:
@@ -588,29 +375,21 @@ def find_own_installed(extra_paths=None, on_progress=None):
         return {}
 
     found = {}
-
     for scan_dir in scan_dirs:
         prog(f"Scanning {scan_dir}...")
-        for dirpath, dirnames, _filenames in _walk_limited(scan_dir, _MAX_SCAN_DEPTH):
-            folder_name = os.path.basename(dirpath)
-            matched_keys = _match_folder(folder_name)
-
-            if not matched_keys:
+        for dirpath, dirnames, filenames in _walk_games(scan_dir):
+            exes = {f.lower(): f for f in filenames if f.lower() in _OWN_EXES}
+            if not exes:
                 continue
-
-            # Determine the sentinel group from the first matched key.
-            # All keys from the same folder match share a sentinel group.
-            sentinel_group = KEY_TO_SENTINEL.get(matched_keys[0])
-            if not sentinel_group:
-                # No sentinel defined — fall back to old behavior (trust folder name)
-                dirnames.clear()
-                for key in matched_keys:
+            # Game root: the rest of this game's tree has no other games
+            dirnames.clear()
+            for low, fname in exes.items():
+                for key in _OWN_EXES[low]:
                     if key in found:
                         continue
-                    meta = GAMES.get(key)
-                    if not meta:
-                        continue
-                    exe_path = os.path.join(dirpath, meta["exe"])
+                    meta = GAMES[key]
+                    # Ghosts SP falls back to the MP exe; use its own when present
+                    exe_path = os.path.join(dirpath, exes.get(meta["exe"].lower(), fname))
                     found[key] = {
                         **meta,
                         "install_dir": dirpath,
@@ -619,40 +398,6 @@ def find_own_installed(extra_paths=None, on_progress=None):
                         "source":      "own",
                     }
                     prog(f"  found {key}: {meta['name']} at {dirpath}")
-                continue
-
-            # Run sentinel check to confirm and locate actual game root
-            game_root = _find_game_root(dirpath, sentinel_group)
-
-            if game_root is None:
-                # Sentinel not found — incomplete or wrong install.
-                # Don't stop descending: the real game might be deeper
-                # under a differently-named subfolder.
-                prog(f"  {folder_name}: folder matched but game files not found, skipping")
-                continue
-
-            # Sentinel confirmed — stop descending into this branch
-            dirnames.clear()
-
-            if game_root != dirpath:
-                prog(f"  {folder_name}: game root found in subfolder {os.path.relpath(game_root, dirpath)}")
-
-            for key in matched_keys:
-                if key in found:
-                    continue
-                meta = GAMES.get(key)
-                if not meta:
-                    continue
-
-                exe_path = os.path.join(game_root, meta["exe"])
-                found[key] = {
-                    **meta,
-                    "install_dir": game_root,
-                    "exe_path":    exe_path,
-                    "exe_size":    get_exe_size(exe_path),
-                    "source":      "own",
-                }
-                prog(f"  found {key}: {meta['name']} at {game_root}")
 
     if not found:
         prog("No supported games found.")
