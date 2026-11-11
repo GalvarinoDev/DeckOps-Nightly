@@ -148,7 +148,12 @@ def download(url: str, dest: str, on_progress=None, label: str = "",
             if on_progress:
                 on_progress(100, _detail(label, done, total or done, 0))
             return
-        except Exception:
+        except Exception as ex:
+            # 416: the part file is as long as the remote file or longer,
+            # usually left from an older release. Start over from byte 0.
+            if getattr(ex, "code", None) == 416:
+                try: os.remove(part)
+                except OSError: pass
             if attempt == tries - 1:
                 raise
             _log.debug("download retry %d for %s", attempt + 1, url)
