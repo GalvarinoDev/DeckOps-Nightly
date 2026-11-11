@@ -307,9 +307,9 @@ def find_installed_games(library_folders, steam_root=None):
 
 
 # --- Own installs
-# A game counts as found when its stock exe is in a folder. Folder names and
-# fastfiles don't decide it: users name folders anything, and a copy can lack
-# a mode (a BO2 copy with Campaign and Zombies has no t6mp.exe or mp_*.ff).
+# A game is found by its stock exe, in a folder of any name. Fastfiles aren't
+# checked because a copy can lack a mode: a BO2 copy with only Campaign and
+# Zombies has no t6mp.exe or mp_*.ff.
 
 # Default scan locations -- case-sensitive on Linux.
 OWN_SCAN_PATHS = [
@@ -381,7 +381,7 @@ def find_own_installed(extra_paths=None, on_progress=None):
             exes = {f.lower(): f for f in filenames if f.lower() in _OWN_EXES}
             if not exes:
                 continue
-            # Game root: the rest of this game's tree has no other games
+            # Game root found; skip its subfolders
             dirnames.clear()
             for low, fname in exes.items():
                 for key in _OWN_EXES[low]:
