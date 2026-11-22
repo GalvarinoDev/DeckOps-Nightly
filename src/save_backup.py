@@ -1,21 +1,21 @@
 """
-save_backup.py — DeckOps save file backup and restore
+save_backup.py: DeckOps save file backup and restore
 
 Backs up player save data (configs, stats, custom classes, demos)
 before uninstall and restores them after reinstall.
 
 Backup location: ~/.local/share/deckops/save_backup/<group>/
-This directory is outside the DeckOps install tree and survives uninstall.
+This folder is outside the DeckOps install tree, so it survives uninstall.
 
-Two public functions:
+Main functions:
 
     backup_saves(steam_root, on_progress)
-        Scan deckops.json for installed games, copy save dirs to backup.
-        Called by the uninstaller before deletion.
+        Finds installed games in deckops.json and copies their save dirs
+        to the backup. The uninstaller calls it before it deletes anything.
 
     restore_saves(steam_root, installed_games, on_progress)
-        If backups exist, copy them back to the correct locations.
-        Called at the end of the install flow after game setup completes.
+        Copies any backups back to the right places. The Restore button
+        on the management screen calls it.
 """
 
 import json
@@ -29,17 +29,17 @@ from log import get_logger
 _log = get_logger(__name__)
 
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
+# --- Paths
 
 BACKUP_ROOT = os.path.expanduser("~/.local/share/deckops/save_backup")
 STEAM_ROOT_DEFAULT = os.path.expanduser("~/.local/share/Steam")
 HEROIC_PREFIX = os.path.expanduser("~/Games/Heroic/Prefixes/default")
 
 
-# ── Save location map ────────────────────────────────────────────────────────
+# --- Save location map
 #
-# Each group maps to one backup. Sibling keys (cod4mp/cod4sp) that share
-# the same save directory are grouped together — only backed up once.
+# Each group is one backup. Sibling keys (cod4mp/cod4sp) that share a save
+# directory sit in one group, so it is backed up once.
 #
 # Format: {
 #   "group_name": {
@@ -114,7 +114,7 @@ SAVE_GROUPS = {
 }
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# --- Helpers
 
 def _load_config() -> dict:
     """Load deckops.json, return empty dict on failure."""
@@ -145,7 +145,7 @@ def _find_all_compatdata_dirs(steam_root: str) -> list:
         except OSError:
             pass
 
-    # SD card brute-force
+    # Also glob SD card libraries directly
     import glob
     for pattern in ["/run/media/deck/*/steamapps/compatdata",
                     "/run/media/deck/*/SteamLibrary/steamapps/compatdata"]:
@@ -281,8 +281,7 @@ def _find_install_dir(keys: list, setup_games: dict, installed_games: dict = Non
 
 def _find_t7x_players(keys: list, setup_games: dict, installed_games: dict = None) -> str | None:
     """Find the T7X sibling players directory."""
-    # T7X lives in DeckOps-T7X/ next to the BO3 install dir.
-    # We need to find BO3's install dir first.
+    # T7X lives in DeckOps-T7X/ next to the BO3 install dir, so find that first
     bo3_keys = ["t7", "t7x"]
     install_dir = _find_install_dir(bo3_keys, setup_games, installed_games)
     if not install_dir:
@@ -321,15 +320,15 @@ def _keep_pre_restore(path: str):
         _log.warning("save restore: could not keep %s: %s", path, ex)
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
+# --- Public API
 
 def backup_saves(steam_root: str = None, on_progress=None,
                  installed_games: dict = None) -> dict:
     """Back up save data for all installed games.
 
-    steam_root       — Steam root path (defaults to ~/.local/share/Steam)
-    on_progress      — callback(message: str)
-    installed_games  — optional dict of key -> game info (from install flow)
+    steam_root       : Steam root path (defaults to ~/.local/share/Steam)
+    on_progress      : callback(message: str)
+    installed_games  : optional dict of key -> game info (from install flow)
 
     Returns a dict of {group_name: backup_path} for groups that were backed up.
     """
@@ -391,7 +390,7 @@ def backup_saves(steam_root: str = None, on_progress=None,
             _log.debug("save backup: %s — source not found", group_name)
             continue
 
-        # Check if there's actually anything to back up
+        # Skip empty save dirs
         try:
             has_files = any(True for _ in os.scandir(src))
         except OSError:
@@ -432,9 +431,9 @@ def restore_saves(steam_root: str = None, installed_games: dict = None,
                   on_progress=None) -> dict:
     """Restore save data from backups into the correct game locations.
 
-    steam_root       — Steam root path
-    installed_games  — dict of key -> game info (install_dir, etc.)
-    on_progress      — callback(message: str)
+    steam_root       : Steam root path
+    installed_games  : dict of key -> game info (install_dir, etc.)
+    on_progress      : callback(message: str)
 
     Returns a dict of {group_name: dest_path} for groups that were restored.
     """
@@ -478,7 +477,7 @@ def restore_saves(steam_root: str = None, installed_games: dict = None,
         if not os.path.isdir(backup_dir):
             continue
 
-        # Check if backup has content
+        # Skip empty backups
         try:
             has_files = any(True for _ in os.scandir(backup_dir))
         except OSError:
@@ -526,7 +525,7 @@ def restore_saves(steam_root: str = None, installed_games: dict = None,
                 dst = os.path.join(install_dir, group["subdir"])
 
         elif group["type"] == "t7x_sibling":
-            # For T7X, we need the BO3 install dir to find the sibling
+            # T7X sits next to the BO3 install dir
             bo3_dir = _find_install_dir(["t7", "t7x"], setup_games, installed_games)
             if bo3_dir:
                 dst = os.path.join(os.path.dirname(bo3_dir), "DeckOps-T7X", "players")
@@ -567,7 +566,7 @@ def clear_backups(on_progress=None):
         _log.info("save backups cleared")
 
 
-# ── CLI for manual use / uninstaller ──────────────────────────────────────────
+# --- CLI (manual use and the uninstaller)
 
 if __name__ == "__main__":
     import sys

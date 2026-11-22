@@ -1,5 +1,5 @@
 """
-t7x.py - DeckOps installer for the T7X mod client (Black Ops III)
+t7x.py: DeckOps installer for the T7X mod client (Black Ops III)
 
 T7X is an AlterWare standalone client for BO3. Instead of dropping files
 into the stock BO3 directory, DeckOps creates a sibling directory
@@ -9,7 +9,7 @@ mirrors the game's file tree. BlackOps3.exe is copied as a real file
 
 This keeps the Steam-managed BO3 directory completely clean. T7X writes
 its runtime data (t7x/ subdirectory, ext.dll, mods/, usermaps/) into
-the sibling dir as real files — symlinks are never written through.
+the sibling dir as real files. Symlinks are never written through.
 
 T7X is always launched via its own non-Steam shortcut with GE-Proton
 as the compat tool. No launch options are needed.
@@ -24,17 +24,17 @@ import shutil
 
 from net import download as _download
 
-# ── T7X constants ─────────────────────────────────────────────────────────────
+# --- T7X constants
 
 T7X_URL           = "https://master.bo3.eu/t7x/t7x.exe"
 T7X_EXE           = "t7x.exe"
 T7X_METADATA_FILE = "deckops_t7x.json"
 T7X_DATA_DIR      = "t7x"               # created by t7x.exe on first run
 T7X_SIBLING_DIR   = "DeckOps-T7X"       # sibling dir name (next to BO3 install)
-BO3_EXE           = "BlackOps3.exe"      # copied (not symlinked) — T7X hash-checks it
+BO3_EXE           = "BlackOps3.exe"      # copied (not symlinked), T7X hash-checks it
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# --- helpers
 
 def _get_sibling_dir(install_dir: str) -> str:
     """Return the path to the DeckOps-T7X sibling directory."""
@@ -77,7 +77,7 @@ def is_t7x_installed(install_dir: str) -> bool:
     Returns True if the T7X sibling directory exists and contains
     both the T7X exe and the metadata file.
 
-    install_dir — the stock BO3 install directory (from detect_games).
+    install_dir: the stock BO3 install directory (from detect_games).
     """
     sibling = _get_sibling_dir(install_dir)
     return (
@@ -87,7 +87,7 @@ def is_t7x_installed(install_dir: str) -> bool:
     )
 
 
-# ── T7X public API ────────────────────────────────────────────────────────────
+# --- T7X public API
 
 def install_t7x(game: dict, on_progress=None):
     """
@@ -100,8 +100,8 @@ def install_t7x(game: dict, on_progress=None):
     Returns the path to the sibling directory so the caller can update
     game["install_dir"] for shortcut creation.
 
-    game        — entry from detect_games with install_dir
-    on_progress — optional callback(percent: int, status: str)
+    game:        entry from detect_games with install_dir
+    on_progress: optional callback(percent: int, status: str)
     """
     install_dir = game["install_dir"]
     sibling     = _get_sibling_dir(install_dir)
@@ -146,7 +146,7 @@ def install_t7x(game: dict, on_progress=None):
         if name:
             set_player_name(sibling, name)
     except Exception:
-        pass  # Non-fatal — user can set it later in Settings
+        pass  # Non-fatal. The user can set it later in Settings
 
     prog(100, "T7X installation complete!")
     return sibling

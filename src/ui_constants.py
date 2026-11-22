@@ -119,7 +119,7 @@ def font(size=13, bold=False, weight=None, display=False):
 
 # ── Game card definitions ─────────────────────────────────────────────────────
 #
-# Each entry is one card in the UI: two rows of CARD_COLS (5). What each card shows
+# Each entry is one card in the UI. What each card shows
 # depends on the Deck model. OLED and Other users get the full key list. LCD
 # users get a reduced set via the lcd_* overrides:
 #
@@ -132,27 +132,42 @@ def font(size=13, bold=False, weight=None, display=False):
 # resolve the correct value based on the user's saved deck_model config.
 
 ALL_GAMES = [
-    # ── Row 1: Infinity Ward / Sledgehammer ──────────────────────────────
+    # --- Release order. The games page shows a row per dev with the "classic" games
+    # left of a divider. The install screen splits the list into its two columns by dev.
+    {"base":"Call of Duty","classic":True,"keys":["cod1mp","cod1sp"],"appid":2620,"dev":"iw","client":"iw-pad + cod1x",
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"Call of Duty: United Offensive","classic":True,"keys":["coduomp","coduosp"],"appid":2640,"dev":"iw","client":"iw-pad + coduox",
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
+    # Finest Hour has no Steam app. 99000005 is its placeholder
+    {"base":"Call of Duty: Finest Hour","classic":True,"keys":["codfh"],"appid":99000005,"dev":"trey","client":"fh remastered",
+     "launch_note":"Put your PAL (Europe) Xbox disc image in Games/finesthour. DeckOps installs Finest Hour Remastered from it."},
+    {"base":"Call of Duty 2","classic":True,"keys":["cod2mp","cod2sp"],"appid":2630,"dev":"iw","client":"iw-pad + cod2x",
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
+    # Big Red One has no Steam app either. 99000004 is its placeholder
+    {"base":"Call of Duty 2: Big Red One","classic":True,"keys":["bro"],"appid":99000004,"dev":"trey","client":"bro",
+     "launch_note":"Put your Xbox disc image in Games/bro. DeckOps installs the BRO engine next to it."},
+    # CoD3 has no Steam app. 99000003 is a placeholder, used only for the card image
+    {"base":"Call of Duty 3","classic":True,"keys":["cod3"],"appid":99000003,"dev":"trey","client":"cod3recomp",
+     "launch_note":"Put your Xbox 360 disc image in Games/cod3. DeckOps installs CoD3Recomp next to it."},
     {"base":"Call of Duty 4: Modern Warfare","keys":["cod4mp","cod4sp"],"appid":7940,"dev":"iw","client":"cod4r + iw3sp",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Modern Warfare 2","keys":["iw4mp","iw4sp"],"appid":10190,"dev":"iw","client":"iw4x",
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Modern Warfare 3","keys":["iw5mp","iw5sp","iw5mp_ds"],"appid":42690,"dev":"iw","client":"plutonium",
-     "lcd_keys":["iw5mp","iw5sp","iw5mp_ds"],"lcd_client":"plutonium","lcd_appid":42680,
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Ghosts","keys":["iw6mp","iw6sp"],"appid":209160,"dev":"iw","client":"alterware",
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    {"base":"Call of Duty: Advanced Warfare","keys":["s1mp","s1sp"],"appid":209650,"dev":"iw","client":"alterware",
-     "launch_note":"DeckOps creates Proton prefixes automatically."},
-    # ── Row 2: Treyarch + LAN launcher ───────────────────────────────────
     {"base":"Call of Duty: World at War","keys":["t4mp","t4sp"],"appid":10090,"dev":"trey","client":"plutonium",
      "lcd_keys":["t4mp","t4sp"],"lcd_client":"plutonium",
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"Call of Duty: Modern Warfare 2","keys":["iw4mp","iw4sp"],"appid":10190,"dev":"iw","client":"iw4x",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Black Ops","keys":["t5mp","t5sp"],"appid":42700,"dev":"trey","client":"plutonium",
      "lcd_keys":["t5mp","t5sp"],"lcd_client":"plutonium",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"Call of Duty: Modern Warfare 3","keys":["iw5mp","iw5sp","iw5mp_ds"],"appid":42690,"dev":"iw","client":"plutonium",
+     "lcd_keys":["iw5mp","iw5sp","iw5mp_ds"],"lcd_client":"plutonium","lcd_appid":42680,
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Black Ops II","keys":["t6mp","t6sp","t6zm"],"appid":202990,"dev":"trey","client":"plutonium + t6sp-mod",
      "lcd_keys":["t6mp","t6sp","t6zm"],"lcd_client":"plutonium + t6sp-mod","lcd_appid":202970,
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"Call of Duty: Ghosts","keys":["iw6mp","iw6sp"],"appid":209160,"dev":"iw","client":"alterware",
+     "launch_note":"DeckOps creates Proton prefixes automatically."},
+    {"base":"Call of Duty: Advanced Warfare","keys":["s1mp","s1sp"],"appid":209650,"dev":"iw","client":"alterware",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
     {"base":"Call of Duty: Black Ops III","keys":["t7"],"appid":311210,"dev":"trey","client":"cleanops",
      "launch_note":"DeckOps creates Proton prefixes automatically."},
@@ -179,6 +194,12 @@ def _active_appid(gd):
     return gd.get("lcd_appid", gd["appid"])
 
 KEY_CLIENT = {
+    "cod1sp": "steam", "cod1mp": "cod1x",
+    "coduosp": "steam", "coduomp": "coduox",
+    "cod2sp": "steam", "cod2mp": "cod2x",
+    "cod3":   "cod3recomp",
+    "bro":    "bro",
+    "codfh":  "finesthour",
     "cod4mp": "cod4r",
     "cod4sp": "iw3sp",
     "iw4mp":  "iw4x",
@@ -202,6 +223,12 @@ KEY_CLIENT = {
 }
 
 KEY_EXES = {
+    "cod1sp":"CoDSP.exe","cod1mp":"CoDMP.exe",
+    "coduosp":"CoDUOSP.exe","coduomp":"CoDUOMP.exe",
+    "cod2sp":"CoD2SP_s.exe","cod2mp":"CoD2MP_s.exe",
+    "cod3":"CoD3SP_s.exe",
+    "bro":"cod_bro",
+    "codfh":"CODFH.exe",
     "cod4mp":"iw3mp.exe","cod4sp":"iw3sp.exe",
     "iw4mp":"iw4mp.exe","iw4sp":"iw4sp.exe",
     "iw5mp":"iw5mp.exe","iw5mp_ds":"iw5mp_server.exe","iw5sp":"iw5sp.exe",
@@ -216,6 +243,12 @@ KEY_EXES = {
 
 # Label shown beneath each per-key checkbox in SetupScreen.
 KEY_MODE_LABEL = {
+    "cod1mp": "MP",    "cod1sp": "SP",
+    "coduomp": "MP",   "coduosp": "SP",
+    "cod2mp": "MP",    "cod2sp": "SP",
+    "cod3":   "SP",
+    "bro":    "SP",
+    "codfh":  "SP",
     "cod4mp": "MP",    "cod4sp": "SP",
     "iw4mp":  "MP",    "iw4sp":  "SP",
     "iw5mp":  "MP",    "iw5mp_ds": "DS",    "iw5sp":  "SP",
@@ -229,6 +262,12 @@ KEY_MODE_LABEL = {
 
 
 SP_IMAGE_URLS = {
+    2620:   "https://shared.steamstatic.com/store_item_assets/steam/apps/2620/library_600x900_2x.jpg",
+    2640:   "https://cdn2.steamgriddb.com/grid/3ead4e722d6df4d4d7e1c61fbdd66968.png",
+    2630:   "https://shared.steamstatic.com/store_item_assets/steam/apps/2630/library_600x900_2x.jpg",
+    99000003: "https://cdn2.steamgriddb.com/grid/ebb4cd828b62543f83b337e48b333eb8.jpg",  # CoD3 placeholder appid
+    99000005: "https://cdn2.steamgriddb.com/grid/f0dda1e19cb7596fcb7430e4b3f4f0b5.png",  # Finest Hour placeholder appid
+    99000004: "https://cdn2.steamgriddb.com/grid/3e5589b2df55552e7716818b29ba2a2d.png",  # Big Red One placeholder appid
     7940:   "https://shared.steamstatic.com/store_item_assets/steam/apps/7940/library_600x900_2x.jpg",
     10180:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
     10190:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",
@@ -244,8 +283,8 @@ SP_IMAGE_URLS = {
 }
 
 IMG_RATIO = 1.5
-CARD_COLS  = 5
-CARD_MAX_W = 187
+# The games page picks the card width that fits every card on screen, up to this
+CARD_MAX_W = 300
 
 MUSIC_URL = "https://archive.org/download/adrenaline-klickaud/Adrenaline_KLICKAUD.mp3"
 
@@ -553,6 +592,8 @@ class _Sigs(QObject):
     # Zombies Declassified opt-in prompt
     zd_ask        = pyqtSignal()           # show install/skip buttons
     zd_go         = pyqtSignal()           # dismiss buttons
+    # Recompile installed: offer to delete its disc image (game title, disc path)
+    disc_ask      = pyqtSignal(str, str)
 
 
 # ── App stylesheet ────────────────────────────────────────────────────────────

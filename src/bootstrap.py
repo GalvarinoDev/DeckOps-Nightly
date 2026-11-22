@@ -42,6 +42,10 @@ _STEAM_CDN = "https://shared.steamstatic.com/store_item_assets/steam/apps/{appid
 # artwork. The MP appids below point to their SP counterpart's portrait image
 # so we don't download duplicates or get the wrong art on the UI cards.
 _HEADER_OVERRIDES = {
+    2640:   "https://cdn2.steamgriddb.com/grid/3ead4e722d6df4d4d7e1c61fbdd66968.png",  # UO has no Steam portrait
+    99000003: "https://cdn2.steamgriddb.com/grid/ebb4cd828b62543f83b337e48b333eb8.jpg",  # CoD3 has no Steam app, so this appid is a placeholder
+    99000005: "https://cdn2.steamgriddb.com/grid/f0dda1e19cb7596fcb7430e4b3f4f0b5.png",  # Finest Hour, same
+    99000004: "https://cdn2.steamgriddb.com/grid/3e5589b2df55552e7716818b29ba2a2d.png",  # Big Red One, same
     10190:  "https://shared.steamstatic.com/store_item_assets/steam/apps/10180/library_600x900_2x.jpg",   # MW2 MP -> MW2 SP art
     202990: "https://shared.steamstatic.com/store_item_assets/steam/apps/202970/library_600x900_2x.jpg",  # BO2 MP -> BO2 SP art
     42690:  "https://shared.steamstatic.com/store_item_assets/steam/apps/42680/library_600x900_2x.jpg",   # MW3 MP -> MW3 SP art
@@ -50,6 +54,12 @@ _HEADER_OVERRIDES = {
 # Every appid that needs a portrait grid image cached locally.
 # SP and MP appids are both listed so the UI can look up either one.
 HEADER_APPIDS = [
+    2620,     # CoD1
+    2640,     # UO
+    2630,     # CoD2
+    99000003, # CoD3 (placeholder appid)
+    99000004, # Big Red One (placeholder appid)
+    99000005, # Finest Hour (placeholder appid)
     7940,
     10180,
     10190,

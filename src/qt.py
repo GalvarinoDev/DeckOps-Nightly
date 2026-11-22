@@ -1,9 +1,9 @@
 """
 qt.py - Qt import shim
 
-PyQt6 when the venv has it, else PyQt5. UI code imports from here and
-uses only names both accept (fully scoped enums, exec()). The PyQt5
-branch stays: venvs where the PyQt6 install failed keep running on it.
+Loads PyQt6 when the venv has it, else PyQt5. UI code imports from here
+and uses only names that work in both (fully scoped enums, exec()).
+Keep the PyQt5 branch: venvs where the PyQt6 install failed still run on it.
 """
 
 try:

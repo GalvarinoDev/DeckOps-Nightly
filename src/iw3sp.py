@@ -1,5 +1,5 @@
 """
-iw3sp.py - DeckOps installer for IW3SP-MOD (Call of Duty 4: Modern Warfare Singleplayer)
+iw3sp.py: DeckOps installer for IW3SP-MOD (Call of Duty 4: Modern Warfare Singleplayer)
 
 Downloads the IW3SP-MOD files listed in the mod's own update manifest
 (files.json, the one its in-game updater checks) into the CoD4 install
@@ -17,7 +17,7 @@ import urllib.request
 from net import download as _download, BROWSER_UA as _BROWSER_UA
 from steam_common import sha1_file as _sha1
 
-# The Gitea releases lag behind this: v4.1.5's game.dll breaks right stick
+# The Gitea releases lag behind this. v4.1.5's game.dll breaks right stick
 # aim with m_rawinput on and ignores the config init marker, and the
 # in-game updater offers the newer build on first launch anyway.
 _CDN          = "https://jerryalt.codeberg.page"
@@ -25,7 +25,7 @@ METADATA_FILE = "deckops_iw3sp.json"
 COD4_APPID    = "7940"
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# --- helpers
 
 def _get_manifest():
     """[(relative path, size, sha1), ...] from the mod's update manifest."""
@@ -40,7 +40,7 @@ def _build_iw3sp_launch_option() -> str:
 
 def cod4_launch_option(setup_games: dict) -> str:
     """
-    The one 7940 launch option for what DeckOps set up from Steam: MP and
+    The one 7940 launch option for what DeckOps set up from Steam. MP and
     SP share the appid, so the CoD4R pre-launch update and the IW3SP exe
     swap are built together here instead of overwriting each other.
     Returns "" when neither applies.
@@ -69,7 +69,7 @@ def apply_cod4_launch_option(steam_root: str) -> bool:
     return True
 
 
-# ── public API ────────────────────────────────────────────────────────────────
+# --- public API
 
 def install_iw3sp(game: dict, steam_root: str,
                   proton_path: str, compatdata_path: str,
@@ -78,10 +78,9 @@ def install_iw3sp(game: dict, steam_root: str,
     Install IW3SP-MOD for Call of Duty 4 singleplayer.
 
     Downloads every manifest file that is missing or out of date into the
-    CoD4 install directory.
-    For Steam games, sets a launch option to redirect iw3sp.exe to
-    iw3sp_mod.exe. For own games, the shortcut points at iw3sp_mod.exe
-    directly.
+    CoD4 install directory. Steam games get a launch option that redirects
+    iw3sp.exe to iw3sp_mod.exe. Own games have a shortcut that points at
+    iw3sp_mod.exe directly.
     """
     install_dir = game["install_dir"]
     prog = on_progress or (lambda *a: None)
@@ -116,9 +115,9 @@ def install_iw3sp(game: dict, steam_root: str,
             os.remove(iw3sp)
         os.rename(iw3sp_bak, iw3sp)
 
-    # Set launch option (Steam only) — redirects iw3sp.exe to iw3sp_mod.exe.
-    # Safe on shared appid 7940: substitution only matches when Steam
-    # launches the SP exe, no-op for MP (iw3mp.exe).
+    # Launch option (Steam only) redirects iw3sp.exe to iw3sp_mod.exe.
+    # Safe on shared appid 7940: the substitution only matches when Steam
+    # launches the SP exe, so MP (iw3mp.exe) is untouched.
     if source != "own":
         prog(80, "Setting launch options...")
         try:

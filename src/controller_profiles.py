@@ -187,6 +187,11 @@ APPID_PROFILE_MAP = {
     "209660": "standard",  # AW MP -- AlterWare (native controller + aim assist)
 }
 
+# Steam CoD1 / UO / CoD2 apps: SP with IW-Pad (MP runs through DeckOps shortcuts).
+# Kept out of APPID_PROFILE_MAP because own shortcuts look their template up
+# there by the game's appid, and the own MP shortcuts need "other".
+STEAM_SP_APPS = {"2620": "standard", "2640": "standard", "2630": "standard"}
+
 # ── Named game keys used in configset VDFs ────────────────────────────────────
 #
 # Steam resolves controller profiles by both numeric appid AND a named key
@@ -247,15 +252,33 @@ EXTERNAL_CONFIGSET_NAMES = {
 
 # ── Non-Steam shortcut definitions ────────────────────────────────────────────
 #
-# DeckOps creates non-Steam shortcuts for CoD4 MP and WaW MP. These have
-# dynamically calculated appids based on exe path + name. We need to find
-# the install dirs and calculate the appids at runtime so we can assign
-# controller profiles to them too. Without this, re-applying profiles from
-# Settings would miss the shortcuts entirely.
+# DeckOps creates non-Steam shortcuts for the Steam copies of CoD1, UO, CoD2,
+# CoD4 and WaW MP (and T7x, which is disabled). Their appids come from the exe
+# path and name, so the install dirs are found and the appids worked out at
+# runtime to assign controller profiles to them too. Without this,
+# re-applying profiles from Settings would miss the shortcuts.
 #
 # Must match shortcut.py SHORTCUTS.
 
 SHORTCUT_DEFS = {
+    "cod1mp": {
+        "name":          "Call of Duty - Multiplayer",
+        "exe_name":      "CoDMP.exe",
+        "game_appid":    "2620",
+        "profile_type":  "other",
+    },
+    "coduomp": {
+        "name":          "Call of Duty: United Offensive - Multiplayer",
+        "exe_name":      "CoDUOMP.exe",
+        "game_appid":    "2640",
+        "profile_type":  "other",
+    },
+    "cod2mp": {
+        "name":          "Call of Duty 2 - Multiplayer",
+        "exe_name":      "CoD2MP_s.exe",
+        "game_appid":    "2630",
+        "profile_type":  "other",
+    },
     "cod4mp": {
         "name":          "Call of Duty 4: Modern Warfare - Multiplayer",
         "exe_name":      "iw3mp.exe",
@@ -522,7 +545,7 @@ def _assign(uids, pick, canonical, configsets, prog, launcher=False, label=""):
                 _patch_configset(configset_path, named_key, primary)
 
     for uid in uids:
-        for appid, profile_type in APPID_PROFILE_MAP.items():
+        for appid, profile_type in {**APPID_PROFILE_MAP, **STEAM_SP_APPS}.items():
             filenames = files(profile_type, "  ⚠ Asset missing, skipping: {}")
             if filenames:
                 write(uid, appid, filenames, named_keys=APPID_NAMED_KEYS.get(appid, []))
@@ -568,7 +591,7 @@ def _assign(uids, pick, canonical, configsets, prog, launcher=False, label=""):
             # Must match create_own_shortcuts: quoted exe + canonical name
             shortcut_appid = _calc_shortcut_appid(f'"{own_shortcut_exe(key, game)}"', OWN_SHORTCUTS[key]["name"])
 
-            profile_type = APPID_PROFILE_MAP.get(game.get("appid", ""), "standard")
+            profile_type = APPID_PROFILE_MAP.get(game.get("appid", ""), OWN_SHORTCUTS[key].get("template_type", "standard"))
             filenames = files(_cod4mp_profile(key, profile_type))
             if not filenames:
                 continue

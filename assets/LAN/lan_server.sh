@@ -81,9 +81,9 @@ if [ -n "$PORT" ]; then
   if ! ss -uln | grep -q ":$PORT "; then
     # A unit left over from an interrupted run blocks systemd-run from reusing the name
     systemctl --user stop "$UNIT" 2>/dev/null; systemctl --user reset-failed "$UNIT" 2>/dev/null
-    # systemd-run with the display passed in: a headless server stalls under Proton, and in Game Mode
-    # this keeps its window out of the Steam launch so gamescope never focuses it.
-    # Game Mode's systemd user environment has no DISPLAY, so it is passed in.
+    # Started through systemd-run: a headless server stalls under Proton, and in Game Mode this keeps
+    # its window out of the Steam launch so gamescope never focuses it. Game Mode's systemd user
+    # environment has no DISPLAY, so the display is passed in.
     systemd-run --user --collect --unit="$UNIT" -p TimeoutStopSec=10 -E DISPLAY="${DISPLAY:-:0}" \
       -E WAYLAND_DISPLAY="$WAYLAND_DISPLAY" -E GAMESCOPE_WAYLAND_DISPLAY="$GAMESCOPE_WAYLAND_DISPLAY" \
       -E XDG_RUNTIME_DIR="$XDG_RUNTIME_DIR" \

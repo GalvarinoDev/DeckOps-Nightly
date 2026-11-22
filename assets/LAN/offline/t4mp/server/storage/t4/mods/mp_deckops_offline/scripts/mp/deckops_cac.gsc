@@ -127,12 +127,10 @@ useEditedClass(n)
     self dlog("next spawn: custom" + (n + 1));
 }
 
-// ============================================================
-// MAP / MODE
-// ============================================================
+// --- Map / Mode
 
 // Time and score limits are scr_<gametype>_* dvars the match logic keeps reading, so they change
-// live; the gametype resets them on every map, so they are re-applied
+// live. The gametype resets them on every map, so they are re-applied
 applyMatchOptions()
 {
     level endon("game_ended");
@@ -162,7 +160,7 @@ matchMaps()
     return m;
 }
 
-// Map / Mode menu: a row click changes the pending choice, the menu shows it through dcac_m<row>;
+// Map / Mode menu: a row click changes the pending choice, the menu shows it through dcac_m<row>.
 // dcac_map<n> fill the map list (installed maps only)
 matchMenu(r)
 {
@@ -209,7 +207,7 @@ matchMenu(r)
     self setClientDvar("dcac_m4", "Start Match");
 }
 
-// The value after cur in vals (wraps; the first one when cur isn't listed)
+// The value after cur in vals (wraps around, and is the first one when cur isn't listed)
 nextOf(vals, cur)
 {
     for (i = 0; i < vals.size; i++)
@@ -262,9 +260,7 @@ startMatch()
     exitLevel(false);
 }
 
-// ============================================================
-// BOT WARFARE (reads these dvars live)
-// ============================================================
+// --- Bot Warfare (reads these dvars live)
 
 // Bot Warfare menu: a row click cycles that setting, the menu shows it through dcac_b<row>
 botMenu(r)

@@ -1,11 +1,10 @@
 """
 inhibit.py - keep the device awake during long operations
 
-Installs can run for hours and a Deck that suspends mid-install leaves
-a half-written prefix behind. Two locks are taken because they cover
-different things: logind blocks suspend and idle actions (the one that
-matters in Game Mode), and org.freedesktop.ScreenSaver blocks the KDE
-screen locker in Desktop Mode.
+Installs can run for hours, and a Deck that suspends mid-install leaves
+a half-written prefix behind. DeckOps takes two locks: logind blocks
+suspend and idle actions (the one that matters in Game Mode), and
+org.freedesktop.ScreenSaver blocks the KDE screen locker in Desktop Mode.
 
 Both are best effort. A missing binary, bus or service is never fatal.
 """
@@ -17,7 +16,7 @@ from log import get_logger
 
 _log = get_logger(__name__)
 
-# Bounded so a leaked child can't hold the machine awake indefinitely.
+# Capped so a leaked child process can't keep the machine awake forever.
 MAX_HOLD = "6h"
 
 _proc = None
@@ -61,9 +60,9 @@ def start(why="DeckOps is installing"):
     global _proc, _cookie
     if _proc is None:
         try:
-            # Deliberately NOT detached. Every other subprocess here uses
-            # start_new_session so it outlives DeckOps; this one must die
-            # with it, or the lock outlasts the install.
+            # Not detached on purpose. Every other subprocess here uses
+            # start_new_session so it outlives DeckOps, but this one has
+            # to die with it, or the lock outlasts the install.
             _proc = subprocess.Popen(
                 ["systemd-inhibit",
                  "--what=idle:sleep:handle-lid-switch",

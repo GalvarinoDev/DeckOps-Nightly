@@ -3,15 +3,15 @@
 #
 # Entry point for the non-Steam shortcut. Runs DeckOps_Offline.exe inside
 # Proton (for XInput gamepad support), then reads an intent file written
-# by the exe to determine which game to launch. If an intent is found,
-# exec's into the game's LAN wrapper script (which uses the correct
-# per-game Proton prefix).
+# by the exe to find out which game to launch. If it finds an intent, it
+# execs the game's LAN wrapper script, which uses the right per-game
+# Proton prefix.
 #
 # Process chain (from Steam's perspective):
 #   Steam -> launcher_offline.sh -> proton run DeckOps_Offline.exe (UI)
 #                                -> exe exits, writes .lan_intent.json
 #                                -> exec bash <lan_wrapper_path>
-#                                -> lan wrapper exec's proton run bootstrapper
+#                                -> lan wrapper execs proton run bootstrapper
 #
 # Steam sees launcher_offline.sh as the running process the entire time.
 # The final exec replaces this shell with Proton running the game, so
@@ -25,7 +25,7 @@ DECKOPS_JSON="$PROJECT_ROOT/deckops.json"
 INTENT_FILE="$PROJECT_ROOT/.lan_intent.json"
 LAUNCHER_EXE="$SCRIPT_DIR/DeckOps_Offline.exe"
 
-# ── Read config ──────────────────────────────────────────────────────────────
+# --- Read config
 
 if [ ! -f "$DECKOPS_JSON" ]; then
     echo "ERROR: deckops.json not found at $DECKOPS_JSON" >&2
@@ -70,14 +70,14 @@ if [ ! -f "$LAUNCHER_EXE" ]; then
     exit 1
 fi
 
-# ── Clean up stale intent file ───────────────────────────────────────────────
+# --- Clean up stale intent file
 
 rm -f "$INTENT_FILE"
 
-# ── Determine STEAM_COMPAT_DATA_PATH for the launcher exe ────────────────────
-# The exe needs a Wine prefix to run in. We use a fixed prefix under
-# the DeckOps data directory so it persists across installs and doesn't
-# depend on Steam shortcut appids (which change when the exe path changes).
+# --- Determine STEAM_COMPAT_DATA_PATH for the launcher exe
+# The exe needs a Wine prefix. A fixed one under the DeckOps data directory
+# survives reinstalls and does not depend on Steam shortcut appids, which
+# change when the exe path changes.
 
 LAUNCHER_PREFIX="$HOME/.local/share/deckops/launcher_prefix"
 mkdir -p "$LAUNCHER_PREFIX"
@@ -85,14 +85,14 @@ mkdir -p "$LAUNCHER_PREFIX"
 export STEAM_COMPAT_DATA_PATH="$LAUNCHER_PREFIX"
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="$STEAM_ROOT"
 
-# ── Launch the UI ────────────────────────────────────────────────────────────
+# --- Launch the UI
 # Run the exe inside Proton. The exe shows the game selection UI and
 # writes .lan_intent.json when the user picks a game, then exits.
 # PROTON_NO_FSYNC/ESYNC prevents hangs on older kernels.
 
 PROTON_NO_FSYNC=1 PROTON_NO_ESYNC=1 "$PROTON_PATH" run "$LAUNCHER_EXE" "$@"
 
-# ── Check for launch intent ─────────────────────────────────────────────────
+# --- Check for launch intent
 
 if [ ! -f "$INTENT_FILE" ]; then
     # User quit without selecting a game
@@ -123,9 +123,9 @@ if [ ! -f "$LAN_WRAPPER" ]; then
     exit 1
 fi
 
-# ── Launch the game ──────────────────────────────────────────────────────────
-# exec replaces this shell with bash running the LAN wrapper. The LAN
-# wrapper itself exec's proton run bootstrapper, so the final process
-# is Proton running the game. Steam tracks it as the original shortcut.
+# --- Launch the game
+# exec replaces this shell with bash running the LAN wrapper. The wrapper
+# in turn execs proton run bootstrapper, so the last process is Proton
+# running the game, and Steam tracks it as the original shortcut.
 
 exec bash "$LAN_WRAPPER"

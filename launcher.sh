@@ -1,7 +1,7 @@
 #!/bin/bash
-# launcher.sh — DeckOps entry point
+# launcher.sh: DeckOps entry point
 
-# Source deckops_identity.sh if available, otherwise fallback
+# Source deckops_identity.sh if present, otherwise use the defaults below
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -f "$SCRIPT_DIR/deckops_identity.sh" ]; then
     source "$SCRIPT_DIR/deckops_identity.sh"
@@ -23,7 +23,7 @@ LOCKFILE="$HOME/.deckops_installing"
 VERSION_FILE="$INSTALL_DIR/VERSION"
 UPDATE_DIR="$INSTALL_DIR/.update"
 
-# ── Installing or first-time — run install directly ───────────────────────────
+# --- Installing or first-time: run install directly
 if [ ! -d "$INSTALL_DIR" ] || [ -f "$LOCKFILE" ]; then
     touch "$LOCKFILE"
     curl -sL "$GITHUB_RAW/install.sh" | bash
@@ -31,7 +31,7 @@ if [ ! -d "$INSTALL_DIR" ] || [ -f "$LOCKFILE" ]; then
     exit 0
 fi
 
-# ── Update check ──────────────────────────────────────────────────────────────
+# --- Update check
 check_for_updates() {
     local LOCAL_SHA REMOTE_SHA CHANGED_FILES FILE_COUNT RESET_HINT=""
     local FORCE="${1:-}"
@@ -49,7 +49,7 @@ check_for_updates() {
     [ -z "$REMOTE_SHA" ] && return 0
     [ "$LOCAL_SHA" = "$REMOTE_SHA" ] && return 0
 
-    # First install from install.sh won't have a real SHA — do a full refresh
+    # First install from install.sh won't have a real SHA, so do a full refresh
     if [ "$LOCAL_SHA" = "0" ]; then
         FILE_COUNT="unknown number of"
         CHANGED_FILES=""
@@ -82,7 +82,7 @@ check_for_updates() {
         [ $? -ne 0 ] && return 0
     fi
 
-    # ── Download changed files to staging dir ─────────────────────────────
+    # --- Download changed files to staging dir
     rm -rf "$UPDATE_DIR"
     mkdir -p "$UPDATE_DIR"
 
@@ -90,7 +90,7 @@ check_for_updates() {
     local REMOVED_FILES=""
 
     if [ "$LOCAL_SHA" = "0" ] || [ -z "$CHANGED_FILES" ]; then
-        # No compare available — download full repo zip
+        # No compare available, so download the full repo zip
         local TMPZIP
         TMPZIP="$(mktemp /tmp/deckops_update_XXXXXX.zip)"
         curl -sL --max-time 120 \
@@ -140,8 +140,8 @@ check_for_updates() {
                 # removed files (and old names of renamed files, via the
                 # previous_filename key which the filename grep also matches),
                 # and those 404 on raw.githubusercontent. Previously this
-                # aborted the whole update, permanently bricking incremental
-                # updates for any commit that deleted or renamed a file.
+                # aborted the whole update, so any commit that deleted or renamed
+                # a file blocked incremental updates for good.
                 # Skip the download and delete the local copy at apply time.
                 rm -f "$UPDATE_DIR/$filepath"
                 REMOVED_FILES="${REMOVED_FILES}${filepath}
@@ -162,12 +162,11 @@ check_for_updates() {
         return 0
     fi
 
-    # ── Apply staged files ────────────────────────────────────────────────
+    # --- Apply staged files
     # Protected paths are never overwritten
     if [ "$LOCAL_SHA" = "0" ] || [ -z "$CHANGED_FILES" ]; then
-        # Full update — copy everything except protected paths
-        # Preserve user config
-        # cp + mv (atomic rename) so a power loss can't leave a truncated config
+        # Full update: copy everything except protected paths.
+        # Preserve user config with cp + mv (atomic rename) so a power loss can't leave a truncated config
         local SAVED_CONFIG=""
         if [ -f "$INSTALL_DIR/deckops.json" ]; then
             SAVED_CONFIG="$INSTALL_DIR/deckops.json.bak"
@@ -190,7 +189,7 @@ check_for_updates() {
             mv "$SAVED_MUSIC" "$INSTALL_DIR/assets/music/background.mp3"
         fi
     else
-        # Partial update — copy only changed files
+        # Partial update: copy only changed files
         while IFS= read -r filepath; do
             case "$filepath" in
                 logs/*) continue ;;
@@ -204,8 +203,8 @@ check_for_updates() {
         done < <(echo "$CHANGED_FILES")
 
         # Delete local copies of files removed (or renamed away) upstream.
-        # Only paths that the compare API listed AND that 404 at HEAD reach
-        # this list; protected paths are never touched.
+        # Only paths that the compare API listed and that 404 at HEAD reach
+        # this list. Protected paths are never touched.
         if [ -n "$REMOVED_FILES" ]; then
             while IFS= read -r filepath; do
                 [ -z "$filepath" ] && continue
@@ -237,7 +236,7 @@ check_for_updates() {
     return 0
 }
 
-# ── Already installed — ask what to do ───────────────────────────────────────
+# --- Already installed: ask what to do
 choice=$(zenity \
     --list \
     --title="$APP_TITLE" \
@@ -254,7 +253,7 @@ choice=$(zenity \
 case "$choice" in
     "Launch DeckOps")
         # Installs from before the PyQt6 move: rerun the installer in this terminal so
-        # the download shows. It keeps deckops.json and the venv and launches DeckOps itself
+        # the download shows. It keeps deckops.json and the venv, then launches DeckOps itself.
         if ! "$INSTALL_DIR/.venv/bin/python3" -c "import PyQt6.QtWidgets" &>/dev/null \
            && [ ! -f "$INSTALL_DIR/.venv/.qt6_unsupported" ]; then
             zenity --info --title="$APP_TITLE Update" --width=360 \

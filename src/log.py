@@ -1,9 +1,9 @@
 """
-log.py — DeckOps centralised logging
+log.py: DeckOps centralised logging
 
-Provides a single rotating file logger that every module can import.
-Only imports from identity.py (which itself has zero internal imports),
-so it can still be loaded early without circular-dependency risk.
+One rotating file logger that every module can import. It imports only
+identity.py, which has no internal imports, so it loads early without
+circular-import risk.
 
 Usage in any module:
 
@@ -93,12 +93,11 @@ def _scrub_old_logs():
 
 
 def setup_logging(level: int = logging.DEBUG):
-    """Initialise the root 'deckops' logger with a rotating file handler
-    and a stderr stream handler.  Safe to call more than once (no-op on
-    subsequent calls).
+    """Set up the 'deckops' logger with a rotating file handler and a
+    stderr handler. Later calls do nothing.
 
-    Call this at the top of every entry-point script before any other
-    import that might log:
+    Call it at the top of every entry point, before any import that
+    might log:
 
         from log import setup_logging
         setup_logging()
@@ -114,7 +113,7 @@ def setup_logging(level: int = logging.DEBUG):
     root = logging.getLogger("deckops")
     root.setLevel(level)
 
-    # File handler — rotating
+    # Rotating file handler
     try:
         fh = RotatingFileHandler(
             _LOG_PATH,
@@ -126,9 +125,9 @@ def setup_logging(level: int = logging.DEBUG):
         fh.setFormatter(_RedactingFormatter(_FORMAT, datefmt=_DATE_FMT))
         root.addHandler(fh)
     except OSError:
-        pass  # filesystem issue — fall through to stderr only
+        pass  # filesystem issue, stderr only
 
-    # Stderr handler — visible when running from terminal / SSH
+    # Stderr handler, visible when running from a terminal or SSH
     sh = logging.StreamHandler()
     sh.setLevel(logging.INFO)
     sh.setFormatter(_RedactingFormatter(_FORMAT, datefmt=_DATE_FMT))
@@ -141,6 +140,6 @@ def get_logger(name: str) -> logging.Logger:
     Typical call:  _log = get_logger(__name__)
     Produces loggers like 'deckops.shortcut', 'deckops.config', etc.
     """
-    # Strip leading package path — we just want the module name
+    # Keep only the module name, drop the package path
     short = name.rsplit(".", 1)[-1] if "." in name else name
     return logging.getLogger(f"deckops.{short}")

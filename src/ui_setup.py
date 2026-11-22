@@ -1,12 +1,12 @@
 """
-ui_setup.py — First-run setup flow for DeckOps
+ui_setup.py: first-run setup flow for DeckOps
 
 Flow: [Autodetect Confirm] → OS → Device → Gyro → Name → [Controller] → [Play Mode / Resolution] → Done
 
-When both OS and device are detected from DMI and os-release, a confirm
-screen lets the user accept with one click or fall through to the manual
-flow. All OS paths now go through the model screen so a Deck on Bazzite
-or CachyOS can still pick LCD/OLED.
+When DMI and os-release give both the OS and the device, a confirm screen
+lets the user accept with one click or go through the manual flow. Every
+OS goes through the model screen, so a Deck on Bazzite or CachyOS can
+still pick LCD or OLED.
 """
 
 from qt import QWidget, QVBoxLayout, QHBoxLayout, QLineEdit
@@ -22,7 +22,7 @@ from ui_constants import (
 )
 
 
-# ── Device definitions ────────────────────────────────────────────────────────
+# --- Device definitions
 #
 # Each device maps to: deck_model, other_device (resolution key),
 # other_device_type (controller template group), has_gyro.
@@ -45,8 +45,8 @@ DEVICES = {
 
 class SetupFlowScreen(QWidget):
     """
-    Unified first-run setup. One QWidget with show/hide sections
-    for progressive disclosure. screen_name = "SetupFlowScreen".
+    The whole first-run setup in one QWidget. Each step is a section that
+    is shown or hidden in turn. screen_name = "SetupFlowScreen".
     """
 
     def __init__(self, stack):
@@ -63,7 +63,7 @@ class SetupFlowScreen(QWidget):
         main_lay = QVBoxLayout(self)
         main_lay.setContentsMargins(0, 0, 0, 0)
 
-        # ── 0. Autodetect confirm section ─────────────────────────────────
+        # --- 0. Autodetect confirm section
         self._detected_os = detect_os()
         self._detected_device = detect_device() or ("general_pc" if self._detected_os else None)
 
@@ -103,7 +103,7 @@ class SetupFlowScreen(QWidget):
         cl.addSpacing(40)
         main_lay.addWidget(self._confirm_section)
 
-        # ── 1. OS section ─────────────────────────────────────────────────
+        # --- 1. OS section
         self._os_section = QWidget()
         lay = QVBoxLayout(self._os_section)
         lay.setContentsMargins(80, 60, 80, 60); lay.setSpacing(16)
@@ -139,7 +139,7 @@ class SetupFlowScreen(QWidget):
         lay.addLayout(os_row)
         main_lay.addWidget(self._os_section)
 
-        # ── 2. Device model section ───────────────────────────────────────
+        # --- 2. Device model section
         self._model_section = QWidget(); self._model_section.setVisible(False)
         ml = QVBoxLayout(self._model_section)
         ml.setContentsMargins(80, 60, 80, 60); ml.setSpacing(16)
@@ -163,7 +163,7 @@ class SetupFlowScreen(QWidget):
         ml.addSpacing(40)
         main_lay.addWidget(self._model_section)
 
-        # ── 3. Specific device picker (Other) ────────────────────────────
+        # --- 3. Specific device picker (Other)
         self._device_section = QWidget(); self._device_section.setVisible(False)
         dvl = QVBoxLayout(self._device_section)
         dvl.setContentsMargins(80, 60, 80, 60); dvl.setSpacing(16)
@@ -221,7 +221,7 @@ class SetupFlowScreen(QWidget):
         dvl.addSpacing(40)
         main_lay.addWidget(self._device_section)
 
-        # ── 4. Gyro section ───────────────────────────────────────────────
+        # --- 4. Gyro section
         self._gyro_section = QWidget(); self._gyro_section.setVisible(False)
         gl = QVBoxLayout(self._gyro_section)
         gl.setContentsMargins(80, 60, 80, 60); gl.setSpacing(16)
@@ -241,7 +241,7 @@ class SetupFlowScreen(QWidget):
         gl.addSpacing(40)
         main_lay.addWidget(self._gyro_section)
 
-        # ── 4b. Gyro mode section (shown after Yes) ───────────────────────
+        # --- 4b. Gyro mode section (shown after Yes)
         self._gyro_mode_section = QWidget(); self._gyro_mode_section.setVisible(False)
         gml = QVBoxLayout(self._gyro_mode_section)
         gml.setContentsMargins(80, 60, 80, 60); gml.setSpacing(16)
@@ -268,7 +268,7 @@ class SetupFlowScreen(QWidget):
         gml.addSpacing(40)
         main_lay.addWidget(self._gyro_mode_section)
 
-        # ── 5. Player name section ────────────────────────────────────────
+        # --- 5. Player name section
         self._name_section = QWidget(); self._name_section.setVisible(False)
         nl = QVBoxLayout(self._name_section)
         nl.setContentsMargins(80, 60, 80, 60); nl.setSpacing(16)
@@ -304,10 +304,10 @@ class SetupFlowScreen(QWidget):
         nl.addSpacing(40)
         main_lay.addWidget(self._name_section)
 
-        # ── 6. Primary controller section (Bazzite + General PC) ──────────
+        # --- 6. Primary controller section (Bazzite + General PC)
         # Bazzite doesn't have InputPlumber wired up yet, so Neptune templates
-        # won't work. User must pick their controller type for all modes.
-        # General PC users also need to pick their controller.
+        # don't work there and the user picks a controller type for every
+        # play mode. General PC users pick one too.
         self._primary_controller_section = QWidget()
         self._primary_controller_section.setVisible(False)
         pcl = QVBoxLayout(self._primary_controller_section)
@@ -336,7 +336,7 @@ class SetupFlowScreen(QWidget):
         pcl.addSpacing(40)
         main_lay.addWidget(self._primary_controller_section)
 
-        # ── 7. Resolution section (General PC, or docked) ─────────────────
+        # --- 7. Resolution section (General PC, or docked)
         self._resolution_section = QWidget(); self._resolution_section.setVisible(False)
         rl = QVBoxLayout(self._resolution_section)
         rl.setContentsMargins(80, 60, 80, 60); rl.setSpacing(16)
@@ -380,7 +380,7 @@ class SetupFlowScreen(QWidget):
         rl.addSpacing(40)
         main_lay.addWidget(self._resolution_section)
 
-        # ── 8. Play mode section (handhelds only, not General PC) ─────────
+        # --- 8. Play mode section (handhelds only, not General PC)
         self._play_section = QWidget(); self._play_section.setVisible(False)
         pl = QVBoxLayout(self._play_section)
         pl.setContentsMargins(80, 60, 80, 60); pl.setSpacing(16)
@@ -405,9 +405,9 @@ class SetupFlowScreen(QWidget):
         pl.addSpacing(40)
         main_lay.addWidget(self._play_section)
 
-        # ── 9. Docked external controller section ─────────────────────────
-        # Only shown for docked users on SteamOS/CachyOS who haven't already
-        # picked a controller (Bazzite/PC users already picked in step 6).
+        # --- 9. Docked external controller section
+        # Only for docked users on SteamOS or CachyOS. Bazzite and PC users
+        # already picked a controller in step 6.
         self._docked_controller_section = QWidget()
         self._docked_controller_section.setVisible(False)
         dcl = QVBoxLayout(self._docked_controller_section)
@@ -434,12 +434,12 @@ class SetupFlowScreen(QWidget):
         dcl.addSpacing(40)
         main_lay.addWidget(self._docked_controller_section)
 
-        # Show confirm screen if we detected both, otherwise start at OS
+        # Start on the confirm screen if both were detected, else on OS
         if self._detected_os and self._detected_device:
             self._os_section.setVisible(False)
             self._confirm_section.setVisible(True)
 
-    # ── Section visibility helpers ────────────────────────────────────────
+    # --- Section visibility helpers
 
     def _hide_all(self):
         for attr in dir(self):
@@ -450,7 +450,7 @@ class SetupFlowScreen(QWidget):
         self._hide_all()
         getattr(self, section_name).setVisible(True)
 
-    # ── Navigation logic ─────────────────────────────────────────────────
+    # --- Navigation logic
 
     def _accept_autodetect(self):
         self._autodetected = True
@@ -482,7 +482,7 @@ class SetupFlowScreen(QWidget):
         if dev["other_device_type"]:
             cfg.set_other_device_type(dev["other_device_type"])
 
-        # Next: gyro (if device has it) or name
+        # Next is gyro if the device has it, else name
         if dev["has_gyro"]:
             self._show_gyro_section(dev_key)
         else:
@@ -510,17 +510,17 @@ class SetupFlowScreen(QWidget):
             self._show("_device_section")
 
     def _gyro_yes(self):
-        """User wants gyro — show the mode picker.
+        """User wants gyro.
 
-        Steam Deck LCD/OLED and Steam Machine: 3 options (ADS, Hold, Toggle)
-        All other devices:   skip mode picker, apply 'on' (ADS) directly
+        Steam Deck LCD/OLED and Steam Machine get the mode picker (ADS, Hold,
+        Toggle). Other devices skip it and get 'on' (ADS) directly.
         """
         has_full_modes = self._selected_device in ("sd_lcd", "sd_oled", "steam_machine")
         if not has_full_modes:
             # Non-SD/SM devices only support ADS mode
             self._pick_gyro("on")
             return
-        # SD/SM: show mode picker with Hold/Toggle visible
+        # Deck and Steam Machine: mode picker with Hold and Toggle shown
         self._gyro_hold_btn.setVisible(True)
         self._gyro_toggle_btn.setVisible(True)
         self._gyro_mode_desc_lbl.setText(
@@ -540,12 +540,12 @@ class SetupFlowScreen(QWidget):
     def _back_to_gyro_from_name(self):
         dev = DEVICES.get(self._selected_device, {})
         if not dev.get("has_gyro"):
-            # No gyro section to go back to, go to device
+            # No gyro step to return to, so go back to the device step
             self._back_to_device_from_gyro()
             return
-        # If the user picked a mode (ADS/Hold/Toggle) they came through
-        # the mode picker — go back there. If they picked "off" (No) they
-        # skipped it — go back to the Yes/No screen.
+        # A picked mode (ADS/Hold/Toggle) means the user came through the
+        # mode picker, so go back there. "off" (No) skipped it, so go back
+        # to the Yes/No screen.
         gyro = cfg.get_gyro_mode()
         has_full_modes = self._selected_device in ("sd_lcd", "sd_oled", "steam_machine")
         if gyro != "off" and has_full_modes:
@@ -612,7 +612,7 @@ class SetupFlowScreen(QWidget):
         else:
             self._finish()
 
-    # ── Resolution ────────────────────────────────────────────────────────
+    # --- Resolution
 
     def _back_to_prev_from_res(self):
         if self._is_steam_machine:
@@ -626,22 +626,22 @@ class SetupFlowScreen(QWidget):
 
     def _pick_resolution(self, resolution):
         if self._is_steam_machine:
-            # Steam Machine: store resolution in other_device for config dir resolution
+            # Steam Machine keeps its resolution in other_device, which picks its config folder
             cfg.set_other_device(resolution)
             self._finish()
             return
         cfg.set_docked_resolution(resolution)
         if self._is_general_pc:
-            # PC already picked controller — done
+            # PC already picked a controller, so we're done
             self._finish()
         elif not self._needs_primary_controller():
-            # Docked SteamOS/CachyOS: need external controller
+            # Docked SteamOS/CachyOS: ask for the external controller
             self._show("_docked_controller_section")
         else:
-            # Bazzite docked: already picked controller
+            # Docked Bazzite already picked a controller
             self._finish()
 
-    # ── Docked external controller (SteamOS/CachyOS only) ────────────────
+    # --- Docked external controller (SteamOS/CachyOS only)
 
     def _back_to_resolution_from_docked_ctrl(self):
         self._show("_resolution_section")
@@ -650,8 +650,8 @@ class SetupFlowScreen(QWidget):
         cfg.set_external_controller(ctrl_type)
         self._finish()
 
-    # ── Finish ────────────────────────────────────────────────────────────
+    # --- Finish
 
     def _finish(self):
-        # Manifest mods step skips itself straight to the game scan when none are found
+        # The manifest mods step skips itself and goes to the game scan when there are none
         go_to(self.stack, "ManifestModsScreen")

@@ -1,19 +1,18 @@
 #!/bin/bash
-# deckops_identity.sh — Branch identity for shell scripts
+# deckops_identity.sh: branch identity for shell scripts
 #
 # Sourced by install.sh, launcher.sh, and deckops_uninstall.sh.
-# Change BRANCH to switch between nightly and stable.
-# Everything else derives from it.
+# Change BRANCH to switch between nightly and stable. Everything else follows from it.
 #
 # Usage in any shell script:
 #   SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 #   source "$SCRIPT_DIR/deckops_identity.sh"
 
-# ── The one value you change per branch ──────────────────────────────────────
+# --- Set per branch
 
 BRANCH="nightly"  # "nightly" or "stable"
 
-# ── Everything below is derived ──────────────────────────────────────────────
+# --- Derived from BRANCH
 
 GITHUB_USER="GalvarinoDev"
 

@@ -1,6 +1,5 @@
 /*
     DeckOps In-Game Settings v1.0 (T5 / Black Ops MP, offline LAN server)
-    ======================================================================
     Server-side GSC for the DeckOps offline server (Plutonium T5, -lan -dedicated).
     Lives in: storage/t5/scripts/mp/deckops_cac.gsc
 
@@ -32,7 +31,7 @@ init()
     precacheMenu("dcac_list");
 
     // Stock clears the Copycat struct on death and at the end of an unused killcam, and makes a
-    // pistol sidearm the spawn weapon; DeckOps classes keep theirs and spawn with the primary
+    // pistol sidearm the spawn weapon. DeckOps classes keep theirs and spawn with the primary
     replaceFunc(maps\mp\gametypes\_copycat::copycat_clone_loadout, ::dcacCloneLoadout);
     replaceFunc(maps\mp\gametypes\_copycat::copycat_button_think, ::dcacButtonThink);
     replaceFunc(maps\mp\gametypes\_copycat::copycat_give_sidearm_weapon, ::dcacGiveSidearm);
@@ -53,7 +52,7 @@ onPlayerConnect()
     for (;;)
     {
         level waittill("connected", player);
-        // T5 has no isBot(), and Bot Warfare sets pers["isBot"] only after "connected": bots have GUID 0
+        // T5 has no isBot() and Bot Warfare sets pers["isBot"] only after "connected", so bots are found by GUID 0
         if ((player getGuid() + "") == "0")
             continue;
         player.dcac_guid = player getGuid() + "";
@@ -66,9 +65,7 @@ onPlayerConnect()
     }
 }
 
-// ============================================================
-// DEATH WATCHER (close the menu if the player dies with it open)
-// ============================================================
+// --- DEATH WATCHER (close the menu if the player dies with it open)
 
 watchDeath()
 {
@@ -100,10 +97,8 @@ dlog(msg)
         logprint("DCAC;" + self.name + ";" + msg + "\n");
 }
 
-// ============================================================
-// CLASS DATA
+// --- CLASS DATA
 // One class = item references in this order, "none" for an empty attachment
-// ============================================================
 
 cacFields()
 {
@@ -185,9 +180,7 @@ cacReadFile()
         setDvar("dcac_" + self.dcac_guid, strTok(line, "\r\n")[0]);
 }
 
-// ============================================================
-// LOADOUT (BO1's Copycat struct, given by _class::giveLoadout)
-// ============================================================
+// --- LOADOUT (BO1's Copycat struct, given by _class::giveLoadout)
 
 catIndex(list, ref)
 {
@@ -290,7 +283,7 @@ watchSpawn()
     for (;;)
     {
         self waittill("spawned_player");
-        // given (in_use now false): arm it again for the next spawn
+        // The class was given (in_use is now false), so arm it again for the next spawn
         self cacArm();
     }
 }
@@ -372,9 +365,7 @@ dcacGiveSidearm()
         self setSpawnWeapon(sidearm);
 }
 
-// ============================================================
-// MENU OPEN
-// ============================================================
+// --- MENU OPEN
 
 watchForMenuOpen()
 {
@@ -389,7 +380,7 @@ watchForMenuOpen()
     self notifyOnPlayerCommand("cac_select", "+gostand");
     self notifyOnPlayerCommand("cac_select", "+usereload");
     self notifyOnPlayerCommand("cac_select", "+activate");
-    // B only: aim buttons as Back closed the menu by accident
+    // Back is B only: aim buttons as Back closed the menu by accident
     self notifyOnPlayerCommand("cac_back", "+stance");
     // C: crouch is gocrouch (WaW) or togglecrouch (BO1, MW3), only BO2 binds it to +stance
     self notifyOnPlayerCommand("cac_back", "gocrouch");
@@ -503,9 +494,7 @@ openJoinPicker()
     }
 }
 
-// ============================================================
-// HUB
-// ============================================================
+// --- HUB
 
 openHubMenu()
 {
@@ -544,9 +533,7 @@ openStockClassList()
     self openMenu(game["menu_changeclass"]);
 }
 
-// ============================================================
-// CLASS EDITOR
-// ============================================================
+// --- CLASS EDITOR
 
 openClassList(index)
 {
@@ -639,7 +626,7 @@ setField(n, field, value)
     c[field] = value;
     if (field == "primary") { c["patt1"] = "none"; c["patt2"] = "none"; }
     if (field == "secondary") c["satt"] = "none";
-    // Warlord gone: the second attachment goes
+    // Without Warlord the second attachment is cleared
     if (!hasWarlord(c)) c["patt2"] = "none";
     self.dcac[n] = c;
     self cacSave();
@@ -817,7 +804,7 @@ openStreaks(n, index)
 }
 
 // Paged list, returns the picked index or -1. 15 rows fit above the prompt, so every Create-a-Class list
-// fits on one page (no More page); only a longer list pages with More
+// fits on one page (no More page). Only a longer list pages with More
 pickItem(names, current, maps)
 {
     self endon("disconnect");
@@ -864,12 +851,10 @@ indexOf(list, value)
     return 0;
 }
 
-// ============================================================
-// MAP / MODE (ends the match and loads the pick through the rotation)
-// ============================================================
+// --- MAP / MODE (ends the match and loads the pick through the rotation)
 
 // Time and score limits are scr_<gametype>_* dvars the match logic keeps reading, so they change
-// live; the gametype resets them on every map, so they are re-applied
+// live. The gametype resets them on every map, so they are re-applied
 applyMatchOptions()
 {
     level endon("game_ended");
@@ -1083,9 +1068,7 @@ startMatch()
     exitLevel(false);
 }
 
-// ============================================================
-// BOT WARFARE (Bot Warfare reads these dvars live)
-// ============================================================
+// --- BOT WARFARE (Bot Warfare reads these dvars live)
 
 openBotMenu(index)
 {
@@ -1221,9 +1204,7 @@ botSkillName(s)
     return "Normal";
 }
 
-// ============================================================
-// GENERIC HUD MENU (built once per open; screens only swap text)
-// ============================================================
+// --- GENERIC HUD MENU (built once per open, screens only swap text)
 
 // Bots hold still while anyone has the menu open. BO1's bots are Combat Training's own AI, which ignores the
 // bots_play_* switches WaW's Bot Warfare reads (they kept fighting, PC 2026-10-09): freeze them instead.

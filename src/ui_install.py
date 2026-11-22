@@ -1,8 +1,8 @@
 """
-ui_install.py — Install pipeline screens for DeckOps
+ui_install.py: install pipeline screens for DeckOps
 
-Screens: WelcomeScreen, SetupScreen, InstallScreen
-Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
+Screens: WelcomeScreen, SetupScreen, InstallScreen.
+Screens are looked up by name (go_to/get_screen), never by stack index.
 """
 
 import html, os, subprocess, threading, time
@@ -12,7 +12,7 @@ from qt import (
     QLabel, QCheckBox, QProgressBar, QPushButton, QButtonGroup,
     QPlainTextEdit, QFileDialog, QMessageBox,
 )
-from qt import Qt, QTimer, QStorageInfo, QUrl
+from qt import Qt, QTimer, QStorageInfo, QUrl, QPixmap, QGraphicsOpacityEffect
 
 from detect_games import find_steam_root, find_all_games
 import config as cfg
@@ -23,13 +23,13 @@ from ui_constants import (
     C_IW, C_TREY, C_DIM, C_DARK_BTN, C_BLUE_BTN, C_CARD,
     font, _btn, _lbl, _title_block, _header_bar, _badge, _log_to_file, _log_html, _copy_log_to_clipboard, _Sigs,
     ALL_GAMES, KEY_CLIENT, KEY_MODE_LABEL,
-    _active_keys, _active_client,
+    _active_keys, _active_client, _active_appid, _header_path,
     _ask_bo3_client, _show_preflight,
     go_to, get_screen,
 )
 
 
-# ── WelcomeScreen ─────────────────────────────────────────────────────────────
+# --- WelcomeScreen ---
 class WelcomeScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.installed={}; self.screen_name = "WelcomeScreen"
@@ -174,7 +174,7 @@ class WelcomeScreen(QWidget):
             go_to(self.stack, "ManagementScreen")
 
 
-# ── SetupScreen ───────────────────────────────────────────────────────────────
+# --- SetupScreen ---
 class SetupScreen(QWidget):
     """
     Unified game selection. Shows Steam and non-Steam games in one list.
@@ -192,27 +192,28 @@ class SetupScreen(QWidget):
 
         lay.addWidget(_header_bar()[0])
 
-        # ── Content area ───────────────────────────────────────────────
+        # --- Content area
         content = QWidget()
-        clay = QVBoxLayout(content); clay.setContentsMargins(60,20,60,40); clay.setSpacing(14)
-        clay.addWidget(_lbl(
-            "Choose which games to set up. "
-            "DeckOps will create Proton prefixes automatically.", 13, C_DIM))
-        selrow = QHBoxLayout(); selrow.setSpacing(8); selrow.addStretch()
+        clay = QVBoxLayout(content); clay.setContentsMargins(40,12,40,12); clay.setSpacing(10)
+        selrow = QHBoxLayout(); selrow.setSpacing(8)
+        selrow.addWidget(_lbl("Pick the modes to set up for each game.", 13, C_DIM, align=Qt.AlignmentFlag.AlignLeft, wrap=False))
+        selrow.addStretch()
         for _txt, _on in (("Select All", True), ("Select None", False)):
-            _b = _btn(_txt, C_DARK_BTN, size=10, h=30); _b.setFixedWidth(110)
+            _b = _btn(_txt, C_DARK_BTN, size=10, h=30)
             _b.clicked.connect(lambda _c, v=_on: self._set_all(v))
             selrow.addWidget(_b)
         clay.addLayout(selrow)
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
-        # Two columns (IW/SHG | Treyarch) so the whole list fits at 1280x800 without scrolling
-        self._lw = QWidget(); cols = QHBoxLayout(self._lw)
-        cols.setContentsMargins(0,0,0,0); cols.setSpacing(24)
+        # Three columns (Classics | IW/SHG | Treyarch) so the whole list fits at 1280x800 without scrolling
+        # Stretches above and below centre the columns when the screen has room to spare
+        self._lw = QWidget(); vb = QVBoxLayout(self._lw); vb.setContentsMargins(0,0,0,0)
+        cols = QHBoxLayout(); cols.setSpacing(16)
+        vb.addStretch(); vb.addLayout(cols); vb.addStretch()
         self._cols = {}
-        for dev, title, color in (("iw", "INFINITY WARD / SLEDGEHAMMER", C_IW), ("trey", "TREYARCH", C_TREY)):
-            col = QVBoxLayout(); col.setSpacing(0)
+        for dev, title, color in (("classic", "CLASSICS", C_DIM), ("iw", "INFINITY WARD / SLEDGEHAMMER", C_IW), ("trey", "TREYARCH", C_TREY)):
+            col = QVBoxLayout(); col.setSpacing(6)
             col.addWidget(_lbl(title, 11, color, bold=True, align=Qt.AlignmentFlag.AlignLeft, wrap=False))
             col.addStretch()
             cols.addLayout(col, 1); self._cols[dev] = col
@@ -226,15 +227,15 @@ class SetupScreen(QWidget):
         self.warning = _lbl("", 12, C_TREY, align=Qt.AlignmentFlag.AlignLeft)
         self.warning.setVisible(False); clay.addWidget(self.warning)
         brow = QHBoxLayout(); brow.setSpacing(16)
-        back = _btn("<< Back", C_DARK_BTN, h=52); back.setFixedWidth(180)
+        back = _btn("<< Back", C_DARK_BTN, h=46); back.setFixedWidth(160)
         back.clicked.connect(lambda: go_to(self.stack, "WelcomeScreen"))
-        self._folder_btn = _btn("Choose Folder", C_DARK_BTN, h=52)
-        self._folder_btn.setFixedWidth(200)
+        self._folder_btn = _btn("Choose Folder", C_DARK_BTN, h=46)
+        self._folder_btn.setFixedWidth(180)
         self._folder_btn.clicked.connect(self._pick_folder)
-        self.inst_btn = _btn("Install Selected >>", C_IW, h=52)
+        self.inst_btn = _btn("Install Selected >>", C_IW, h=46); self.inst_btn.setFixedWidth(320)
         self.inst_btn.clicked.connect(self._go_install)
-        brow.addWidget(back); brow.addWidget(self._folder_btn)
-        brow.addWidget(self.inst_btn, stretch=1); clay.addLayout(brow)
+        brow.addStretch(); brow.addWidget(back); brow.addWidget(self._folder_btn)
+        brow.addWidget(self.inst_btn); brow.addStretch(); clay.addLayout(brow)
         lay.addWidget(content, stretch=1)
 
     def showEvent(self, e):
@@ -249,12 +250,36 @@ class SetupScreen(QWidget):
                 cb.setChecked(on)
 
     def _add_row(self, gd, widget):
-        col = self._cols["iw" if gd["dev"] == "iw" else "trey"]
+        col = self._cols["classic" if gd.get("classic") else "iw" if gd["dev"] == "iw" else "trey"]
         col.insertWidget(col.count() - 1, widget)
 
     @staticmethod
-    def _short_name(base):
-        return base.replace("Call of Duty 4: Modern Warfare", "Modern Warfare 1").replace("Call of Duty: ", "")
+    def _short_name(gd):
+        # Classics keep the full name. The column already says which series the rest belong to
+        if gd.get("classic"):
+            return gd["base"]
+        return gd["base"].replace("Call of Duty 4: Modern Warfare", "Modern Warfare").replace("Call of Duty: ", "")
+
+    @staticmethod
+    def _chip(text, bg, fg="#FFF"):
+        c = QLabel(text); c.setFont(font(8, True))
+        c.setStyleSheet(f"color:{fg};background:{bg};border-radius:4px;padding:2px 7px;")
+        return c
+
+    def _card(self, gd, found):
+        """Row card: box art, then the caller's content. Returns (card, row, outer)."""
+        cw = QWidget(); cw.setObjectName("gcard")
+        cw.setStyleSheet(f"#gcard{{background:{C_CARD};border-radius:8px;}}")
+        outer = QVBoxLayout(cw); outer.setContentsMargins(8, 3, 8, 3); outer.setSpacing(4)
+        row = QHBoxLayout(); row.setSpacing(10); outer.addLayout(row)
+        art = QLabel(); art.setFixedSize(32, 48); art.setStyleSheet("background:#0A0A10;border-radius:4px;")
+        pix = QPixmap(_header_path(_active_appid(gd)))
+        if not pix.isNull():
+            art.setPixmap(pix.scaled(32, 48, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        row.addWidget(art)
+        if not found:
+            fx = QGraphicsOpacityEffect(cw); fx.setOpacity(0.35); cw.setGraphicsEffect(fx)
+        return cw, row, outer
 
     def _build(self):
         for col in self._cols.values():
@@ -265,11 +290,6 @@ class SetupScreen(QWidget):
         self._checks.clear()
         self._iw4x_dlc_cb = None; self._iw4x_dlc_present = False
         self._zd_cb = None; self._lan_cb = None
-
-        MAX_SLOTS  = 3
-        SLOT_W     = 28
-        SLOT_GAP   = 8
-        CHECKS_W   = MAX_SLOTS * SLOT_W + (MAX_SLOTS - 1) * SLOT_GAP
 
         all_installed = {**self.steam_installed, **self.own_installed}
 
@@ -283,89 +303,56 @@ class SetupScreen(QWidget):
             if not ik:
                 _iw5_keys = {"iw5mp", "iw5mp_ds"}
                 if _iw5_keys.intersection(keys) and not _iw5_keys.intersection(all_installed):
-                    self._add_mw3_free_row(gd, CHECKS_W)
+                    self._add_mw3_free_row(gd)
                     continue
             # Games that aren't found still show, greyed out, so users know DeckOps supports them
+            cw, row, outer = self._card(gd, bool(ik))
 
-            color  = C_IW if gd["dev"] == "iw" else C_TREY
-            client = _active_client(gd)
-
-            cw = QWidget()
-            outer = QVBoxLayout(cw); outer.setContentsMargins(6, 6, 6, 6); outer.setSpacing(4)
-            row = QHBoxLayout(); row.setSpacing(10)
-
-            checks_widget = QWidget()
-            checks_widget.setFixedWidth(CHECKS_W)
-            checks_layout = QHBoxLayout(checks_widget)
-            checks_layout.setContentsMargins(0, 0, 0, 0)
-            checks_layout.setSpacing(SLOT_GAP)
-
+            mid = QVBoxLayout(); mid.setSpacing(4)
+            mid.addWidget(_lbl(self._short_name(gd), 12, "#FFF", align=Qt.AlignmentFlag.AlignLeft, wrap=False))
+            chips = QHBoxLayout(); chips.setSpacing(4); shown = []
             for key in keys:
                 is_steam = key in self.steam_installed
                 is_own   = key in self.own_installed
-                installed = is_steam or is_own
                 source = "own" if is_own and not is_steam else "steam"
-                already_done = cfg.is_game_setup_for_source(key, source)
-
-                slot = QWidget()
-                slot.setFixedWidth(SLOT_W)
-                slot_lay = QVBoxLayout(slot)
-                slot_lay.setContentsMargins(0, 0, 0, 0)
-                slot_lay.setSpacing(2)
-                slot_lay.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-
-                cb = QCheckBox()
-                if not installed:
-                    cb.setChecked(False); cb.setEnabled(False)
-                elif already_done:
-                    cb.setChecked(False)
-                else:
-                    cb.setChecked(True)
-
-                mode_color = C_TREY if not installed else "#666677"
-                mode_lbl = _lbl(KEY_MODE_LABEL.get(key, key), 10, mode_color,
-                                 align=Qt.AlignmentFlag.AlignHCenter, wrap=False)
-
-                slot_lay.addWidget(cb, alignment=Qt.AlignmentFlag.AlignHCenter)
-                slot_lay.addWidget(mode_lbl)
-                checks_layout.addWidget(slot)
+                if not (is_steam or is_own):
+                    continue
+                cb = QPushButton(KEY_MODE_LABEL.get(key, key)); cb.setCheckable(True)
+                cb.setFont(font(9, True)); cb.setFixedHeight(26)
+                cb.setStyleSheet(
+                    "QPushButton{background:transparent;color:#77778A;border:1px solid #3A3A48;border-radius:5px;padding:0 9px;}"
+                    f"QPushButton:checked{{background:{C_IW};color:#FFF;border-color:{C_IW};}}")
+                # Modes already set up start unticked
+                cb.setChecked(not cfg.is_game_setup_for_source(key, source))
+                shown.append(cb)
                 self._checks[key] = (cb, gd, source)
+            # Same mode order on every row. _checks keeps the install order
+            rank = ["SP", "S/Z", "ZM", "MP", "DS"]
+            for cb in sorted(shown, key=lambda c: rank.index(c.text()) if c.text() in rank else len(rank)):
+                chips.addWidget(cb)
+            if not ik:
+                chips.addWidget(_lbl("Not found", 10, "#AAA", align=Qt.AlignmentFlag.AlignLeft, wrap=False))
+            chips.addStretch(); mid.addLayout(chips)
+            row.addLayout(mid, stretch=1)
 
-            for _ in range(MAX_SLOTS - len(keys)):
-                spacer = QWidget()
-                spacer.setFixedSize(SLOT_W, 38)
-                spacer.setStyleSheet("background: transparent;")
-                checks_layout.addWidget(spacer)
-
-            row.addWidget(checks_widget)
-            row.addWidget(_lbl(self._short_name(gd["base"]), 13, "#FFF" if ik else "#555566",
-                               align=Qt.AlignmentFlag.AlignLeft, wrap=False), stretch=1)
-
+            right = QVBoxLayout(); right.setSpacing(4); right.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
             row_has_own = any(k in self.own_installed and k not in self.steam_installed for k in ik)
             row_has_steam = any(k in self.steam_installed for k in ik)
-            if not ik:
-                src_text, src_color = "NOT FOUND", C_DARK_BTN
-            elif row_has_own and row_has_steam:
-                src_text, src_color = "BOTH", C_TREY
-            elif row_has_own:
-                src_text, src_color = "OWN", C_TREY
-            else:
-                src_text, src_color = "STEAM", C_IW
-            row.addWidget(_badge(src_text, src_color, 84, h=24, size=9, radius=4))
-            row.addWidget(_badge(client.upper(), color, 170, h=28, size=9))
-            outer.addLayout(row)
+            if ik:
+                src = ("BOTH", C_TREY) if row_has_own and row_has_steam else ("OWN", C_TREY) if row_has_own else ("STEAM", C_IW)
+                right.addWidget(self._chip(*src), alignment=Qt.AlignmentFlag.AlignRight)
+            right.addWidget(self._chip(_active_client(gd).upper(), "#33333F", "#DDD"), alignment=Qt.AlignmentFlag.AlignRight)
+            row.addLayout(right)
 
-            # Options sit under the row, indented past the checkbox column
-            opts = QVBoxLayout(); opts.setContentsMargins(CHECKS_W + 10, 0, 0, 0); opts.setSpacing(4)
-            self._row_options(opts, keys, all_installed)
-            outer.addLayout(opts)
+            # Options sit under the row while their mode is ticked
+            self._row_options(outer, keys, all_installed)
             self._add_row(gd, cw)
 
         self._build_extras(all_installed)
 
     def _build_extras(self, all_installed):
-        """Optional add-ons, one tile each. Always shown so users know they exist: a tile greys out
-        while its game is unticked or missing (with what to do); Select All never ticks them."""
+        """Optional add-ons, one tile each. Always shown so users know they exist. A tile greys out
+        while its game is unticked or missing, and says what to do. Select All never ticks them."""
         while self._tiles.count():
             w = self._tiles.takeAt(0).widget()
             if w: w.deleteLater()
@@ -373,7 +360,7 @@ class SetupScreen(QWidget):
         shown = active & set(all_installed)
 
         def tile(title, note, checked=None, game=None, needs="", missing=""):
-            """missing: why it can't be installed yet; the tile shows greyed and returns None."""
+            """missing: why it can't be installed yet. The tile shows greyed out and returns None."""
             w = QWidget(); w.setObjectName("tile"); w.setStyleSheet(f"#tile{{background:{C_CARD};border-radius:8px;}}")
             v = QVBoxLayout(w); v.setContentsMargins(12, 10, 12, 10); v.setSpacing(2)
             cb = None
@@ -427,14 +414,15 @@ class SetupScreen(QWidget):
         self._extras.setVisible(self._tiles.count() > 0)
 
     def _row_options(self, lay, keys, all_installed):
-        """Per-game install choices shown under the row while that mode is ticked (replaces pop-ups)."""
+        """Per-game install choices, shown under the row while that mode is ticked (instead of pop-ups)."""
         def _bind(key, w):
             cb = self._checks.get(key, (None,))[0]
             w.setVisible(bool(cb and cb.isChecked()))
             if cb: cb.toggled.connect(w.setVisible)
 
         def _opt_box():
-            w = QWidget(); v = QVBoxLayout(w); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(4)
+            w = QWidget(); w.setStyleSheet("background:transparent;")
+            v = QVBoxLayout(w); v.setContentsMargins(0, 0, 0, 0); v.setSpacing(4)
             return w, v
 
         if "cod4mp" in keys and "cod4mp" in all_installed:
@@ -448,9 +436,9 @@ class SetupScreen(QWidget):
             note = _lbl(notes[self._cod4_choice], 10, "#777788", align=Qt.AlignmentFlag.AlignLeft)
             grp = QButtonGroup(w)
             for val, text in (("cod4r", "CoD4R (recommended)"), ("cod4x", "CoD4x")):
-                b = QPushButton(text); b.setCheckable(True); b.setFont(font(10, True)); b.setFixedHeight(34)
+                b = QPushButton(text); b.setCheckable(True); b.setFont(font(9, True)); b.setFixedHeight(26)
                 b.setStyleSheet(
-                    f"QPushButton{{background:{C_DARK_BTN};color:#AAA;border:none;border-radius:6px;padding:0 12px;}}"
+                    f"QPushButton{{background:{C_DARK_BTN};color:#AAA;border:none;border-radius:5px;padding:0 10px;}}"
                     f"QPushButton:checked{{background:{C_IW};color:#FFF;}}")
                 grp.addButton(b); b.setChecked(self._cod4_choice == val)
                 b.toggled.connect(lambda on, v_=val: on and (setattr(self, "_cod4_choice", v_), note.setText(notes[v_])))
@@ -458,15 +446,14 @@ class SetupScreen(QWidget):
             h.addStretch(); v.addLayout(h); v.addWidget(note)
             lay.addWidget(w); _bind("cod4mp", w)
 
-    def _add_mw3_free_row(self, gd, checks_w):
-        cw = QWidget()
-        row = QHBoxLayout(cw); row.setSpacing(10); row.setContentsMargins(6, 6, 6, 6)
-        btn = _btn("Get Free", C_BLUE_BTN, size=11, h=40); btn.setFixedWidth(checks_w)
+    def _add_mw3_free_row(self, gd):
+        cw, row, _outer = self._card(gd, True)
+        mid = QVBoxLayout(); mid.setSpacing(4)
+        mid.addWidget(_lbl(self._short_name(gd), 12, "#FFF", align=Qt.AlignmentFlag.AlignLeft, wrap=False))
+        btn = _btn("Get Free", C_BLUE_BTN, size=9, h=26); btn.setFixedWidth(100)
         btn.clicked.connect(self._add_mw3_ds)
-        row.addWidget(btn)
-        row.addWidget(_lbl(self._short_name(gd["base"]), 13, "#555566", align=Qt.AlignmentFlag.AlignLeft, wrap=False), stretch=1)
-        color = C_IW if gd["dev"] == "iw" else C_TREY
-        row.addWidget(_badge(_active_client(gd).upper(), color, 170, h=28, size=9))
+        mid.addWidget(btn); row.addLayout(mid, stretch=1)
+        row.addWidget(self._chip(_active_client(gd).upper(), "#33333F", "#DDD"), alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)
         self._add_row(gd, cw)
 
     def _add_mw3_ds(self):
@@ -482,7 +469,7 @@ class SetupScreen(QWidget):
 
     @staticmethod
     def _removable_mounts():
-        # SD cards / USB drives; username-agnostic so it works on Bazzite/CachyOS too
+        # SD cards and USB drives. No username in the paths, so it works on Bazzite/CachyOS too
         out = set()
         for v in QStorageInfo.mountedVolumes():
             root = v.rootPath()
@@ -496,7 +483,7 @@ class SetupScreen(QWidget):
         mounts = self._removable_mounts()
         dlg = QFileDialog(self, "Select your games folder", mounts[0] if len(mounts) == 1 else home)
         dlg.setFileMode(QFileDialog.FileMode.Directory)
-        # Qt's own dialog honors custom sidebar entries; the KDE/portal one ignores them
+        # Qt's own dialog shows custom sidebar entries. The KDE/portal one ignores them
         dlg.setOptions(QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontResolveSymlinks | QFileDialog.Option.DontUseNativeDialog)
         dlg.setSidebarUrls([QUrl.fromLocalFile(home)] + [QUrl.fromLocalFile(m) for m in mounts])
         dlg.resize(1000, 600)
@@ -539,7 +526,7 @@ class SetupScreen(QWidget):
         self.warning.setVisible(True)
 
     def _preflight_ok(self, steam_selected, own_selected):
-        """Disk space and power. Fast enough to run inline; never blocks the install."""
+        """Disk space and power. Fast enough to run inline, and never blocks the install."""
         import preflight
         rows = [(k, KEY_CLIENT.get(k, ""), g.get("install_dir", ""))
                 for k, _gd, g in steam_selected]
@@ -749,6 +736,7 @@ class _BaseInstallScreen(QWidget):
         self._s.iw5_qr_hide.connect(self._hide_iw5_qr)
         self._s.iw5_dg_choose.connect(self._ask_iw5_dg_method)
         self._s.iw5_trim_ask.connect(self._ask_iw5_trim)
+        self._s.disc_ask.connect(self._ask_delete_disc)
         self._s.pulse_start.connect(self._start_pulse)
         self._s.pulse_stop.connect(self._stop_pulse)
         self._s.manual_dl.connect(self._show_manual_dl_dialog)
@@ -899,6 +887,29 @@ class _BaseInstallScreen(QWidget):
         else:
             self._iw5_method = ""
         self._iw5_dg_event.set()
+
+    def _ask_delete_disc(self, title, path):
+        # The install thread only emits and moves on, so the next game installs while this is open.
+        try:
+            gb = os.path.getsize(path) / (1 << 30)
+        except OSError:
+            return
+        msg = QMessageBox(self)
+        msg.setWindowTitle(f"{title} installed")
+        msg.setText(f"Delete the disc image to free {gb:.1f} GB?\n\n"
+                    f"{os.path.basename(path)}\n\n"
+                    "You only need it to install the game again.")
+        del_btn = msg.addButton("Delete", QMessageBox.ButtonRole.AcceptRole)
+        keep = msg.addButton("Keep", QMessageBox.ButtonRole.RejectRole); msg.setDefaultButton(keep)
+        msg.exec()
+        if msg.clickedButton() != del_btn:
+            return
+        try:
+            os.remove(path); self._append_log(f"  Deleted {os.path.basename(path)} ({gb:.1f} GB freed)")
+        except FileNotFoundError:
+            pass
+        except OSError as ex:
+            self._append_log(f"  Could not delete {os.path.basename(path)}: {ex}")
 
     def _ask_iw5_trim(self):
         msg = QMessageBox(self)
@@ -1086,7 +1097,7 @@ class _BaseInstallScreen(QWidget):
         return captured_user
 
     def _seed_results(self):
-        """One record per selected key; phases overwrite status as they run."""
+        """One record per selected key. Each phase overwrites the status as it runs."""
         self._results = [{"key": k, "name": gd["base"], "status": "pending", "reason": ""}
                          for k, gd, _g in self.selected]
 
@@ -1293,7 +1304,7 @@ class _BaseInstallScreen(QWidget):
     def _run(self):
         import traceback as _tb
         try:
-            # Before the installs: the Plutonium setup reads it
+            # Saved before the installs because the Plutonium setup reads it
             if self.offline_mode is not None:
                 cfg.set_offline_mode(self.offline_mode)
             _log_to_file(f"Offline Mode: {'on' if cfg.get_offline_mode() else 'off'}")
@@ -1339,7 +1350,8 @@ class _BaseInstallScreen(QWidget):
         has_plut      = any(KEY_CLIENT.get(k) == "plutonium" for k in selected_keys)
         has_cod4      = any(KEY_CLIENT.get(k) in ("cod4r", "cod4x", "iw3sp") for k in selected_keys)
         has_t6sp_mod  = any(KEY_CLIENT.get(k) == "t6sp_mod" for k in selected_keys)
-        _sp_keys = [k for k in ("iw4sp", "iw5sp") if k in selected_keys]
+        from sp_mod import SP_MOD_KEYS
+        _sp_keys = [k for k in SP_MOD_KEYS if k in selected_keys]
 
         _cod4_client = getattr(self, "cod4_client", "cod4r")
         _steam_killed = False
@@ -1370,6 +1382,12 @@ class _BaseInstallScreen(QWidget):
             ("cleanops",  "Installing CleanOps",          3 if has_cleanops else 0),
             ("alterware", "Installing AlterWare",         8 * _nk("alterware")),
             ("spmod",     "Installing IW-Pad",            4 * len(_sp_keys)),
+            ("cod1x",     "Installing CoD1x",             3 if "cod1mp" in selected_keys else 0),
+            ("cod2x",     "Installing CoD2x",             3 if "cod2mp" in selected_keys else 0),
+            ("coduox",    "Installing CoDUOx",            3 if "coduomp" in selected_keys else 0),
+            ("codfh",     "Installing Call of Duty: Finest Hour", 30 if "codfh" in own_selected else 0),
+            ("bro",       "Installing Call of Duty 2: Big Red One", 20 if "bro" in own_selected else 0),
+            ("cod3",      "Installing Call of Duty 3",    20 if "cod3" in own_selected else 0),
             ("zd",        "Zombies Declassified",         8 if has_plut and "t6zm" in selected_keys else 0),
             ("finalize",  "Finishing up",                 8),
         ])
@@ -1406,8 +1424,8 @@ class _BaseInstallScreen(QWidget):
 
         # --- BO3 client injection
         # Must happen early so t7x is included in prefix init, shortcuts,
-        # and selected_keys. Actual install runs later (after CleanOps)
-        # to match the original phase order.
+        # and selected_keys. The install itself runs later, just before
+        # CleanOps.
         if has_t7x:
             for k, gd, g in list(self.selected):
                 if k == "t7":
@@ -1420,11 +1438,11 @@ class _BaseInstallScreen(QWidget):
         self._seed_results()
 
         # --- Enrich own game dicts (shortcut_appid, compatdata_path)
-        # enrich_own_games computes CRC-based appids, prefix paths, and
-        # resolved exe/launch options WITHOUT writing any VDF entries.
-        # Must run before ensure_all_prefix_deps. Actual shortcut writing
-        # is deferred to write_own_shortcuts() after all mod clients are
-        # installed so every target exe exists on disk.
+        # enrich_own_games works out CRC-based appids, prefix paths and
+        # the exe/launch options, but writes no VDF entries. It must run
+        # before ensure_all_prefix_deps. write_own_shortcuts() writes the
+        # shortcuts at the end, after all mod clients are installed, so
+        # every target exe exists on disk.
         if has_own:
             self._phase("own")
             self._s.log.emit("Enriching own game data...")
@@ -1443,9 +1461,9 @@ class _BaseInstallScreen(QWidget):
 
         # --- Create prefixes + install deps from GE-Proton default_pfx
         # Every selected game gets its prefix preloaded. Own games use their
-        # CRC-based prefix (set by enrich_own_games). Steam games use their
-        # Steam appid prefix. ensure_all_prefix_deps handles deduplication
-        # and skips prefixes that are already initialized.
+        # CRC-based prefix (set by enrich_own_games), Steam games their
+        # Steam appid prefix. ensure_all_prefix_deps skips duplicates and
+        # prefixes that are already set up.
         self._phase("prefix")
         self._s.log.emit("Creating Proton prefixes and installing dependencies...")
         self._s.pulse_start.emit("Installing prefix dependencies")
@@ -1478,7 +1496,7 @@ class _BaseInstallScreen(QWidget):
         self._s.pulse_stop.emit()
         _log_to_file("[BREADCRUMB] prefix deps done")
 
-        # --- CoD4 (iw3sp + cod4r/cod4x) -- Steam still running
+        # --- CoD4 (iw3sp + cod4r/cod4x) (Steam still running)
         # Runs before the Plutonium bootstrapper and before Steam is closed.
         _log_to_file("[BREADCRUMB] starting cod4 install phase")
         if has_cod4:
@@ -1567,8 +1585,8 @@ class _BaseInstallScreen(QWidget):
                     self._mark(key, "failed", str(ex))
 
         # --- Depot downgrades (Steam still running)
-        # Detect ALL games that need downgrading, show ONE dialog,
-        # run ONE QR scan for everything.
+        # Find every game that needs a downgrade, then show one dialog
+        # and run one QR scan for all of them.
         from depot_downgrade import (
             GAME_CONFIGS as _DG_CONFIGS,
             is_downgrade_needed as _dg_needed,
@@ -1612,8 +1630,8 @@ class _BaseInstallScreen(QWidget):
                     cfg.mark_game_setup("iw5sp", "steam", source="steam")
 
                 # MW3 depot files go into a downgrade/ subfolder so the
-                # 64-bit Steam install stays intact. SP never needs
-                # downgrade (vanilla 64-bit exe works as-is).
+                # 64-bit Steam install stays intact. SP never needs a
+                # downgrade (the vanilla 64-bit exe works as it is).
                 _has_mp = _sel & {"iw5mp", "iw5mp_ds"}
                 if not _has_mp:
                     self._s.log.emit("  MW3 SP does not need downgrade, skipped.")
@@ -1694,9 +1712,9 @@ class _BaseInstallScreen(QWidget):
             self._s.log.emit("  ✓  Login credentials removed.")
 
         # --- Plutonium bootstrapper (Steam still running)
-        # Downloads Plutonium and launches it so the user can log in. LCD
-        # routes through HGL (shared default prefix); OLED uses the
-        # dedicated DeckOps prefix via Proton directly.
+        # Downloads Plutonium and starts it so the user can log in. LCD
+        # goes through Heroic (shared default prefix). OLED runs the
+        # DeckOps Plutonium prefix with Proton directly.
         if has_plut:
             from plutonium import (launch_bootstrapper, is_plutonium_ready,
                                    install_plutonium)
@@ -1842,13 +1860,14 @@ class _BaseInstallScreen(QWidget):
         # --- Kill Steam
         _kill_steam_once()
 
-        # --- Clean slate: clear launch options and ALL compat tools
-        # Previous installs (LCD->OLED switch, older DeckOps versions) can
-        # leave stale launch options and compat tool entries that conflict
-        # with the current install. Wipe them first, then re-apply what's
-        # needed below. Launch options are only cleared for the Steam games
-        # in this run: a per-game Set Up must not wipe the options of games
-        # it doesn't reinstall (CleanOps, IW-Pad, AlterWare, IW3SP).
+        # --- Clean slate: clear launch options and compat tools
+        # Earlier installs (an LCD to OLED switch, older DeckOps versions)
+        # can leave old launch options and compat tool entries that clash
+        # with this install. Clear them first, then set what's needed below.
+        # Compat tools are cleared for every managed appid. Launch options
+        # only for the Steam games in this run, so a per-game Set Up keeps
+        # the options of games it doesn't reinstall (CleanOps, IW-Pad,
+        # AlterWare, IW3SP).
         try:
             from wrapper import clear_launch_options, clear_compat_tool
             from detect_games import GAMES
@@ -1868,9 +1887,9 @@ class _BaseInstallScreen(QWidget):
             self._s.log.emit(f"  Launch option / compat tool cleanup skipped: {ex}")
 
         # --- Set GE-Proton compat for MANAGED_APPIDS
-        # Must run AFTER kill_steam -- Steam overwrites config.vdf on exit.
-        # Only write for Steam appids if the user actually has Steam games
-        # selected; otherwise this may trigger Steam to re-download games.
+        # Must run after kill_steam. Steam overwrites config.vdf on exit.
+        # Only written when Steam games are selected. Otherwise Steam may
+        # start downloading games again.
         if ge_version and steam_sel:
             try:
                 set_compat_tool(MANAGED_APPIDS, ge_version)
@@ -1992,10 +2011,10 @@ class _BaseInstallScreen(QWidget):
                     self._mark(key, "failed", str(ex))
 
         # --- T7X (BO3 AlterWare client)
-        # Must run BEFORE CleanOps: CleanOps drops d3d11.dll into the
-        # stock BO3 dir, and the symlink farm would pick it up if it
-        # already exists. Running T7x first builds symlinks from a clean
-        # stock dir, then CleanOps only touches the stock dir afterward.
+        # Must run before CleanOps. CleanOps drops d3d11.dll into the
+        # stock BO3 dir, and the T7x symlinks would pick it up if it were
+        # already there. T7x first links a clean stock dir, then CleanOps
+        # changes only the stock dir.
         _log_to_file("[BREADCRUMB] starting t7x install phase")
         if has_t7x:
             self._phase("t7x")
@@ -2077,7 +2096,7 @@ class _BaseInstallScreen(QWidget):
                     self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
                     self._mark(key, "failed", str(ex))
 
-        # --- MW2/MW3 SP: IW-Pad. Steam (x64) gets IW-Pad + launch option; own (32-bit)
+        # --- MW2/MW3 SP: IW-Pad. Steam (x64) gets IW-Pad + launch option. Own (32-bit)
         # also gets the AlterWare SP client. On failure the game stays vanilla.
         if _sp_keys:
             from sp_mod import install_sp_mod
@@ -2094,14 +2113,113 @@ class _BaseInstallScreen(QWidget):
                     cfg.mark_game_setup(_sp_key, "iw-pad", source=source)
                     self._s.log.emit(f"✓  IW-Pad installed ({_sp_key}, {source})")
                 except Exception as ex:
-                    _g["_own_launch_options"] = ""
+                    from steam_common import GL_FIX, GL_FIX_KEYS
+                    _g["_own_launch_options"] = GL_FIX + "%command%" if _sp_key in GL_FIX_KEYS else ""
                     self._s.log.emit(f"✗  IW-Pad install failed ({_sp_key}): {ex}")
+
+        # --- CoD1x: CoD1 multiplayer runs from a 1.1 copy beside the game (Steam or own)
+        _c1 = next((g for k, _gd, g in self.selected if k == "cod1mp"), None)
+        if _c1:
+            from cod1x import install_cod1x
+            self._phase("cod1x")
+            _c1_src = "own" if "cod1mp" in own_selected else "steam"
+            try:
+                install_cod1x(_c1, self.steam_root,
+                              lambda pct, msg: self._s.progress.emit(self._ppct(pct), msg), source=_c1_src)
+                cfg.mark_game_setup("cod1mp", "cod1x", source=_c1_src)
+                self._s.log.emit("✓  Call of Duty multiplayer installed (CoD1x)")
+                self._mark("cod1mp", "ok")
+            except Exception as ex:
+                self._s.log.emit(f"✗  CoD1x install failed: {ex}")
+                self._mark("cod1mp", "failed", str(ex))
+
+        # --- CoD2x: CoD2 multiplayer, proxy mss32.dll in the game folder (Steam or own)
+        _c2 = next((g for k, _gd, g in self.selected if k == "cod2mp"), None)
+        if _c2:
+            from cod2x import install_cod2x
+            self._phase("cod2x")
+            _c2_src = "own" if "cod2mp" in own_selected else "steam"
+            try:
+                install_cod2x(_c2, self.steam_root,
+                              lambda pct, msg: self._s.progress.emit(self._ppct(pct), msg), source=_c2_src)
+                cfg.mark_game_setup("cod2mp", "cod2x", source=_c2_src)
+                self._s.log.emit("✓  Call of Duty 2 multiplayer installed (CoD2x)")
+                self._mark("cod2mp", "ok")
+            except Exception as ex:
+                self._s.log.emit(f"✗  CoD2x install failed: {ex}")
+                self._mark("cod2mp", "failed", str(ex))
+
+        # --- CoDUOx: UO multiplayer (disc copy in place, Steam in a copy beside the game)
+        _uo = next((g for k, _gd, g in self.selected if k == "coduomp"), None)
+        if _uo:
+            from coduox import install_coduox
+            self._phase("coduox")
+            _uo_src = "own" if "coduomp" in own_selected else "steam"
+            try:
+                install_coduox(_uo, lambda pct, msg: self._s.progress.emit(self._ppct(pct), msg), source=_uo_src)
+                cfg.mark_game_setup("coduomp", "coduox", source=_uo_src)
+                self._s.log.emit("✓  United Offensive multiplayer installed (CoDUOx)")
+                self._mark("coduomp", "ok")
+            except Exception as ex:
+                self._s.log.emit(f"✗  CoDUOx install failed: {ex}")
+                self._mark("coduomp", "failed", str(ex))
+
+        # --- Finest Hour: Finest Hour Remastered from the user's PAL Xbox disc (own only, no Steam app)
+        _fh = next((g for k, _gd, g in self.selected if k == "codfh" and k in own_selected), None)
+        if _fh:
+            from finesthour import install_fh
+            self._phase("codfh")
+            try:
+                fresh = install_fh(_fh, self.steam_root, proton, _fh.get("compatdata_path", ""),
+                           lambda pct, msg: self._s.progress.emit(self._ppct(pct), msg))
+                cfg.mark_game_setup("codfh", "finesthour", source="own")
+                self._s.log.emit("✓  Call of Duty: Finest Hour installed (Finest Hour Remastered)")
+                self._mark("codfh", "ok")
+                # Only after the disc was installed now, not when it was already installed
+                if fresh and os.path.isfile(_fh.get("disc") or ""):
+                    self._s.disc_ask.emit("Call of Duty: Finest Hour", _fh["disc"])
+            except Exception as ex:
+                self._s.log.emit(f"✗  Call of Duty: Finest Hour install failed: {ex}")
+                self._mark("codfh", "failed", str(ex))
+
+        # --- Big Red One: the BRO engine and the user's Xbox disc (own only, no Steam app)
+        _bro = next((g for k, _gd, g in self.selected if k == "bro" and k in own_selected), None)
+        if _bro:
+            from bro import install_bro
+            self._phase("bro")
+            try:
+                fresh = install_bro(_bro, on_progress=lambda pct, msg: self._s.progress.emit(self._ppct(pct), msg))
+                cfg.mark_game_setup("bro", "bro", source="own")
+                self._s.log.emit("✓  Call of Duty 2: Big Red One installed (BRO engine)")
+                self._mark("bro", "ok")
+                if fresh and os.path.isfile(_bro.get("disc") or ""):
+                    self._s.disc_ask.emit("Call of Duty 2: Big Red One", _bro["disc"])
+            except Exception as ex:
+                self._s.log.emit(f"✗  Call of Duty 2: Big Red One install failed: {ex}")
+                self._mark("bro", "failed", str(ex))
+
+        # --- Call of Duty 3: CoD3Recomp and the user's disc (own only, there is no Steam app)
+        _cod3 = next((g for k, _gd, g in self.selected if k == "cod3" and k in own_selected), None)
+        if _cod3:
+            from cod3recomp import install_cod3
+            self._phase("cod3")
+            try:
+                fresh = install_cod3(_cod3, self.steam_root, proton, _cod3.get("compatdata_path", ""),
+                             lambda pct, msg: self._s.progress.emit(self._ppct(pct), msg))
+                cfg.mark_game_setup("cod3", "cod3recomp", source="own")
+                self._s.log.emit("✓  Call of Duty 3 installed (CoD3Recomp)")
+                self._mark("cod3", "ok")
+                if fresh and os.path.isfile(_cod3.get("disc") or ""):
+                    self._s.disc_ask.emit("Call of Duty 3", _cod3["disc"])
+            except Exception as ex:
+                self._s.log.emit(f"✗  Call of Duty 3 install failed: {ex}")
+                self._mark("cod3", "failed", str(ex))
 
         # --- Zombies Declassified (optional DLC5 for BO2 Zombies via Plutonium)
         if has_plut and "t6zm" in selected_keys:
             self._phase("zd")
             try:
-                # Check BO2 Zombies DLC prerequisite
+                # Zombies Declassified needs all BO2 Zombies DLC
                 _bo2_dir = None
                 for _k, _gd, _g in self.selected:
                     if _k == "t6zm" and _g:
@@ -2116,7 +2234,7 @@ class _BaseInstallScreen(QWidget):
                     _zd_storage = resolve_zd_storage({k: g for k, gd, g in self.selected}.get("t6zm"))
 
                     if _zd_storage and os.path.isdir(_zd_storage):
-                        # Choice comes from the game-selection row; None means ask now (~9 GB)
+                        # Choice comes from the game-selection tile. None means ask now (~9 GB)
                         _zd_yes = self.zd_choice
                         if _zd_yes is None:
                             self._s.progress.emit(self._ppct(0), "Zombies Declassified available")
@@ -2241,10 +2359,10 @@ class _BaseInstallScreen(QWidget):
             self._s.log.emit(f"  Steam Input setup skipped: {ex}")
 
         # --- Write own game shortcuts (VDF, artwork, controllers, compat)
-        # All mod client exes now exist on disk. write_own_shortcuts reads
-        # the enrichment data set by enrich_own_games() earlier and writes
-        # the actual VDF entries, downloads artwork, assigns controller
-        # configs, and sets GE-Proton compat tool per shortcut.
+        # All mod client exes exist on disk now. write_own_shortcuts takes
+        # the data enrich_own_games() set earlier, writes the VDF entries,
+        # downloads artwork, assigns controller configs and sets the
+        # GE-Proton compat tool for each shortcut.
         if has_own:
             gyro_mode = cfg.get_gyro_mode() or "on"
             self._s.progress.emit(self._ppct(60), "Writing own game shortcuts...")
@@ -2292,6 +2410,12 @@ class _BaseInstallScreen(QWidget):
             defaults = {}
             if has_cod4_steam:
                 defaults["7940"] = ("7a722f97", "1")   # CoD4 -> Singleplayer
+            # Steam CoD1 / UO / CoD2 -> Singleplayer (IW-Pad). MP has its own shortcut.
+            # Hash keys read from a Deck where SP was picked as the default (11-21).
+            for _k, _dlo in (("cod1", ("2620", "9c69b44c")), ("coduo", ("2640", "8a5de796")),
+                             ("cod2", ("2630", "4c37e8e2"))):
+                if any(k in (_k + "sp", _k + "mp") for k in steam_keys):
+                    defaults[_dlo[0]] = (_dlo[1], "0")
             # WaW keeps Steam's picker for its Plutonium entries
             if defaults:
                 try:

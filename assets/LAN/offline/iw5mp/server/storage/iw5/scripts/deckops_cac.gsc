@@ -1,10 +1,9 @@
 /*
     DeckOps In-Game Create-a-Class Editor v1.0 (IW5 / MW3)
-    =======================================================
     Server-side GSC script for Plutonium IW5 dedicated servers.
     Drop into: storage/iw5/scripts/deckops_cac.gsc
 
-    Ported from IW4x MW2 CAC v2.0, menu input/hints updated to v2.1 — adapted for MW3 class system:
+    Ported from IW4x MW2 CAC v2.0 (menu input and hints from v2.1), adapted for the MW3 class system:
         - IW5 weapon codenames (iw5_ prefix)
         - Weapon Proficiencies (per weapon class)
         - Dual attachment support (2nd slot requires Attachments proficiency)
@@ -55,9 +54,7 @@ onPlayerConnect()
     }
 }
 
-// ============================================================
-// DEATH WATCHER (close the menu if the player dies with it open)
-// ============================================================
+// --- DEATH WATCHER (close the menu if the player dies with it open)
 
 watchDeath()
 {
@@ -91,11 +88,9 @@ dlog(msg)
         logPrint("DCAC;" + self.name + ";" + msg + "\n");
 }
 
-// ============================================================
-// UNLOCK FILTER HELPERS
-// ============================================================
+// --- CLASS STORAGE AND ITEM LIST HELPERS
 
-// Five classes in self.dcac[0..4]; every edit goes to self.dcac[self.dcac_cur]. The class in use is copied into
+// Five classes in self.dcac[0..4]. Every edit goes to self.dcac[self.dcac_cur]. The class in use is copied into
 // self.pers["gamemodeLoadout"], which _class.gsc gives for class "gamemode" without unlock checks. Server dvars
 // per guid keep them across map changes: dcac_<guid>_<n> (one class each, a dvar holds 1024 characters at most)
 // and dcac_use_<guid> (the class in use, "-" for none). Plutonium IW5 has no GSC file I/O (no fs_*, openfile
@@ -262,9 +257,7 @@ getUnlockedProficiencies(weapon, profListKey, profNameKey)
     return items;
 }
 
-// ============================================================
-// MENU OPEN/CLOSE WATCHER
-// ============================================================
+// --- MENU OPEN/CLOSE WATCHER
 
 watchForMenuOpen()
 {
@@ -289,7 +282,7 @@ watchForMenuOpen()
 }
 
 // CHOOSE CLASS in the in-game menu sends ("class", "changeclass_marines"/"changeclass_opfor").
-// The stock script opens the class list for it; close that and open the editor instead.
+// The stock script opens the class list for it. Close that and open the editor instead.
 watchChooseClass()
 {
     self endon("disconnect");
@@ -306,7 +299,7 @@ watchChooseClass()
     }
 }
 
-// MW3's own class pick, as if class0 was clicked in its Choose Class; on that spawn watchSpawnLoadout gives
+// MW3's own class pick, as if class0 was clicked in its Choose Class. On that spawn watchSpawnLoadout gives
 // the DeckOps class in use and opens our picker
 joinWithClass0()
 {
@@ -375,9 +368,7 @@ cacSeedFromCurrent()
     self cacSet("loadoutPrimary", l["loadoutPrimary"]);
 }
 
-// ============================================================
-// HUB MENU (opened by CHOOSE CLASS)
-// ============================================================
+// --- HUB MENU (opened by CHOOSE CLASS)
 
 openHubMenu(index)
 {
@@ -432,9 +423,7 @@ openChooseClass()
     self thread applyLoadout();
 }
 
-// ============================================================
-// MAP / MODE (ends the match and loads the pick through the rotation)
-// ============================================================
+// --- MAP / MODE (ends the match and loads the pick through the rotation)
 
 // Time and score limits come from the DSR into scr_<gametype>_*, which the match logic keeps
 // reading, so they change live. The DSR resets them on every map, so they are re-applied.
@@ -461,7 +450,7 @@ matchModes()
     return m;
 }
 
-// dcac_maps (set by the offline script) lists the installed maps; DLC maps may be missing.
+// dcac_maps (set by the offline script) lists the installed maps. DLC maps may be missing.
 // DLC names from Bot Warfare's waypoint files, to check against MW3's strings with the Round B catalog.
 matchMaps()
 {
@@ -529,8 +518,8 @@ openMatchMenu(index)
     d[3] = "How many points win the match.";
     d[4] = "Load mode and map. Limits alone apply instantly.";
     self.cac_descs = d;
-    // shown like MW3's Esc menu: mode as the right title; the box like its Maps screen with the map's preview
-    // (its ui_mp picture, shipped in z_deckops_maps.iwd since ui_mp isn't loaded in a match)
+    // shown like MW3's Esc menu, with the mode as the right title. The box is like its Maps screen, with the map's
+    // preview (its ui_mp picture, shipped in z_deckops_maps.iwd since ui_mp isn't loaded in a match)
     self.cac_map = [];
     self.cac_map["pic"] = "preview_" + maps["key"][self.mm_map] + "_lobby";
     self.cac_map["name"] = maps["name"][self.mm_map];
@@ -598,7 +587,7 @@ pickMap(maps, current)
 }
 
 // Paged list, returns the picked index or -1. 15 rows fit above the prompt, so every Create-a-Class list
-// fits on one page (no More page); only a longer list pages with More
+// fits on one page (no More page). Only a longer list pages with More
 pickItem(names, current, title)
 {
     self endon("disconnect");
@@ -692,9 +681,7 @@ startMatch()
     exitLevel(false);
 }
 
-// ============================================================
-// BOT WARFARE (Bot Warfare reads these dvars live)
-// ============================================================
+// --- BOT WARFARE (Bot Warfare reads these dvars live)
 
 openBotMenu(index)
 {
@@ -851,9 +838,7 @@ botSkillName(n)
     return "Veteran";
 }
 
-// ============================================================
-// MAIN MENU
-// ============================================================
+// --- MAIN MENU
 
 classItems()
 {
@@ -921,9 +906,7 @@ openCACMenu()
     }
 }
 
-// ============================================================
-// PRIMARY WEAPON FLOW
-// ============================================================
+// --- PRIMARY WEAPON FLOW
 
 pickPrimaryCategory(slot)
 {
@@ -1001,9 +984,7 @@ pickWeaponFromList(listKey, nameKey, weaponSlot)
     self thread pickAttachment(weapon, weaponSlot, 0);
 }
 
-// ============================================================
-// SECONDARY WEAPON FLOW
-// ============================================================
+// --- SECONDARY WEAPON FLOW
 
 pickSecondaryCategory()
 {
@@ -1032,13 +1013,11 @@ pickSecondaryCategory()
     }
 }
 
-// ============================================================
-// ATTACHMENT PICKER (per-weapon, unlock-gated)
-// ============================================================
+// --- ATTACHMENT PICKER (per weapon)
 
 // Valid attachments per weapon come from the game's own mp/statsTable.csv (columns 11+), the same
 // source as MW3's Create-a-Class and Bot Warfare. Codes are class-specific (silencer02 on pistols,
-// silencer03 on shotguns, m320/gp25 launchers); generic codes build weapons that don't exist.
+// silencer03 on shotguns, m320/gp25 launchers). Generic codes build weapons that don't exist.
 getAttachmentsForGun(gun)
 {
     row = tableLookupRowNum("mp/statsTable.csv", 4, gun);
@@ -1123,9 +1102,7 @@ pickAttachment(weapon, weaponSlot, attachSlot)
         self thread openCACMenu();
 }
 
-// ============================================================
-// PROFICIENCY PICKER (per-weapon-class, unlock-gated)
-// ============================================================
+// --- PROFICIENCY PICKER (per weapon class)
 
 pickProficiency(weaponSlot)
 {
@@ -1172,9 +1149,7 @@ pickProficiency(weaponSlot)
     self thread openCACMenu();
 }
 
-// ============================================================
-// PERK PICKER (unlock-gated)
-// ============================================================
+// --- PERK PICKER
 
 pickPerk(perkSlot)
 {
@@ -1204,8 +1179,7 @@ pickPerk(perkSlot)
     perk = unlocked["keys"][result];
     self cacSet(perkKey(perkSlot), perk);
 
-    // Overkill: if selected, secondary buff needs to be valid
-    // If deselected, clear secondary buff
+    // Without Overkill the secondary takes no proficiency, so clear it
     if (perkSlot == 2)
     {
         if (perk != "specialty_twoprimaries")
@@ -1225,9 +1199,7 @@ pickPerk(perkSlot)
     self thread openCACMenu();
 }
 
-// ============================================================
-// EQUIPMENT, TACTICAL, DEATHSTREAK
-// ============================================================
+// --- EQUIPMENT, TACTICAL, DEATHSTREAK
 
 pickEquipmentMenu()
 {
@@ -1291,7 +1263,7 @@ pickDeathstreak()
     self endon("disconnect");
     self endon("death");
 
-    // Deathstreaks — filter by unlock
+    // Deathstreaks: the full list (offline, nothing is locked)
     unlocked = self getUnlockedItems("deathstreak", "deathstreak_name");
 
     if (unlocked["names"].size == 0)
@@ -1321,9 +1293,7 @@ isPrimaryWeapon(w)
     return false;
 }
 
-// ============================================================
-// STRIKE PACKAGE
-// ============================================================
+// --- STRIKE PACKAGE
 
 pickStreakType()
 {
@@ -1341,7 +1311,7 @@ pickStreakType()
 }
 
 // Streaks are stored by kill cost (setKillstreaks in _class.gsc), so two with the same cost
-// would overwrite each other; Specialist costs are the slot (2/4/6) instead.
+// would overwrite each other. Specialist costs are the slot (2/4/6) instead.
 pickStreak(n)
 {
     self endon("disconnect");
@@ -1426,9 +1396,7 @@ cacSanitize()
     }
 }
 
-// ============================================================
-// APPLY LOADOUT (Divity's class swap trick)
-// ============================================================
+// --- APPLY LOADOUT (Divity's class swap trick)
 
 applyLoadout()
 {
@@ -1526,12 +1494,10 @@ openJoinPicker()
     }
 }
 
-// ============================================================
-// GENERIC MENU (same layout as the WaW / BO1 / BO2 menus, MW3 green)
-// ============================================================
+// --- GENERIC MENU (same layout as the WaW / BO1 / BO2 menus, MW3 green)
 
 // Retail MW3 strike packages (valid lists in _class.gsc also hold cut streaks, left out here).
-// Specialist uses the perks as "<perk>_ks"; their cost is the slot (2/4/6) via getStreakCost.
+// Specialist uses the perks as "<perk>_ks". Their cost is the slot (2/4/6) via getStreakCost.
 buildStreakData()
 {
     level.cac["ks_assault"] = strTok("uav,airdrop_assault,ims,predator_missile,airdrop_sentry_minigun,precision_airstrike,helicopter,littlebird_flock,littlebird_support,remote_mortar,airdrop_remote_tank,ac130,helicopter_flares,airdrop_juggernaut,osprey_gunner", ",");

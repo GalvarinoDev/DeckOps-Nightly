@@ -2,23 +2,24 @@
 plutonium.py - DeckOps installer for Plutonium (every device except Steam Deck LCD)
 (Call of Duty: MW3, World at War, Black Ops, Black Ops II)
 
-LCD Decks are dispatched to plutonium_lcd.py early in
-install_plutonium(). Everything below the LCD dispatch handles both
-OLED and Other (non-Deck SteamOS) devices, which share the same
-direct-launch architecture.
+install_plutonium() hands LCD Decks to plutonium_lcd.py early on. The rest
+of this file covers OLED and Other (non-Deck) devices, which launch
+Plutonium directly through Proton.
 
 OLED / Other flow:
-  1. Download plutonium.exe into a dedicated DeckOps-managed Wine prefix.
-  2. Launch it through Proton so the user can log in and let Plutonium
+  1. Download plutonium.exe into a dedicated DeckOps Wine prefix.
+  2. Run it through Proton so the user can log in and Plutonium can
      download its full client.
-  3. Wait for user confirmation that they have logged in and closed Plutonium.
-  4. Verify by checking that the storage/ folder exists in the prefix.
-  5. Copy the entire Plutonium/ folder into each selected game's prefix.
-  6. Write config.json in each prefix with the correct game install paths.
-  7. Write a bash wrapper script that replaces the game exe, padded to the
-     original exe size so Steam's file validation does not flag it.
+  3. Wait for the user to confirm they logged in and closed Plutonium.
+  4. Check that the storage/ folder exists in the prefix.
+  5. Set up Plutonium in each selected game's prefix: shared folders link
+     to the dedicated prefix, the game's storage/ is copied.
+  6. Write config.json in each prefix with the game install paths.
+  7. Write the launch files. Steam games keep their exe and get Plutonium
+     Online / Offline entries in the Steam launch menu. Own games get a
+     standalone wrapper for their shortcut.
 
-Progress is reported via a callback:
+Progress is reported through a callback:
     on_progress(percent: int, status: str)
 """
 
@@ -37,18 +38,17 @@ _log = get_logger(__name__)
 
 
 
-# ── dedicated prefix ──────────────────────────────────────────────────────────
-# DeckOps manages its own Wine prefix for the initial Plutonium install.
-# This avoids depending on Steam to create a non-Steam game entry and gives
-# us a known, stable path to copy from.
+# --- dedicated prefix
+# DeckOps keeps its own Wine prefix for the first Plutonium install, so it
+# needs no non-Steam game entry from Steam and has a fixed path to copy from.
 
 DEDICATED_PREFIX = os.path.expanduser("~/.local/share/deckops/plutonium_prefix")
 PLUT_BOOTSTRAPPER_URL = "https://cdn.plutonium.pw/updater/plutonium.exe"
 _PLUT_ARCHIVE_FALLBACK_URL = "https://archive.org/download/plutonium_202605/plutonium.exe"
 
 
-# ── game metadata ─────────────────────────────────────────────────────────────
-# Maps DeckOps game key → (appid, config.json path key, exe name to replace)
+# --- game metadata
+# DeckOps game key -> (appid, config.json path key, stock exe name)
 
 GAME_META = {
     "t4sp":  (10090,  "t4Path",  "CoDWaW.exe"),
@@ -63,11 +63,10 @@ GAME_META = {
 
 METADATA_FILE = "deckops_plutonium.json"
 
-# Standalone wrapper exe names for OLED own games.
-# These are new files dropped into the game folder — the original exe is
-# left untouched. shortcut.py points the non-Steam shortcut at these.
-# Same filenames as LCD's LCD_OWN_WRAPPER_EXES in plutonium_lcd.py so the
-# launcher treats both models identically.
+# Standalone wrapper exe names for OLED own games. These are new files in
+# the game folder and the original exe stays untouched. shortcut.py points
+# the non-Steam shortcut at them. The names match LCD_OWN_WRAPPER_EXES in
+# plutonium_lcd.py so the launcher treats both models the same.
 OLED_OWN_WRAPPER_EXES = {
     "t4sp":  "t4plutsp.exe",
     "t4mp":  "t4plutmp.exe",
@@ -94,17 +93,16 @@ STEAM_MENU_EXES = {
     "iw5mp_ds": ("iw5plutds.exe", "iw5plutds_lan.exe"),
 }
 
-# Menu labels where one appid holds two modes; others get the defaults.
+# Menu labels where one appid holds two modes. Others get the defaults.
 STEAM_MENU_LABELS = {
     "t4sp": ("Play Plutonium SP/ZM Online", "Play Plutonium SP/ZM Offline"),
     "t4mp": ("Play Plutonium Multiplayer Online", "Play Plutonium Multiplayer Offline"),
 }
 _DEFAULT_MENU_LABELS = ("Play Plutonium Online", "Play Plutonium Offline")
 
-# Sidecar -lan wrapper script names for OLED offline mode.
-# These are written alongside the game files (never replacing anything)
-# and launched by DeckOps_Offline.exe for offline play. Shell scripts rather
-# than .exe so they don't interfere with Steam's file validation.
+# Offline -lan script names (OLED and LCD). They sit next to the game files,
+# replace nothing, and DeckOps_Offline.exe runs them for offline play. They
+# are shell scripts, not .exe, so Steam's file validation ignores them.
 OLED_LAN_WRAPPER_NAMES = {
     "t4sp":  "t4plut_lan_sp.sh",
     "t4mp":  "t4plut_lan_mp.sh",
@@ -116,8 +114,8 @@ OLED_LAN_WRAPPER_NAMES = {
     "iw5mp_ds": "iw5plut_lan.sh",
 }
 
-# Old shared filenames used before the unique-name fix. Used during
-# install to clean up stale wrappers from previous DeckOps versions.
+# Shared names older DeckOps versions used before each mode got its own.
+# The install deletes these stale files.
 _OLD_OLED_LAN_WRAPPER_NAMES = {
     "t4sp":  "t4plut_lan.sh",
     "t4mp":  "t4plut_lan.sh",
@@ -127,15 +125,14 @@ _OLD_OLED_LAN_WRAPPER_NAMES = {
     "t6zm":  "t6plut_lan.sh",
 }
 
-# DeckOps client-side menu mods packaged as .iwd files (renamed .zip).
-# Bundled with the repo at assets/mods/ and copied locally into Plutonium's
-# storage/ directory where they are loaded automatically on game launch.
+# DeckOps client-side menu mods, packed as .iwd files (renamed .zip). They
+# ship in assets/mods/ and are copied into Plutonium's storage/ folder,
+# which the game loads on launch.
 #
-# T6 uses a single consolidated .iwd (deckops_bo2_menu.iwd) for both MP
-# and ZM. The Lua inside contains both PopulateButtons_Multiplayer and
-# PopulateButtons_Zombie, with the engine's CoD.isZombie dispatch selecting
-# the right button set at runtime. Both t6mp and t6zm point at the same
-# source file and same destination -- idempotent when both are installed.
+# T6 uses one .iwd (deckops_bo2_menu.iwd) for MP and ZM. Its Lua holds both
+# PopulateButtons_Multiplayer and PopulateButtons_Zombie, and the engine's
+# CoD.isZombie check picks the button set at runtime. t6mp and t6zm share
+# the source and destination, so installing both is harmless.
 _OLED_HERE = os.path.dirname(os.path.abspath(__file__))
 MENU_MOD_ASSETS_DIR = os.path.join(os.path.dirname(_OLED_HERE), "assets", "mods")
 MENU_MOD_FILES = {
@@ -144,7 +141,7 @@ MENU_MOD_FILES = {
 }
 
 
-# ── path helpers ──────────────────────────────────────────────────────────────
+# --- path helpers
 
 def _plut_dir_in_prefix(prefix_path: str) -> str:
     """Return the Plutonium/ folder path inside a given Wine prefix."""
@@ -168,7 +165,7 @@ def _wine_path(linux_path: str) -> str:
     return "Z:" + linux_path.replace("/", "\\")
 
 
-# ── dedicated prefix helpers ──────────────────────────────────────────────────
+# --- dedicated prefix helpers
 
 def get_dedicated_plut_dir() -> str:
     """Return the Plutonium/ folder inside DeckOps's dedicated prefix."""
@@ -177,9 +174,8 @@ def get_dedicated_plut_dir() -> str:
 
 def is_plutonium_ready() -> bool:
     """
-    Returns True if the user has logged in and Plutonium has downloaded
-    its client files. We check for the storage/ folder which is only
-    created after a successful login.
+    True once the user has logged in and Plutonium has downloaded its
+    client files. Plutonium creates storage/ only after a successful login.
     """
     storage = os.path.join(get_dedicated_plut_dir(), "storage")
     if not os.path.isdir(storage):
@@ -191,15 +187,15 @@ def is_plutonium_ready() -> bool:
     )
 
 
-# ── bootstrapper ──────────────────────────────────────────────────────────────
+# --- bootstrapper
 
 def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = None):
     """
     Download plutonium.exe into the dedicated prefix and launch it through
     Proton. Blocks until the user closes the Plutonium window.
 
-    The UI should display instructions to the user before calling this,
-    and show a confirmation button after it returns.
+    The UI shows the user instructions before calling this and a
+    confirmation button after it returns.
     """
     def prog(pct, msg):
         if on_progress:
@@ -208,7 +204,7 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
     plut_dir = get_dedicated_plut_dir()
     os.makedirs(plut_dir, exist_ok=True)
 
-    # Proton needs pfx/ to exist , initialise a minimal prefix structure
+    # Proton needs the prefix folder to exist. It sets up pfx/ inside.
     os.makedirs(DEDICATED_PREFIX, exist_ok=True)
 
     bootstrapper = os.path.join(plut_dir, "plutonium.exe")
@@ -254,8 +250,8 @@ def launch_bootstrapper(proton_path: str, on_progress=None, steam_root: str = No
     prog(30, "Plutonium closed.")
 
 
-# ── shared Plutonium directories ─────────────────────────────────────────────
-# bin/, launcher/, and games/ are identical across all prefixes (~129MB total).
+# --- shared Plutonium folders
+# bin/, launcher/ and games/ are the same in every prefix (~129MB total).
 # Each prefix symlinks them to the master copy in the dedicated prefix, so
 # pre-launch updates reach every prefix. Only storage/ is per-game.
 _PLUT_SHARED_SUBDIRS = ("bin", "launcher", "games")
@@ -293,13 +289,12 @@ def _link_to_master(master: str, plut_dir: str, prog):
 def _copy_plut_to_prefix(src_plut_dir: str, dest_plut_dir: str,
                           game_key: str = "", on_progress=None):
     """
-    Set up Plutonium in a game prefix using symlinks for shared dirs.
+    Set up Plutonium in a game prefix, with symlinks for the shared folders.
 
-    bin/, launcher/, and games/ are symlinked to the master copy in the
-    dedicated prefix. Only the relevant storage/
-    subdirectory for game_key is copied as real files, so large mods
-    (e.g. Zombies Declassified ~9GB in storage/t6/) don't leak into
-    unrelated prefixes.
+    bin/, launcher/ and games/ link to the master copy in the dedicated
+    prefix. Only game_key's storage/ subfolder is copied as real files, so
+    large mods (e.g. Zombies Declassified, ~9GB in storage/t6/) stay out
+    of other prefixes.
     """
 
     def prog(msg):
@@ -341,7 +336,7 @@ def _stash_user_storage(plut_dir: str, keep_root: str, prog):
             src = os.path.join(storage, store, part)
             dst = os.path.join(keep_root, store, part)
             # A keep dir left by an earlier failed run already holds the
-            # user's data; what's in the prefix now is a fresh copy.
+            # user's data. What's in the prefix now is a fresh copy.
             if not os.path.isdir(src) or os.path.lexists(dst):
                 continue
             os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -410,14 +405,14 @@ def _copy_plut_fresh(src_plut_dir: str, dest_plut_dir: str, game_key: str, prog)
     prog(f"  Copied Plutonium with symlinks ({elapsed:.1f}s)")
 
 
-# ── config.json ───────────────────────────────────────────────────────────────
+# --- config.json
 
 def _write_config(plut_dir: str, game_keys: list, installed_games: dict):
     """
-    Write config.json inside a prefix with the correct game install paths.
-    Reads the existing config from the dedicated prefix and updates path keys.
-    game_keys   , list of game keys being installed into this prefix
-    installed_games , dict from detect_games.find_installed_games()
+    Write config.json in a prefix with the game install paths. Keeps the
+    prefix's existing config (token etc.) and updates the path keys.
+    game_keys:       game keys installed into this prefix
+    installed_games: dict from detect_games.find_installed_games()
     """
     config_path = os.path.join(plut_dir, "config.json")
 
@@ -436,8 +431,8 @@ def _write_config(plut_dir: str, game_keys: list, installed_games: dict):
         game = installed_games.get(key, {})
         install_dir = game.get("install_dir", "")
         if install_dir:
-            # MW3 Steam: point at the downgrade/ subfolder where 32-bit
-            # depot files live, keeping the 64-bit install untouched.
+            # MW3 Steam: point at the downgrade/ subfolder with the 32-bit
+            # depot files. The 64-bit install stays untouched.
             install_dir = plut_game_dir(key, install_dir, game.get("source", "steam"))
             data[path_key] = _wine_path(install_dir)
 
@@ -445,24 +440,21 @@ def _write_config(plut_dir: str, game_keys: list, installed_games: dict):
         json.dump(data, f, indent=2)
 
 
-# ── client-side menu mods ────────────────────────────────────────────────────
+# --- client-side menu mods
 
 def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
     """
-    Copy and install the DeckOps menu mod for the given game key.
+    Install the DeckOps menu mod for game_key.
 
-    Copies the bundled mod file from assets/mods/ into the prefix's
-    Plutonium storage path at raw/. Plutonium loads .iwd files from
-    raw/ automatically on game launch, overriding the default main
-    menu with the DeckOps community version (server connect, unlock
-    all, reset stats buttons).
+    Copies the bundled file from assets/mods/ into raw/ in the prefix's
+    Plutonium storage. Plutonium loads .iwd files from raw/ on every
+    launch, so the DeckOps main menu (server connect, unlock all, reset
+    stats buttons) replaces the default one.
 
-    Uses .iwd in raw/ (not mods/) so it:
-    - Uses normal player stats (no separate mod stats)
-    - Persists across disconnects
-    - Loads automatically on every launch
+    raw/ instead of mods/ keeps normal player stats (no separate mod
+    stats) and keeps the menu across disconnects.
 
-    Skips silently for game keys without a menu mod defined.
+    Does nothing for game keys without a menu mod.
     """
     def prog(msg):
         if on_progress:
@@ -479,7 +471,7 @@ def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
 
     if not os.path.isfile(src_file):
         prog(f"  ⚠ Menu mod asset missing: {src_file}")
-        return  # Non-fatal -- game still works without the mod
+        return  # Not fatal. The game works without the mod.
 
     os.makedirs(os.path.dirname(dest_file), exist_ok=True)
 
@@ -490,14 +482,13 @@ def _install_menu_mod(dest_plut_dir: str, game_key: str, on_progress=None):
         prog(f"  ⚠ Menu mod copy failed: {ex}")
 
 
-# ── launcher prefix game configs ──────────────────────────────────────────────
+# --- launcher prefix game configs
 #
-# Maps game keys to their DeckOps asset config and the relative storage
-# path inside the Plutonium directory where the bootstrapper expects them.
-# This is the single source of truth for placing game configs into a
-# Plutonium folder (a game's prefix and its offline copy) — called every
-# time a Plutonium game is installed or reinstalled, so configs always land
-# regardless of which install flow triggered it.
+# Game key -> DeckOps asset config and the storage path inside the Plutonium
+# folder where the bootstrapper looks for it. The one place that decides
+# where game configs go in a Plutonium folder (a game's prefix and its
+# offline copy). Runs on every Plutonium install or reinstall, so the
+# configs land whichever install flow started it.
 
 _LAUNCHER_CONFIG_MAP = {
     # game_key: (asset_subpath, storage_relpath)
@@ -515,15 +506,13 @@ _LAUNCHER_CONFIG_MAP = {
 def _apply_launcher_game_configs(launcher_plut_dir: str, game_key: str,
                                   on_progress=None):
     """
-    Copy DeckOps asset configs directly into the offline launcher prefix.
+    Copy the DeckOps asset config for game_key into a Plutonium folder, so
+    the game starts with the right resolution, FOV, sensitivity and player
+    name whichever install flow ran.
 
-    This ensures the bootstrapper has correct resolution, FOV, sensitivity,
-    and player name settings when launching games from the offline LAN
-    launcher — regardless of install flow or timing.
-
-    Called inside install_plutonium / install_plutonium_lcd after the
-    storage/ tree and menu mods have been mirrored. Uses the deck model
-    from deckops.json to pick LCD or OLED assets.
+    install_plutonium calls it on the game's prefix right after
+    config.json, before the menu mod. The device model in deckops.json
+    picks the asset folder.
     """
     def prog(msg):
         if on_progress:
@@ -564,12 +553,12 @@ def _apply_launcher_game_configs(launcher_plut_dir: str, game_key: str,
         prog(f"  ⚠ {game_key}: launcher config failed: {ex}")
 
 
-# ── wrapper script ────────────────────────────────────────────────────────────
+# --- wrapper script
 
-# Maps DeckOps game keys to the Plutonium protocol key used in
-# `plutonium://play/<key>` URLs and bootstrapper arguments. Most keys
-# are identical, but iw5mp_ds (the free dedicated server appid 42750)
-# runs the same Plutonium client as iw5mp (the full game appid 42690).
+# DeckOps game key -> Plutonium protocol key, used in
+# `plutonium://play/<key>` URLs and bootstrapper arguments. Most keys are
+# the same. iw5mp_ds (the free dedicated server, appid 42750) runs the same
+# Plutonium client as iw5mp (the full game, appid 42690).
 _PLUT_KEY_MAP = {
     "iw5mp_ds": "iw5mp",
 }
@@ -585,14 +574,14 @@ def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
     Write a standalone wrapper exe for OLED own games.
 
     Creates a new file (e.g. t4plutmp.exe) in the game's install dir that
-    launches the Plutonium launcher with a protocol URL. The original game
-    exe is left untouched. shortcut.py points the non-Steam shortcut at
-    this wrapper, and the launcher uses the stored wrapper_path to launch it.
-    Steam games reuse it for their Online launch menu entry (wrapper_name
-    from STEAM_MENU_EXES).
+    starts the Plutonium launcher with a protocol URL. The original game
+    exe stays untouched. shortcut.py points the non-Steam shortcut at this
+    wrapper, and the launcher runs it from the stored wrapper_path. Steam
+    games reuse it for their Online launch menu entry (wrapper_name from
+    STEAM_MENU_EXES).
 
-    Returns the full path to the written wrapper, or None if game_key
-    is not in OLED_OWN_WRAPPER_EXES.
+    Returns the wrapper's full path, or None if game_key has no entry in
+    OLED_OWN_WRAPPER_EXES and no wrapper_name was given.
     """
     if not wrapper_name and game_key not in OLED_OWN_WRAPPER_EXES:
         return None
@@ -610,7 +599,7 @@ def _write_oled_own_wrapper(game: dict, game_key: str, steam_root: str,
         "#!/bin/bash\n"
         f"export STEAM_COMPAT_DATA_PATH=\"{compatdata_path}\"\n"
         f"export STEAM_COMPAT_CLIENT_INSTALL_PATH=\"{steam_root}\"\n"
-        # Silent Plutonium update; the launcher never updates on its own.
+        # Silent Plutonium update. The launcher never updates on its own.
         f"{prelaunch_prefix(game_key)}true\n"
         f"\"{proton_path}\" run \"{launcher}\" \"{plut_url}\" &\n"
         "PROTON_PID=$!\n"
@@ -646,7 +635,7 @@ def _write_offline_wrapper(game: dict, game_key: str, source: str = "steam") -> 
     install_dir = game["install_dir"]
     path = os.path.join(install_dir, OLED_LAN_WRAPPER_NAMES[game_key])
 
-    # Older versions shared one name for SP/MP pairs; drop the stale file
+    # Older versions shared one name for SP/MP pairs. Drop the stale file.
     old_name = _OLD_OLED_LAN_WRAPPER_NAMES.get(game_key)
     if old_name and old_name != OLED_LAN_WRAPPER_NAMES[game_key]:
         old_path = os.path.join(install_dir, old_name)
@@ -687,32 +676,31 @@ def _write_offline_wrapper(game: dict, game_key: str, source: str = "steam") -> 
 def _write_wrapper(game: dict, game_key: str, steam_root: str,
                    proton_path: str, compatdata_path: str, plut_dir: str):
     """
-    Replace the game exe with a bash wrapper that launches Plutonium
-    through Proton. OLED / Other only — LCD uses plutonium_lcd.py.
+    Replace the game exe with a bash wrapper that starts Plutonium through
+    Proton. OLED / Other only. LCD uses plutonium_lcd.py.
 
-    Calls plutonium-launcher-win32.exe with a protocol URL.
-    Requires the user to have logged in.
+    Calls plutonium-launcher-win32.exe with a protocol URL. The user must
+    have logged in.
 
-    The original exe is backed up as <exe>.bak.
-    The wrapper is padded to the original file's size so Steam's
-    file validation does not flag it as changed.
+    The original exe is backed up as <exe>.bak. The wrapper is padded to
+    the original file's size so Steam's file validation does not flag it.
     """
     install_dir    = game["install_dir"]
     _, _, exe_name = GAME_META[game_key]
     exe_path       = os.path.join(install_dir, exe_name)
     backup_path    = exe_path + ".bak"
 
-    # Safety: refuse to create a wrapper if the original exe doesn't exist.
-    # Steam games always ship the exe we're replacing. If it's missing,
-    # detection returned the wrong key — writing here would create a
-    # phantom file that confuses future detection runs.
+    # No wrapper without the original exe. Steam games always ship the exe
+    # we replace, so a missing one means detection returned the wrong key,
+    # and writing here would leave a stray file that confuses later
+    # detection runs.
     if not os.path.exists(exe_path) and not os.path.exists(backup_path):
         return
 
-    # Read original size before we overwrite
+    # Original size, read before the overwrite
     original_size = os.path.getsize(exe_path) if os.path.exists(exe_path) else 0
 
-    # Back up original exe
+    # Back up the original exe
     if not os.path.exists(backup_path) and os.path.exists(exe_path):
         shutil.copy2(exe_path, backup_path)
         original_size = os.path.getsize(backup_path)
@@ -773,8 +761,8 @@ def _setup_steam_menu(game: dict, game_key: str, steam_root: str,
     """
     OLED Steam games: keep the original exe and add Plutonium Online /
     Offline entries to the game's Steam launch menu, each pointing at its
-    own wrapper file. Steam runs the chosen file through its Proton, the
-    same way it ran the old replaced exe. Returns the online wrapper path.
+    own wrapper file. Steam runs the chosen file through its Proton, as it
+    ran the replaced exe in older versions. Returns the online wrapper path.
     """
     online_name, offline_name = STEAM_MENU_EXES[game_key]
     _restore_original_exe(game, game_key)
@@ -787,8 +775,8 @@ def _setup_steam_menu(game: dict, game_key: str, steam_root: str,
         write_offline_menu_file(os.path.join(game["install_dir"], offline_name))
     add_steam_menu(game, game_key, steam_root, prog)
 
-    # Fallback when Steam refreshes appinfo.vdf and our menu is gone: prelaunch.sh
-    # swaps an untagged stock exe for its online file (VANILLA_TAG marks a stock pick)
+    # Fallback for when Steam refreshes appinfo.vdf and drops our menu: prelaunch.sh
+    # swaps an untagged stock exe for its online file (VANILLA_TAG marks a stock pick).
     from steam_common import prelaunch_prefix
     from wrapper import set_launch_options, clear_launch_options
     appid = GAME_META[game_key][0]
@@ -800,8 +788,8 @@ def _setup_steam_menu(game: dict, game_key: str, steam_root: str,
 
 
 def write_offline_menu_file(path: str):
-    """The Steam menu's Plutonium Offline file (OLED and LCD): prelaunch.sh / cache_cleanup.py
-    run it on the host, and it opens the DeckOps: Plutonium Offline launcher."""
+    """Write the Steam menu's Plutonium Offline file (OLED and LCD). prelaunch.sh or
+    cache_cleanup.py runs it on the host and it opens the DeckOps: Plutonium Offline launcher."""
     from shortcut import launcher_run_url
     with open(path, "w") as f:
         f.write(f'#!/bin/bash\nexec steam "{launcher_run_url()}"\n')
@@ -811,9 +799,9 @@ def write_offline_menu_file(path: str):
 def add_steam_menu(game: dict, game_key: str, steam_root: str, prog):
     """
     Rebuild our entries for this appid in STEAM_MENU_EXES order (Online
-    before Offline, WaW SP before MP) whatever order keys were installed in.
-    Sibling keys count once their online file is on disk. Shared with LCD,
-    which writes its own files under the same names.
+    before Offline, WaW SP before MP), whatever order the keys were
+    installed in. A sibling key counts once its online file is on disk.
+    LCD uses this too and writes its own files under the same names.
     """
     appid = GAME_META[game_key][0]
     keys = [k for k in STEAM_MENU_EXES if GAME_META[k][0] == appid and (
@@ -822,7 +810,7 @@ def add_steam_menu(game: dict, game_key: str, steam_root: str, prog):
     for k in keys:
         on, off = STEAM_MENU_LABELS.get(k, _DEFAULT_MENU_LABELS)
         entries.append({"executable": STEAM_MENU_EXES[k][0], "description": on})
-        # Offline only with Offline Mode added: its file is there exactly then
+        # Offline entry only with Offline Mode on, which is exactly when its file exists
         if os.path.exists(os.path.join(game["install_dir"], STEAM_MENU_EXES[k][1])):
             entries.append({"executable": STEAM_MENU_EXES[k][1], "description": off})
 
@@ -835,13 +823,13 @@ def add_steam_menu(game: dict, game_key: str, steam_root: str, prog):
 
 
 def remove_offline_files(game: dict, game_key: str):
-    """Offline Mode off: the game's -lan script and its Steam menu Offline file go,
+    """Offline Mode off: delete the game's -lan script and its Steam menu Offline file,
     so add_steam_menu leaves the Offline entry out (same names on OLED and LCD)."""
     d = game.get("install_dir", "")
     for n in (OLED_LAN_WRAPPER_NAMES.get(game_key), STEAM_MENU_EXES.get(game_key, ("", ""))[1]):
         if n and d and os.path.isfile(os.path.join(d, n)):
             os.remove(os.path.join(d, n))
-    # MW3's offline server config (setup_lan); the .dsr recipes may be the user's own
+    # MW3's offline server config (setup_lan). The .dsr recipes stay, they may be the user's own.
     if game_key in ("iw5mp", "iw5mp_ds") and d:
         for sub in ("downgrade", ""):
             cfg_path = os.path.join(d, sub, "admin", "deckops_lan.cfg")
@@ -849,7 +837,7 @@ def remove_offline_files(game: dict, game_key: str):
                 os.remove(cfg_path)
 
 
-# ── metadata ──────────────────────────────────────────────────────────────────
+# --- metadata
 
 def _write_metadata(install_dir: str, data: dict):
     path = os.path.join(install_dir, METADATA_FILE)
@@ -863,7 +851,7 @@ def cleanup_zd_from_other_prefixes(installed_games: dict, steam_root: str,
     Remove Zombies Declassified from every storage/t6 except the t6zm
     prefix's. Older versions left copies in the MP prefix, the master and
     the launcher prefix. Nothing is removed unless the t6zm prefix has ZD,
-    so the only copy is never lost.
+    so the last copy is never lost.
 
     Returns the number of places cleaned.
     """
@@ -898,11 +886,11 @@ def cleanup_zd_from_other_prefixes(installed_games: dict, steam_root: str,
 
 def cleanup_plut_from_non_plut_prefixes(steam_root: str, on_progress=None):
     """
-    Remove leaked Plutonium directories from prefixes that aren't Plutonium games.
+    Remove Plutonium folders that leaked into prefixes of non-Plutonium games.
 
-    Old versions ran _copy_plut_to_prefix() with a blanket storage/ copy into
+    Old versions ran _copy_plut_to_prefix() with a full storage/ copy into
     every managed prefix. Non-Plutonium appids (CoD4, MW2, MW3 SP, BO2 Campaign,
-    BO3, Ghosts, AW) should never have Plutonium data.
+    BO3, Ghosts, AW) should never hold Plutonium data.
 
     Returns the number of prefixes cleaned.
     """
@@ -929,10 +917,9 @@ def cleanup_plut_from_non_plut_prefixes(steam_root: str, on_progress=None):
     return cleaned
 
 
-# ── public API ────────────────────────────────────────────────────────────────
+# --- public API
 
-# ---
-# Offline: local LAN server (WaW MP, BO1 MP, BO2 MP, MW3 MP), run by assets/LAN/lan_server.sh
+# --- Offline: local LAN server (WaW MP, BO1 MP, BO2 MP, MW3 MP), run by assets/LAN/lan_server.sh
 #
 # Plain -lan play can't create a private match without a Plutonium account, so
 # these games host a hidden local dedicated server and join it. Opt-in
@@ -940,40 +927,40 @@ def cleanup_plut_from_non_plut_prefixes(steam_root: str, on_progress=None):
 # under LAN_ROOT: Plutonium's files are hard links to the online copy, settings
 # and stats are real LAN files, user mods come in as one link per mod, and our
 # offline-only files are real files. Every folder is real, so nothing is ever
-# written through a link into an online folder: online launches never see our files.
+# written through a link into an online folder and online launches never see our files.
 
 LAN_ROOT = os.path.expanduser("~/.local/share/deckops/lan")
 LAN_ASSETS = os.path.join(os.path.dirname(_OLED_HERE), "assets", "LAN", "offline")
 # The offline Rejoin Match buttons connect to this port (WaW mod.ff, BO1 mod.ff Play,
-# BO2 raw/deckops_bo2_menu.iwd, MW3 ui_mp/main.lua)
+# BO2 raw/deckops_bo2_menu.iwd, MW3 ui_mp/main.lua).
 LAN_PORT = 4986
 LAN_KEYS = ("t4mp", "t5mp", "t6mp", "iw5mp", "iw5mp_ds")
-# Offline games run in their own prefix. The server runs in the Offline launcher's
-# prefix: the game's runtime launch (waitforexitandrun) waits for every wineserver
-# on its own prefix, so the two can't share one.
+# Offline games run in their own prefix and the server in the Offline launcher's.
+# The game's runtime launch (waitforexitandrun) waits for every wineserver on its
+# prefix, so the two can't share one.
 LAN_PREFIX = os.path.expanduser("~/.local/share/deckops/lan_prefix")
 LAN_SERVER_PREFIX = os.path.expanduser("~/.local/share/deckops/launcher_prefix")
 _LAN_SERVER_ARGS = {
-    # $M: the maps in zone/all, listed by the offline script
+    # $M: the maps in zone/all, listed by the offline script.
     "t6mp": '+set fs_game mods/deckops_offline +set dcac_maps "$M" +exec deckops_lan_mp.cfg +map_rotate',
     "iw5mp": '+set dcac_maps "$M" +set sv_config deckops_lan.cfg +start_map_rotate',
-    # BO1 runs +exec (storage/t5/deckops_lan_mp.cfg); Bot Warfare and the class script load as loose
-    # scripts, the class menu (dcac_list) comes from the mod's mod.ff
+    # BO1 runs +exec (storage/t5/deckops_lan_mp.cfg). Bot Warfare and the class script load as loose
+    # scripts, the class menu (dcac_list) comes from the mod's mod.ff.
     "t5mp": '+set fs_game mods/mp_deckops_offline +set dcac_maps "$M" +exec deckops_lan_mp.cfg +map_rotate',
-    # T4 ignores +exec on a server, and Bot Warfare makes its dvars at runtime: all here.
+    # T4 ignores +exec on a server and Bot Warfare makes its dvars at runtime, so all of it goes here.
     # WaW MP mods must be named mp_*. sv_maxclients 13: 12 bots + the player (Bot Count).
-    # sv_floodprotect 0: every click in the Map / Mode and Bot Warfare menus is a menu response; fast clicks get dropped.
+    # sv_floodprotect 0: every click in the Map / Mode and Bot Warfare menus is a menu response, and fast clicks get dropped.
     "t4mp": ('+set fs_game mods/mp_deckops_offline +set dcac_maps "$M" +set sv_maxclients 13 '
              '+set sv_hostname "DeckOps Offline" +set sv_floodprotect 0 +set logfile 1 +set g_inactivity 0 +set bots_main 1 '
              '+set bots_main_firstIsHost 0 +set bots_manage_fill 10 +set bots_manage_fill_mode 0 +set bots_manage_fill_kick 1 '
              '+set bots_skill 2 +map_rotate'),
 }
 
-# Third-party server files, downloaded at install: their repos show no license,
-# so they are never redistributed. Pinned to a commit, or a release checked by digest.
+# Third-party server files, downloaded at install. Their repos show no license,
+# so we never redistribute them. Pinned to a commit, or a release checked by digest.
 _T6_BW = ("https://raw.githubusercontent.com/ineedbots/t6_bot_warfare/"
           "cafee7d585160b046dc928f90798a611683e6cd1/scripts/mp/")
-# Bot Warfare T5: its 2021 release predates Plutonium, so the files come from the repo, each checked
+# Bot Warfare T5: its 2021 release predates Plutonium, so the files come from the repo, each one checked.
 _T5_BW = ("https://raw.githubusercontent.com/ineedbots/t5_bot_warfare/"
           "93b82d7720fce4059b272d6a907747bef55e5c6a/")
 _T6_GS = ("https://raw.githubusercontent.com/xerxes-at/T6ServerConfigs/"
@@ -983,7 +970,7 @@ LAN_DOWNLOADS = {
              for f in ("bots.gsc", "bots_adapter_pt6.gsc")]
           + [(f"storage/t6/gamesettings/{g}.cfg", _T6_GS + g + ".cfg", None)
              for g in "conf ctf dem dm dom gun hq koth oic oneflag sas sd shrp tdm".split()],
-    # Release zip; only z_svr_bots.iwd is taken from it
+    # Release zip. Only z_svr_bots.iwd is taken from it.
     "iw5mp": [("storage/iw5/z_svr_bots.iwd",
                "https://github.com/ineedbots/iw5_bot_warfare/releases/download/v2.3.0/iw5bw230.zip",
                "sha256:733692aaeda839635d86f9752803b04ecfbd0057f9475661b8cadf084543cfaa")],
@@ -998,18 +985,18 @@ LAN_DOWNLOADS = {
               "sha256:266a183f6557f58c14808ef455ba009e5d763295f47695731978b88aa45c2d21")],
 }
 
-# Plutonium's online data per title (demonware): pub is linked from the online copy,
-# user (stats) stays a real LAN folder so offline stats never reach online
+# Plutonium's online data per title (demonware). pub is linked from the online copy.
+# user (stats) stays a real LAN folder so offline stats never reach online.
 # 18301 is a guess for BO1: Plutonium's folder had it next to BO2's and MW3's after a
 # login, with MP and SP data (Deck, 2026-10-08). WaW had none.
 _LAN_DW_TITLE = {"t6": "18397", "iw5": "18409", "t5": "18301"}
-# Never taken from the online folder: the LAN copy keeps its own settings, logs
-# and stats, and user mods come in one link per mod
+# Never taken from the online folder. The LAN copy keeps its own settings, logs
+# and stats, and user mods come in as one link per mod.
 _LAN_TOP_OWN = ("console.log", "crashdumps", "storage")
 _LAN_STORE_OWN = ("players", "mods", "usermaps", "main", "demo", "imgui.ini")
 _LAN_USER_DIRS = ("mods", "usermaps")
 # Games run offline with a mod (fs_game) read their settings from players/<mod>/, not
-# players/: BO2 MP fell back to 800x600 there (Deck, 2026-10-08). game_config mirrors there.
+# players/. BO2 MP fell back to 800x600 without them (Deck, 2026-10-08). game_config mirrors there.
 LAN_MOD_PLAYERS = {"t6mp": os.path.join("mods", "deckops_offline"),
                    "t5mp": os.path.join("mods", "mp_deckops_offline")}
 # WaW MP starts from players/profiles/$$$/ and reads profiles/$$$/<server mod>/ once it joins
@@ -1017,13 +1004,13 @@ LAN_MOD_PLAYERS = {"t6mp": os.path.join("mods", "deckops_offline"),
 LAN_MOD_PROFILE = {"t4mp": os.path.join("mods", "mp_deckops_offline")}
 # Server files older builds shipped. BO2's server needs no mod.ff since the real menus (client only, 2026-10-14).
 _LAN_STALE = {"t6mp": ("storage/t6/mods/deckops_offline/mod.ff",)}
-# Real (not hard-linked) files under LAN_ROOT past this mean something got copied
-# by mistake (mods are only ever linked); our own files are a few MB
+# Real (not hard-linked) files under LAN_ROOT past this size mean something got copied
+# by mistake (mods are only ever linked). Our own files are a few MB.
 _LAN_DISK_WARN = 100 * 1024 * 1024
 
 
 def _lan_link(src: str, dst: str):
-    """dst becomes a hard link to src's real file, a copy if they're on different drives."""
+    """Make dst a hard link to src's real file, or a copy if they're on different drives."""
     src = os.path.realpath(src)
     if os.path.lexists(dst):
         if not os.path.islink(dst) and os.path.samefile(src, dst):
@@ -1036,7 +1023,7 @@ def _lan_link(src: str, dst: str):
 
 
 def _lan_mirror(src: str, dst: str, rel: str, keep):
-    """Hard-link src's files (links in src followed) into real folders under dst.
+    """Hard-link src's files (following links in src) into real folders under dst.
     keep: paths relative to the LAN root that are never taken from src."""
     os.makedirs(dst, exist_ok=True)
     for n in os.listdir(src) if os.path.isdir(src) else ():
@@ -1052,8 +1039,8 @@ def _lan_mirror(src: str, dst: str, rel: str, keep):
 
 def _lan_tree(root: str, user_plut: str, master: str, store: str, files: dict, client: bool):
     """Build one LAN Plutonium copy at root from the game's online folder user_plut.
-    files {rel: source} are our offline files (source None = a download, kept as is)."""
-    # Links from the last build go (old layout, removed mods); real files stay
+    files {rel: source} are our offline files (source None means a download, kept as is)."""
+    # Drop links from the last build (old layout, removed mods). Real files stay.
     for dp, dns, fns in os.walk(root):
         for n in dns + fns:
             if os.path.islink(os.path.join(dp, n)):
@@ -1077,7 +1064,7 @@ def _lan_tree(root: str, user_plut: str, master: str, store: str, files: dict, c
         pub = title and next((p for p in (os.path.join(b, "storage", "demonware", title, "pub")
                                           for b in (master, user_plut)) if os.path.isdir(p)), None)
         dw = os.path.join(root, "storage", "demonware", title or "")
-        # The game makes an empty pub when it has none; a link makes it see the online data
+        # The game makes an empty pub when it has none. A link lets it see the online data.
         if pub:
             os.makedirs(os.path.join(dw, "user"), exist_ok=True)
             if os.path.isdir(os.path.join(dw, "pub")) and not os.path.islink(os.path.join(dw, "pub")):
@@ -1136,14 +1123,14 @@ def lan_dirs(mode: str):
 
 def refresh_lan(mode: str, prog=lambda m: None):
     """Rebuild the server and game copies from the online folder saved at install.
-    Run at every offline launch (prelaunch.py lan <mode>) so mods added or Plutonium
+    Runs at every offline launch (prelaunch.py lan <mode>), so mods added and Plutonium
     files updated since the install show up offline too."""
     with open(os.path.join(LAN_ROOT, mode, "source.json")) as f:
         user_plut = json.load(f)["user_plut"]
     store = _STORAGE_SUBDIRS[mode]
     server, client = lan_dirs(mode)
     master = get_dedicated_plut_dir()
-    # Real files from older builds stay in the copies: drop the ones we stopped shipping
+    # Real files from older builds stay in the copies, so drop the ones we stopped shipping.
     for rel in _LAN_STALE.get(mode, ()):
         if os.path.isfile(os.path.join(server, rel)):
             os.remove(os.path.join(server, rel))
@@ -1173,7 +1160,7 @@ def setup_lan(game: dict, game_key: str, user_plut: str, source: str, prog):
         os.makedirs(os.path.join(LAN_ROOT, mode), exist_ok=True)
         with open(os.path.join(LAN_ROOT, mode, "source.json"), "w") as f:
             json.dump({"user_plut": user_plut}, f)
-        # Folders first, so every download lands in a real folder of ours
+        # Folders first, so every download lands in a real folder of ours.
         refresh_lan(mode, prog)
         server, _ = lan_dirs(mode)
         for rel, url, digest in LAN_DOWNLOADS.get(mode, ()) if mode in LAN_KEYS else ():
@@ -1197,8 +1184,8 @@ def setup_lan(game: dict, game_key: str, user_plut: str, source: str, prog):
 
 
 def _lan_prefixes(prog):
-    """The offline game prefix and the Offline launcher's prefix (the server's), set up
-    with GE-Proton's default prefix like a first install of a game prefix."""
+    """Set up the offline game prefix and the Offline launcher's prefix (the server's)
+    from GE-Proton's default prefix, like a game prefix on first install."""
     import config as _cfg
     from ge_proton import ensure_prefix_deps
     from steam_common import STEAM_ROOT
@@ -1212,7 +1199,7 @@ def _lan_prefixes(prog):
 
 def lan_runtime() -> tuple:
     """(Steam Linux Runtime dir the GE-Proton asks for, Steam libraries outside home).
-    The game runs inside that runtime like Steam's own launches; the container only
+    The game runs inside that runtime like Steam's own launches. The container only
     sees home unless the other libraries are mounted. ("", ...) if not found."""
     import re
     import config as _cfg
@@ -1257,9 +1244,9 @@ def _plut_compat(game_key: str, game: dict, source: str, steam_root: str) -> str
 
 def apply_offline_mode(on: bool, steam_root: str, prog=lambda pct, msg: None):
     """Add or remove Offline Mode for every set-up Plutonium game: rerun the
-    Plutonium setup (the offline pieces follow config offline_mode), then the
-    offline launcher. No Plutonium bootstrapper run. Steam must be closed:
-    launch menu entries and shortcuts.vdf get rewritten."""
+    Plutonium setup (the offline parts follow config offline_mode), then set up
+    the offline launcher. The Plutonium bootstrapper does not run. Steam must be
+    closed, because launch menu entries and shortcuts.vdf get rewritten."""
     import config as _cfg
     from detect_games import find_all_games
     from wrapper import get_proton_path
@@ -1289,8 +1276,8 @@ def apply_offline_mode(on: bool, steam_root: str, prog=lambda pct, msg: None):
             _log.warning("offline mode: %s failed", k, exc_info=True)
             prog(base, f"  ⚠ {k}: {ex}")
     if on and games:
-        # Configs last, like the install's finalize phase: game_config also fills the
-        # offline copies (resolution, FOV, sensitivity, name) now that they exist
+        # Configs last, like the install's finalize phase. game_config also fills the
+        # offline copies (resolution, FOV, sensitivity, name) now that they exist.
         from game_config import apply_game_configs
         apply_game_configs(selected_keys=list(games), installed_games=games, steam_root=steam_root,
                            deck_model=_cfg.get_deck_model() or "oled", on_progress=lambda m: prog(93, m))
@@ -1298,7 +1285,8 @@ def apply_offline_mode(on: bool, steam_root: str, prog=lambda pct, msg: None):
 
 
 def remove_lan(prog=lambda m: None):
-    """Offline Mode removed. rmtree never follows the links into online folders."""
+    """Remove the offline folders after Offline Mode is turned off. rmtree never
+    follows the links into online folders."""
     for mode in {_plut_key(k) for k in LAN_KEYS}:
         subprocess.run(["systemctl", "--user", "stop", f"deckops-lan-{mode}"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1314,34 +1302,33 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     """
     Full install flow for a single Plutonium game.
 
-    LCD Decks are dispatched to plutonium_lcd.py early
-    in this function. Everything after the dispatch handles
-    OLED and Other (non-Deck SteamOS) devices.
+    LCD Decks go to plutonium_lcd.py early on. Everything after that
+    covers OLED and Other (non-Deck) devices.
 
-    Assumes the user has already logged in and closed Plutonium via
-    launch_bootstrapper(), and is_plutonium_ready() has returned True.
+    Assumes the user already logged in and closed Plutonium through
+    launch_bootstrapper(), and is_plutonium_ready() returned True.
 
-    game               , entry from detect_games.find_installed_games()
-    game_key           , one of: t4sp, t4mp, t5sp, t5mp, t6zm, t6mp, iw5mp
-    steam_root         , path to Steam root
-    proton_path        , path to the proton executable
-    compatdata_path    , path to this game's compatdata prefix
-    on_progress        , optional callback(percent: int, status: str)
+    game:            entry from detect_games.find_installed_games()
+    game_key:        one of t4sp, t4mp, t5sp, t5mp, t6zm, t6mp, iw5mp, iw5mp_ds
+    steam_root:      path to the Steam root
+    proton_path:     path to the proton executable
+    compatdata_path: path to this game's compatdata prefix
+    on_progress:     optional callback(percent: int, status: str)
     """
     def prog(pct, msg):
         if on_progress:
             on_progress(pct, msg)
 
-    # Fall back to single-game dict if caller doesn't supply full installed_games.
-    # Supplying the full dict is preferred so sibling keys get correct paths.
+    # Fall back to a single-game dict if the caller gives no installed_games.
+    # The full dict is better, so sibling keys get their paths too.
     if installed_games is None:
         installed_games = {game_key: game}
 
-    # ── LCD dispatch ──────────────────────────────────────────────────────
-    # LCD Decks use Heroic Games Launcher with a single shared Wine prefix
-    # for all Plutonium games. Everything from downloading the bootstrapper
-    # to writing per-game shortcuts lives in plutonium_lcd.py.
-    # OLED and Other devices continue below with the direct-launch path.
+    # --- LCD dispatch
+    # LCD Decks use Heroic Games Launcher with one shared Wine prefix for
+    # all Plutonium games. Everything from the bootstrapper download to the
+    # per-game shortcuts lives in plutonium_lcd.py. OLED and Other devices
+    # continue below and launch Plutonium directly.
     import config as _cfg_lcd
     if _cfg_lcd.is_lcd():
         from plutonium_lcd import install_plutonium_lcd, get_shared_plut_dir
@@ -1359,11 +1346,11 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
 
     src_plut_dir  = get_dedicated_plut_dir()
 
-    # OLED / Other past this point (LCD returns early above).
-    # Plutonium files go into Steam's compatdata prefix for the game,
-    # because OLED/Other launches the game through a bash wrapper that
-    # Steam runs inside that same prefix. Use the compatdata_path passed
-    # by the caller for correct SD card handling via find_compatdata().
+    # OLED / Other from here (LCD returned above). Plutonium files go into
+    # the game's Steam compatdata prefix, because OLED/Other launch the game
+    # through a bash wrapper that Steam runs in that same prefix. The
+    # caller's compatdata_path comes from find_compatdata(), which handles
+    # SD cards.
     dest_plut_dir = os.path.join(
         compatdata_path, "pfx", "drive_c", "users", "steamuser",
         "AppData", "Local", "Plutonium",
@@ -1377,22 +1364,22 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     _link_to_master(src_plut_dir, dest_plut_dir, lambda msg: prog(45, msg))
 
     prog(60, "Writing game path to config.json...")
-    # Pass all keys that share this appid so config has all paths for this prefix.
-    # installed_games must contain ALL installed games, not just the current one,
-    # so sibling keys (e.g. t4sp + t4mp share appid 10090) get their paths written too.
+    # Pass every key that shares this appid so config.json has all paths for this
+    # prefix. installed_games must hold every installed game, not only this one,
+    # so sibling keys (e.g. t4sp + t4mp on appid 10090) get their paths written too.
     appid = GAME_META[game_key][0]
     keys_for_appid = [k for k, v in GAME_META.items() if v[0] == appid]
     _write_config(dest_plut_dir, keys_for_appid, installed_games)
 
-    # Apply DeckOps game configs (resolution, FOV, sensitivity, name)
-    # into the per-game prefix BEFORE copying to the launcher prefix.
-    # This way the tuned configs propagate automatically to every prefix
-    # that receives a copy of storage/ — no separate mirror step needed.
+    # Apply DeckOps game configs (resolution, FOV, sensitivity, name) to
+    # the game's prefix before anything copies it to the launcher prefix.
+    # Every prefix that gets a copy of storage/ then has the tuned configs
+    # without a separate mirror step.
     _apply_launcher_game_configs(dest_plut_dir, game_key,
                                   on_progress=lambda msg: prog(62, msg))
 
-    # Install DeckOps client-side menu mod (e.g. mainlobby.lua for T6 MP).
-    # OLED / Other only -- LCD handles its own setup in plutonium_lcd.py.
+    # DeckOps client-side menu mod (e.g. mainlobby.lua for T6 MP).
+    # OLED / Other only. LCD does its own in plutonium_lcd.py.
     prog(65, "Installing menu mod...")
     _install_menu_mod(dest_plut_dir, game_key,
                       on_progress=lambda msg: prog(67, msg))
@@ -1402,9 +1389,9 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
     if not offline:
         remove_offline_files(game, game_key)
 
-    # ── OLED / Other only past this point ──────────────────────────────
-    # LCD dispatched to plutonium_lcd.py at the top of this
-    # function. OLED games get a Steam-side bash wrapper + metadata.
+    # --- OLED / Other launch files
+    # LCD went to plutonium_lcd.py at the top. Here OLED/Other games get
+    # their wrapper files and metadata.
     wrapper_path = None
     if source == "own":
         # OLED own games: standalone wrapper
@@ -1415,9 +1402,9 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
         )
 
         prog(85, "Writing offline LAN wrapper...")
-        # Sidecar -lan script alongside the game files. Does not touch the
-        # online wrapper above. DeckOps_Offline.exe reads lan_wrapper_path
-        # from config and bash-runs this script for offline play.
+        # Offline -lan script next to the game files. It leaves the online
+        # wrapper above alone. DeckOps_Offline.exe reads lan_wrapper_path
+        # from config and runs this script with bash for offline play.
         lan_wrapper_path = _write_offline_wrapper(game, game_key, "own") if offline else None
 
         prog(95, "Saving metadata...")
@@ -1440,9 +1427,9 @@ def install_plutonium(game: dict, game_key: str, steam_root: str,
                            compatdata_path, dest_plut_dir)
 
         prog(85, "Writing offline LAN wrapper...")
-        # Sidecar -lan script alongside the game files. DeckOps_Offline.exe
-        # reads lan_wrapper_path from config and bash-runs this script for
-        # offline play.
+        # Offline -lan script next to the game files. DeckOps_Offline.exe
+        # reads lan_wrapper_path from config and runs this script with bash
+        # for offline play.
         lan_wrapper_path = _write_offline_wrapper(game, game_key, "steam") if offline else None
 
         if game_key in STEAM_MENU_EXES:

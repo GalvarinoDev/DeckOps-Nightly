@@ -1,16 +1,15 @@
 """
-steam_common.py — shared Steam helpers for DeckOps
+steam_common.py: shared Steam helpers for DeckOps
 
-Single home for helpers that were previously copy-pasted across
-shortcut.py, controller_profiles.py, plutonium_lcd.py, and
-cache_cleanup.py. The copies had already drifted (int vs str return
-types, differing file-creation endings), which is exactly the failure
-mode this module prevents.
+These helpers used to be copy-pasted across shortcut.py,
+controller_profiles.py, plutonium_lcd.py, and cache_cleanup.py, and the
+copies had drifted (int vs str return types, different file-creation
+endings). Keeping one copy here stops that.
 
-This is a leaf module: it imports only the standard library and log,
-with a lazy wrapper import inside record_configset_edit. Any DeckOps
-module may import it without creating a cycle — including
-cache_cleanup.py, which runs as a standalone script.
+This is a leaf module. It imports only the standard library and log,
+plus a lazy wrapper import inside record_configset_edit, so any DeckOps
+module can import it without a cycle. That includes cache_cleanup.py,
+which runs as a standalone script.
 
 Consumers import with underscore aliases to keep their existing call
 sites unchanged, e.g.:
@@ -35,7 +34,7 @@ from log import get_logger
 _log = get_logger(__name__)
 
 
-# ── Paths / constants ─────────────────────────────────────────────────────────
+# --- Paths and constants
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STEAM_ROOT   = os.path.expanduser("~/.local/share/Steam")
@@ -46,7 +45,7 @@ STEAM_CONFIG = os.path.join(STEAM_ROOT, "config", "config.vdf")
 MIN_UID = 10000
 
 
-# ── Shortcut appid ────────────────────────────────────────────────────────────
+# --- Shortcut appid
 
 def calc_shortcut_appid(exe_path: str, name: str) -> int:
     """
@@ -64,7 +63,7 @@ def calc_shortcut_appid(exe_path: str, name: str) -> int:
     return (crc | 0x80000000) & 0xFFFFFFFF
 
 
-# ── Steam account discovery ───────────────────────────────────────────────────
+# --- Steam account discovery
 
 def backup_file(path: str):
     """Write a .bak copy before modifying a Steam config file."""
@@ -152,8 +151,8 @@ def get_deck_serial() -> str | None:
     """Read the Steam Deck serial, or None.
 
     Tries "SteamDeckRegisteredSerialNumber" in config.vdf, then the DMI
-    product serial. The config.vdf key is absent on at least a stock OLED;
-    the DMI serial matches the configset_<serial>.vdf name Steam uses for
+    product serial. The config.vdf key is missing on at least one stock
+    OLED. The DMI serial matches the configset_<serial>.vdf name Steam uses for
     the built-in controller (Deck-verified 2026-10-21).
     """
     try:
@@ -175,13 +174,13 @@ def get_deck_serial() -> str | None:
     return None
 
 
-# ── Configset patching ────────────────────────────────────────────────────────
+# --- Configset patching
 
 def record_configset_edit(configset_path: str, key: str, template_name: str):
     """Record a configset VDF edit in the wrapper ledger.
 
-    Lazy wrapper import keeps this module a leaf; failures are logged
-    and swallowed so ledger problems never block a profile write.
+    Lazy wrapper import keeps this module a leaf. Failures are logged
+    and swallowed, so ledger problems never block a profile write.
     """
     try:
         from wrapper import _record_configset
@@ -242,6 +241,15 @@ def prelaunch_prefix(key: str) -> str:
     return f'bash "{PROJECT_ROOT}/prelaunch.sh" {key} '
 
 
+# CoD1 and UO copy the GL extension string into a fixed buffer and crash at
+# startup ("Buffer overrun detected!"). Proton applies this fix only to the
+# Steam appids 2620/2640, so non-Steam shortcuts set it themselves. It has to
+# come first in a launch option, because prelaunch.sh execs its arguments as a
+# command.
+GL_FIX = "MESA_EXTENSION_MAX_YEAR=2003 "
+GL_FIX_KEYS = ("cod1sp", "cod1mp", "coduosp", "coduomp")
+
+
 # --- Wine drive letters
 
 def nvme_compatdata(appid) -> str:
@@ -261,8 +269,8 @@ def wine_path_for_prefix(linux_path: str, compatdata_path: str) -> str:
     Steam library (Proton/Wine give an SD card library its own letter,
     usually D:), creating one if missing, and falls back to Z:.
 
-    Plutonium's own launcher passes SD card games as D:\\steamapps\\...;
-    the same folder as Z:\\run\\media\\<card>\\... made BO2 Zombies offline
+    Plutonium's own launcher passes SD card games as D:\\steamapps\\....
+    The same folder as Z:\\run\\media\\<card>\\... made BO2 Zombies offline
     fail with "Black Ops II server is not available" (Deck, 2026-09-25).
     Internal drive paths keep Z:, which works.
     """

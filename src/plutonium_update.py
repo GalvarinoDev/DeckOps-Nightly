@@ -1,7 +1,7 @@
 """
-plutonium_update.py - keep Plutonium current from its own manifest, silently
+plutonium_update.py: keep Plutonium current from its own manifest, silently
 
-plutonium.exe (the updater, which is also the login) only runs at install;
+plutonium.exe (the updater, which is also the login) only runs at install.
 DeckOps launches games straight through bin/, so without this Plutonium
 never updates. Format, traced from updater 1.0.221 on 2026-10-06:
   prod.json  -> manifests: [info.json URL], yeet: [paths/globs]
@@ -11,12 +11,13 @@ never updates. Format, traced from updater 1.0.221 on 2026-10-06:
   the updater leaves <Plutonium dir>/info.json {revision, launchTarget}
 
 OLED keeps one real copy, the master in the dedicated prefix. Game prefixes
-link to it, bin/ launcher/ games/ as directory symlinks and Plutonium's own
-storage/ files of every game as file symlinks, so an update reaches every
-prefix at once and nothing is stored twice. Every game's files, not just the
-prefix's own: since r5369 MW3 online fails (error 260, no profile) when the
-other games' Plutonium files are missing (Deck + Bazzite, 2026-10-19). User data in storage/ (players/,
-mods/, usermaps/) is never in the manifest and stays real per prefix.
+link to it: bin/ launcher/ games/ as directory symlinks and Plutonium's own
+storage/ files of every game as file symlinks. An update reaches every
+prefix at once and nothing is stored twice. All games' files are linked, not
+just the prefix's own, because since r5369 MW3 online fails (error 260, no
+profile) when the other games' Plutonium files are missing (Deck + Bazzite,
+2026-10-19). User data in storage/ (players/, mods/, usermaps/) is never in
+the manifest and stays real per prefix.
 """
 
 import fnmatch
@@ -61,8 +62,8 @@ def local_revision(plut_dir: str):
 
 
 def _yeet(plut_dir: str, patterns: list, keep: set, log) -> int:
-    # One directory level per pattern, the way the updater was seen
-    # to behave; if Plutonium starts yeeting nested files, recurse here.
+    # One directory level per pattern, matching what the updater was seen
+    # doing. If Plutonium starts yeeting nested files, recurse here.
     n = 0
     for pat in patterns:
         d = os.path.dirname(pat)
@@ -95,7 +96,7 @@ def sync_master(plut_dir: str, prod: dict, info: dict, log=None) -> int:
     for e in todo:
         p = os.path.join(plut_dir, e["name"])
         new = p + ".new"
-        # Left by an earlier interrupted update and already complete.
+        # Left by an earlier interrupted update, already complete.
         if os.path.isfile(new) and _sha1(new) == e["hash"]:
             continue
         os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -117,7 +118,7 @@ def sync_master(plut_dir: str, prod: dict, info: dict, log=None) -> int:
 def update(plut_dir: str, log=None) -> dict:
     """Fetch once, sync plut_dir if its revision differs, return info."""
     log = log or (lambda *a: None)
-    # One quick try so being offline costs a few seconds at most.
+    # One quick try, so being offline costs a few seconds at most.
     prod, info = fetch(timeout=5, tries=1)
     local = local_revision(plut_dir)
     if local != info["revision"]:
@@ -131,10 +132,10 @@ def update(plut_dir: str, log=None) -> dict:
 def link_prefix(master: str, prefix_plut: str, info: dict, log=None) -> int:
     """
     Point a game prefix's Plutonium folder at the master: the shared dir
-    symlinks, and every manifest file under storage/. Real copies
-    are swapped for links only when the master's file is complete, user
-    files are never touched, and real bin/ launcher/ games/ folders (full
-    copy installs) are left alone. Returns how many links were (re)made.
+    symlinks, and every manifest file under storage/. A real copy is
+    swapped for a link only when the master's file is complete. User files
+    are never touched, and real bin/ launcher/ games/ folders (full copy
+    installs) are left alone. Returns how many links were (re)made.
     """
     log = log or (lambda *a: None)
     m = os.path.realpath(master)
@@ -162,7 +163,7 @@ def link_prefix(master: str, prefix_plut: str, info: dict, log=None) -> int:
         os.symlink(tgt, tmp)
         os.replace(tmp, dst)
         n += 1
-    # Links to files Plutonium dropped from the manifest.
+    # Remove links to files Plutonium dropped from the manifest.
     root = os.path.join(prefix_plut, "storage")
     for dp, _, fs in os.walk(root):
         for f in fs:

@@ -1,9 +1,9 @@
 """
-ui_manage.py — Post-install management screens for DeckOps
+ui_manage.py: post-install management screens for DeckOps
 
 Screens: ManagementCard, ManagementScreen, SetupCompleteScreen,
          ConfigureScreen, UpdateScreen
-Extracted from ui_qt.py — all hardcoded stack indices replaced with named lookups.
+Screens are looked up by name (go_to/get_screen), never by stack index.
 """
 
 import os, subprocess, sys, shutil, stat, threading, json, urllib.request, urllib.error, urllib.parse, compileall
@@ -13,7 +13,7 @@ from qt import (
     QLabel, QPushButton, QCheckBox, QProgressBar, QPlainTextEdit,
     QFrame, QSizePolicy, QMessageBox, QLineEdit, QSlider, QDialog,
 )
-from qt import Qt, QTimer, QObject, pyqtSignal
+from qt import Qt, QTimer, QObject, QEvent, pyqtSignal
 from qt import QPixmap
 from qt import QGraphicsOpacityEffect
 
@@ -28,7 +28,7 @@ from ui_constants import (
     _show_preflight,
     ALL_GAMES, KEY_CLIENT,
     _active_keys, _active_client, _active_appid,
-    SP_IMAGE_URLS, IMG_RATIO, CARD_COLS, CARD_MAX_W,
+    SP_IMAGE_URLS, IMG_RATIO, CARD_MAX_W,
     HEROES_DIR, PROJECT_ROOT,
     _music_volume, _music_enabled,
     _set_audio_volume, _set_audio_enabled, _start_audio, _kill_audio,
@@ -41,7 +41,7 @@ from log import get_logger
 _log = get_logger(__name__)
 
 
-# VERSION is per install; the repo still tracks an old copy from 2026-05
+# VERSION is per install. The repo still tracks an old copy from 2026-05
 _PROTECTED = ("deckops.json", "VERSION", "assets/music/background.mp3")
 _HDR = {"User-Agent": "DeckOps"}
 
@@ -98,7 +98,7 @@ def _remote_changes(removed: bool = False):
         try:
             gone = [p for p in _tree(api, local_sha) if p not in want and not _protected(p)]
         except Exception:
-            # e.g. the installed commit is gone after a force push; leftovers stay
+            # e.g. the installed commit is gone after a force push. Leftovers stay
             _log.warning("could not list files of installed version %s", local_sha, exc_info=True)
     return local_sha, remote_sha, stale, gone
 
@@ -123,7 +123,28 @@ def _check_update_status():
         return "FAIL|Update check failed."
 
 
-# ── ManagementCard ────────────────────────────────────────────────────────────
+def card_rows(games):
+    """The games page rows as (classics, the rest). The rest is a row per dev
+    (Infinity Ward / Sledgehammer, then Treyarch and the LAN launcher). The classics
+    go left of a divider, filled left to right, top to bottom, in release order, as
+    many rows as the rest has. Both keep ALL_GAMES' release order."""
+    classics = [g for g in games if g.get("classic")]
+    rest = [r for r in ([g for g in games if not g.get("classic") and g["dev"] == "iw"],
+                        [g for g in games if not g.get("classic") and g["dev"] != "iw"]) if r]
+    n = max(len(rest), 1)
+    per = -(-len(classics) // n)
+    left = [classics[i * per:(i + 1) * per] for i in range(n)]
+    return list(zip(left, rest or [[]]))
+
+
+def card_width(cols, rows, w, h, gap=10):
+    """Width of the largest cards that fit cols x rows in a w x h area, so the page never scrolls."""
+    # 3 px for the coloured strip on top of each card
+    cw = min((w - gap * (cols - 1)) // cols, int(((h - gap * (rows - 1)) / rows - 3) / IMG_RATIO))
+    return max(1, min(cw, CARD_MAX_W))
+
+
+# --- ManagementCard
 class ManagementCard(QFrame):
     def __init__(self, gd, installed, on_setup, on_configure,
                  on_readd=None, on_add_ds=None, on_offline=None, parent=None):
@@ -133,8 +154,7 @@ class ManagementCard(QFrame):
         self._appid  = _active_appid(gd)
         self._is_lan = gd.get("client") == "lan"
         self.setObjectName("MC")
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
-        self.setMaximumWidth(CARD_MAX_W)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
 
         keys       = _active_keys(gd)
         client     = _active_client(gd)
@@ -158,7 +178,7 @@ class ManagementCard(QFrame):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
 
-        # ── Image container with overlaid badge and buttons ───────────────
+        # --- Image container with overlaid badge and buttons
         img_container = QWidget()
         img_container.setStyleSheet("background:#0A0A10;border:none;")
         img_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -171,8 +191,9 @@ class ManagementCard(QFrame):
             effect.setOpacity(0.45 if is_present else 0.25)
             self._img.setGraphicsEffect(effect)
 
-        # Client badge — overlaid top-left on the image
-        self._client_badge = QPushButton(client.upper(), img_container)
+        # Client badge, overlaid top-left on the image. Only the main client
+        # ("cod4r + iw3sp" shows COD4R) so it stays readable on small cards.
+        self._client_badge = QPushButton(client.split(" + ")[0].upper(), img_container)
         self._client_badge.setFont(font(9, True)); self._client_badge.setEnabled(False)
         self._client_badge.setStyleSheet(
             f"QPushButton{{background:{color};color:#FFF;border:none;border-radius:3px;padding:2px 6px;}}"
@@ -181,16 +202,17 @@ class ManagementCard(QFrame):
         self._client_badge.adjustSize()
         self._client_badge.raise_()
 
-        # Buttons — overlaid bottom-center on the image
+        # Buttons, overlaid bottom-center on the image
         self._btn_bar = QWidget(img_container)
         self._btn_bar.setStyleSheet("background:transparent;border:none;")
         bb = QHBoxLayout(self._btn_bar)
-        bb.setContentsMargins(6, 0, 6, 0); bb.setSpacing(4)
+        bb.setContentsMargins(4, 0, 4, 0); bb.setSpacing(4)
 
         def _card_btn(text, bg, fg="#FFF"):
-            b = QPushButton(text); b.setFont(font(11, True)); b.setFixedHeight(40)
+            # Small padding: cards are narrow on small screens
+            b = QPushButton(text); b.setFont(font(10, True)); b.setFixedHeight(40)
             b.setStyleSheet(
-                f"QPushButton{{background:{bg};color:{fg};border:none;border-radius:4px;padding:0 12px;}}"
+                f"QPushButton{{background:{bg};color:{fg};border:none;border-radius:4px;padding:0 6px;}}"
                 f"QPushButton:disabled{{background:{bg};color:{fg};}}")
             return b
 
@@ -210,7 +232,7 @@ class ManagementCard(QFrame):
             b = _card_btn("Options", "rgba(51,51,63,200)", "#CCC")
             b.clicked.connect(lambda: on_configure(gd, ik))
         elif "iw5mp_ds" in keys and on_add_ds:
-            b = _card_btn("Set Up Free Game", C_IW)
+            b = _card_btn("Get Free Game", C_IW)
             b.clicked.connect(lambda: on_add_ds(gd))
         else:
             b = _card_btn("Set Up", "rgba(37,37,53,200)", "#555568")
@@ -260,9 +282,9 @@ class ManagementCard(QFrame):
             self._img.setPixmap(
                 self._raw_pixmap.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
             )
-        # Position client badge — top-left with 4px margin
+        # Client badge sits top-left with a 4px margin
         self._client_badge.move(4, 4)
-        # Position button bar — bottom, full width
+        # Button bar runs along the bottom, full width
         self._btn_bar.setFixedWidth(w)
         bh = self._btn_bar.sizeHint().height()
         self._btn_bar.move(0, h - bh - 4)
@@ -280,7 +302,7 @@ class ManagementCard(QFrame):
             _log.debug("image load failed", exc_info=True)
 
 
-# ── ManagementScreen ──────────────────────────────────────────────────────────
+# --- ManagementScreen
 class ManagementScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.installed={}; self.screen_name = "ManagementScreen"
@@ -306,11 +328,12 @@ class ManagementScreen(QWidget):
         hl.addWidget(cfg_btn)
         lay.addWidget(hdr)
 
-        scroll = QScrollArea(); scroll.setWidgetResizable(True)
-        inner = QWidget(); self._grid = QGridLayout(inner)
-        self._grid.setContentsMargins(16,16,16,16); self._grid.setSpacing(12)
-        self._grid.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
-        scroll.setWidget(inner); lay.addWidget(scroll, stretch=1)
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); self._scroll = scroll
+        # The cards shrink to fit instead (card_width)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._cards = []
+        scroll.setWidget(QWidget()); lay.addWidget(scroll, stretch=1)
 
         self._deckops_update_status = _lbl("", 10, C_DIM, wrap=False)
         self._deckops_update_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -320,6 +343,13 @@ class ManagementScreen(QWidget):
         self._status = _lbl("", 12, C_DIM)
         self._status.setContentsMargins(16,4,16,4)
         lay.addWidget(self._status)
+
+        # Empty status lines are hidden so the cards get their height
+        for l in (self._deckops_update_status, self._status):
+            l.hide()
+            l.setText = lambda t, l=l, f=l.setText: (f(t), l.setVisible(bool(t)))
+        # Refit the cards whenever the visible area changes size
+        scroll.viewport().installEventFilter(self)
 
     def _open_guide(self):
         get_screen(self.stack, "SetupCompleteScreen")._from_guide = True
@@ -359,33 +389,67 @@ class ManagementScreen(QWidget):
             self._rebuild()
 
     def _rebuild(self):
-        while self._grid.count():
-            item = self._grid.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
-
         games = [g for g in ALL_GAMES
                  if _active_keys(g) or g.get("client") == "lan"]
+        rows = card_rows(games)
 
-        for idx, gd in enumerate(games):
-            row = idx // CARD_COLS
-            col = idx  % CARD_COLS
-            card = ManagementCard(
-                gd, self.installed,
-                on_setup     = self._setup,
-                on_configure = self._configure,
-                on_readd     = self._readd,
-                on_add_ds    = self._add_mw3_ds,
-                on_offline   = self._offline,
-            )
-            self._grid.addWidget(card, row, col)
+        # Classics block | divider line | the rest, centered, the leftover space split around it
+        inner = QWidget(); v = QVBoxLayout(inner)
+        v.setContentsMargins(10,10,10,10); v.addStretch()
+        h = QHBoxLayout(); h.setSpacing(10); h.addStretch()
+        self._cards = []
+        left_any = any(row[0] for row in rows)
+        for side in (0, 1):
+            grid = QGridLayout(); grid.setSpacing(10)
+            grid.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+            for r, row in enumerate(rows):
+                for c, gd in enumerate(row[side]):
+                    card = ManagementCard(
+                        gd, self.installed,
+                        on_setup     = self._setup,
+                        on_configure = self._configure,
+                        on_readd     = self._readd,
+                        on_add_ds    = self._add_mw3_ds,
+                        on_offline   = self._offline,
+                    )
+                    self._cards.append(card); grid.addWidget(card, r, c)
+            # CLASSICS over the left block. The right one has no heading, an empty label keeps both level
+            col = QVBoxLayout(); col.setSpacing(6)
+            if left_any:
+                col.addWidget(_lbl("CLASSICS" if side == 0 else "", 11, C_DIM, bold=True))
+            col.addLayout(grid); h.addLayout(col)
+            if side == 0 and left_any:
+                # The line runs beside the cards only: an empty heading-height label sits above it
+                lc = QVBoxLayout(); lc.setSpacing(6); lc.addWidget(_lbl("", 11, bold=True))
+                line = QFrame(); line.setFixedWidth(2); line.setStyleSheet(f"background:{C_DIM};border:none;")
+                lc.addWidget(line, stretch=1); h.addLayout(lc)
+        h.addStretch(); v.addLayout(h); v.addStretch()
+        # setWidget deletes the old page and its cards
+        self._scroll.setWidget(inner)
+        left = max((len(r[0]) for r in rows), default=0)
+        self._shape = (max(left + max((len(r[1]) for r in rows), default=0), 1), max(len(rows), 1))
+        self._divider = 22 if left else 0  # the 2 px line and the spacing on each side
+        self._heading = _lbl("X", 11, bold=True).sizeHint().height() + 6 if left else 0
+        self._fitted = None
+        self._place_cards()
 
-        total = len(games)
-        remainder = total % CARD_COLS
-        if remainder:
-            for col in range(remainder, CARD_COLS):
-                self._grid.addWidget(QWidget(), total // CARD_COLS, col)
+    def _place_cards(self):
+        if not self._cards:
+            return
+        vp = self._scroll.viewport()
+        w = card_width(*self._shape, vp.width() - 20 - self._divider, vp.height() - 20 - self._heading)
+        if w == self._fitted:
+            return
+        self._fitted = w
+        for c in self._cards:
+            c.setFixedWidth(w)
 
-    # ── Update DeckOps (from ManagementScreen) ──────────────────────────────
+    def eventFilter(self, obj, e):
+        if e.type() == QEvent.Type.Resize and obj is self._scroll.viewport():
+            self._place_cards()
+        return super().eventFilter(obj, e)
+
+    # --- Update DeckOps (from ManagementScreen)
     _GITHUB_USER = GITHUB_USER
     _GITHUB_REPO = GITHUB_REPO
 
@@ -416,12 +480,12 @@ class ManagementScreen(QWidget):
             self._deckops_update_status.setStyleSheet(f"color:{C_DIM};")
 
     def _apply_deckops_update(self):
-        # Apply runs on Settings; show it so download progress is visible
+        # Apply runs on Settings. Show it so download progress is visible
         s = get_screen(self.stack, "ConfigureScreen")
         go_to(self.stack, "ConfigureScreen")
         QTimer.singleShot(0, s._apply_update)
 
-    # ── Update all games (batch) ──────────────────────────────────────────
+    # --- Update all games (batch)
     def _update_all_games(self):
         root = find_steam_root()
         all_installed = self.installed
@@ -500,13 +564,13 @@ class ManagementScreen(QWidget):
             log = lambda m: sigs.log.emit(m.strip())
             # Steam must be closed first. Steam holds shortcuts.vdf and the
             # controller configsets in memory and flushes them on exit, which
-            # clobbers any edits made while it is running. This was the cause
-            # of the launcher controller template intermittently reverting.
+            # clobbers any edits made while it is running. That is why the
+            # launcher's controller template sometimes reverted.
             sigs.progress.emit(2, "Closing Steam...")
             kill_steam(on_progress=sigs.log.emit)
             sigs.progress.emit(10, "Checking launcher files...")
             repair_launcher_files(log)
-            # Also the offline server's prefix; _lan_prefixes sets it up again
+            # Also the offline server's prefix. _lan_prefixes sets it up again
             sigs.progress.emit(40, "Rebuilding launcher prefix...")
             shutil.rmtree(plutonium.LAN_SERVER_PREFIX, ignore_errors=True)
             plutonium._lan_prefixes(log)
@@ -610,8 +674,8 @@ class ManagementScreen(QWidget):
             if has_depot_dg:
                 break
 
-        # Zombies Declassified: available when t6zm is installed via Plutonium
-        # and user has all BO2 Zombies DLC
+        # Zombies Declassified: offered when t6zm is set up with Plutonium
+        # and the user owns all BO2 Zombies DLC
         has_zd = False
         if ("t6zm" in installed_keys
                 and KEY_CLIENT.get("t6zm") == "plutonium"
@@ -786,12 +850,12 @@ class ManagementScreen(QWidget):
         self._setup(gd)
 
     def _depot_downgrade(self, game_id, gd, installed_keys):
-        """Downgrade a game from 64-bit to 32-bit and trigger reinstall.
+        """Downgrade a game from 64-bit to 32-bit and reinstall it.
 
-        Checks whether the downgrade is actually needed first; if the
-        install is already 32-bit, informs the user and does nothing.
-        Otherwise unmarks the game's keys so the install flow re-runs
-        the depot downgrade gate.
+        Checks first whether the downgrade is needed. If the depot files
+        are already right, it asks before forcing one. Then it clears the
+        receipt, unmarks the game's keys and reruns the install flow with
+        the downgrade forced.
         """
         _DG_KEY_MAP = {
             "iw5": ("iw5mp", "iw5mp_ds", "iw5sp"),
@@ -836,11 +900,11 @@ class ManagementScreen(QWidget):
 
     def _mods(self, gd, installed_keys):
         """Open the mod folder for a game. Shows a chooser for games with
-        both mods/ and usermaps/ directories (CoD4x, IW4x, T7X), for
+        both mods/ and usermaps/ folders (CoD4R, CoD4x, IW4x, T7X), for
         AlterWare games with data/scripts/mp and data/scripts/sp, or for
         OLED Plutonium games whose SP/MP modes live in separate prefixes."""
 
-        # ── Plutonium storage name mapping ────────────────────────────────
+        # --- Plutonium storage name mapping
         _PLUT_STORAGE = {
             "t4sp": "t4", "t4mp": "t4",
             "t5sp": "t5", "t5mp": "t5",
@@ -848,9 +912,8 @@ class ManagementScreen(QWidget):
             "iw5mp": "iw5", "iw5mp_ds": "iw5",
         }
 
-        # Appid per key — used to detect when keys on the same card
-        # have separate Wine prefixes (different appids = different
-        # mods/ folders on OLED).
+        # Appid per key. On OLED, keys on the same card with different
+        # appids have separate Wine prefixes, so separate mods/ folders.
         _PLUT_APPID = {
             "t4sp": 10090, "t4mp": 10090,
             "t5sp": 42700, "t5mp": 42710,
@@ -934,7 +997,7 @@ class ManagementScreen(QWidget):
             if not install_dir:
                 self._status.setText("Game install directory not found.")
                 return
-            # Two folders — ask user which one
+            # Two folders, so ask which one
             msg = QMessageBox(self)
             msg.setWindowTitle("Open Mod Folder")
             msg.setText(f"Which folder would you like to open for {gd['base']}?")
@@ -963,7 +1026,7 @@ class ManagementScreen(QWidget):
             if not os.path.isdir(install_dir):
                 self._status.setText("T7X directory not found. Has T7X been installed?")
                 return
-            # Two folders — ask user which one
+            # Two folders, so ask which one
             msg = QMessageBox(self)
             msg.setWindowTitle("Open Mod Folder")
             msg.setText(f"Which folder would you like to open for {gd['base']} (T7x)?")
@@ -1041,7 +1104,7 @@ class ManagementScreen(QWidget):
                             self._status.setText(f"Could not resolve mods folder for {k}.")
                         break
             else:
-                # Single prefix or LCD — open directly
+                # Single prefix or LCD: open directly
                 mods_path = _resolve_plut_mods_dir(plut_keys[0])
                 if mods_path:
                     _open_folder(mods_path)
@@ -1049,7 +1112,7 @@ class ManagementScreen(QWidget):
                     self._status.setText("Could not resolve Plutonium mods folder.")
 
 
-# ── SetupCompleteScreen ──────────────────────────────────────────────────────
+# --- SetupCompleteScreen
 class SetupCompleteScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack = stack; self.screen_name = "SetupCompleteScreen"
@@ -1063,14 +1126,14 @@ class SetupCompleteScreen(QWidget):
             "and display settings. Open Steam (or return to Game Mode) to start playing.",
             12, C_DIM))
 
-        # ── Scrollable content area ───────────────────────────────────────────
+        # --- Scrollable content area
         scroll = QScrollArea(); scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setStyleSheet("QScrollArea{border:none;background:transparent;}")
         inner = QWidget()
         sl = QVBoxLayout(inner); sl.setContentsMargins(0,8,0,8); sl.setSpacing(6)
 
-        # ── Cloud saves ───────────────────────────────────────────────────────
+        # --- Cloud saves
         sl.addWidget(_hdiv())
         sl.addWidget(_lbl("⚠  Steam Cloud Saves", 12, C_TREY, bold=True, align=Qt.AlignmentFlag.AlignLeft))
         sl.addWidget(_lbl(
@@ -1078,74 +1141,68 @@ class SetupCompleteScreen(QWidget):
             "If a game asks for Safe Mode, choose No.",
             11, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
 
-        # ── MW1 / WaW shortcuts ───────────────────────────────────────────────
+        # --- MW1 / WaW shortcuts
         self._mw1waw_div = _hdiv()
         self._mw1waw_hdr = _lbl("🎮  MW1 & WaW Multiplayer", 12, C_IW, bold=True, align=Qt.AlignmentFlag.AlignLeft)
-        self._mw1waw_body = _lbl(
-            "MW1 and WaW have separate DeckOps multiplayer shortcuts in your "
-            "Steam library. Use the main game entry for singleplayer and the "
-            "DeckOps shortcut for multiplayer.\n\n"
-            "MW1 Singleplayer: on first launch, select the \"Player\" profile. "
-            "This is the profile DeckOps created with your display settings.",
-            11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
+        # Text set in showEvent, for the games that are set up
+        self._mw1waw_body = _lbl("", 11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         sl.addWidget(self._mw1waw_div)
         sl.addWidget(self._mw1waw_hdr)
         sl.addWidget(self._mw1waw_body)
 
-        # ── First launch ─────────────────────────────────────────────────────
+        # --- First launch
         sl.addWidget(_hdiv())
         sl.addWidget(_lbl("⏳  First Launch", 12, "#5B9BD5", bold=True, align=Qt.AlignmentFlag.AlignLeft))
         sl.addWidget(_lbl(
-            "All games take longer to launch the first time. This is normal "
-            "and they will be faster on subsequent launches.\n\n"
-            "Plutonium games must be launched once before they can be used "
-            "with the offline LAN launcher.",
+            "All games take longer to start the first time. Later starts are faster.",
             11, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
+        self._offline_body = _lbl(
+            "Start each Plutonium game one time before you use Plutonium Offline.",
+            11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
+        sl.addWidget(self._offline_body)
 
-        # ── MW2 MP own-game first launch ──────────────────────────────────────
+        # --- MW2 MP own-game first launch
         self._mw2own_div = _hdiv()
         self._mw2own_hdr = _lbl("🎮  MW2 Multiplayer (Non-Steam)", 12, C_IW, bold=True, align=Qt.AlignmentFlag.AlignLeft)
         self._mw2own_body = _lbl(
-            "MW2 Multiplayer (IW4x) needs to be launched twice on initial "
-            "installation. The first launch will fail, this is normal. "
-            "Launch it again and it will work.",
+            "Start MW2 Multiplayer (IW4x) two times after the first install. "
+            "The first launch fails. The second launch works.",
             11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         sl.addWidget(self._mw2own_div)
         sl.addWidget(self._mw2own_hdr)
         sl.addWidget(self._mw2own_body)
 
-        # ── BO3 first launch ─────────────────────────────────────────────────
+        # --- BO3 first launch
         self._bo3_div = _hdiv()
         self._bo3_hdr = _lbl("🎮  Black Ops III: First Launch", 12, C_TREY, bold=True, align=Qt.AlignmentFlag.AlignLeft)
         self._bo3_body = _lbl(
-            "CleanOps finishes installing on its first run. Do the "
+            "CleanOps finishes its install on the first launch. Do the "
             "first launch in Desktop Mode:\n\n"
-            "1. Launch Black Ops III (CleanOps). It will patch the game and "
-            "may slow the Deck temporarily.\n"
-            "2. If it does not launch, press the blue Stop button in Steam, "
-            "then relaunch to verify it works.",
+            "1. Start Black Ops III (CleanOps). It patches the game. The Deck "
+            "can be slow for a short time.\n"
+            "2. If the game does not start, press the blue Stop button in "
+            "Steam. Then start it again.",
             11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         sl.addWidget(self._bo3_div)
         sl.addWidget(self._bo3_hdr)
         sl.addWidget(self._bo3_body)
 
-        # ── LCD notes (LCD users only) ────────────────────────────────────────
+        # --- LCD notes (LCD only)
         self._lcd_div = _hdiv()
         self._lcd_hdr = _lbl("⚠  LCD Steam Deck Notes", 12, C_TREY, bold=True, align=Qt.AlignmentFlag.AlignLeft)
         self._lcd_body = _lbl(
-            "Plutonium games on LCD may take a moment to launch while a "
-            "shader cache cleanup runs. If a game does not start right "
-            "away, be patient or try again.\n\n"
-            "If Steam tries to compile Vulkan shaders before launching, "
-            "skip it. These are not used by LCD Plutonium games.\n\n"
-            "Quit games from the in-game menu rather than the Steam "
-            "overlay for a faster exit.",
+            "Plutonium games on LCD can take a moment to start while a "
+            "shader cache cleanup runs. If a game does not start, wait or "
+            "start it again.\n\n"
+            "If Steam asks to compile Vulkan shaders, skip it. LCD Plutonium "
+            "games do not use them.\n\n"
+            "To exit faster, quit from the in-game menu, not the Steam overlay.",
             11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         sl.addWidget(self._lcd_div)
         sl.addWidget(self._lcd_hdr)
         sl.addWidget(self._lcd_body)
 
-        # ── Restore player saves (visible only when backups exist) ────────────
+        # --- Restore player saves (visible only when backups exist)
         self._restore_div = _hdiv()
         self._restore_hdr = _lbl("💾  Restore Player Saves", 12, C_IW, bold=True, align=Qt.AlignmentFlag.AlignLeft)
         self._restore_body = _lbl(
@@ -1182,7 +1239,7 @@ class SetupCompleteScreen(QWidget):
         scroll.setWidget(inner)
         lay.addWidget(scroll, stretch=1)
 
-        # ── Continue button (pinned outside scroll) ───────────────────────────
+        # --- Continue button (pinned outside scroll)
         cont = _btn("Continue  >>", C_IW, size=13, h=42)
         cont.setFixedWidth(240)
         cont.clicked.connect(self._go_management)
@@ -1191,13 +1248,27 @@ class SetupCompleteScreen(QWidget):
 
     def showEvent(self, e):
         super().showEvent(e)
-        is_lcd = cfg.is_lcd()
-        self._lcd_div.setVisible(is_lcd)
-        self._lcd_hdr.setVisible(is_lcd)
-        self._lcd_body.setVisible(is_lcd)
-        show_mw1waw = cfg.is_game_setup("cod4mp") or cfg.is_game_setup("t4mp")
+        plut = any(cfg.is_game_setup(k) for k in ("t4sp", "t4mp", "t5sp", "t5mp", "t6mp", "t6zm", "iw5mp"))
+        show_lcd = cfg.is_lcd() and plut
+        for w in (self._lcd_div, self._lcd_hdr, self._lcd_body):
+            w.setVisible(show_lcd)
+        self._offline_body.setVisible(plut and cfg.get_offline_mode())
+        mp = [n for k, n in (("cod4mp", "MW1"), ("t4mp", "WaW")) if cfg.is_game_setup(k)]
+        text = ""
+        if mp:
+            text = (f"{' and '.join(mp)} {'have' if len(mp) > 1 else 'has a'} DeckOps "
+                    f"multiplayer shortcut{'s' if len(mp) > 1 else ''} in your Steam library. "
+                    "Use the main game entry for singleplayer and the DeckOps shortcut for multiplayer.")
+        if cfg.is_game_setup("cod4sp"):
+            from game_config import _cod4_profile_name
+            name = _cod4_profile_name(cfg.get_player_name())
+            text += ("\n\n" if text else "") + (
+                f"MW1 Singleplayer: on the first launch, select the \"{name}\" profile. "
+                "DeckOps made this profile with your display settings.")
+        self._mw1waw_hdr.setText("🎮  " + (" & ".join(mp) + " Multiplayer" if mp else "MW1 Singleplayer"))
+        self._mw1waw_body.setText(text)
         for w in (self._mw1waw_div, self._mw1waw_hdr, self._mw1waw_body):
-            w.setVisible(show_mw1waw)
+            w.setVisible(bool(text))
         show_bo3 = cfg.is_game_setup("t7")
         for w in (self._bo3_div, self._bo3_hdr, self._bo3_body):
             w.setVisible(show_bo3)
@@ -1260,7 +1331,7 @@ class SetupCompleteScreen(QWidget):
         go_to(self.stack, "ManagementScreen")
 
 
-# ── ConfigureScreen ───────────────────────────────────────────────────────────
+# --- ConfigureScreen
 class ConfigureScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack=stack; self.screen_name = "ConfigureScreen"
@@ -1287,7 +1358,7 @@ class ConfigureScreen(QWidget):
             if not first: col.addSpacing(12)
             col.addWidget(_lbl(text, 13, color, bold=True, align=Qt.AlignmentFlag.AlignLeft))
 
-        # ── Left: Background Music ────────────────────────────────────────
+        # --- Left: Background Music
         _head(left, "Background Music", first=True)
         mr = QHBoxLayout(); mr.setSpacing(12)
         self._music_on = _music_enabled
@@ -1306,13 +1377,13 @@ class ConfigureScreen(QWidget):
         mr.addWidget(self._music_toggle); mr.addWidget(self._vol_slider,stretch=1); mr.addWidget(self._vol_label)
         left.addLayout(mr)
 
-        # ── Left: Controller Profiles ─────────────────────────────────────
+        # --- Left: Controller Profiles
         _head(left, "Controller Profiles")
         gr = QHBoxLayout(); gr.setSpacing(8)
         gr.addWidget(_lbl("Gyro:", 12, "#AAA", wrap=False))
         self._gyro_btns = {}
-        # SD LCD/OLED and Steam Machine get 4 modes; others get 2.
-        # Hold/toggle hidden dynamically in showEvent.
+        # Steam Deck LCD/OLED and Steam Machine get 4 modes, other devices 2.
+        # showEvent hides Hold and Toggle.
         for mode in ("on", "hold", "toggle", "off"):
             labels = {"on": "ADS", "hold": "Hold", "toggle": "Toggle", "off": "Off"}
             b = _btn(labels[mode], C_DARK_BTN, size=11, h=40)
@@ -1327,7 +1398,7 @@ class ConfigureScreen(QWidget):
         ctrl_btn.clicked.connect(self._apply_controller_profiles)
         left.addWidget(ctrl_btn)
 
-        # ── Left: Shortcuts ───────────────────────────────────────────────
+        # --- Left: Shortcuts
         _head(left, "Shortcuts")
         left.addWidget(_lbl("Closes Steam, then re-adds any missing DeckOps shortcuts.",
                             11, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
@@ -1335,7 +1406,7 @@ class ConfigureScreen(QWidget):
         sc_fix_btn.setFixedWidth(220); sc_fix_btn.clicked.connect(self._repair_shortcuts)
         left.addWidget(sc_fix_btn)
 
-        # ── Left: Player Name ─────────────────────────────────────────────
+        # --- Left: Player Name
         _head(left, "Player Name")
         nr = QHBoxLayout(); nr.setSpacing(12)
         self._name_input = QLineEdit()
@@ -1355,7 +1426,7 @@ class ConfigureScreen(QWidget):
         self._name_note = _lbl("Sets your offline name for CoD4x, IW4x, AlterWare, T7X, and Plutonium. Does not affect CleanOps.", 10, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         left.addWidget(self._name_note)
 
-        # ── Left: Shader Cache (LCD only) ─────────────────────────────────
+        # --- Left: Shader Cache (LCD only)
         self._shader_row = QWidget()
         sr_lay = QVBoxLayout(self._shader_row); sr_lay.setContentsMargins(0,0,0,0); sr_lay.setSpacing(10)
         sr_lay.addSpacing(12)
@@ -1365,12 +1436,12 @@ class ConfigureScreen(QWidget):
         sc_btn.clicked.connect(self._clear_shader_cache)
         sr_lay.addWidget(sc_btn)
         left.addWidget(self._shader_row)
-        # Kept for showEvent's LCD toggle; the two-column layout has no dividers
+        # Kept for showEvent's LCD toggle. The two-column layout has no dividers
         self._shader_hdiv = QWidget(); self._shader_hdiv.setFixedHeight(0)
         left.addWidget(self._shader_hdiv)
         left.addStretch()
 
-        # ── Right: Links ──────────────────────────────────────────────────
+        # --- Right: Links
         _head(right, "Links", first=True)
         lr = QHBoxLayout(); lr.setSpacing(12)
         discord_btn = _btn("Discord", "#5865F2", size=12, h=40)
@@ -1385,7 +1456,7 @@ class ConfigureScreen(QWidget):
         lr.addWidget(discord_btn); lr.addWidget(stable_btn); lr.addWidget(nightly_btn); lr.addStretch()
         right.addLayout(lr)
 
-        # ── Right: Updates & Logs ─────────────────────────────────────────
+        # --- Right: Updates & Logs
         _head(right, "Updates & Logs")
         self._update_btn = _btn("Check for Updates", C_BLUE_BTN, size=12, h=40)
         self._update_btn.setFixedWidth(220)
@@ -1405,7 +1476,7 @@ class ConfigureScreen(QWidget):
         right.addWidget(self._log_status)
         log_btn.clicked.connect(lambda: _copy_log_to_clipboard(self._log_status))
 
-        # ── Right: Danger Zone ────────────────────────────────────────────
+        # --- Right: Danger Zone
         _head(right, "Danger Zone", "#E05050")
         right.addWidget(_lbl("These remove DeckOps changes. Each asks for confirmation first.",
                              11, C_DIM, align=Qt.AlignmentFlag.AlignLeft))
@@ -1417,7 +1488,7 @@ class ConfigureScreen(QWidget):
         dzr.addWidget(uninstall_btn); dzr.addWidget(reset_cfg_btn); dzr.addStretch()
         right.addLayout(dzr)
 
-        # ── Right: About + status ─────────────────────────────────────────
+        # --- Right: About + status
         right.addSpacing(12)
         self._about_label = _lbl("", 11, C_DIM, align=Qt.AlignmentFlag.AlignLeft)
         right.addWidget(self._about_label)
@@ -1447,12 +1518,12 @@ class ConfigureScreen(QWidget):
         has_full_modes = model in ("lcd", "oled", "steam_machine")
         self._gyro_btns["hold"].setVisible(has_full_modes)
         self._gyro_btns["toggle"].setVisible(has_full_modes)
-        # Relabel ADS button for non-SD/SM devices
+        # Other devices show "Gyro On" instead of ADS
         self._gyro_btns["on"].setText("ADS" if has_full_modes else "Gyro On")
 
         # Gyro highlight
         gyro = cfg.get_gyro_mode() or "on"
-        # If non-SD/SM device has hold/toggle saved, treat as "on" for highlight
+        # Other devices with hold or toggle saved highlight "on"
         if not has_full_modes and gyro in ("hold", "toggle"):
             gyro = "on"
         for mode, btn in self._gyro_btns.items():
@@ -1687,7 +1758,7 @@ class ConfigureScreen(QWidget):
                 ["konsole", "-e", "bash", uninstall_script],
                 start_new_session=True,
             )
-            # Close DeckOps — the uninstaller will remove our files
+            # Close DeckOps, since the uninstaller removes its files
             _kill_audio()
             QApplication.instance().quit()
         except Exception:
@@ -1702,17 +1773,17 @@ class ConfigureScreen(QWidget):
             except Exception as ex:
                 self.status.setText(f"✗  Could not launch uninstaller: {ex}")
 
-    # ── Update check ────────────────────────────────────────────────────────
+    # --- Update check
     _GITHUB_USER = GITHUB_USER
     _GITHUB_REPO = GITHUB_REPO
 
     def _init_update_signals(self):
-        """Connect the update result signal (call once during __init__)."""
+        """Connect the update result signal (fresh for each check)."""
         self._update_sig = _Sigs()
         self._update_sig.log.connect(self._on_update_signal)
 
     def _check_for_updates(self):
-        """Hit GitHub API to compare local SHA against remote HEAD."""
+        """Compare this install to GitHub main in a background thread."""
         self._init_update_signals()
         self._update_btn.setEnabled(False)
         self._update_status.setText("Checking...")
@@ -1723,7 +1794,7 @@ class ConfigureScreen(QWidget):
         self._update_sig.log.emit(_check_update_status())
 
     def _on_update_signal(self, msg):
-        """Slot that runs on the main thread via pyqtSignal."""
+        """Runs on the main thread, called through the signal."""
         kind, text = msg.split("|", 1)
         self._update_result(text, kind == "UPDATE")
 
@@ -1794,10 +1865,10 @@ class ConfigureScreen(QWidget):
                 self._apply_sig.log.emit(f"PROG|{head}: {os.path.basename(path)}")
                 dest = os.path.join(update_dir, path)
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
-                # Bar fills by bytes across all files; the label shows this file's size and speed
+                # Bar fills by bytes across all files. The label shows this file's size and speed
                 prog = lambda p, m, g=got, sz=size, h=head: self._apply_sig.progress.emit(
                     min(99, int((g + sz * p / 100) * 100 / nbytes)), f"{h}\n{m}")
-                # net.download retries and rejects truncated streams; the hash check catches the rest
+                # net.download retries and rejects truncated streams. The hash check catches the rest
                 download(f"{raw}/{urllib.parse.quote(path)}", dest, on_progress=prog,
                          label=os.path.basename(path), timeout=30, headers=_HDR)
                 if git_blob_sha(dest) != sha:
@@ -1873,7 +1944,7 @@ class ConfigureScreen(QWidget):
             self._update_status.setStyleSheet(f"color:{C_TREY};")
 
     def _relaunch(self):
-        """Relaunch DeckOps by exec-ing the same Python + main.py."""
+        """Relaunch DeckOps: exec the same Python with main.py."""
         # Clear bytecode cache so updated .py files are re-imported
         pycache = os.path.join(PROJECT_ROOT, "src", "__pycache__")
         if os.path.isdir(pycache):
@@ -1903,9 +1974,9 @@ class ConfigureScreen(QWidget):
 
 
 
-# ── UpdateScreen ──────────────────────────────────────────────────────────────
+# --- UpdateScreen
 class UpdateScreen(QWidget):
-    """Handles Update from ManagementScreen."""
+    """Runs game updates and one-off tasks (such as Offline Mode) started from ManagementScreen."""
 
     def __init__(self, stack):
         super().__init__(); self.stack = stack; self.screen_name = "UpdateScreen"
@@ -2046,7 +2117,7 @@ class UpdateScreen(QWidget):
         # Read setup_games to determine source for each key
         setup_games = cfg.get_setup_games()
 
-        # ── Plutonium update: re-run bootstrapper ─────────────────────
+        # --- Plutonium update: re-run bootstrapper
         if has_plut:
             if is_lcd:
                 self._s.progress.emit(5, "Setting up Plutonium through HGL...")
@@ -2107,13 +2178,13 @@ class UpdateScreen(QWidget):
 
             # Remove the old shared copy prefixes used to link to. OLED games
             # are reinstalled below and link to the master in the dedicated
-            # prefix instead; LCD reads everything from the Heroic prefix.
+            # prefix instead. LCD reads everything from the Heroic prefix.
             from plutonium import SHARED_PLUT_DIR
             if os.path.isdir(SHARED_PLUT_DIR):
                 shutil.rmtree(SHARED_PLUT_DIR, ignore_errors=True)
                 self._s.log.emit("  Removed the old shared Plutonium copy")
 
-        # ── GE-Proton download (Steam may still be running) ─────────
+        # --- GE-Proton download (Steam may still be running)
         ge_version = None
         try:
             self._s.log.emit("Checking GE-Proton...")
@@ -2134,12 +2205,11 @@ class UpdateScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"  Could not close Steam: {ex}")
 
-        # ── Clean slate: clear launch options and compat tools ─────────
-        # Same clean-slate approach as InstallScreen.
-        # Prevents stale entries from previous installs (LCD→OLED, older
-        # DeckOps versions) interfering with the update.
-        # Launch options only for the Steam games in this update, so a
-        # per-game update doesn't wipe other games' options.
+        # --- Clean slate: clear launch options and compat tools
+        # Same as InstallScreen, so stale entries from earlier installs
+        # (LCD to OLED, older DeckOps versions) can't interfere with the update.
+        # Launch options are cleared only for the Steam games in this update,
+        # so a per-game update doesn't wipe other games' options.
         try:
             from wrapper import clear_launch_options, clear_compat_tool
             from detect_games import GAMES
@@ -2172,7 +2242,7 @@ class UpdateScreen(QWidget):
             entry = setup_games.get(key, {})
             source = entry.get("source", "steam")
             # Prefer the client from the original install if available
-            if key in ("cod4mp", "iw4sp", "iw5sp") and entry.get("client"):
+            if key in ("cod4mp", "iw4sp", "iw5sp", "cod1sp", "coduosp", "cod2sp", "coduomp") and entry.get("client"):
                 c = entry["client"]
             try:
                 from plutonium import GAME_META as _PLUT_META
@@ -2184,12 +2254,14 @@ class UpdateScreen(QWidget):
                 else:
                     _appid = gd["appid"]
 
-                # Resolve compatdata - own games may have CRC-based prefix
+                # Resolve compatdata. Own games may have a CRC-based prefix
                 if source == "own":
                     compat = game.get("compatdata_path", "")
-                    # Scanned games are not enriched here; use the same
+                    # Scanned games are not enriched here. Use the same
                     # prefix the install flow gave this own-copy game
-                    if not compat and c == "plutonium" and not cfg.is_lcd():
+                    # Despite its name, own_plut_prefix is the plain own-shortcut prefix
+                    # for every key except t4mp, so CoD3 and Finest Hour use it too
+                    if not compat and (c == "plutonium" and not cfg.is_lcd() or c in ("cod3recomp", "finesthour")):
                         from shortcut import own_plut_prefix
                         compat = own_plut_prefix(key, game)
                     if not compat:
@@ -2213,7 +2285,7 @@ class UpdateScreen(QWidget):
                                   source=source)
                 elif c == "iw4x":
                     install_iw4x(game, self.steam_root, proton, compat, op,
-                                 source=source, install_dlc=False)
+                                 source=source, install_dlc=False, force=True)
                 elif c == "plutonium":
                     if is_lcd:
                         install_plutonium_lcd(game, key,
@@ -2244,6 +2316,24 @@ class UpdateScreen(QWidget):
                     if source == "own":
                         from shortcut import migrate_own_t6sp
                         migrate_own_t6sp(game, self._s.log.emit)
+                elif c == "cod1x":
+                    from cod1x import install_cod1x
+                    install_cod1x(game, self.steam_root, op, source=game.get("source", "steam"))
+                elif c == "coduox":
+                    from coduox import install_coduox
+                    install_coduox(game, op, source=game.get("source", "steam"))
+                elif c == "cod2x":
+                    from cod2x import install_cod2x
+                    install_cod2x(game, self.steam_root, op, source=game.get("source", "steam"))
+                elif c == "cod3recomp":
+                    from cod3recomp import install_cod3
+                    install_cod3(game, self.steam_root, proton, compat, op)
+                elif c == "finesthour":
+                    from finesthour import install_fh
+                    install_fh(game, self.steam_root, proton, compat, op)
+                elif c == "bro":
+                    from bro import install_bro
+                    install_bro(game, on_progress=op)
                 elif c == "iw-pad":
                     from sp_mod import install_sp_mod
                     install_sp_mod(key, game["install_dir"], op,
@@ -2257,7 +2347,7 @@ class UpdateScreen(QWidget):
             except Exception as ex:
                 self._s.log.emit(f"✗  {base_name} ({key}) failed: {ex}")
 
-        # ── Re-apply GE-Proton compat + Steam Input ──────────────────
+        # --- Re-apply GE-Proton compat + Steam Input
         if ge_version:
             try:
                 set_compat_tool(MANAGED_APPIDS, ge_version)
@@ -2272,7 +2362,7 @@ class UpdateScreen(QWidget):
         except Exception as ex:
             self._s.log.emit(f"  Steam Input setup skipped: {ex}")
 
-        # Steam WaW has Plutonium entries in its launch menu; a Deck default
+        # Steam WaW has Plutonium entries in its launch menu. A Deck default
         # from older installs would auto-pick Campaign and hide it.
         _setup = cfg.get_setup_games()
         if any(k in ("t4sp", "t4mp") and _setup.get(k, {}).get("source", "steam") == "steam"

@@ -3,7 +3,7 @@ detect_hw.py - detect OS, device, and CPU architecture
 
 Reads DMI identity and os-release at import time. Results are cached
 for the process lifetime. All reads are best-effort: a missing sysfs
-node or unrecognised string returns None, never raises.
+node or unrecognized string returns None and never raises.
 
 This is a leaf module with no DeckOps imports.
 """
@@ -12,7 +12,7 @@ import os
 import platform
 
 
-# ── DMI product_name -> DEVICES key ──────────────────────────────────────────
+# --- DMI product_name -> DEVICES key
 # Values come from /sys/class/dmi/id/product_name on each device.
 # ASUS repeats the model code (e.g. "RC71L_RC71L"), so those use prefix matching.
 
@@ -29,7 +29,7 @@ _DMI_EXACT = {
 }
 
 _DMI_PREFIX = [
-    # ASUS -- product_name may carry a suffix like RC71L_RC71L
+    # ASUS: product_name may carry a suffix like RC71L_RC71L
     ("RC71L",  "rog_ally"),
     ("RC72LA", "rog_ally_x"),
     ("RC73YA", "xbox_ally_x"),
@@ -51,7 +51,7 @@ _DT_MODEL = {
     "Retroid Pocket 6 TOP-DPAD":  "rp6",
 }
 
-# ── os-release ID -> os_key ──────────────────────────────────────────────────
+# --- os-release ID -> os_key
 
 _OS_ID_MAP = {
     "steamos":  "steamos",

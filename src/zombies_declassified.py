@@ -1,9 +1,9 @@
 """
-zombies_declassified.py -- Zombies Declassified DLC5 installer for DeckOps
+zombies_declassified.py: Zombies Declassified DLC5 installer for DeckOps
 
 Downloads and installs the Zombies Declassified map pack (10 classic
-Zombies maps ported to BO2 T6) via Plutonium. Uses Littlegods'
-properly packaged files from files.littlegods.space.
+Zombies maps ported to BO2 T6) via Plutonium. The files come from Littlegods'
+packaged release at files.littlegods.space.
 
 All files go to <plut_dir>/storage/t6/ only. The BO2 game directory
 is never touched.
@@ -183,8 +183,8 @@ def install_zd(plut_storage_t6: str, on_progress=None):
     """
     Download and install Zombies Declassified.
 
-    plut_storage_t6 -- path to <plut_dir>/storage/t6/
-    on_progress     -- callback(percent: int, message: str)
+    plut_storage_t6: path to <plut_dir>/storage/t6/
+    on_progress: callback(percent: int, message: str)
     """
     prog = on_progress or (lambda *a: None)
 

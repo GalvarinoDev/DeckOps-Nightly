@@ -1,17 +1,17 @@
 """
 ge_proton.py - DeckOps GE-Proton installer
 
-Downloads and installs the latest GE-Proton release from GitHub, then
-writes the CompatToolMapping entry in Steam's config.vdf so each game
-uses it automatically.
+Downloads and installs the latest GE-Proton release from GitHub.
+set_compat_tool (from wrapper) writes the CompatToolMapping entry in
+Steam's config.vdf so each game uses it.
 
-Also provides ensure_prefix_deps() which copies the full dependency set
-(d3dx, vcrun, xinput, partial xact) from GE-Proton's default_pfx into
-any game prefix that's missing them. This eliminates the need for users
-to launch each game once before mods can be installed.
+ensure_prefix_deps() copies the full dependency set (d3dx, vcrun, xinput,
+partial xact) from GE-Proton's default_pfx into any game prefix that is
+missing it, so users don't have to launch each game once before mods
+can be installed.
 
 Install path:
-    ~/.steam/root/compatibilitytools.d/GE-ProtonX-XX/
+    ~/.local/share/Steam/compatibilitytools.d/GE-Proton<version>-<arch>/
 
 CompatToolMapping written to:
     ~/.local/share/Steam/config/config.vdf
@@ -34,7 +34,7 @@ _log = get_logger(__name__)
 GITHUB_API   = "https://api.github.com/repos/GloriousEggroll/proton-ge-custom/releases/latest"
 COMPAT_DIR   = os.path.expanduser("~/.local/share/Steam/compatibilitytools.d")
 
-# Steam appids that DeckOps manages — GE-Proton will be set for all of these
+# Steam appids DeckOps manages. All of them get GE-Proton.
 MANAGED_APPIDS = [
     "7940",    # CoD4
     "10090",   # WaW
@@ -53,15 +53,20 @@ MANAGED_APPIDS = [
     "209170",  # Ghosts MP
     "209650",  # AW SP
     "209660",  # AW MP
+    # Classics: DeckOps builds their prefixes from GE-Proton too. Under Steam's
+    # Proton the compatibility script (CD key, uninstall) hangs in them.
+    "2620",    # CoD1
+    "2640",    # UO
+    "2630",    # CoD2
 ]
 
 
-# ── GitHub API ────────────────────────────────────────────────────────────────
+# --- GitHub API
 
 def _get_latest_release():
     """
     Query the GitHub API for the latest GE-Proton release.
-    Returns (version, tarball_url, checksum_url).
+    Returns (version, tarball_url, checksum_url, dir_name).
     """
     req = urllib.request.Request(GITHUB_API, headers=_BROWSER_UA)
     with urllib.request.urlopen(req, timeout=15) as resp:
@@ -86,9 +91,9 @@ def _get_latest_release():
     if not tarball_url:
         raise RuntimeError(f"No {arch} .tar.gz asset found for {version}")
 
-    # GE-Proton 11+ tarballs extract to a directory matching the asset
-    # name minus .tar.gz (e.g. "GE-Proton11-7-x86_64"), not the tag.
-    # Steam registers compat tools by directory name, so this must match.
+    # GE-Proton 11+ tarballs extract to the asset name minus .tar.gz
+    # (e.g. "GE-Proton11-7-x86_64"), not the tag. Steam registers compat
+    # tools by folder name, so dir_name has to match the extracted folder.
     dir_name = tarball_asset.removesuffix(".tar.gz")
 
     return version, tarball_url, checksum_url, dir_name
@@ -102,22 +107,21 @@ def _is_installed(version):
 def _get_local_version() -> str | None:
     """
     Scan compatibilitytools.d for the newest installed GE-Proton version.
-    Returns the version string (e.g. 'GE-Proton10-32') or None if not found.
-    Works regardless of how GE-Proton was installed (ProtonUp-Qt, manual, etc.)
+    Returns the version string (e.g. 'GE-Proton10-32') or None.
+    Finds it however GE-Proton was installed (ProtonUp-Qt, by hand, etc.).
     """
     return newest_proton_dir(COMPAT_DIR, "GE-Proton")
 
 
-# ── default_pfx resolution ───────────────────────────────────────────────────
+# --- default_pfx lookup
 
 def _find_default_pfx(ge_version: str | None) -> str | None:
     """
     Locate GE-Proton's default_pfx directory.
 
-    Tries the exact version first, then falls back to scanning for the
-    newest available GE-Proton install. Returns the path or None.
+    Tries the exact version first, then the newest GE-Proton install
+    that has one. Returns the path or None.
     """
-    # Try exact version first
     if ge_version:
         candidate = os.path.join(COMPAT_DIR, ge_version, "files", "share", "default_pfx")
         if os.path.isdir(candidate):
@@ -135,15 +139,15 @@ def _find_default_pfx(ge_version: str | None) -> str | None:
     return None
 
 
-# ── Install ───────────────────────────────────────────────────────────────────
+# --- Install
 
 def install_ge_proton(on_progress=None):
     """
     Download and install the latest GE-Proton to compatibilitytools.d.
-    Returns the version string (e.g. 'GE-Proton10-34') so it can be
-    passed to set_compat_tool().
+    Returns the version string (e.g. 'GE-Proton10-34') for
+    set_compat_tool().
 
-    on_progress — optional callback(percent: int, msg: str)
+    on_progress: optional callback(percent: int, msg: str)
     """
     prog = on_progress or (lambda *a: None)
 
@@ -178,9 +182,8 @@ def install_ge_proton(on_progress=None):
         download(tarball_url, tarball_path, on_progress=on_progress, label=dir_name,
                  digest=digest)
 
-        # Use system tar for speed and memory efficiency — Python's tarfile
-        # module is noticeably slower and more memory-hungry when extracting
-        # large archives like GE-Proton.
+        # System tar, because Python's tarfile is much slower and uses more
+        # memory on an archive as large as GE-Proton.
         prog(87, f"Extracting {dir_name}...")
         import subprocess
         result = subprocess.run(
@@ -188,7 +191,7 @@ def install_ge_proton(on_progress=None):
             capture_output=True,
         )
         if result.returncode != 0:
-            # Fall back to Python tarfile if tar isn't available
+            # tar failed or is missing. Use Python's tarfile.
             with tarfile.open(tarball_path, "r:gz") as tar:
                 tar.extractall(COMPAT_DIR)
         prog(100, f"GE-Proton {dir_name} installed.")
@@ -196,24 +199,30 @@ def install_ge_proton(on_progress=None):
     return dir_name
 
 
-# ── CompatToolMapping ─────────────────────────────────────────────────────────
-# Canonical implementation lives in wrapper.set_compat_tool.
-# Imported here so callers can use ge_proton.set_compat_tool as before.
+# --- CompatToolMapping
+# The real code is wrapper.set_compat_tool. Re-exported here so
+# ge_proton.set_compat_tool also works.
 
 from wrapper import set_compat_tool  # noqa: F401
 
 
-# ── Prefix dependency management ─────────────────────────────────────────────
-# GE-Proton's default_pfx ships with the full d3dx, vcrun, xinput, and
-# xact dependency set that these CoD games need. Instead of running
-# winetricks verbs or relying on Steam to install them on first launch,
-# we copy the DLLs directly from default_pfx into each game's prefix.
-# This works for both Steam and own games.
+# --- Prefix dependencies
+# GE-Proton's default_pfx ships the d3dx, vcrun, xinput and xact DLLs
+# these CoD games need. We copy them from default_pfx into each game's
+# prefix instead of running winetricks or waiting for Steam to install
+# them on first launch. Works for Steam and own games.
+
+def _drop_dead_link(path):
+    # Proton links prefix DLLs into its own folder. When that GE-Proton version is
+    # removed the links point nowhere, and copy2 would follow one into the missing folder.
+    if os.path.islink(path) and not os.path.exists(path):
+        os.remove(path)
+
 
 def _copy_dlls(src_dir: str, dest_dir: str) -> tuple[int, int]:
     """
-    Copy .dll files from src_dir into dest_dir, skipping files that
-    already exist with a matching file size.
+    Copy .dll files from src_dir into dest_dir. Files already there with
+    the same size are skipped.
 
     Returns (copied, skipped) counts.
     """
@@ -226,21 +235,21 @@ def _copy_dlls(src_dir: str, dest_dir: str) -> tuple[int, int]:
         if fname.lower().endswith(".dll"):
             src_path = os.path.join(src_dir, fname)
             dest_path = os.path.join(dest_dir, fname)
-            # Skip if dest exists and matches source file size
             if os.path.isfile(dest_path):
                 try:
                     if os.path.getsize(dest_path) == os.path.getsize(src_path):
                         skipped += 1
                         continue
                 except OSError:
-                    pass  # can't stat -- copy it
-            # Unlock read-only files (Proton sometimes creates prefix
-            # files with 0o444 permissions)
+                    pass  # can't stat it, so copy it
+            # Proton sometimes creates prefix files as 0o444. Make them
+            # writable first.
             if os.path.isfile(dest_path):
                 try:
                     os.chmod(dest_path, 0o644)
                 except OSError:
                     pass
+            _drop_dead_link(dest_path)
             shutil.copy2(src_path, dest_path)
             copied += 1
     return (copied, skipped)
@@ -250,29 +259,28 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
                        on_progress=None, proton_path: str | None = None,
                        steam_root: str | None = None) -> bool:
     """
-    Make sure a game's compatdata prefix is fully initialized and has
-    the complete dependency set from GE-Proton's default_pfx.
+    Make sure a game's compatdata prefix is initialized and has the full
+    dependency set from GE-Proton's default_pfx.
 
-    Logic:
-      1. If no proton_path, fall back to copytree from default_pfx and return.
-      2. If pfx/drive_c already exists (prefix previously initialized):
+    Steps:
+      1. No proton_path: copy the whole default_pfx and return.
+      2. pfx/drive_c exists (prefix already initialized):
          - Copy any missing DLLs from default_pfx (fast, no Proton run)
-         - Skip the slow `proton run cmd /c exit` step entirely
-      3. If pfx/drive_c does NOT exist (fresh prefix):
-         - Create prefix_path so Proton has a directory to work with
+         - Skip the slow `proton run cmd /c exit`
+      3. pfx/drive_c missing (fresh prefix):
+         - Create prefix_path so Proton has a folder to work in
          - Copy DLLs from default_pfx into system32 + syswow64
          - Run `proton run cmd /c exit` to finalize the prefix
 
-    ge_version  -- GE-Proton version string (e.g. "GE-Proton10-33")
-    prefix_path -- compatdata root (e.g. ~/.../compatdata/10090)
-    on_progress -- optional callback(msg: str) for log messages
-    proton_path -- path to the proton binary. When provided, the prefix is
-                   finalized by Proton after DLL copy. Falls back to copytree
-                   if not provided.
-    steam_root  -- path to Steam root. Used for STEAM_COMPAT_CLIENT_INSTALL_PATH.
-                   Falls back to deriving from proton_path if not provided.
+    ge_version:  GE-Proton version string (e.g. "GE-Proton10-33")
+    prefix_path: compatdata root (e.g. ~/.../compatdata/10090)
+    on_progress: optional callback(msg: str) for log messages
+    proton_path: path to the proton binary. If set, Proton finalizes the
+                 prefix after the DLL copy. If not, default_pfx is copied.
+    steam_root:  Steam root, used for STEAM_COMPAT_CLIENT_INSTALL_PATH.
+                 If not set, it is derived from proton_path.
 
-    Returns True if deps are now in place, False if we couldn't do it.
+    Returns True if the deps are in place, False if not.
     """
     prog = on_progress or (lambda *a: None)
 
@@ -286,13 +294,12 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
     wow64_target = os.path.join(pfx_dir, "drive_c", "windows", "syswow64")
     version_file = os.path.join(prefix_path, "version")
 
-    # Check if the prefix has already been initialized by Proton.
-    # If drive_c exists, the prefix structure is in place — we only need
-    # to copy any missing DLLs and can skip the slow Proton run.
+    # drive_c means Proton already initialized this prefix. Then we only
+    # copy missing DLLs and skip the slow Proton run.
     prefix_exists = os.path.isdir(os.path.join(pfx_dir, "drive_c"))
 
-    # ── Fallback: no proton_path ───────────────────────────────────────
-    # Can't run Proton to finalize — copy entire default_pfx as a best effort.
+    # --- Fallback: no proton_path
+    # Proton can't finalize, so copy the whole default_pfx as a best effort.
     if not proton_path:
         try:
             os.makedirs(prefix_path, exist_ok=True)
@@ -307,18 +314,19 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
             prog(f"  ⚠ Prefix creation failed: {ex}")
             return False
 
-    # STEAM_COMPAT_CLIENT_INSTALL_PATH should be the Steam root so Proton
-    # can find steamclient.so. Fall back to dirname trick if not provided.
+    # STEAM_COMPAT_CLIENT_INSTALL_PATH must be the Steam root so Proton
+    # can find steamclient.so. Without steam_root, go two levels up from
+    # proton_path.
     _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
 
-    # ── Step 1: Ensure the prefix directory exists ─────────────────────
-    # Proton needs the compatdata directory to exist before it can initialize.
-    # Don't create pfx/ itself — Proton does that in the finalize step.
+    # --- Step 1: make sure the prefix folder exists
+    # Proton needs the compatdata folder before it can initialize. Don't
+    # create pfx/ itself. Proton does that in the finalize step.
     if not prefix_exists:
         os.makedirs(prefix_path, exist_ok=True)
 
-    # ── Step 2: Always copy DLLs from default_pfx ─────────────────────
-    # Copy before Proton finalizes so Proton sees the full dependency set
+    # --- Step 2: always copy DLLs from default_pfx
+    # Copy before Proton finalizes, so Proton sees the full dependency set
     # when it writes its management files.
     sys32_src = os.path.join(default_pfx, "drive_c", "windows", "system32")
     wow64_src = os.path.join(default_pfx, "drive_c", "windows", "syswow64")
@@ -336,11 +344,10 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
         prog(f"  ⚠ DLL copy failed: {ex}")
         return False
 
-    # ── Step 3: Finalize via Proton (only if prefix is new) ───────────
-    # Only run `proton run cmd /c exit` when the prefix hasn't been
-    # initialized yet. This is the slow step (~60s per prefix) that
-    # creates the Wine prefix structure, wineserver, registry, etc.
-    # For existing prefixes, the DLL copy above is sufficient.
+    # --- Step 3: finalize with Proton (new prefix only)
+    # `proton run cmd /c exit` is the slow step (~60s per prefix). It
+    # builds the Wine prefix, starts wineserver, writes the registry, etc.
+    # An existing prefix only needs the DLL copy above.
     if prefix_exists:
         prog("  ✓ Prefix already initialized — skipped Proton run")
         return True
@@ -362,13 +369,13 @@ def ensure_prefix_deps(ge_version: str | None, prefix_path: str,
 
 
 def _finish_clone(source_pfx_dir: str, dest_prefix_path: str, ge_version: str | None):
-    # Write version file so Proton knows which version initialized this prefix
+    # The version file tells Proton which version initialized this prefix
     if ge_version:
         with open(os.path.join(dest_prefix_path, "version"), "w") as f:
             f.write(ge_version + "\n")
-    # Copy tracked_files from the donor's parent directory.
-    # Proton requires this file to exist -- without it, prefix setup
-    # crashes with FileNotFoundError on update_builtin_libs().
+    # Copy tracked_files from the donor's compatdata root. Proton needs
+    # it. Without it, prefix setup crashes with FileNotFoundError in
+    # update_builtin_libs().
     donor_tracked = os.path.join(os.path.dirname(source_pfx_dir), "tracked_files")
     if os.path.isfile(donor_tracked):
         shutil.copy2(donor_tracked, os.path.join(dest_prefix_path, "tracked_files"))
@@ -379,19 +386,17 @@ def _clone_prefix(source_pfx_dir: str, dest_prefix_path: str,
     """
     Clone an initialized prefix to a new appid's compatdata directory.
 
-    Copies the pfx/ directory tree from a fully initialized source prefix,
-    writes the version file, and copies tracked_files. This produces an
-    identical prefix in ~2s instead of running `proton run cmd /c exit`
-    (~60-180s).
+    Copies the pfx/ tree from an initialized source prefix, writes the
+    version file and copies tracked_files. That gives an identical prefix
+    in ~2s, where `proton run cmd /c exit` takes ~60-180s.
 
-    The donor prefix already contains all DLLs from default_pfx, so
-    clones do NOT need a DLL top-up — skipping it saves ~45s per prefix
-    on SD card.
+    The donor already has every DLL from default_pfx, so clones skip the
+    DLL top-up. That saves ~45s per prefix on SD card.
 
-    source_pfx_dir   -- the pfx/ directory inside the donor prefix
-    dest_prefix_path -- the compatdata root for the target appid
-    ge_version       -- GE-Proton version string for the version file
-    on_progress      -- optional callback(msg: str)
+    source_pfx_dir:   the pfx/ folder inside the donor prefix
+    dest_prefix_path: the compatdata root for the target appid
+    ge_version:       GE-Proton version string for the version file
+    on_progress:      optional callback(msg: str)
 
     Returns True on success, False on failure.
     """
@@ -416,18 +421,18 @@ def _clone_prefix(source_pfx_dir: str, dest_prefix_path: str,
 def _overlay_prefix(source_pfx_dir: str, dest_prefix_path: str,
                     ge_version: str | None, on_progress=None) -> bool:
     """
-    Overlay a finalized donor prefix onto an existing prefix, copying
-    only files that are missing or differ in size.
+    Overlay a finalized donor prefix onto an existing prefix. Only files
+    that are missing or differ in size are copied.
 
-    For new prefixes (no pfx/ dir yet), this is equivalent to a full clone.
-    For existing prefixes, this fills in any missing files without
-    re-copying the ~1200 DLLs that are already there.
+    A new prefix (no pfx/ yet) gets a full clone. An existing prefix gets
+    its missing files without re-copying the ~1200 DLLs already there.
 
     Also copies tracked_files and writes the version file.
 
-    source_pfx_dir   -- the pfx/ directory inside the donor prefix
-    dest_prefix_path -- the compatdata root for the target appid
-    on_progress      -- optional callback(msg: str)
+    source_pfx_dir:   the pfx/ folder inside the donor prefix
+    dest_prefix_path: the compatdata root for the target appid
+    ge_version:       GE-Proton version string for the version file
+    on_progress:      optional callback(msg: str)
 
     Returns True on success, False on failure.
     """
@@ -442,14 +447,14 @@ def _overlay_prefix(source_pfx_dir: str, dest_prefix_path: str,
         os.makedirs(dest_prefix_path, exist_ok=True)
 
         if is_new:
-            # Fresh prefix -- full clone (fastest path)
+            # Fresh prefix: full clone (fastest path)
             prog(f"  Cloning: {source_pfx_dir} -> {dest_pfx_dir}")
             start = time.time()
             shutil.copytree(source_pfx_dir, dest_pfx_dir, symlinks=True)
             elapsed = time.time() - start
             prog(f"  ✓ Prefix cloned from donor ({elapsed:.1f}s)")
         else:
-            # Existing prefix -- overlay missing files only
+            # Existing prefix: copy only missing files
             start = time.time()
             copied = 0
             skipped = 0
@@ -458,9 +463,9 @@ def _overlay_prefix(source_pfx_dir: str, dest_prefix_path: str,
                 dst_dirpath = os.path.join(dest_pfx_dir, rel)
                 os.makedirs(dst_dirpath, exist_ok=True)
 
-                # Handle symlinked directories (e.g. dosdevices/c: -> ../drive_c,
-                # d: -> /run/media/deck/...). Recreate as symlinks in the
-                # destination instead of descending into the target.
+                # Symlinked folders (e.g. dosdevices/c: -> ../drive_c,
+                # d: -> /run/media/deck/...) are recreated as symlinks in the
+                # destination. We don't walk into their targets.
                 real_dirnames = []
                 for dname in dirnames:
                     src_dir = os.path.join(src_dirpath, dname)
@@ -480,11 +485,11 @@ def _overlay_prefix(source_pfx_dir: str, dest_prefix_path: str,
                     src_file = os.path.join(src_dirpath, fname)
                     dst_file = os.path.join(dst_dirpath, fname)
 
-                    # Handle symlinked files (e.g. dosdevices/h:: -> /dev/sda2).
+                    # Symlinked files (e.g. dosdevices/h:: -> /dev/sda2).
                     # Proton maps drive letters and block devices as symlinks
-                    # in dosdevices/. These vary by hardware (nvme, sda, mmcblk)
-                    # and distro (SteamOS, Bazzite, CachyOS). Copy them as
-                    # symlinks rather than trying to read the target.
+                    # in dosdevices/. They vary by hardware (nvme, sda, mmcblk)
+                    # and distro (SteamOS, Bazzite, CachyOS). Copy the link
+                    # itself and never read the target.
                     if os.path.islink(src_file):
                         link_target = os.readlink(src_file)
                         if os.path.islink(dst_file) or os.path.exists(dst_file):
@@ -501,14 +506,14 @@ def _overlay_prefix(source_pfx_dir: str, dest_prefix_path: str,
                                 continue
                         except OSError:
                             pass
-                    # Skip existing read-only files -- these are Proton
-                    # prefix scaffolding (wordpad.exe, odbccp32.dll, etc.)
-                    # that differ in size between Proton versions but are
-                    # not needed by any game.  Game-critical DLLs are
-                    # handled separately by _copy_dlls.
+                    # Skip existing read-only files. They are Proton prefix
+                    # scaffolding (wordpad.exe, odbccp32.dll, etc.) that
+                    # differs in size between Proton versions, and no game
+                    # needs it. _copy_dlls handles the DLLs games need.
                     if os.path.exists(dst_file) and not os.access(dst_file, os.W_OK):
                         skipped += 1
                         continue
+                    _drop_dead_link(dst_file)
                     shutil.copy2(src_file, dst_file)
                     copied += 1
 
@@ -525,21 +530,21 @@ def _overlay_prefix(source_pfx_dir: str, dest_prefix_path: str,
         return False
 
 
-# ── Shared DLL directory for symlinked prefixes ───────────────────────────────
-# Instead of copying 600MB+ of identical DLLs into every prefix, we keep
-# one real copy and symlink each prefix's system32/syswow64 to it.
-# This lives under DeckOps's data dir so Steam can't touch it.
+# --- Shared DLL folder for symlinked prefixes
+# One real copy of the 600MB+ of DLLs. Each prefix's system32/syswow64
+# is a symlink to it. It lives in DeckOps's data dir so Steam can't
+# touch it.
 
 SHARED_DLL_DIR = os.path.expanduser("~/.local/share/deckops/shared_dlls")
 
 
 def _ensure_shared_dlls(ge_version: str | None, on_progress=None) -> bool:
     """
-    Ensure the shared DLL directory exists with the full set of DLLs
-    from GE-Proton's default_pfx.
+    Make sure the shared DLL folder has the full DLL set from
+    GE-Proton's default_pfx.
 
-    If the directory already has the expected file count, this is a no-op.
-    Otherwise it copies system32 and syswow64 from default_pfx.
+    Does nothing if the folder already has the expected DLL count.
+    Otherwise copies system32 and syswow64 from default_pfx.
 
     Returns True if shared DLLs are ready, False on failure.
     """
@@ -555,7 +560,7 @@ def _ensure_shared_dlls(ge_version: str | None, on_progress=None) -> bool:
     src_sys32 = os.path.join(default_pfx, "drive_c", "windows", "system32")
     src_wow64 = os.path.join(default_pfx, "drive_c", "windows", "syswow64")
 
-    # Check if already populated -- count DLLs in source vs dest
+    # Already filled? Compare DLL counts in source and dest.
     if os.path.isdir(shared_sys32) and os.path.isdir(shared_wow64):
         src_count = sum(1 for f in os.listdir(src_sys32) if f.lower().endswith(".dll"))
         dst_count = sum(1 for f in os.listdir(shared_sys32) if f.lower().endswith(".dll"))
@@ -568,8 +573,8 @@ def _ensure_shared_dlls(ge_version: str | None, on_progress=None) -> bool:
     start = time.time()
 
     try:
-        # Copy full directories from default_pfx -- includes all file types
-        # not just DLLs (some .exe, .drv, etc. are also needed by Wine)
+        # Copy the whole folders, not just DLLs. Wine also needs some
+        # .exe, .drv, etc. files from them.
         if os.path.isdir(shared_sys32):
             shutil.rmtree(shared_sys32)
         if os.path.isdir(shared_wow64):
@@ -588,17 +593,17 @@ def _ensure_shared_dlls(ge_version: str | None, on_progress=None) -> bool:
 def _clone_with_symlinks(source_pfx_dir: str, dest_prefix_path: str,
                          ge_version: str | None, on_progress=None) -> bool:
     """
-    Clone a donor prefix but symlink system32 and syswow64 to the shared
-    DLL directory instead of copying them. This reduces each clone from
-    ~725MB to ~120MB.
+    Clone a donor prefix, with system32 and syswow64 as symlinks to the
+    shared DLL folder instead of copies. Each clone drops from ~725MB to
+    ~120MB.
 
-    For the donor prefix itself, system32/syswow64 are real directories.
-    All other prefixes get symlinks.
+    The donor prefix keeps real system32/syswow64 folders. All other
+    prefixes get symlinks.
 
-    source_pfx_dir   -- the pfx/ directory inside the donor prefix
-    dest_prefix_path -- the compatdata root for the target appid
-    ge_version       -- GE-Proton version string for the version file
-    on_progress      -- optional callback(msg: str)
+    source_pfx_dir:   the pfx/ folder inside the donor prefix
+    dest_prefix_path: the compatdata root for the target appid
+    ge_version:       GE-Proton version string for the version file
+    on_progress:      optional callback(msg: str)
 
     Returns True on success, False on failure.
     """
@@ -612,7 +617,7 @@ def _clone_with_symlinks(source_pfx_dir: str, dest_prefix_path: str,
         os.makedirs(dest_prefix_path, exist_ok=True)
         start = time.time()
 
-        # Copy the prefix skeleton -- everything except the heavy DLL dirs
+        # Copy the prefix skeleton: everything except the big DLL folders
         def _ignore_dll_dirs(directory, contents):
             # Only ignore at the windows/ level
             if os.path.basename(directory) == "windows":
@@ -623,7 +628,7 @@ def _clone_with_symlinks(source_pfx_dir: str, dest_prefix_path: str,
         shutil.copytree(source_pfx_dir, dest_pfx_dir, symlinks=True,
                         ignore=_ignore_dll_dirs)
 
-        # Create symlinks for system32 and syswow64 pointing to shared DLLs
+        # Point system32 and syswow64 at the shared DLLs
         windows_dir = os.path.join(dest_pfx_dir, "drive_c", "windows")
         shared_sys32 = os.path.join(SHARED_DLL_DIR, "system32")
         shared_wow64 = os.path.join(SHARED_DLL_DIR, "syswow64")
@@ -643,8 +648,8 @@ def _clone_with_symlinks(source_pfx_dir: str, dest_prefix_path: str,
 
 def _cleanup_sd_card_prefixes(appids: list[str], on_progress=None):
     """
-    Delete compatdata prefixes for managed appids from SD card locations.
-    Prefixes now live on NVMe for performance. SD card copies are stale.
+    Delete compatdata prefixes for managed appids on the SD card.
+    Prefixes live on NVMe for speed, so SD card copies are stale.
     """
     import glob
 
@@ -682,24 +687,23 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
     """
     Initialize and install dependencies for a list of game prefixes.
 
-    All prefixes are created on NVMe for performance. SD card prefixes
-    for managed appids are deleted. Each prefix uses symlinked system32
-    and syswow64 directories pointing to a shared DLL copy, reducing
-    disk usage from ~8GB to ~1.9GB.
+    All prefixes go on NVMe for speed, and SD card prefixes for managed
+    appids are deleted. Each prefix's system32 and syswow64 are symlinks
+    to one shared DLL copy, which cuts disk use from ~8GB to ~1.9GB.
 
     Flow:
-      1. Set up shared DLL directory from GE-Proton's default_pfx (one-time)
-      2. Clean up any SD card prefixes for managed appids
-      3. Override all prefix paths to NVMe
-      4. Pick first prefix as donor -- initialize via Proton if new
-      5. Clone donor to remaining prefixes using symlinked DLL dirs
+      1. Set up the shared DLL folder from GE-Proton's default_pfx (once)
+      2. Delete SD card prefixes for managed appids
+      3. Move every prefix path to NVMe
+      4. Use the first prefix as donor. Initialize it with Proton if new
+      5. Clone the donor to the other prefixes with symlinked DLL folders
 
-    prefix_paths -- list of (label, compatdata_path) tuples
-    on_progress  -- optional callback(msg: str)
-    proton_path  -- path to the Proton binary for prefix initialization
-    steam_root   -- path to Steam root for STEAM_COMPAT_CLIENT_INSTALL_PATH
+    prefix_paths: list of (label, compatdata_path) tuples
+    on_progress:  optional callback(msg: str)
+    proton_path:  path to the Proton binary for prefix initialization
+    steam_root:   Steam root for STEAM_COMPAT_CLIENT_INSTALL_PATH
 
-    Returns the number of prefixes that now have deps installed.
+    Returns the number of prefixes that have their deps.
     """
     import subprocess
     import time
@@ -711,29 +715,29 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
         prog("⚠ No GE-Proton default_pfx found -- cannot install dependencies")
         return 0
 
-    # ── Step 1: Ensure shared DLLs exist ──────────────────────────────────
+    # --- Step 1: shared DLLs
     if not _ensure_shared_dlls(ge_version, on_progress=on_progress):
         prog("⚠ Shared DLL setup failed -- falling back to full copies")
-        # Fall back to the old approach if shared DLLs can't be set up
+        # Clones will be full copies instead of symlinks
         shared_available = False
     else:
         shared_available = True
 
-    # ── Step 2: Clean up SD card prefixes ─────────────────────────────────
+    # --- Step 2: delete SD card prefixes
     prog("  Cleaning up SD card prefixes...")
     _cleanup_sd_card_prefixes(
         [str(a) for a in MANAGED_APPIDS],
         on_progress=on_progress,
     )
 
-    # ── Step 3: Deduplicate and override paths to NVMe ────────────────────
+    # --- Step 3: drop duplicates and move paths to NVMe
     seen_paths = {}
     unique_paths = []
     for label, compat_path in prefix_paths:
         if not compat_path:
             prog(f"  {label}: no compatdata path -- skipped")
             continue
-        # Extract appid from the path and force NVMe location
+        # Take the appid from the path and use its NVMe location
         appid = os.path.basename(os.path.normpath(compat_path))
         nvme_path = _nvme_compatdata(appid)
         norm = os.path.normpath(nvme_path)
@@ -748,13 +752,13 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
 
     success = 0
 
-    # ── Step 4: Prepare donor prefix ──────────────────────────────────────
+    # --- Step 4: prepare the donor prefix
     donor_label, donor_path = unique_paths[0]
     donor_pfx_dir = os.path.join(donor_path, "pfx")
     donor_exists = os.path.isdir(os.path.join(donor_pfx_dir, "drive_c"))
 
     if donor_exists:
-        # Donor already on NVMe -- verify DLLs if it has real dirs (not symlinks)
+        # Donor already on NVMe. Check its DLLs if they are real folders, not symlinks
         sys32_dir = os.path.join(donor_pfx_dir, "drive_c", "windows", "system32")
         if os.path.islink(sys32_dir):
             prog(f"  {donor_label}: donor already has symlinked DLLs -- ready")
@@ -776,7 +780,7 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
                 prog(f"  ⚠ {donor_label}: donor DLL check failed: {ex}")
         success += 1
     else:
-        # Donor needs Proton initialization
+        # Donor needs Proton to initialize it
         if not proton_path:
             for label, compat_path in unique_paths:
                 prog(f"  {label}: checking dependencies...")
@@ -815,29 +819,29 @@ def ensure_all_prefix_deps(ge_version: str | None, prefix_paths: list[tuple[str,
                     success += 1
             return success
 
-    # ── Step 5: Clone donor to remaining prefixes ─────────────────────────
+    # --- Step 5: clone the donor to the other prefixes
     for label, compat_path in unique_paths[1:]:
         dest_pfx = os.path.join(compat_path, "pfx")
         dest_exists = os.path.isdir(os.path.join(dest_pfx, "drive_c"))
 
         if dest_exists:
-            # Existing NVMe prefix -- check if already symlinked
+            # Existing NVMe prefix. Is it already symlinked?
             sys32_dir = os.path.join(dest_pfx, "drive_c", "windows", "system32")
             if os.path.islink(sys32_dir):
                 prog(f"  {label}: already symlinked -- skipping")
                 success += 1
                 continue
-            # Existing with real dirs -- overlay to fill in any gaps
+            # Real DLL folders: overlay to fill any gaps
             prog(f"  {label}: overlaying from donor...")
             ok = _overlay_prefix(donor_pfx_dir, compat_path, ge_version,
                                  on_progress=on_progress)
         elif shared_available:
-            # New prefix -- clone with symlinked DLLs (fast)
+            # New prefix: clone with symlinked DLLs (fast)
             prog(f"  {label}: cloning with symlinked DLLs...")
             ok = _clone_with_symlinks(donor_pfx_dir, compat_path, ge_version,
                                       on_progress=on_progress)
         else:
-            # Fallback -- full clone if shared DLLs aren't available
+            # No shared DLLs: full clone
             prog(f"  {label}: cloning from donor (full copy)...")
             ok = _clone_prefix(donor_pfx_dir, compat_path, ge_version,
                                on_progress=on_progress)

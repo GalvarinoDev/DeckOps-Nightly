@@ -1,18 +1,18 @@
 """
 t6sp_mod.py - DeckOps installer for T6SP-MOD (Call of Duty: Black Ops II Singleplayer)
 
-Rattpak's T6SP-MOD — a dedicated singleplayer client for Black Ops II.
+Rattpak's T6SP-MOD, a dedicated singleplayer client for Black Ops II.
 https://github.com/Rattpak/T6SP-Mod-Release
 
 Downloads the mod exe and companion DLL from Rattpak's latest GitHub release
-and drops them into the BO2 install directory.
+into the BO2 install directory.
 
 The stock t6sp.exe is left untouched; T6SP-Mod.exe and t6sp-mod.dll go next to it.
-Steam games get a launch option that swaps t6sp.exe for T6SP-Mod.exe (same idea
-as IW3SP), so file verification and game updates can't undo the mod. Own games
+Steam games get a launch option that swaps t6sp.exe for T6SP-Mod.exe (same as
+IW3SP), so file verification and game updates can't undo the mod. Own games
 get the same launch option on their t6sp.exe shortcut (shortcut.migrate_own_t6sp
 moves older shortcuts that pointed at T6SP-Mod.exe).
-Older installs replaced t6sp.exe and kept the original as t6sp.exe.bak; that
+Older installs replaced t6sp.exe and kept the original as t6sp.exe.bak. That
 backup is moved back on install.
 
 Progress is reported via a callback:
@@ -25,7 +25,7 @@ import shutil
 
 from net import download as _download, github_asset
 
-# Rattpak's releases; the pinned URLs are only used if the GitHub API lookup fails
+# Rattpak's releases. The pinned URLs are only used if the GitHub API lookup fails
 _REPO = "Rattpak/T6SP-Mod-Release"
 _PIN = "https://github.com/Rattpak/T6SP-Mod-Release/releases/download/v1.0.0-Beta/"
 
@@ -36,9 +36,9 @@ LAUNCH_OPTS = "bash -c 'exec \"${@/t6sp.exe/T6SP-Mod.exe}\"' -- %command%"
 METADATA_FILE = "deckops_t6sp_mod.json"
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# --- helpers
 
-# ── public API ────────────────────────────────────────────────────────────────
+# --- public API
 
 def install_t6sp_mod(game: dict, steam_root: str,
                      proton_path: str, compatdata_path: str,
@@ -46,15 +46,15 @@ def install_t6sp_mod(game: dict, steam_root: str,
     """
     Install T6SP-MOD for Call of Duty: Black Ops II singleplayer.
 
-    Downloads the mod exe and DLL, backs up the original t6sp.exe,
-    and drops the mod files into the game directory.
+    Downloads the mod exe and DLL into the game directory, moves back an
+    old t6sp.exe.bak if there is one, and sets the launch option for Steam games.
 
-    game            — entry from detect_games
-    steam_root      — path to Steam root (kept for API consistency)
-    proton_path     — path to the proton executable (kept for API consistency)
-    compatdata_path — path to the BO2 compatdata prefix (kept for API consistency)
-    on_progress     — optional callback(percent: int, status: str)
-    source          — "steam" or "own"
+    game            : entry from detect_games
+    steam_root      : path to Steam root (kept for API consistency)
+    proton_path     : path to the proton executable (kept for API consistency)
+    compatdata_path : path to the BO2 compatdata prefix (kept for API consistency)
+    on_progress     : optional callback(percent: int, status: str)
+    source          : "steam" or "own"
     """
     install_dir = game["install_dir"]
 

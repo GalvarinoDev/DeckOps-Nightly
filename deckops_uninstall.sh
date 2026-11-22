@@ -529,8 +529,8 @@ info "Removing mod client files from non-Steam (My Own) game folders..."
 # For games added via the My Own flow, the install dir isnt in any Steam
 # library. We find them by scanning shortcuts.vdf for known exe names and
 # cleaning up the same files we would for Steam installs.
-python3 - << 'PYEOF'
-import os, re, shutil
+APP_TITLE="$APP_TITLE" python3 - << 'PYEOF'
+import os, re, shutil, glob
 
 STEAM_DIR    = os.path.expanduser("~/.local/share/Steam")
 USERDATA_DIR = os.path.join(STEAM_DIR, "userdata")
@@ -628,14 +628,85 @@ OWN_CLEANUP = {
     },
     # Own MW2/MW3 SP: shortcut keeps the stock exe; IW-Pad + AlterWare SP client (sp_mod.py)
     "iw4sp.exe": {
-        "files": ["iw-pad.exe", "iw-pad.dll", "iw-pad.log",
+        "files": ["iw-pad.exe", "iw-pad.dll", "iw-pad32.dll", "iw-pad.log", "iw-pad.old.log",
                   "iw4x-sp.exe", "data/iw4sp.exe"],
         "dirs":  [],
     },
     "iw5sp.exe": {
-        "files": ["iw-pad.exe", "iw-pad.dll", "iw-pad.log",
+        "files": ["iw-pad.exe", "iw-pad.dll", "iw-pad32.dll", "iw-pad.log", "iw-pad.old.log",
                   "iw5-mod.exe", "iw5mp_server.exe", "raw/scripts/sp/_cp.gsc"],
         "dirs":  [],
+    },
+    # CoD1x (cod1x.py): the MP shortcut runs deckops_cod1x/CoDMP.exe, a 1.1 copy
+    # of hard links beside the game. Removing it leaves the game's own files.
+    # A 1.1 disc copy has CoD1x in its own folder, stock exe kept as CoDMP_old.exe.
+    "codmp.exe": {
+        "files": [],
+        "dirs":  [],
+        "cod1x_copy": True,
+    },
+    # CoD2x (cod2x.py): proxy mss32.dll + the stock one as mss32_original.dll.
+    # The stock DLL goes back under its own name (see "cod2x" below).
+    "cod2mp_s.exe": {
+        "files": ["deckops_cod2x.json", "steam_appid.txt"],
+        "dirs":  [],
+        "cod2x": True,
+    },
+    # Own CoD1/UO/CoD2 SP: IW-Pad and its menu file (sp_mod.py). The menu folder
+    # can be main/ or Main/ (uo/ or UO/), so both spellings are listed.
+    "codsp.exe": {
+        "files": ["iw-pad.exe", "iw-pad.dll", "iw-pad32.dll", "iw-pad.log", "iw-pad.old.log",
+                  "main/z_iwpad.pk3", "Main/z_iwpad.pk3"],
+        "dirs":  [],
+    },
+    # CoDUOx (coduox.py): in place on a disc copy, stock exe kept as CoDUOMP_old.exe.
+    # Steam: the shortcut runs deckops_coduox/CoDUOMP.exe, a copy of hard links
+    "coduomp.exe": {
+        "files": [],
+        "dirs":  [],
+        "coduox": True,
+    },
+    "coduosp.exe": {
+        "files": ["iw-pad.exe", "iw-pad.dll", "iw-pad32.dll", "iw-pad.log", "iw-pad.old.log",
+                  "uo/zz_iwpad.pk3", "UO/zz_iwpad.pk3"],
+        "dirs":  [],
+    },
+    "cod2sp_s.exe": {
+        "files": ["iw-pad.exe", "iw-pad.dll", "iw-pad32.dll", "iw-pad.log", "iw-pad.old.log",
+                  "main/zz_iwpad.iwd", "Main/zz_iwpad.iwd"],
+        "dirs":  [],
+    },
+    # CoD3Recomp (cod3recomp.py). The uninstaller keeps game/ (the disc's files and
+    # the saves) and CoD3Recomp.ini (the player's settings).
+    # game/.cod3install (CoD3Recomp's own setup marker) stays in game/, so a
+    # reinstall of DeckOps skips the disc extraction. BRO checks assets/ itself.
+    "cod3sp_s.exe": {
+        "files": ["CoD3SP_s.exe", "CoD3SP_s.exe.old", "CoD3.log", "game.path",
+                  "deckops_cod3.json", "deckops_cod3_disc.iso", "deckops_cod3_disc.iso.src",
+                  "d3dcompiler_47.dll", "avcodec-62.dll", "avutil-60.dll",
+                  "swresample-6.dll", "ffmpeg-LICENSE.txt"],
+        "dirs":  [],
+        "keep_note": "game (Call of Duty 3 files and saves, delete it yourself if you want)",
+    },
+    # Finest Hour Remastered (finesthour.py). The shortcut points at game/CODFH.exe.
+    # The port, its settings and the saves (hdd/) stay.
+    # game/version.txt stays with the port: it marks the install finished, so a
+    # reinstall of DeckOps skips the 10 GB setup.
+    "codfh.exe": {
+        "files": [],
+        "dirs":  [],
+        "keep_note": "(Finest Hour Remastered and its saves in hdd/, delete the folder yourself if you want)",
+    },
+    # BRO engine release (bro.py). The uninstaller keeps assets/ (the disc's files).
+    # Saves and settings are in ~/.local/share/cod_bro and stay too.
+    "cod_bro": {
+        "files": ["cod_bro", "cod_bro_launcher", "cod_bro_loader", "README.txt", "game_files.txt",
+                  "code_section_data.txt", "level_eh_code.txt", "codmp_xbe_signatures.txt",
+                  "codmp_xbe_symbols.txt", "default_xbe_signatures.txt", "default_xbe_symbols.txt",
+                  "deckops_bro.json", "deckops_bro.tar.gz", "deckops_bro_disc.iso",
+                  "deckops_bro_disc.iso.src"],
+        "dirs":  ["lib", "lang", "fonts", "LICENSES"],
+        "keep_note": "assets (Big Red One files, delete it yourself if you want)",
     },
 }
 
@@ -661,6 +732,9 @@ if not os.path.isdir(USERDATA_DIR):
     exit(0)
 
 cleaned = set()
+# Mirrors detect_games.DISC_FOLDERS. Only folders with these names are ever removed whole.
+CLASSIC_FOLDERS = ("cod3", "bro", "finesthour")
+classic_dirs = set()
 for uid in os.listdir(USERDATA_DIR):
     if not uid.isdigit() or int(uid) < 10000:
         continue
@@ -692,6 +766,61 @@ for uid in os.listdir(USERDATA_DIR):
         cleaned.add((install_dir, exe_name))
 
         print(f"  Cleaning {install_dir}...")
+
+        # Only a folder named deckops_cod1x goes. A shortcut at the stock
+        # CoDMP.exe (before CoD1x) must never take the game folder with it.
+        if cleanup.get("cod1x_copy"):
+            old = os.path.join(install_dir, "CoDMP_old.exe")
+            if os.path.basename(install_dir).lower() == "deckops_cod1x":
+                try:
+                    shutil.rmtree(install_dir)
+                    print("    Removed deckops_cod1x/ (CoD1x copy)")
+                except Exception as ex:
+                    print(f"    Failed to remove deckops_cod1x/: {ex}")
+            elif os.path.isfile(old) and os.path.isfile(os.path.join(install_dir, "cod1x.dll")):
+                try:
+                    os.replace(old, os.path.join(install_dir, "CoDMP.exe"))
+                    for f in ("cod1x.dll", "deckops_cod1x.json"):
+                        if os.path.exists(os.path.join(install_dir, f)):
+                            os.remove(os.path.join(install_dir, f))
+                    print("    Restored stock CoDMP.exe (CoD1x removed)")
+                except Exception as ex:
+                    print(f"    Failed to restore CoDMP.exe: {ex}")
+            continue
+
+        # CoDUOx: the Steam copy goes (only a folder with that name), a disc copy gets its stock exe back
+        if cleanup.get("coduox"):
+            old = os.path.join(install_dir, "CoDUOMP_old.exe")
+            if os.path.basename(install_dir).lower() == "deckops_coduox":
+                try:
+                    shutil.rmtree(install_dir)
+                    print("    Removed deckops_coduox/ (CoDUOx copy)")
+                except Exception as ex:
+                    print(f"    Failed to remove deckops_coduox/: {ex}")
+            elif os.path.isfile(old):
+                try:
+                    os.replace(old, os.path.join(install_dir, "CoDUOMP.exe"))
+                    if os.path.exists(os.path.join(install_dir, "cod1x.dll")):
+                        os.remove(os.path.join(install_dir, "cod1x.dll"))
+                    print("    Restored stock CoDUOMP.exe (CoDUOx removed)")
+                except Exception as ex:
+                    print(f"    Failed to restore CoDUOMP.exe: {ex}")
+
+        # CoD2x: put the stock mss32.dll back, drop the files CoD2x unpacked
+        if cleanup.get("cod2x"):
+            orig = os.path.join(install_dir, "mss32_original.dll")
+            if os.path.isfile(orig):
+                try:
+                    os.replace(orig, os.path.join(install_dir, "mss32.dll"))
+                    print("    Restored stock mss32.dll (CoD2x removed)")
+                except Exception as ex:
+                    print(f"    Failed to restore mss32.dll: {ex}")
+            for iwd in glob.glob(os.path.join(install_dir, "[mM]ain", "iw_CoD2x_*.iwd")):
+                try:
+                    os.remove(iwd)
+                    print(f"    Removed {os.path.basename(iwd)}")
+                except Exception as ex:
+                    print(f"    Failed to remove {os.path.basename(iwd)}: {ex}")
 
         # T7X uses a DeckOps-managed sibling dir — remove the entire directory.
         # Safety: only nuke if the directory is actually named DeckOps-T7X.
@@ -741,6 +870,14 @@ for uid in os.listdir(USERDATA_DIR):
                     print(f"    Removed {dname}/")
                 except Exception as ex:
                     print(f"    Failed to remove {dname}/: {ex}")
+
+        if cleanup.get("keep_note"):
+            print(f"    Kept {os.path.join(install_dir, cleanup['keep_note'])}")
+            # The recompile's folder under Games/ is offered for removal once, at the end
+            for d in (install_dir, os.path.dirname(install_dir)):
+                if os.path.basename(d).lower() in CLASSIC_FOLDERS:
+                    classic_dirs.add(d)
+                    break
 
         # DLC directories: ask before removing .iwd and .ff files
         # Check both new (main/iw4x/x86) and legacy (iw4x) paths
@@ -817,6 +954,39 @@ for uid in os.listdir(USERDATA_DIR):
 
 if not cleaned:
     print("  No non-Steam game folders found to clean.")
+
+# The installed games, their saves and the user's disc images stay unless the user says so
+if classic_dirs:
+    import subprocess
+    def _gb(d):
+        n = 0
+        for r, _, fs in os.walk(d):
+            for f in fs:
+                try:
+                    n += os.path.getsize(os.path.join(r, f))
+                except OSError:
+                    pass
+        return n / (1 << 30)
+    listing = "\n".join(f"  {d}  ({_gb(d):.1f} GB)" for d in sorted(classic_dirs))
+    try:
+        remove = subprocess.run(
+            ["zenity", "--question", "--title=" + os.environ.get("APP_TITLE", "DeckOps") + " Uninstaller",
+             "--text=Also remove these game folders?\n\n" + listing + "\n\n"
+             "They hold the installed games, your saves and your disc images.\n"
+             "To install them again you need the disc images.",
+             "--ok-label=Remove", "--cancel-label=Keep"],
+            stderr=subprocess.DEVNULL).returncode == 0
+    except OSError:
+        remove = False
+    for d in sorted(classic_dirs):
+        if not remove:
+            print(f"  Kept {d}")
+            continue
+        try:
+            shutil.rmtree(d)
+            print(f"  Removed {d}")
+        except Exception as ex:
+            print(f"  Failed to remove {d}: {ex}")
 PYEOF
 echo ""
 
@@ -1053,7 +1223,7 @@ import os, re, shutil
 # These live in the Deck_ConfiguratorInterstitialApps "apps" block, not the
 # standard LaunchOptions flat key, so they need separate removal.
 # See: wrapper.py set_default_launch_option() for the write side.
-DECK_APPIDS = {"7940", "10090"}
+DECK_APPIDS = {"7940", "10090", "2620", "2640", "2630"}
 
 steam_dir = os.path.expanduser("~/.local/share/Steam")
 userdata  = os.path.join(steam_dir, "userdata")
@@ -1172,7 +1342,7 @@ import os, re, shutil
 MANAGED_STEAM_APPIDS = [
     "7940", "10090", "10180", "10190", "42680", "42690", "42750",
     "42700", "42710", "202970", "202990", "212910", "311210",
-    "209160", "209170", "209650", "209660",
+    "209160", "209170", "209650", "209660",    "2620", "2640", "2630",
 ]
 
 steam_dir = os.path.expanduser("~/.local/share/Steam")
@@ -1596,14 +1766,30 @@ PYEOF
     fi
 fi
 
-# MW2/MW3 SP (Steam): IW-Pad files (sp_mod.py). Launch options are cleared with the other managed appids.
+# MW2/MW3 and CoD1/UO/CoD2 SP (Steam): IW-Pad files and the classic menu files (sp_mod.py).
+# Launch options are cleared with the other managed appids. CoD1 and UO share a folder.
 if [ -n "$STEAM_ROOT" ]; then
-    for appid in 10180 42680; do
+    for appid in 10180 42680 2620 2640 2630; do
         game_dir=$(find_install_dir "$appid") || true
         [ -n "$game_dir" ] || continue
-        for f in "iw-pad.exe" "iw-pad.dll" "iw-pad.log"; do
+        for f in "iw-pad.exe" "iw-pad.dll" "iw-pad32.dll" "iw-pad.log" "iw-pad.old.log" \
+                 "main/z_iwpad.pk3" "Main/z_iwpad.pk3" "uo/zz_iwpad.pk3" "UO/zz_iwpad.pk3" \
+                 "main/zz_iwpad.iwd" "Main/zz_iwpad.iwd"; do
             [ -f "$game_dir/$f" ] && { rm -f "$game_dir/$f" && success "Removed $f (appid $appid)" || warn "Failed to remove $f (appid $appid)"; }
         done
+        # CoD1x copy (cod1x.py): hard links, so the game's own files stay
+        if [ "$appid" = "2620" ] && [ -d "$game_dir/deckops_cod1x" ]; then
+            rm -rf "$game_dir/deckops_cod1x" && success "Removed deckops_cod1x/ (CoD1x)" || warn "Failed to remove deckops_cod1x/"
+        fi
+        # CoDUOx copy (coduox.py): hard links too
+        if [ "$appid" = "2640" ] && [ -d "$game_dir/deckops_coduox" ]; then
+            rm -rf "$game_dir/deckops_coduox" && success "Removed deckops_coduox/ (CoDUOx)" || warn "Failed to remove deckops_coduox/"
+        fi
+        # CoD2x (cod2x.py): stock mss32.dll back under its own name
+        if [ "$appid" = "2630" ] && [ -f "$game_dir/mss32_original.dll" ]; then
+            mv -f "$game_dir/mss32_original.dll" "$game_dir/mss32.dll" && success "Restored stock mss32.dll (CoD2x)" || warn "Failed to restore mss32.dll"
+            rm -f "$game_dir/deckops_cod2x.json" "$game_dir/steam_appid.txt" "$game_dir"/[mM]ain/iw_CoD2x_*.iwd
+        fi
     done
 fi
 echo ""
@@ -1730,6 +1916,9 @@ import os, struct
 
 SHORTCUT_NAMES = {
     # Steam-path shortcuts (shortcut.py SHORTCUTS)
+    "Call of Duty - Multiplayer",
+    "Call of Duty: United Offensive - Multiplayer",
+    "Call of Duty 2 - Multiplayer",
     "Call of Duty 4: Modern Warfare - Multiplayer",
     "Call of Duty: World at War - Multiplayer",
     "DeckOps",
@@ -1738,6 +1927,12 @@ SHORTCUT_NAMES = {
     "DeckOps: Plutonium Offline",
     "DeckOps: Plutonium Launcher",  # old name, kept for migration
     # Own-path shortcuts (shortcut.py OWN_SHORTCUTS)
+    "Call of Duty - Singleplayer",
+    "Call of Duty: United Offensive - Singleplayer",
+    "Call of Duty 2 - Singleplayer",
+    "Call of Duty 3",
+    "Call of Duty: Finest Hour",
+    "Call of Duty 2: Big Red One",
     "Call of Duty 4: Modern Warfare - Singleplayer",
     "Call of Duty: Modern Warfare 2 (2009) - Multiplayer",
     "Call of Duty: Modern Warfare 2 (2009) - Singleplayer",
@@ -2008,6 +2203,15 @@ OWN_EXE_MAP = {
     "iw5plutmp.exe":  "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
     "blackops3.exe":  "Call of Duty: Black Ops III",
     "t7x.exe":        "Call of Duty: Black Ops 3 T7x",
+    "codsp.exe":      "Call of Duty - Singleplayer",
+    "codmp.exe":      "Call of Duty - Multiplayer",
+    "coduosp.exe":    "Call of Duty: United Offensive - Singleplayer",
+    "coduomp.exe":    "Call of Duty: United Offensive - Multiplayer",
+    "cod2sp_s.exe":   "Call of Duty 2 - Singleplayer",
+    "cod2mp_s.exe":   "Call of Duty 2 - Multiplayer",
+    "cod3sp_s.exe":   "Call of Duty 3",
+    "cod_bro":        "Call of Duty 2: Big Red One",
+    "codfh.exe":      "Call of Duty: Finest Hour",
 }
 
 for uid in os.listdir(userdata):
@@ -2172,7 +2376,7 @@ STEAM_CONFIG = os.path.join(STEAM_DIR, "config", "config.vdf")
 MANAGED_STEAM_APPIDS = [
     "7940", "10090", "10180", "10190", "42680", "42690", "42750",
     "42700", "42710", "202970", "202990", "212910", "311210",
-    "209160", "209170", "209650", "209660",
+    "209160", "209170", "209650", "209660",    "2620", "2640", "2630",
 ]
 
 # Named game keys used in configset files — must match controller_profiles.py
@@ -2326,6 +2530,15 @@ OWN_EXE_MAP = {
     "iw5plutmp.exe":  "Call of Duty: Modern Warfare 3 (2011) - Multiplayer",
     "blackops3.exe":  "Call of Duty: Black Ops III",
     "t7x.exe":        "Call of Duty: Black Ops 3 T7x",
+    "codsp.exe":      "Call of Duty - Singleplayer",
+    "codmp.exe":      "Call of Duty - Multiplayer",
+    "coduosp.exe":    "Call of Duty: United Offensive - Singleplayer",
+    "coduomp.exe":    "Call of Duty: United Offensive - Multiplayer",
+    "cod2sp_s.exe":   "Call of Duty 2 - Singleplayer",
+    "cod2mp_s.exe":   "Call of Duty 2 - Multiplayer",
+    "cod3sp_s.exe":   "Call of Duty 3",
+    "cod_bro":        "Call of Duty 2: Big Red One",
+    "codfh.exe":      "Call of Duty: Finest Hour",
 }
 
 for uid in os.listdir(USERDATA):

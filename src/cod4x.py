@@ -2,25 +2,28 @@
 cod4x.py - DeckOps installer for CoD4x (Call of Duty 4: Modern Warfare)
 
 Runs the official CoD4x 21.3 setup.exe through Proton in silent mode.
-The prefix (7940) is already fully initialized by ensure_all_prefix_deps
-before this module runs — no prefix management needed here.
+ensure_all_prefix_deps sets up the prefix (7940) before this module runs,
+so this module does no prefix management.
 
-The CoD4x chain-loader mechanism:
-  1. mss32.dll in the game directory is replaced with the CoD4x version.
-     The original is backed up as miles32.dll. CoD4 loads mss32.dll at
-     startup via PE imports, so this is the entry point for the mod.
+How the CoD4x chain-loader works:
+  1. The CoD4x mss32.dll replaces the one in the game directory, and the
+     original is kept as miles32.dll. CoD4 loads mss32.dll at startup
+     through its PE imports, so this is where the mod gets in.
   2. The new mss32.dll loads launcher.dll from AppData/Local/CallofDuty4MW/bin/.
   3. launcher.dll loads cod4x_021.dll from AppData/Local/CallofDuty4MW/bin/cod4x_021/.
   4. cod4x_021.dll patches the game in memory to become CoD4x 21.3.
 
 Install flow:
-  1. Write registry keys so Steam skips DirectX/Punkbuster first-launch installers
-  1b. Write CoD4 install path registry key so setup.exe can find the game
+  1. Write registry keys so Steam skips the DirectX/Punkbuster first-launch installers
+  1b. Write the CoD4 install path registry key so setup.exe can find the game
   2. Download the official CoD4x setup.exe
   3. Run setup.exe through Proton with /DIR= pointing at the game directory
-  3b. Relocate chain-loader from prefix to game directory (fallback)
-  4. Write registry keys again (safety net after Proton run)
-  5. Verify and write metadata
+  3b. Copy the Inno Setup log to the DeckOps logs folder
+  3c. Move the chain-loader from the prefix to the game directory (fallback)
+  4. Write the registry keys again, in case the Proton run replaced user.reg
+  5. Check the chain-loader
+  6. Delete servercache.dat
+  7. Write metadata
 """
 
 import os
@@ -38,26 +41,26 @@ from log import get_logger
 _log = get_logger(__name__)
 
 
-# ── constants ─────────────────────────────────────────────────────────────────
+# --- constants
 
 _SETUP_EXE_URL = "https://cod4x.ovh/uploads/short-url/2V3RsE0Pp5Jakc1VE9Yuh5yb4lE.exe"
 
 METADATA_FILE = "deckops_cod4x.json"
 
-# ── Archive.org fallback ─────────────────────────────────────────────────────
-# If the setup.exe download from cod4x.ovh times out (60 s), fall back to
-# this archived copy of the official 21.3 installer and continue the normal
-# setup.exe flow.
+# --- Archive.org fallback
+# If the setup.exe download from cod4x.ovh fails (60 s timeout), download
+# this archived copy of the official 21.3 installer instead. The rest of
+# the setup.exe flow is the same.
 _ARCHIVE_FALLBACK_URL = (
     "https://archive.org/download/co-d-4x.-21.3.-setup/CoD4x.21.3.Setup.exe"
 )
 
 # Both URLs serve the same 21.3 installer. If cod4x.ovh ever ships a new
-# build, the mismatch drops to the archive.org copy; update this hash then.
+# build, the mismatch drops to the archive.org copy. Update this hash then.
 _SETUP_EXE_DIGEST = "sha256:bcda78657050e359d9116477758d1d8167410d6d60a6b40f1bb5ec9d0cafb1f7"
 
-# ── GitHub fallback (disabled) ───────────────────────────────────────────────
-# Replaced by the archive.org fallback above.  Kept here for reference.
+# --- GitHub fallback (disabled)
+# The archive.org fallback above replaced this. Kept for reference.
 #
 # _GITHUB_RELEASE_BASE = (
 #     "https://github.com/callofduty4x/CoD4x_Client_pub/releases/download/21.3"
@@ -77,14 +80,14 @@ _SETUP_EXE_DIGEST = "sha256:bcda78657050e359d9116477758d1d8167410d6d60a6b40f1bb5
 # # The chain-loader DLL that replaces the game's mss32.dll.
 # _GITHUB_MSS_ASSET = "mss"
 
-# The AppData subfolder name inside the Wine prefix. This is where the CoD4x
-# launcher expects to find its DLLs, zone files, and iwd assets.
+# AppData subfolder inside the Wine prefix. The CoD4x launcher looks here
+# for its DLLs, zone files and iwd assets.
 _APPDATA_FOLDER = "CallofDuty4MW"
 
 # Registry keys that tell Steam the first-launch installers already ran.
-# Without these, Steam runs PunkBuster setup, DirectX setup, and PunkBuster
-# Vista setup on every first launch — and re-validates game files afterward,
-# overwriting our CoD4x mss32.dll chain-loader with the original.
+# Without them, Steam runs PunkBuster setup, DirectX setup and PunkBuster
+# Vista setup on first launch, then validates the game files, which puts
+# the original mss32.dll back over the CoD4x chain-loader.
 #
 # Source: installscript.vdf in the CoD4 game directory.
 # Key path: HKEY_CURRENT_USER\Software\Valve\Steam\Apps\7940
@@ -95,26 +98,26 @@ _REGISTRY_VALUES = {
     "Running":    "dword:00000001",
 }
 
-# DeckOps log directory — Inno Setup logs are copied here for debugging.
+# DeckOps log directory. Inno Setup logs are copied here for debugging.
 _LOG_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "logs",
 )
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# --- helpers
 
-# _download imported from net.py; call site passes timeout=120.
+# _download comes from net.py. The call sites pass timeout=60 (cod4x.ovh)
+# and timeout=300 (archive.org).
 
 
 def _get_appdata_dir(compatdata_path: str) -> str:
     """
     Return the AppData/Local/CallofDuty4MW path inside a Wine prefix.
 
-    Works for both Steam and own game prefixes — the compatdata_path is
-    resolved by the caller (ui_qt.py) before install_cod4x() is called,
-    regardless of whether the game is on the NVME, SD card, or an own
-    install with a DeckOps-generated shortcut appid.
+    Works for Steam and own game prefixes. install_cod4x() resolves
+    compatdata_path from the appid (the NVMe compatdata, also for SD card
+    games and own installs with a DeckOps shortcut appid) before calling this.
     """
     return os.path.join(
         compatdata_path,
@@ -129,7 +132,7 @@ def _write_registry_keys(compatdata_path: str, on_progress=None):
     the first-launch installers (Punkbuster, DirectX) have already run.
 
     If the key block [Software\\\\Valve\\\\Steam\\\\Apps\\\\7940] already exists,
-    we update/add the values. If it doesn't exist, we append the entire block.
+    its values are updated or added. Otherwise the whole block is appended.
 
     Wine registry format in user.reg:
       [Software\\\\Valve\\\\Steam\\\\Apps\\\\7940] <timestamp>
@@ -143,9 +146,9 @@ def _write_registry_keys(compatdata_path: str, on_progress=None):
     user_reg = os.path.join(compatdata_path, "pfx", "user.reg")
 
     if not os.path.exists(user_reg):
-        # Prefix hasn't been initialized yet — the setup.exe Proton run
-        # will create it. We'll write the keys after the setup.exe runs
-        # if needed, but typically Proton creates user.reg during init.
+        # Prefix not initialized yet. The setup.exe Proton run creates it,
+        # and step 4 writes the keys after that run. Proton usually creates
+        # user.reg during prefix init.
         prog("  ⚠ user.reg not found — registry keys will be written after prefix init")
         return False
 
@@ -161,9 +164,9 @@ def _write_registry_keys(compatdata_path: str, on_progress=None):
     values_text = "\n".join(value_lines)
 
     if key_path in content:
-        # Key block exists — find it and ensure all values are present.
+        # Key block exists. Find it and make sure all values are present.
         # The block starts at the key_path line and ends at the next
-        # empty line or next key block ([...]).
+        # empty line or the next key block ([...]).
         pattern = re.compile(
             r'(\[Software\\\\Valve\\\\Steam\\\\Apps\\\\7940\][^\n]*\n)((?:(?!\[)[^\n]*\n)*)',
             re.MULTILINE
@@ -173,7 +176,7 @@ def _write_registry_keys(compatdata_path: str, on_progress=None):
             header = match.group(1)
             existing_body = match.group(2)
 
-            # Parse existing values to preserve any we don't manage
+            # Parse existing values to keep any we don't manage
             existing_values = {}
             for line in existing_body.strip().split("\n"):
                 line = line.strip()
@@ -188,7 +191,7 @@ def _write_registry_keys(compatdata_path: str, on_progress=None):
             new_body = "\n".join(existing_values.values()) + "\n"
             content = content[:match.start()] + header + new_body + content[match.end():]
     else:
-        # Key block doesn't exist — append it at the end
+        # No key block yet. Append it at the end.
         block = (
             f"\n{key_path}\n"
             f"{values_text}\n"
@@ -208,15 +211,14 @@ def _write_install_path_registry(compatdata_path: str, install_dir: str,
     Write the CoD4 install path into the Wine prefix's system.reg (HKLM)
     so the CoD4x setup.exe can auto-detect the game directory.
 
-    The CoD4x Inno Setup installer looks for the game via the standard
-    Activision registry key. On a real Windows install this is set by
-    the original game installer. Inside a Steam Deck Wine prefix it
-    doesn't exist, so setup.exe falls back to Program Files.
+    The CoD4x Inno Setup installer finds the game through the standard
+    Activision registry key. On Windows the original game installer sets
+    it. A Steam Deck Wine prefix doesn't have it, so setup.exe falls back
+    to Program Files.
 
-    We write to both the native path and the Wow6432Node path because
-    setup.exe is a 32-bit Inno Setup binary — on a 64-bit Wine prefix
-    it may look under either location depending on Wine's registry
-    redirection behaviour.
+    Both the native path and the Wow6432Node path get the key. setup.exe
+    is a 32-bit Inno Setup binary, and on a 64-bit Wine prefix it may look
+    under either one, depending on Wine's registry redirection.
 
     Wine system.reg format:
       Keys are relative to HKEY_LOCAL_MACHINE (no HKLM prefix).
@@ -234,14 +236,14 @@ def _write_install_path_registry(compatdata_path: str, install_dir: str,
     with open(system_reg, "r", errors="replace") as f:
         content = f.read()
 
-    # Convert Linux path to Wine Z: drive path with doubled backslashes
-    # for the .reg file format. Wine's system.reg uses \\\\ as separator.
+    # Convert the Linux path to a Wine Z: drive path, then double the
+    # backslashes for the .reg format. Wine's system.reg uses \\\\ as separator.
     wine_path = _linux_to_wine_path(install_dir)
     # In .reg files, backslashes inside string values are doubled
     reg_value_path = wine_path.replace("\\", "\\\\")
 
-    # The two key paths we need to write (without HKLM prefix, as Wine
-    # system.reg keys are relative to HKEY_LOCAL_MACHINE)
+    # The two key paths to write. No HKLM prefix, because Wine's system.reg
+    # keys are relative to HKEY_LOCAL_MACHINE.
     key_paths = [
         r"[Software\\Activision\\Call of Duty 4]",
         r"[Software\\Wow6432Node\\Activision\\Call of Duty 4]",
@@ -255,8 +257,8 @@ def _write_install_path_registry(compatdata_path: str, install_dir: str,
         )
 
         if key_path in content:
-            # Key block exists — update InstallPath value
-            # Match the key header and its body (everything until next key or EOF)
+            # Key block exists. Update its values.
+            # Match the key header and its body (everything up to the next key or EOF).
             escaped_key = re.escape(key_path)
             pattern = re.compile(
                 rf'({escaped_key}[^\n]*\n)((?:(?!\[)[^\n]*\n)*)',
@@ -286,7 +288,7 @@ def _write_install_path_registry(compatdata_path: str, install_dir: str,
                     content[match.end():]
                 )
         else:
-            # Key block doesn't exist — append it
+            # No key block yet. Append it.
             block = f"\n{key_path}\n{values_text}"
             content += block
 
@@ -297,12 +299,11 @@ def _write_install_path_registry(compatdata_path: str, install_dir: str,
     return True
 
 
-# The default install path that setup.exe writes to inside the Wine prefix
-# when it can't find the game via registry or /DIR. setup.exe runs with
-# cwd=install_dir on the Linux side, but Wine maps that to Z:\home\deck\...
-# which Inno Setup doesn't recognise as a CoD4 install -- so it falls back
-# here. With the /DIR parameter and registry key fixes, this path should
-# only be needed as a last-resort fallback.
+# Default install path setup.exe uses inside the Wine prefix when it can't
+# find the game through the registry or /DIR. setup.exe runs with
+# cwd=install_dir on the Linux side, but Wine maps that to Z:\home\deck\...,
+# which Inno Setup doesn't see as a CoD4 install, so it falls back here.
+# With /DIR and the registry key in place, this is only a last resort.
 _PREFIX_GAME_RELPATH = os.path.join(
     "pfx", "drive_c", "Program Files (x86)",
     "Activision", "Call of Duty 4 - Modern Warfare",
@@ -314,15 +315,14 @@ def _relocate_chainloader(compatdata_path: str, install_dir: str,
     """
     Copy the CoD4x chain-loader from the prefix to the real game directory.
 
-    This is a fallback for when /DIR didn't work and setup.exe placed
-    files in the prefix's Program Files instead of the game directory.
-    If /DIR worked correctly, the prefix fallback directory won't exist
-    and this function is a no-op.
+    Fallback for when /DIR didn't work and setup.exe put the files in the
+    prefix's Program Files instead of the game directory. If /DIR worked,
+    the prefix fallback directory doesn't exist and this does nothing.
 
-    setup.exe writes mss32.dll (chain-loader) and miles32.dll (original
-    backup) into the prefix's virtual Program Files path because it can't
-    see the Linux game directory. This function moves them to install_dir
-    where CoD4 actually loads them from.
+    In that case setup.exe writes mss32.dll (chain-loader) and miles32.dll
+    (original backup) into the prefix's Program Files path, because it
+    can't see the Linux game directory. This copies them to install_dir,
+    where CoD4 loads them from, and deletes the prefix copy.
 
     Returns True if the chain-loader was placed successfully or was
     already in the right place.
@@ -331,8 +331,8 @@ def _relocate_chainloader(compatdata_path: str, install_dir: str,
         if on_progress:
             on_progress(msg)
 
-    # Check if setup.exe already placed files directly in install_dir
-    # (meaning /DIR worked). If so, no relocation needed.
+    # If setup.exe already put the files in install_dir, /DIR worked and
+    # there is nothing to move.
     real_mss = os.path.join(install_dir, "mss32.dll")
     real_miles = os.path.join(install_dir, "miles32.dll")
     if os.path.exists(real_miles) and os.path.exists(real_mss):
@@ -349,14 +349,14 @@ def _relocate_chainloader(compatdata_path: str, install_dir: str,
     if not os.path.exists(prefix_mss):
         # Neither /DIR nor prefix fallback has the chain-loader
         if os.path.exists(real_miles):
-            # miles32.dll exists but mss32.dll is same size — might still be ok
+            # miles32.dll is there but mss32.dll is missing or the same size. It may still work.
             return True
         log("  ⚠ Chain-loader not found in prefix or game directory — setup.exe may have failed")
         return False
 
     log("  ℹ Chain-loader found in prefix fallback — relocating to game directory")
 
-    # Back up the original mss32.dll as miles32.dll (only if not already done)
+    # Back up the original mss32.dll as miles32.dll, unless that was already done
     if os.path.exists(real_mss) and not os.path.exists(real_miles):
         shutil.copy2(real_mss, real_miles)
         log("  ✓ Backed up original mss32.dll → miles32.dll")
@@ -365,7 +365,7 @@ def _relocate_chainloader(compatdata_path: str, install_dir: str,
     shutil.copy2(prefix_mss, real_mss)
     log("  ✓ CoD4x chain-loader mss32.dll copied to game directory")
 
-    # Clean up the prefix's fake game directory — it's not needed at runtime
+    # Delete the prefix's fake game directory. Nothing uses it at runtime.
     if os.path.isdir(prefix_game_dir):
         shutil.rmtree(prefix_game_dir, ignore_errors=True)
         log("  ✓ Cleaned up prefix fallback directory")
@@ -378,9 +378,9 @@ def _collect_inno_log(compatdata_path: str, on_progress=None):
     Find the Inno Setup log file from the prefix's temp directory and
     copy it to the DeckOps logs directory for debugging.
 
-    Inno Setup /LOG writes to the current user's TEMP directory with a
-    filename like Setup Log YYYY-MM-DD #NNN.txt. Inside Wine this maps
-    to the prefix's drive_c/users/steamuser/Temp/.
+    Inno Setup /LOG writes to the current user's TEMP directory, with a
+    file name like Setup Log YYYY-MM-DD #NNN.txt. Inside Wine that is the
+    prefix's drive_c/users/steamuser/Temp/.
 
     Returns the path to the copied log file, or None if not found.
     """
@@ -402,7 +402,7 @@ def _collect_inno_log(compatdata_path: str, on_progress=None):
         pattern = os.path.join(temp_dir, "Setup Log *.txt")
         matches = glob.glob(pattern)
         if matches:
-            # Take the most recent one
+            # Take the newest one
             latest = max(matches, key=os.path.getmtime)
             try:
                 os.makedirs(_LOG_DIR, exist_ok=True)
@@ -418,8 +418,8 @@ def _collect_inno_log(compatdata_path: str, on_progress=None):
     return None
 
 
-# ── GitHub fallback: manual install (disabled) ───────────────────────────────
-# Replaced by archive.org setup.exe fallback.  Function body preserved below.
+# --- GitHub fallback: manual install (disabled)
+# The archive.org setup.exe fallback replaced this. Function body kept below.
 
 # def _manual_install(install_dir: str, compatdata_path: str, on_progress=None):
 #     """
@@ -518,24 +518,23 @@ def _collect_inno_log(compatdata_path: str, on_progress=None):
 #     log("  ✓ All CoD4x files placed via GitHub fallback")
 
 
-# ── public API ───────────────────────────────────────────────────────────────
+# --- public API
 
 def install_cod4x(game: dict, steam_root: str, proton_path: str,
                   compatdata_path: str, on_progress=None, appid: int = 7940):
     """
     Install CoD4x 21.3 using the official setup.exe through Proton.
 
-    The prefix is already initialized by ensure_all_prefix_deps before
-    this function runs. We just need to write registry keys, run the
-    installer, and relocate the chain-loader.
+    ensure_all_prefix_deps sets up the prefix before this runs, so this
+    only writes registry keys, runs the installer and moves the chain-loader.
 
     Parameters:
-      game            -- dict from detect_games with install_dir, exe_path, etc.
-      steam_root      -- path to the Steam root directory
-      proton_path     -- path to the Proton executable
-      compatdata_path -- path to the game's compatdata prefix (can be None/empty)
-      on_progress     -- optional callback(percent: int, status: str)
-      appid           -- Steam appid (default 7940)
+      game            : dict from detect_games with install_dir, exe_path, etc.
+      steam_root      : path to the Steam root directory
+      proton_path     : path to the Proton executable
+      compatdata_path : path to the game's compatdata prefix (can be None/empty)
+      on_progress     : optional callback(percent: int, status: str)
+      appid           : Steam appid (default 7940)
     """
     install_dir = game["install_dir"]
 
@@ -545,24 +544,24 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
         if on_progress:
             on_progress(0, msg)
 
-    # Resolve to NVMe path — ensure_all_prefix_deps already placed it here
+    # Use the NVMe path. ensure_all_prefix_deps already put the prefix there.
     compatdata_path = _nvme_compatdata(str(appid))
     log(f"  Prefix path: {compatdata_path}")
 
-    # ── Step 1: Write registry keys (pre-setup) ─────────────────────────
-    # Write before the setup.exe run so Steam skips first-launch installers.
+    # --- Step 1: write registry keys (before setup)
+    # Written before the setup.exe run so Steam skips the first-launch installers.
     prog(5, "Writing registry keys...")
     pre_reg_ok = _write_registry_keys(compatdata_path, on_progress=log)
 
-    # ── Step 1b: Write install path registry key ─────────────────────────
+    # --- Step 1b: write the install path registry key
     # Write the CoD4 install directory into HKLM so setup.exe can find it.
-    # This is the primary fix for setup.exe not detecting the game location
-    # inside the Wine prefix. We write to both the native and Wow6432Node
-    # paths because setup.exe is 32-bit and Wine may redirect either way.
+    # This is the main fix for setup.exe not finding the game inside the
+    # Wine prefix. Both the native and Wow6432Node paths get it, because
+    # setup.exe is 32-bit and Wine may redirect either way.
     prog(8, "Writing install path registry...")
     _write_install_path_registry(compatdata_path, install_dir, on_progress=log)
 
-    # ── Step 2: Download CoD4x setup.exe ─────────────────────────────────
+    # --- Step 2: download CoD4x setup.exe
     prog(10, "Downloading CoD4x installer...")
     setup_dir = tempfile.mkdtemp(prefix="deckops_cod4x_")
     setup_exe = os.path.join(setup_dir, "CoD4x_Setup.exe")
@@ -597,9 +596,9 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
                 ),
             )
 
-    # ── Step 3: Run setup.exe through Proton ───────────────────────────────
-    # /DIR= tells Inno Setup where to install. Registry key (step 1b) is a
-    # safety net in case /DIR is ignored. /LOG writes a debug log to the
+    # --- Step 3: run setup.exe through Proton
+    # /DIR= tells Inno Setup where to install. The registry key (step 1b)
+    # covers the case where /DIR is ignored. /LOG writes a debug log to the
     # prefix temp dir.
     prog(55, "Running CoD4x installer...")
     _compat_install = steam_root or os.path.dirname(os.path.dirname(proton_path))
@@ -636,31 +635,31 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     finally:
         shutil.rmtree(setup_dir, ignore_errors=True)
 
-    # ── Step 3b: Collect Inno Setup log ──────────────────────────────────
+    # --- Step 3b: collect the Inno Setup log
     _collect_inno_log(compatdata_path, on_progress=log)
 
-    # ── Step 3c: Relocate chain-loader to real game directory ────────────
-    # If /DIR worked, this is a no-op. If /DIR was ignored, files ended up
-    # in the prefix's Program Files fallback path.
+    # --- Step 3c: move the chain-loader to the real game directory
+    # Does nothing if /DIR worked. If /DIR was ignored, the files are in
+    # the prefix's Program Files fallback path.
     prog(65, "Placing chain-loader...")
     relocated = _relocate_chainloader(compatdata_path, install_dir, on_progress=log)
     if not relocated:
         log("  ⚠ Chain-loader relocation failed — CoD4x may not work")
         log("  ℹ Check logs/cod4x_inno_setup.log for details")
 
-    # ── Step 4: Write registry keys (post-setup) ─────────────────────────
-    # The Proton run may have created a fresh user.reg, so write keys again
-    # to make sure they're in place for the next Steam launch.
+    # --- Step 4: write registry keys (after setup)
+    # The Proton run may have created a new user.reg, so write the keys
+    # again for the next Steam launch.
     prog(80, "Finalizing registry...")
     _write_registry_keys(compatdata_path, on_progress=log)
 
-    # ── Step 5: Verify the chain-loader was placed correctly ─────────────
+    # --- Step 5: check the chain-loader is in place
     mss_path = os.path.join(install_dir, "mss32.dll")
     miles_path = os.path.join(install_dir, "miles32.dll")
 
     if os.path.exists(miles_path) and os.path.exists(mss_path):
-        # Check that mss32.dll and miles32.dll are different
-        # (mss32.dll should be the chain-loader, miles32.dll the original)
+        # mss32.dll should be the chain-loader and miles32.dll the original,
+        # so their sizes should differ.
         mss_size = os.path.getsize(mss_path)
         miles_size = os.path.getsize(miles_path)
         if mss_size != miles_size:
@@ -670,8 +669,8 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
     elif not os.path.exists(miles_path):
         log("  ⚠ miles32.dll backup not found — setup.exe may not have run correctly")
 
-    # ── Step 6: Delete servercache.dat ────────────────────────────────────
-    # Force CoD4x to download a fresh server list on first launch.
+    # --- Step 6: delete servercache.dat
+    # Makes CoD4x download a fresh server list on first launch.
     appdata_dir = _get_appdata_dir(compatdata_path)
     for cache_path in [
         os.path.join(install_dir, "servercache.dat"),
@@ -682,7 +681,7 @@ def install_cod4x(game: dict, steam_root: str, proton_path: str,
 
     prog(90, "Cleared server cache.")
 
-    # ── Step 7: Write metadata ────────────────────────────────────────────
+    # --- Step 7: write metadata
     prog(95, "Saving metadata...")
     write_json(os.path.join(install_dir, METADATA_FILE), {
         "version": "21.3",

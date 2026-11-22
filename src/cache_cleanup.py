@@ -1,30 +1,31 @@
 #!/usr/bin/env python3
 """
-cache_cleanup.py — DeckOps LCD shader cache nuke + game launcher
+cache_cleanup.py: DeckOps LCD shader cache cleanup and game launcher
 
-Removes the entire shader cache directory for a game's appid before
-launching through Heroic. LCD Plutonium games route through
+Deletes the whole shader cache folder for a game's appid, then launches
+the game through Heroic. LCD Plutonium games run as
 cache_cleanup.py → flatpak → Heroic → Proton, so Steam's shader cache
-for these appids only records activity from the Python/flatpak launcher
-process — not the actual game. The cache is useless junk that
-accumulates on every launch due to a Steam bug with non-Steam games.
+for these appids only records the Python/flatpak launcher process, not
+the game. A Steam bug with non-Steam games makes this useless cache
+grow on every launch.
 
-Called from Steam launch options (Steam-owned games) or non-Steam shortcut
-LaunchOptions (own games). Not used on OLED — OLED launches through
-Steam's Proton directly and its shader cache is actually useful.
+Called from Steam launch options (Steam games) or non-Steam shortcut
+LaunchOptions (own games). OLED does not use it. OLED launches through
+Steam's Proton directly, where the shader cache does its job.
 
 Usage:
     python3 cache_cleanup.py <game_key> <source> [Steam's %command%...]
 
-    game_key  — Plutonium game key (t4sp, t4mp, t5sp, t5mp, t6mp, t6zm, iw5mp, iw5mp_ds)
-    source    — "steam" or "own"
+    game_key: Plutonium game key (t4sp, t4mp, t5sp, t5mp, t6mp, t6zm, iw5mp, iw5mp_ds)
+    source:   "steam" or "own"
 
-With Steam's command (Steam games), the launch menu entry that was picked
-decides: Plutonium Online / Offline launch the matching Heroic entry, any
-other entry runs Steam's command unchanged (the stock game).
+When Steam passes its command (Steam games), the picked launch menu
+entry decides what runs. Plutonium Online and Offline launch the matching
+Heroic entry. Any other entry runs Steam's command unchanged (the stock
+game).
 
-Steam source adds LD_PRELOAD to work around Steam's pinned libcurl
-conflicting with the system flatpak binary.
+For Steam source, LD_PRELOAD works around Steam's pinned libcurl, which
+conflicts with the system flatpak binary.
 """
 
 import binascii
@@ -39,7 +40,7 @@ _log = get_logger("cache_cleanup")
 
 
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# --- Constants
 
 HEROIC_FLATPAK_ID = "com.heroicgameslauncher.hgl"
 
@@ -47,9 +48,8 @@ SHADERCACHE_DIR = os.path.expanduser(
     "~/.local/share/Steam/steamapps/shadercache"
 )
 
-# Map game key to Steam appid. Used to find the shadercache folder for
-# Steam-owned games (whose cache is keyed on the Steam appid, not the
-# shortcut appid).
+# Game key to Steam appid. Steam games keep their shadercache folder
+# under the Steam appid, not the shortcut appid.
 STEAM_APPIDS = {
     "t4sp":  "10090",
     "t4mp":  "10090",
@@ -61,9 +61,9 @@ STEAM_APPIDS = {
     "iw5mp_ds": "42750",
 }
 
-# LCD own-game shortcut titles — must match HEROIC_PLUT_GAMES in
-# plutonium_lcd.py exactly so the CRC-based appid resolves to the
-# same shadercache directory that Steam creates for the shortcut.
+# LCD own-game shortcut titles. These must match HEROIC_PLUT_GAMES in
+# plutonium_lcd.py exactly, so the CRC appid points at the same
+# shadercache folder Steam creates for the shortcut.
 _OWN_SHORTCUT_TITLES = {
     "t4sp":  "Call of Duty: World at War",
     "t4mp":  "Call of Duty: World at War - Multiplayer",
@@ -75,25 +75,23 @@ _OWN_SHORTCUT_TITLES = {
 }
 
 
-# ── Shortcut appid calculation ───────────────────────────────────────────────
+# --- Shortcut appid calculation
 # Must match shortcut._calc_shortcut_appid exactly.
 
-# ── Shader cache cleanup ────────────────────────────────────────────────────
+# --- Shader cache cleanup
 
 def _nuke_shader_cache_dir(appid_str: str):
     """
-    Delete the entire shadercache/<appid>/ directory.
+    Delete the whole shadercache/<appid>/ folder.
 
     LCD Plutonium games launch through cache_cleanup.py → flatpak →
     Heroic → Proton. Steam's shader cache for these appids only records
-    Fossilize activity from the Python/flatpak launcher process, not the
-    actual game (which runs inside Heroic's Proton instance). The cache
-    is useless dead weight that accumulates on every launch and can
-    potentially cause launch failures if it becomes corrupt.
+    Fossilize activity from the Python/flatpak launcher process. The game
+    itself runs inside Heroic's Proton. The cache grows on every launch
+    and can cause launch failures if it gets corrupt.
 
-    Safe to delete entirely — Steam recreates the directory structure
-    on next launch, and the game's real shader work happens inside
-    Heroic's Proton runtime which stores its cache elsewhere.
+    Deleting it is safe. Steam recreates the folders on the next launch,
+    and Heroic's Proton keeps the game's real shader cache elsewhere.
     """
     cache_dir = os.path.join(SHADERCACHE_DIR, appid_str)
     if os.path.isdir(cache_dir):
@@ -105,19 +103,19 @@ def _nuke_shader_cache_dir(appid_str: str):
 
 def cleanup_shader_cache(game_key: str, source: str):
     """
-    Nuke the entire shader cache directory for a game. Handles both
-    the Steam appid cache (for Steam-owned games) and the shortcut
-    appid cache (for own games with non-Steam shortcuts).
+    Delete a game's shader cache folders: the Steam appid cache (Steam
+    games) and the shortcut appid cache (own games with non-Steam
+    shortcuts).
     """
-    # Always nuke the Steam appid cache if it exists
+    # Steam appid cache, if there is one
     steam_appid = STEAM_APPIDS.get(game_key)
     if steam_appid:
         _nuke_shader_cache_dir(steam_appid)
 
-    # For own games, also nuke the shortcut appid cache. The shortcut
-    # appid is CRC-derived from the exe path + title used when the
-    # shortcut was created. Must match _create_heroic_steam_shortcut
-    # in plutonium_lcd.py exactly.
+    # Own games also have a shortcut appid cache. The shortcut appid is
+    # a CRC of the exe path and title the shortcut was created with, so
+    # this must match _create_heroic_steam_shortcut in plutonium_lcd.py
+    # exactly.
     if source == "own":
         title = _OWN_SHORTCUT_TITLES.get(game_key)
         if title:
@@ -126,18 +124,17 @@ def cleanup_shader_cache(game_key: str, source: str):
             _nuke_shader_cache_dir(str(shortcut_appid))
 
 
-# ── Steam shader pre-cache environment strip ────────────────────────────────
-# When Steam launches a Steam-owned game through cache_cleanup.py, it
-# injects its shader pre-caching environment (precompiled RADV pipeline
-# DBs, DXVK state cache path, Fossilize capture layer, AMDVLK pipeline
-# cache) keyed on the vanilla game's appid. Those vars leak through
-# flatpak run into Heroic's Proton runtime, so the game consumes
-# precompiled shaders built for the vanilla game on Steam's own
-# Proton/mesa versions. On LCD this causes transient artifacting
-# (small black/red/white squares) whenever Steam has downloaded
-# precompiled shaders for the appid. Stripping these vars makes the
-# game fall back to mesa's own cache inside the Heroic flatpak, which
-# is self-consistent with the runtime actually rendering the game.
+# --- Steam shader pre-cache environment strip
+# When Steam launches a Steam game through cache_cleanup.py, it adds its
+# shader pre-caching environment (precompiled RADV pipeline DBs, DXVK
+# state cache path, Fossilize capture layer, AMDVLK pipeline cache) for
+# the vanilla game's appid. Those vars pass through flatpak run into
+# Heroic's Proton, so the game loads shaders precompiled for the vanilla
+# game on Steam's own Proton/mesa versions. On LCD this shows brief
+# artifacts (small black/red/white squares) whenever Steam has
+# downloaded precompiled shaders for the appid. Without these vars the
+# game uses mesa's own cache inside the Heroic flatpak, which matches
+# the runtime that renders the game.
 
 _STEAM_SHADER_ENV_VARS = (
     "MESA_DISK_CACHE_READ_ONLY_FOZ_DBS",
@@ -164,30 +161,29 @@ _STEAM_SHADER_ENV_VARS = (
 def _strip_steam_shader_env(env: dict) -> dict:
     """
     Remove Steam's shader pre-cache vars and disable the Fossilize
-    capture layer so the Heroic-run game uses only its own caches.
-    Harmless for own-game launches where the vars are absent.
+    capture layer, so the game in Heroic uses only its own caches.
+    Own-game launches don't have these vars, so nothing changes there.
     """
     for var in _STEAM_SHADER_ENV_VARS:
         env.pop(var, None)
-    # Belt and suspenders: explicitly disable the Fossilize layer in
-    # case the layer manifest is discovered without the enable var.
+    # Also disable the Fossilize layer outright, in case its manifest
+    # gets loaded without the enable var.
     env["DISABLE_VK_LAYER_VALVE_steam_fossilize_1"] = "1"
     return env
 
 
-# ── Game launch ──────────────────────────────────────────────────────────────
+# --- Game launch
 
 def launch_game(game_key: str, source: str):
     """
     Launch the Heroic flatpak for a Plutonium game and wait for it to
-    finish. Uses subprocess instead of os.execv so the parent process
-    (which Steam tracks as "the game") stays alive for the entire
-    session. With os.execv the process becomes flatpak, which may exit
-    quickly after handing off to Heroic inside the sandbox -- causing
-    Steam to think the game closed immediately.
+    finish. subprocess keeps the parent process (which Steam tracks as
+    "the game") alive for the whole session. With os.execv the process
+    becomes flatpak, which can exit soon after it hands off to Heroic
+    inside the sandbox, and Steam then thinks the game closed at once.
 
-    Steam source: sets LD_PRELOAD to override Steam's pinned libcurl
-    which conflicts with the system flatpak binary.
+    For Steam source, LD_PRELOAD overrides Steam's pinned libcurl, which
+    conflicts with the system flatpak binary.
     """
     import subprocess
     import time
@@ -207,9 +203,9 @@ def launch_game(game_key: str, source: str):
     if source == "steam":
         env["LD_PRELOAD"] = "/usr/lib/libcurl.so.4"
 
-    # Kill any stale Heroic process so the flatpak launch gets a clean
-    # instance. Electron's single-instance lock can cause a new flatpak
-    # run to silently attach to an old instance or fail entirely.
+    # Kill any old Heroic process first. Electron's single-instance lock
+    # can make a new flatpak run attach to an old instance without a
+    # word, or fail.
     try:
         subprocess.run(
             ["flatpak", "kill", HEROIC_FLATPAK_ID],
@@ -219,14 +215,14 @@ def launch_game(game_key: str, source: str):
     except Exception:
         _log.debug("cache rebuild trigger failed", exc_info=True)
 
-    # Run flatpak and wait for it to exit. This keeps the parent
-    # process alive so Steam sees the game as running. Without this,
-    # Steam may report "launch failed" if flatpak hands off quickly.
+    # Wait for flatpak to exit, so Steam sees the game as running.
+    # Otherwise Steam can report "launch failed" when flatpak hands off
+    # quickly.
     result = subprocess.run(flatpak_args, env=env)
     sys.exit(result.returncode)
 
 
-# ── Main ─────────────────────────────────────────────────────────────────────
+# --- Main
 
 def main():
     setup_logging()
@@ -254,8 +250,8 @@ def main():
         from steam_appinfo import VANILLA_TAG
         menu = {n: (k, i == 1) for k, names in STEAM_MENU_EXES.items()
                 for i, n in enumerate(names)}
-        # Stock exe without the tag: Steam dropped our menu (add_steam_menu tags the
-        # stock entry), so plain Play runs that game's Plutonium Online
+        # Stock exe without the tag means Steam dropped our menu (add_steam_menu tags
+        # the stock entry), so plain Play runs that game's Plutonium Online
         if VANILLA_TAG not in cmd:
             for k in STEAM_MENU_EXES:
                 a = next((a for a in cmd if os.path.basename(a) == GAME_META[k][2]), None)
@@ -269,7 +265,7 @@ def main():
         (game_key, offline), path = hit  # WaW SP/MP share one appid and launch option
         lan = path if offline else None
 
-    # Heroic's prefix holds the only real Plutonium copy; never block the launch
+    # Heroic's prefix holds the only real Plutonium copy. Never block the launch
     try:
         import plutonium_update as pu
         from plutonium_lcd import get_shared_plut_dir
@@ -284,7 +280,7 @@ def main():
     if lan:
         os.execvp("bash", ["bash", lan])
 
-    # Nuke shader cache, then launch
+    # Clear the shader cache, then launch
     cleanup_shader_cache(game_key, source)
     launch_game(game_key, source)
 

@@ -3,28 +3,28 @@ alterware.py - DeckOps installer for AlterWare (IW6-Mod & S1-Mod)
 
 Downloads the native Linux AlterWare launcher from GitHub and runs it
 to fetch mod client files for Ghosts (IW6-Mod) and Advanced Warfare
-(S1-Mod). The launcher runs natively on Linux — no Proton needed for
-the install step.
+(S1-Mod). The launcher is a native Linux binary, so the install step
+needs no Proton.
 
 For Steam games:
-  - Sets Steam launch options to redirect the game exe to the mod exe
-    using bash parameter substitution on %command%
-  - The original exe is NEVER modified — iw6-mod.exe maps the original
-    binary into memory at runtime, so it must remain a valid PE file
-  - Steam's own Proton invocation handles all env vars, cwd, prefix
-  - GE-Proton compat tool mapping (set by ge_proton.py) is required
+  - A Steam launch option swaps the game exe for the mod exe with bash
+    parameter substitution on %command%.
+  - The original exe is NEVER modified. iw6-mod.exe maps it into memory
+    at runtime, so it must stay a valid PE file.
+  - Steam's own Proton call sets the env vars, cwd and prefix.
+  - Needs the GE-Proton compat tool mapping that ge_proton.py sets.
 
 For own games:
-  - Leaves mod client exe as-is (iw6-mod.exe, s1-mod.exe)
-  - Non-Steam shortcut points to mod exe directly
-  - CRC appid stable via (exe_path + shortcut_name)
+  - The mod client exe (iw6-mod.exe, s1-mod.exe) is left as is.
+  - The non-Steam shortcut points straight at the mod exe.
+  - The CRC appid stays stable because it comes from exe_path + shortcut_name.
 
 Both flows:
-  - Run native Linux launcher with --update flag to download files
-  - Write metadata tracking version, paths, installation state
-  - Launcher modifies .ff and .bik files in-place (patches)
+  - The native Linux launcher runs with --update to download the files.
+  - Metadata records version, paths and install state.
+  - The launcher patches .ff and .bik files in place.
 
-Progress is reported via a callback:
+Progress goes to a callback:
     on_progress(percent: int, status: str)
 """
 
@@ -41,9 +41,9 @@ from steam_common import write_json
 
 _log = get_logger(__name__)
 
-# ── constants ─────────────────────────────────────────────────────────────────
+# --- constants
 
-# Native Linux launcher — no Proton needed for the install step.
+# Native Linux launcher, so the install step needs no Proton.
 _LAUNCHER_URL = (
     "https://github.com/alterware/alterware-launcher/releases/latest"
     "/download/alterware-launcher-x86_64-unknown-linux-gnu.tar.gz"
@@ -66,7 +66,7 @@ def cdn_digests() -> dict:
         return {}
 
 # Game exe replacements the launcher doesn't download on its own.
-# (cdn_path, local_filename) — downloaded after the launcher finishes.
+# (cdn_path, local_filename), downloaded after the launcher finishes.
 _CDN_GAME_EXES = {
     "iw6mp": [("iw6/iw6mp64_ship.exe", "iw6mp64_ship.exe")],
     "iw6sp": [("iw6/iw6mp64_ship.exe", "iw6mp64_ship.exe")],
@@ -74,14 +74,14 @@ _CDN_GAME_EXES = {
 
 METADATA_FILE = "deckops_alterware.json"
 
-# Maps game_key → (launcher_arg, client_exe, original_exe)
+# game_key: (launcher_arg, client_exe, original_exe)
 #
-# launcher_arg:  passed to the alterware-launcher binary to select the client
-# client_exe:    the mod exe that the launcher downloads into the game dir
-# original_exe:  the vanilla Steam exe that the mod maps into memory at runtime
+# launcher_arg:  tells alterware-launcher which client to fetch
+# client_exe:    the mod exe the launcher puts in the game dir
+# original_exe:  the stock Steam exe the mod maps into memory at runtime
 #
-# Both iw6mp and iw6sp use the same client (iw6-mod), just launched with
-# different flags (-multiplayer / -singleplayer) at runtime. Same for s1.
+# iw6mp and iw6sp share one client (iw6-mod) and differ only in the
+# -multiplayer / -singleplayer flag at launch. Same for s1.
 _GAME_CONFIG = {
     "iw6mp": ("iw6-mod", "iw6-mod.exe", "iw6mp64_ship.exe"),
     "iw6sp": ("iw6-mod", "iw6-mod.exe", "iw6sp64_ship.exe"),
@@ -90,9 +90,9 @@ _GAME_CONFIG = {
 }
 
 # The built-in launcher UI in iw6-mod and s1-mod crashes under Wine/Proton.
-# These flags bypass it and launch directly into the correct game mode.
-# Must be passed via launch options (Steam installs) or shortcut
-# launch options (own installs).
+# These flags skip it and start the right game mode directly. They go in
+# the Steam launch option (Steam installs) or the shortcut launch option
+# (own installs).
 _MODE_FLAGS = {
     "iw6mp": "-multiplayer",
     "iw6sp": "-singleplayer",
@@ -100,7 +100,7 @@ _MODE_FLAGS = {
     "s1sp":  "-singleplayer",
 }
 
-# Maps game_key to its Steam appid for launch option writing.
+# Steam appid per game_key, for the launch option.
 _APPIDS = {
     "iw6mp": "209170",
     "iw6sp": "209160",
@@ -109,25 +109,25 @@ _APPIDS = {
 }
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# --- helpers
 
 def _build_launch_option(original_exe: str, client_exe: str,
                          mode_flag: str) -> str:
     """
-    Build the Steam launch option string that redirects the original exe
-    to the mod exe using bash parameter substitution on %command%.
+    Build the Steam launch option that swaps the original exe for the mod
+    exe with bash parameter substitution on %command%.
 
     Steam expands %command% to the full Proton launch chain:
       SLR/_v2-entry-point --verb=waitforexitandrun -- GE-Proton/proton
       waitforexitandrun /path/to/game/iw6mp64_ship.exe
 
-    The ${@/old/new} substitution replaces the original exe name with
-    the mod exe in whichever positional parameter contains it. The mode
-    flag (-multiplayer/-singleplayer) is appended to bypass the mod's
-    built-in launcher UI which crashes under Wine/Proton.
+    ${@/old/new} replaces the original exe name with the mod exe in
+    whichever argument holds it. The mode flag (-multiplayer/-singleplayer)
+    goes on the end to skip the mod's built-in launcher UI, which crashes
+    under Wine/Proton.
 
-    The original exe is never touched on disk — the mod exe maps it
-    into memory at runtime, so it must remain a valid PE binary.
+    The original exe stays untouched on disk. The mod exe maps it into
+    memory at runtime, so it must stay a valid PE binary.
     """
     return (
         f"bash -c "
@@ -138,12 +138,12 @@ def _build_launch_option(original_exe: str, client_exe: str,
 
 def _migrate_old_wrapper(install_dir: str, original_exe: str):
     """
-    Migrate from the old wrapper-over-exe flow to the new launch options
-    flow. If a .bak file exists, the old flow replaced the original exe
-    with a bash wrapper — restore the original PE binary so the mod exe
-    can map it at runtime.
+    Move from the old flow (bash wrapper over the exe) to launch options.
+    A .bak file means the old flow replaced the original exe with a bash
+    wrapper. Put the original PE binary back so the mod exe can map it
+    at runtime.
 
-    Safe to call even if no .bak exists (no-op).
+    Does nothing when there is no .bak.
     """
     original_path = os.path.join(install_dir, original_exe)
     backup_path = original_path + ".bak"
@@ -155,7 +155,7 @@ def _migrate_old_wrapper(install_dir: str, original_exe: str):
         os.rename(backup_path, original_path)
 
 
-# ── public API ────────────────────────────────────────────────────────────────
+# --- public API
 
 def install_alterware(game: dict, game_key: str,
                       steam_root: str = "", proton_path: str = "",
@@ -163,22 +163,21 @@ def install_alterware(game: dict, game_key: str,
                       on_progress=None, source: str = "steam",
                       download_bonus: bool = True):
     """
-    Install AlterWare mod client (IW6-Mod or S1-Mod).
+    Install the AlterWare mod client (IW6-Mod or S1-Mod).
 
     Downloads the native Linux AlterWare launcher, runs it to fetch the
-    mod client files, then sets Steam launch options to redirect the
-    original exe to the mod exe. The launcher runs natively — no Proton
-    needed for the install step.
+    mod client files, then sets a Steam launch option that swaps the
+    original exe for the mod exe. No Proton is needed for the install.
 
     Parameters:
-      game            — dict from detect_games with install_dir
-      game_key        — one of: iw6mp, iw6sp, s1mp, s1sp
-      steam_root      — path to Steam root (for launch option writing)
-      proton_path     — path to Proton binary (unused, kept for API compat)
-      compatdata_path — path to compatdata prefix (unused, kept for API compat)
-      on_progress     — optional callback(percent: int, status: str)
-      source          — "steam" or "own"
-      download_bonus  — if True, download bonus content (extra maps/DLC)
+      game            : dict from detect_games with install_dir
+      game_key        : one of iw6mp, iw6sp, s1mp, s1sp
+      steam_root      : Steam root path (for the launch option)
+      proton_path     : Proton binary path (unused, kept for API compat)
+      compatdata_path : compatdata prefix path (unused, kept for API compat)
+      on_progress     : optional callback(percent: int, status: str)
+      source          : "steam" or "own"
+      download_bonus  : if True, download bonus content (extra maps/DLC)
     """
     install_dir = game["install_dir"]
 
@@ -189,7 +188,7 @@ def install_alterware(game: dict, game_key: str,
 
     prog = on_progress or (lambda *a: None)
 
-    # ── Step 1: Download the native Linux launcher ────────────────────────
+    # --- Step 1: download the native Linux launcher
     prog(5, "Downloading AlterWare launcher...")
     tmp_dir = tempfile.mkdtemp(prefix="deckops_alterware_")
     tar_path = os.path.join(tmp_dir, "alterware-launcher.tar.gz")
@@ -208,11 +207,11 @@ def install_alterware(game: dict, game_key: str,
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError(f"Failed to download AlterWare launcher: {e}")
 
-    # ── Step 2: Extract launcher binary ───────────────────────────────────
+    # --- Step 2: extract the launcher binary
     prog(22, "Extracting launcher...")
     try:
         with tarfile.open(tar_path, "r:gz") as tf:
-            # The tarball contains a single binary: alterware-launcher
+            # The tarball holds one binary, alterware-launcher
             for member in tf.getmembers():
                 if member.name.endswith("alterware-launcher") and member.isfile():
                     member.name = "alterware-launcher"
@@ -225,7 +224,7 @@ def install_alterware(game: dict, game_key: str,
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError(f"Failed to extract AlterWare launcher: {e}")
 
-    # ── Step 3: Run launcher to download mod client files ─────────────────
+    # --- Step 3: run the launcher to download the mod client files
     prog(25, f"Downloading {launcher_arg} client files...")
     bonus_flag = "--bonus" if download_bonus else "--skip-bonus"
     cmd = [
@@ -265,7 +264,7 @@ def install_alterware(game: dict, game_key: str,
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError(f"Failed to run AlterWare launcher: {e}")
 
-    # ── Step 3b: Download CDN game exe replacements ─────────────────────
+    # --- Step 3b: download game exe replacements from the CDN
     cdn_files = _CDN_GAME_EXES.get(game_key, [])
     digests = cdn_digests() if cdn_files else {}
     for cdn_path, local_name in cdn_files:
@@ -284,7 +283,7 @@ def install_alterware(game: dict, game_key: str,
 
     prog(80, "Verifying client files...")
 
-    # ── Step 4: Verify mod client exe was downloaded ──────────────────────
+    # --- Step 4: check the mod client exe arrived
     client_exe_path = os.path.join(install_dir, client_exe)
     if not os.path.exists(client_exe_path):
         shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -293,23 +292,23 @@ def install_alterware(game: dict, game_key: str,
             f"in {install_dir}"
         )
 
-    # ── Step 5: Set launch options (Steam) or skip (own) ─────────────────
-    # The mod exe (iw6-mod.exe / s1-mod.exe) is a Windows PE binary that
-    # must run through Proton. It maps the original game exe into memory
-    # at runtime — the original exe MUST remain a valid PE file on disk.
+    # --- Step 5: set launch options (Steam) or skip (own)
+    # The mod exe (iw6-mod.exe / s1-mod.exe) is a Windows PE binary and
+    # runs through Proton. It maps the original game exe into memory at
+    # runtime, so the original exe MUST stay a valid PE file on disk.
     #
-    # For Steam installs we set launch options that use bash parameter
-    # substitution to swap the exe name in Steam's Proton launch chain.
-    # Steam's compat tool mapping (set by ge_proton.py) provides the
-    # Proton environment — no manual env var setup needed.
+    # Steam installs get a launch option that swaps the exe name in
+    # Steam's Proton launch chain with bash parameter substitution.
+    # Steam's compat tool mapping (set by ge_proton.py) supplies the
+    # Proton environment, so no env vars are set by hand.
     #
-    # The built-in launcher UI crashes under Wine/Proton, so we append
-    # -multiplayer / -singleplayer to bypass it.
+    # The built-in launcher UI crashes under Wine/Proton, so
+    # -multiplayer / -singleplayer goes on the end to skip it.
     mode_flag = _MODE_FLAGS.get(game_key, "")
     if source != "own":
         appid = _APPIDS.get(game_key)
         if appid and steam_root:
-            # Migrate from old wrapper flow if needed — restore original exe
+            # The old wrapper flow left a .bak. Put the original exe back
             prog(83, "Checking for old wrapper migration...")
             _migrate_old_wrapper(install_dir, original_exe)
 
@@ -318,7 +317,7 @@ def install_alterware(game: dict, game_key: str,
                                               mode_flag)
 
             from wrapper import set_launch_options, clear_launch_options
-            # Clear first to avoid appending duplicates on reinstall
+            # Clear first so a reinstall doesn't append a duplicate
             clear_launch_options(steam_root, appid)
             set_launch_options(steam_root, appid, launch_opt)
         else:
@@ -326,7 +325,7 @@ def install_alterware(game: dict, game_key: str,
     else:
         prog(85, "Own game — skipping launch options")
 
-    # ── Step 6: Write metadata ────────────────────────────────────────────
+    # --- Step 6: write metadata
     prog(90, "Saving metadata...")
     write_json(os.path.join(install_dir, METADATA_FILE), {
         "client": launcher_arg,
@@ -338,7 +337,7 @@ def install_alterware(game: dict, game_key: str,
         "mode_flag": mode_flag,
     })
 
-    # ── Step 7: Clean up temp dir ─────────────────────────────────────────
+    # --- Step 7: clean up the temp dir
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
     prog(100, f"{launcher_arg} installation complete!")

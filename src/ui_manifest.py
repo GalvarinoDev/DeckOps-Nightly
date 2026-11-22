@@ -1,9 +1,9 @@
 """
-ui_manifest.py -- optional manifest mods step before the game scan
+ui_manifest.py: optional manifest mods step before the game scan
 
 Lists manifest .json files found in the Games folders, lets the user
 tick mods, pick one option each, enter the shared CDN and a target
-Games folder, then installs. Skipped entirely when no manifests exist.
+Games folder, then installs. The screen skips itself when no manifests exist.
 """
 
 import html, os, threading
@@ -137,7 +137,7 @@ class ManifestModsScreen(QWidget):
         for b in self._root_grp.buttons():
             self._root_grp.removeButton(b); b.deleteLater()
         home = os.path.expanduser("~")
-        # Default: each mod goes to the Games folder its manifest is in; a drive sends all there.
+        # Default: each mod goes to the Games folder its manifest is in. Picking a drive sends every mod there.
         for r in [_NEXT_TO_JSON] + self._roots:
             b = _pill("Next to each manifest" if r == _NEXT_TO_JSON else
                       "Internal: ~/" + os.path.relpath(r, home) if r.startswith(home + os.sep) else f"SD / drive: {r}")

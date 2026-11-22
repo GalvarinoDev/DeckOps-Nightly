@@ -1,6 +1,10 @@
 import os
 import re
 import glob
+import hashlib
+import zipfile
+import shutil
+import subprocess
 
 # Paths where Steam is commonly installed on Linux
 STEAM_PATHS = [
@@ -28,6 +32,75 @@ SD_CARD_PATTERNS = [
 # or any exe replacement.
 
 GAMES = {
+    "cod1sp": {
+        "name": "Call of Duty - Singleplayer",
+        "order": 0,
+        "appid": "2620",
+        "exe": "CoDSP.exe",
+        "protocol": "steam",
+    },
+    "cod1mp": {
+        "name": "Call of Duty - Multiplayer",
+        "order": 0,
+        "appid": "2620",
+        "exe": "CoDMP.exe",
+        "protocol": "steam",
+    },
+    "coduosp": {
+        "name": "Call of Duty: United Offensive - Singleplayer",
+        "order": 0,
+        "appid": "2640",
+        "exe": "CoDUOSP.exe",
+        "protocol": "steam",
+    },
+    "coduomp": {
+        "name": "Call of Duty: United Offensive - Multiplayer",
+        "order": 0,
+        "appid": "2640",
+        "exe": "CoDUOMP.exe",
+        "protocol": "steam",
+    },
+    "cod2sp": {
+        "name": "Call of Duty 2 - Singleplayer",
+        "order": 0,
+        "appid": "2630",
+        "exe": "CoD2SP_s.exe",
+        "protocol": "steam",
+    },
+    "cod2mp": {
+        "name": "Call of Duty 2 - Multiplayer",
+        "order": 0,
+        "appid": "2630",
+        "exe": "CoD2MP_s.exe",
+        "protocol": "steam",
+    },
+    # CoD3 has no PC release or Steam app. CoD3Recomp runs the user's Xbox 360
+    # disc. The appid is a placeholder used only for the game card (find_cod3).
+    "cod3": {
+        "name": "Call of Duty 3",
+        "order": 0,
+        "appid": "99000003",
+        "exe": "CoD3SP_s.exe",
+        "protocol": "cod3recomp",
+    },
+    # Big Red One is console only too. The BRO engine runs the user's Xbox disc
+    # natively. Placeholder appid like CoD3 (find_bro).
+    "bro": {
+        "name": "Call of Duty 2: Big Red One",
+        "order": 0,
+        "appid": "99000004",
+        "exe": "cod_bro",
+        "protocol": "bro",
+    },
+    # Finest Hour too. Finest Hour Remastered runs the user's PAL Xbox disc
+    # under Proton (find_fh).
+    "codfh": {
+        "name": "Call of Duty: Finest Hour",
+        "order": 0,
+        "appid": "99000005",
+        "exe": "CODFH.exe",
+        "protocol": "finesthour",
+    },
     "t4sp":  {
         "name": "Call of Duty: World at War",
         "order": 2,
@@ -383,9 +456,11 @@ def find_own_installed(extra_paths=None, on_progress=None):
                 continue
             # Game root found; skip its subfolders
             dirnames.clear()
+            # A UO folder also ships CoD1's CoDSP/CoDMP; those belong to the CoD1 folder
+            is_uo = "coduosp.exe" in exes or "coduomp.exe" in exes
             for low, fname in exes.items():
                 for key in _OWN_EXES[low]:
-                    if key in found:
+                    if key in found or (is_uo and key in ("cod1sp", "cod1mp")):
                         continue
                     meta = GAMES[key]
                     # Ghosts SP falls back to the MP exe; use its own when present
@@ -399,12 +474,250 @@ def find_own_installed(extra_paths=None, on_progress=None):
                     }
                     prog(f"  found {key}: {meta['name']} at {dirpath}")
 
+    cod3 = find_cod3(scan_dirs)
+    if cod3:
+        found["cod3"] = {**found.get("cod3", {}), **cod3}
+        prog(f"  found cod3: Call of Duty 3 at {cod3['install_dir']}")
+    bro = find_bro(scan_dirs)
+    if bro:
+        found["bro"] = {**found.get("bro", {}), **bro}
+        prog(f"  found bro: Call of Duty 2: Big Red One at {bro['install_dir']}")
+    fh = find_fh(scan_dirs)
+    if fh:
+        found["codfh"] = {**found.get("codfh", {}), **fh}
+        prog(f"  found codfh: Call of Duty: Finest Hour at {fh['install_dir']}")
+
     if not found:
         prog("No supported games found.")
     else:
         prog(f"Found {len(found)} game(s).")
 
     return found
+
+
+def find_cod3(scan_dirs):
+    """Find Call of Duty 3 in a "cod3" folder (any case), either a scan dir
+    itself or a folder in one. It needs the disc image (.iso, or a .zip, .7z or .rar with
+    one inside), an installed game/ folder, or the disc's files copied in as
+    they are. CoD3Recomp installs next to them."""
+    for scan_dir in scan_dirs:
+        dirs = [scan_dir] if os.path.basename(scan_dir).lower() == "cod3" else [
+            os.path.join(scan_dir, d) for d in sorted(os.listdir(scan_dir))
+            if d.lower() == "cod3" and os.path.isdir(os.path.join(scan_dir, d))]
+        for d in dirs:
+            files = sorted(os.listdir(d))
+            disc = next((os.path.join(d, f) for f in files if f.lower().endswith(".iso")), None) \
+                or next((os.path.join(d, f) for f in files if f.lower().endswith(DISC_ARCHIVES)), None)
+            installed = any(os.path.isfile(os.path.join(d, sub, "default.xex"))
+                            and os.path.isdir(os.path.join(d, sub, "sp")) for sub in ("game", ""))
+            if disc or installed:
+                exe = next((f for f in files if f.lower() == "cod3sp_s.exe"), "CoD3SP_s.exe")
+                return {**GAMES["cod3"], "install_dir": d, "exe_path": os.path.join(d, exe),
+                        "exe_size": get_exe_size(os.path.join(d, exe)), "disc": disc, "source": "own"}
+    loose = find_loose_disc(scan_dirs, "cod3")
+    if loose:
+        d, disc = loose
+        exe = os.path.join(d, "CoD3SP_s.exe")
+        return {**GAMES["cod3"], "install_dir": d, "exe_path": exe, "exe_size": get_exe_size(exe),
+                "disc": disc, "loose": True, "source": "own"}
+    return None
+
+
+def _disc_game_dir(scan_dirs, key, exe_rel, installed):
+    """Game folder for a console game DeckOps installs from the user's disc: a
+    folder named DISC_FOLDERS[key] (any case), either a scan dir itself or a
+    folder in one. It needs a disc image (.iso, or a .zip, .7z or .rar with one inside) or
+    installed(folder). Otherwise a loose disc in a scan dir."""
+    name = DISC_FOLDERS[key]
+    for scan_dir in scan_dirs:
+        try:
+            dirs = [scan_dir] if os.path.basename(scan_dir).lower() == name else [
+                os.path.join(scan_dir, d) for d in sorted(os.listdir(scan_dir))
+                if d.lower() == name and os.path.isdir(os.path.join(scan_dir, d))]
+        except OSError:
+            continue
+        for d in dirs:
+            files = sorted(os.listdir(d))
+            disc = next((os.path.join(d, f) for f in files if f.lower().endswith(".iso")), None) \
+                or next((os.path.join(d, f) for f in files if f.lower().endswith(DISC_ARCHIVES)), None)
+            if disc or installed(d):
+                exe = os.path.join(d, exe_rel)
+                return {**GAMES[key], "install_dir": d, "exe_path": exe,
+                        "exe_size": get_exe_size(exe), "disc": disc, "source": "own"}
+    loose = find_loose_disc(scan_dirs, key)
+    if loose:
+        d, disc = loose
+        exe = os.path.join(d, exe_rel)
+        return {**GAMES[key], "install_dir": d, "exe_path": exe, "exe_size": get_exe_size(exe),
+                "disc": disc, "loose": True, "source": "own"}
+    return None
+
+
+def find_bro(scan_dirs):
+    """Big Red One: the Xbox disc, or the extracted files in assets/. The engine installs next to them."""
+    return _disc_game_dir(scan_dirs, "bro", GAMES["bro"]["exe"],
+                          lambda d: os.path.isfile(os.path.join(d, "assets", "default.xbe")))
+
+
+def find_fh(scan_dirs):
+    """Finest Hour: the PAL Xbox disc, its files copied in as they are (default.xbe),
+    or the installed port in game/."""
+    exe = os.path.join("game", GAMES["codfh"]["exe"])
+    return _disc_game_dir(scan_dirs, "codfh", exe,
+                          lambda d: os.path.isfile(os.path.join(d, "default.xbe"))
+                          or os.path.isfile(os.path.join(d, exe)))
+
+
+# Disc images left loose in a scan dir. The scan only reads them. The install
+# moves them into the game's folder (move_disc_in).
+COD3_XEX_SIZE = 7254016  # the default.xex CoD3Recomp was recompiled from
+BRO_XBE_SHA1 = {"bb33fd9d2fd2d667df9e669dcb6b47a347bdccbb",  # Standard (World)
+                "5a84a08720483e93add552cfdbf7fbf924658553"}  # Collector's Edition
+FH_XBE_SHA1 = "938a7b1e17928de49cb3c5834d61abcd3d9081c8"  # PAL, version 3, the only one the port runs
+DISC_FOLDERS = {"cod3": "cod3", "bro": "bro", "codfh": "finesthour"}
+
+
+DISC_ARCHIVES = (".zip", ".7z", ".rar")
+
+
+def _archive_list(path):
+    """Every name inside a .zip, .7z or .rar. A .7z or .rar is listed with 7z
+    (SteamOS ships it), else bsdtar, else unrar (some 7z builds have no RAR codec).
+    Empty if none can read it."""
+    if path.lower().endswith(".zip"):
+        try:
+            with zipfile.ZipFile(path) as zf:
+                return zf.namelist()
+        except (OSError, zipfile.BadZipFile):
+            return []
+    for cmd in (["7z", "l", "-ba", "-slt", path], ["bsdtar", "-tf", path], ["unrar", "lb", path]):
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=60)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if r.returncode == 0:
+            if cmd[0] == "7z":
+                return [l[7:] for l in r.stdout.splitlines() if l.startswith("Path = ")]
+            return r.stdout.splitlines()
+    return []
+
+
+def archive_isos(path):
+    """Names of the .iso files inside an archive, without unpacking it. With no
+    .iso, the .zip files inside instead: archive.org often wraps a zipped disc in a .rar."""
+    names = _archive_list(path)
+    return [n for n in names if n.lower().endswith(".iso")] or \
+        [n for n in names if n.lower().endswith(".zip")]
+
+
+def _extract(archive, member, dest):
+    if archive.lower().endswith(".zip"):
+        with zipfile.ZipFile(archive) as zf, zf.open(member) as src, open(dest, "wb") as out:
+            shutil.copyfileobj(src, out, 8 << 20)
+        return
+    for cmd in (["7z", "e", "-so", archive, member], ["bsdtar", "-xOf", archive, member],
+                ["unrar", "p", "-inul", archive, member]):
+        try:
+            with open(dest, "wb") as out:
+                r = subprocess.run(cmd, stdout=out, stderr=subprocess.PIPE, timeout=3600)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if r.returncode == 0:
+            return
+    if os.path.exists(dest):
+        os.remove(dest)
+    raise RuntimeError(f"Could not unpack {os.path.basename(archive)}. Unpack the .iso yourself.")
+
+
+def unpack_iso(archive, dest, log):
+    """Unpack the first .iso in an archive to dest and return dest. A .zip inside
+    the archive is unpacked first, then its .iso, and the inner .zip is deleted."""
+    names = archive_isos(archive)
+    if not names:
+        raise RuntimeError(f"No .iso inside {os.path.basename(archive)}")
+    log(f"Unpacking {os.path.basename(names[0])} (several GB, this takes a few minutes)...")
+    if not names[0].lower().endswith(".zip"):
+        _extract(archive, names[0], dest)
+        return dest
+    inner = dest + ".zip"
+    try:
+        _extract(archive, names[0], inner)
+        if not any(n.lower().endswith(".iso") for n in archive_isos(inner)):
+            raise RuntimeError(f"No .iso inside {os.path.basename(names[0])}")
+        return unpack_iso(inner, dest, log)
+    finally:
+        if os.path.exists(inner):
+            os.remove(inner)
+
+
+def disc_game(path):
+    """"cod3", "bro", "codfh" or None. An .iso is judged by its main file, an archive
+    by the name of the .iso (or .zip) inside (unpacking it to look would take minutes)."""
+    low = path.lower()
+    if low.endswith(DISC_ARCHIVES):
+        names = [re.sub(r"[^a-z0-9]", "", os.path.basename(n).lower()) for n in archive_isos(path)]
+        for n in names:
+            if "bigredone" in n:
+                return "bro"
+            if "finesthour" in n:
+                return "codfh"
+            if "callofduty3" in n or "cod3" in n:
+                return "cod3"
+        return None
+    if not low.endswith(".iso"):
+        return None
+    from xdvdfs import root_files
+    files = root_files(path)
+    if files.get("default.xex", (0, 0))[1] == COD3_XEX_SIZE:
+        return "cod3"
+    xbe = files.get("default.xbe")
+    if xbe and xbe[1] < 64 << 20:
+        try:
+            with open(path, "rb") as f:
+                f.seek(xbe[0])
+                sha = hashlib.sha1(f.read(xbe[1])).hexdigest()
+            if sha in BRO_XBE_SHA1:
+                return "bro"
+            if sha == FH_XBE_SHA1:
+                return "codfh"
+        except OSError:
+            pass
+    return None
+
+
+def find_loose_disc(scan_dirs, key):
+    """(game folder, loose .iso or archive) for key, from the top level of a scan dir.
+    The game folder may not exist yet."""
+    name = DISC_FOLDERS[key]
+    for scan_dir in scan_dirs:
+        if os.path.basename(scan_dir).lower() == name:
+            continue
+        try:
+            entries = sorted(os.listdir(scan_dir))
+        except OSError:
+            continue
+        folder = next((os.path.join(scan_dir, e) for e in entries
+                       if e.lower() == name and os.path.isdir(os.path.join(scan_dir, e))),
+                      os.path.join(scan_dir, name))
+        # An .iso before an archive: it installs faster and needs no unpacking
+        for e in sorted(entries, key=lambda e: not e.lower().endswith(".iso")):
+            p = os.path.join(scan_dir, e)
+            if e.lower().endswith((".iso",) + DISC_ARCHIVES) and os.path.isfile(p) and disc_game(p) == key:
+                return folder, p
+    return None
+
+
+def move_disc_in(disc, folder, log):
+    """Move a loose disc image into its game folder and return the new path.
+    It is a rename on the same drive: instant, and nothing is copied or deleted."""
+    os.makedirs(folder, exist_ok=True)
+    dest = os.path.join(folder, os.path.basename(disc))
+    # os.rename would replace an existing file without asking
+    if os.path.exists(dest):
+        raise RuntimeError(f"{dest} already exists. Move {os.path.basename(disc)} yourself.")
+    os.rename(disc, dest)
+    log(f"Moved {os.path.basename(disc)} into {folder}")
+    return dest
 
 
 def find_all_games(steam_root=None):

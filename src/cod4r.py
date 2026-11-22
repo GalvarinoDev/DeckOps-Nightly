@@ -48,7 +48,7 @@ from log import get_logger
 _log = get_logger(__name__)
 
 
-# -- constants ----------------------------------------------------------------
+# --- constants
 
 # CoD4R's update server, the one CoD4R-Launcher.exe uses. Plain HTTP, so
 # the manifest is checked against the launcher's signing key below.
@@ -75,10 +75,10 @@ kGVOa+i6OT99LMDzING0zlECAwEAAQ==
 METADATA_FILE = "deckops_cod4r.json"
 
 # The AppData subfolder name where the game stores runtime data
-# (servercache, player configs, etc.) -- same as CoD4x.
+# (servercache, player configs, etc.), same as CoD4x.
 _GAME_APPDATA_FOLDER = "CallofDuty4MW"
 
-# -- helpers ------------------------------------------------------------------
+# --- helpers
 
 def _get_game_appdata_dir(compatdata_path: str) -> str:
     """
@@ -138,7 +138,7 @@ def _sha256(path: str) -> str:
 
 def _verify_cod4r_files(install_dir: str, on_progress=None) -> bool:
     """
-    Check that the key CoD4R files are present in the game directory.
+    Check that the critical CoD4R files are present in the game directory.
 
     Returns True if the critical files are found.
     """
@@ -168,7 +168,7 @@ def _verify_cod4r_files(install_dir: str, on_progress=None) -> bool:
     return True
 
 
-# -- public API ---------------------------------------------------------------
+# --- public API
 
 def sync_files(install_dir: str, compatdata_path: str, log=None, prog=None,
                fetch_timeout: int = 30, tries: int = 3) -> int:
@@ -229,13 +229,13 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
     no user interaction; files already matching the manifest are skipped.
 
     Parameters:
-      game            -- dict from detect_games with install_dir, exe_path, etc.
-      steam_root      -- path to the Steam root directory (unused, common signature)
-      proton_path     -- path to the Proton executable (unused, common signature)
-      compatdata_path -- path to the game's compatdata prefix (can be None/empty)
-      on_progress     -- optional callback(percent: int, status: str)
-      appid           -- Steam appid (default 7940)
-      source          -- 'steam' or 'own'
+      game            : dict from detect_games with install_dir, exe_path, etc.
+      steam_root      : path to the Steam root directory (unused, common signature)
+      proton_path     : path to the Proton executable (unused, common signature)
+      compatdata_path : path to the game's compatdata prefix (can be None/empty)
+      on_progress     : optional callback(percent: int, status: str)
+      appid           : Steam appid (default 7940)
+      source          : 'steam' or 'own'
     """
     install_dir = game["install_dir"]
 
@@ -249,23 +249,23 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
     compatdata_path = _nvme_compatdata(str(appid))
     log(f"  Prefix path: {compatdata_path}")
 
-    # -- Step 1: Write registry keys -----------------------------------------
+    # --- Step 1: Write registry keys
     prog(5, "Writing registry keys...")
     _write_registry_keys(compatdata_path, on_progress=log)
 
-    # -- Steps 2-3: Fetch the manifest, download changed files ---------------
+    # --- Steps 2-3: Fetch the manifest, download changed files
     prog(10, "Fetching CoD4R manifest...")
     sync_files(install_dir, compatdata_path, log,
                lambda pct, lbl: prog(15 + int(pct * 0.6), lbl))
 
-    # -- Step 4: Verify CoD4R files ------------------------------------------
+    # --- Step 4: Verify CoD4R files
     prog(80, "Verifying installation...")
     verified = _verify_cod4r_files(install_dir, on_progress=log)
     if not verified:
         log("  CoD4R files not fully present")
         log("  Try running DeckOps install again")
 
-    # -- Step 5: Delete servercache.dat --------------------------------------
+    # --- Step 5: Delete servercache.dat
     # Force a fresh server list on first launch.
     appdata_dir = _get_game_appdata_dir(compatdata_path)
     for cache_path in [
@@ -277,7 +277,7 @@ def install_cod4r(game: dict, steam_root: str, proton_path: str,
 
     prog(90, "Cleared server cache.")
 
-    # -- Step 6: Write metadata -----------------------------------------------
+    # --- Step 6: Write metadata
     prog(95, "Saving metadata...")
     write_json(os.path.join(install_dir, METADATA_FILE), {
         "client": "cod4r",

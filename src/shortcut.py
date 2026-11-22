@@ -51,6 +51,43 @@ ASSETS_DIR     = os.path.join(PROJECT_ROOT, "assets", "controllers")
 # ── Shortcut definitions ──────────────────────────────────────────────────────
 
 SHORTCUTS = {
+    # Stock MP with no client yet, so they get the KB+M template
+    "cod1mp": {
+        "name":            "Call of Duty - Multiplayer",
+        "exe_name":        "CoDMP.exe",
+        "game_appid":      "2620",
+        "template_type":   "other",
+        "icon_url":        "https://cdn2.steamgriddb.com/icon/5bb098377521372ff3fe2d5fdc965fa8/32/256x256.png",
+        "grid_url":        "https://cdn2.steamgriddb.com/grid/49f6685e68490297d3b8e8b655c791cd.jpg",
+        "wide_url":        "https://cdn2.steamgriddb.com/grid/ba11de6d3ef01bb8a2df64a347b63c5b.jpg",
+        "hero_url":        "https://cdn2.steamgriddb.com/hero/a04a0656dfdbce5dbe00bfd0e401436e.png",
+        "logo_url":        "https://cdn2.steamgriddb.com/logo/00570c78f3d7277184b5f86dc919fce5.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
+    "coduomp": {
+        "name":            "Call of Duty: United Offensive - Multiplayer",
+        "exe_name":        "CoDUOMP.exe",
+        "game_appid":      "2640",
+        "template_type":   "other",
+        "icon_url":        "https://cdn2.steamgriddb.com/icon/fa46d72636d271b3974b6be01333c50e.ico",
+        "grid_url":        "https://cdn2.steamgriddb.com/grid/ed6704089026138e6a3282339ee4374b.jpg",
+        "wide_url":        "https://cdn2.steamgriddb.com/grid/f887105f1315f23a2740632b788b32f5.jpg",
+        "hero_url":        "https://cdn2.steamgriddb.com/hero/74c040829e4620eb5628df19071ec670.png",
+        "logo_url":        "https://cdn2.steamgriddb.com/logo/17186fe67f63a028d07a5821ad54dd0f.png",
+        "icon_ext": "ico", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
+    "cod2mp": {
+        "name":            "Call of Duty 2 - Multiplayer",
+        "exe_name":        "CoD2MP_s.exe",
+        "game_appid":      "2630",
+        "template_type":   "other",
+        "icon_url":        "https://cdn2.steamgriddb.com/icon/e7b9e0b39ba3af2f8aa0e8aaa630cd0d.png",
+        "grid_url":        "https://cdn2.steamgriddb.com/grid/4ad72e8d113a1ff0abc77718f29f0f18.jpg",
+        "wide_url":        "https://cdn2.steamgriddb.com/grid/7d98395d16a103b1f8042f7890343d5c.jpg",
+        "hero_url":        "https://cdn2.steamgriddb.com/hero/6fad28dc918c302ede5ee2f2368228e5.png",
+        "logo_url":        "https://cdn2.steamgriddb.com/logo/c01c46e45de108f23c7ddb2bc3bb4103.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
     "cod4mp": {
         "name":            "Call of Duty 4: Modern Warfare - Multiplayer",
         "exe_name":        "iw3mp.exe",
@@ -111,6 +148,99 @@ SHORTCUTS = {
 # Artwork credits (SteamGridDB): see README.md
 
 OWN_SHORTCUTS = {
+    "cod1sp": {
+        "name":           "Call of Duty - Singleplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/2620/b4ce47894dee6ec21b0ad96cfb2b8c0036098e39.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/2620/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/2620/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/2620/library_hero_2x.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/2620/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "cod1mp": {
+        "name":           "Call of Duty - Multiplayer",
+        "template_type":  "other",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon/5bb098377521372ff3fe2d5fdc965fa8/32/256x256.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/49f6685e68490297d3b8e8b655c791cd.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/grid/ba11de6d3ef01bb8a2df64a347b63c5b.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero/a04a0656dfdbce5dbe00bfd0e401436e.png",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo/00570c78f3d7277184b5f86dc919fce5.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
+    "coduosp": {
+        "name":           "Call of Duty: United Offensive - Singleplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/2640/e5fbc61fce98c303a9c49dc988163499b183f037.jpg",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/3ead4e722d6df4d4d7e1c61fbdd66968.png",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/2640/header.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero/52c103dad7014b76e67cd1307b4a4bf0.png",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo/5ff1ed03c4a4267f97fd841827b79e00.png",
+        "icon_ext": "jpg", "grid_ext": "png", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
+    "coduomp": {
+        "name":           "Call of Duty: United Offensive - Multiplayer",
+        "template_type":  "other",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon/fa46d72636d271b3974b6be01333c50e.ico",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/ed6704089026138e6a3282339ee4374b.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/grid/f887105f1315f23a2740632b788b32f5.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero/74c040829e4620eb5628df19071ec670.png",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo/17186fe67f63a028d07a5821ad54dd0f.png",
+        "icon_ext": "ico", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
+    "cod2sp": {
+        "name":           "Call of Duty 2 - Singleplayer",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/2630/2e455daa8702a3cb9da8733232ec330a06936df3.jpg",
+        "grid_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/2630/library_600x900_2x.jpg",
+        "wide_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/2630/header.jpg",
+        "hero_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/2630/library_hero_2x.jpg",
+        "logo_url":       "https://shared.steamstatic.com/store_item_assets/steam/apps/2630/logo_2x.png",
+        "icon_ext": "jpg", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "jpg", "logo_ext": "png",
+    },
+    "cod2mp": {
+        "name":           "Call of Duty 2 - Multiplayer",
+        "template_type":  "other",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon/e7b9e0b39ba3af2f8aa0e8aaa630cd0d.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/4ad72e8d113a1ff0abc77718f29f0f18.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/grid/7d98395d16a103b1f8042f7890343d5c.jpg",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero/6fad28dc918c302ede5ee2f2368228e5.png",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo/c01c46e45de108f23c7ddb2bc3bb4103.png",
+        "icon_ext": "png", "grid_ext": "jpg", "wide_ext": "jpg", "hero_ext": "png", "logo_ext": "png",
+    },
+    # CoD3Recomp runs the console game, which already has pad support and aim assist
+    "cod3": {
+        "name":           "Call of Duty 3",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon/2f05776d37d873642af484255572600d.ico",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/ebb4cd828b62543f83b337e48b333eb8.jpg",
+        "wide_url":       "https://cdn2.steamgriddb.com/grid/60b1bbf7401dd9361d241c7dc178b7e9.png",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero/e54002424031588e6248ffa5c5eaa36a.png",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo/16bc552457d2e473c07026303a5de747.png",
+        "icon_ext": "ico", "grid_ext": "jpg", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
+    },
+    # Finest Hour Remastered reads the pad itself
+    "codfh": {
+        "name":           "Call of Duty: Finest Hour",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon/5701f2db3b3e449c953c129fac75f358.ico",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/f0dda1e19cb7596fcb7430e4b3f4f0b5.png",
+        "wide_url":       "https://cdn2.steamgriddb.com/grid/a39fdc350f2dccbd44187ec2b28b0052.png",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero/fee6e6bfe55024e4ae92983d776ecd56.png",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo/ec4e854146d020e2bae1e0d14bf709ad.png",
+        "icon_ext": "ico", "grid_ext": "png", "wide_ext": "png", "hero_ext": "png", "logo_ext": "png",
+    },
+    # The BRO engine reads the pad in its Xbox layout
+    "bro": {
+        "name":           "Call of Duty 2: Big Red One",
+        "template_type":  "standard",
+        "icon_url":       "https://cdn2.steamgriddb.com/icon/613594054b1f1c7911d9f9fc9c795477.png",
+        "grid_url":       "https://cdn2.steamgriddb.com/grid/3e5589b2df55552e7716818b29ba2a2d.png",
+        "wide_url":       "https://cdn2.steamgriddb.com/grid/ba7d4edf877300c40f66184e6cf56c73.png",
+        "hero_url":       "https://cdn2.steamgriddb.com/hero/eb1009b8772fd76316bac8a1519b8a03.jpg",
+        "logo_url":       "https://cdn2.steamgriddb.com/logo/713162451b118e993404ff1c7a759183.png",
+        "icon_ext": "png", "grid_ext": "png", "wide_ext": "png", "hero_ext": "jpg", "logo_ext": "png",
+    },
     "cod4sp": {
         "name":           "Call of Duty 4: Modern Warfare - Singleplayer",
         "template_type":  "standard",
@@ -1140,8 +1270,9 @@ def cleanup_orphan_shortcuts(on_progress=None):
 def create_shortcuts(installed_games: dict, selected_keys: list,
                      gyro_mode: str, on_progress=None, steam_root: str = None):
     """
-    Create non-Steam shortcuts for CoD4 MP and WaW MP if they were selected
-    and installed. Creates shortcuts for ALL Steam user accounts.
+    Create non-Steam shortcuts for the Steam games in SHORTCUTS (CoD1, UO,
+    CoD2, CoD4 and WaW MP) that are selected and installed, in every Steam
+    user account.
 
     steam_root -- path to Steam root, used to dynamically resolve the game's
                   compatdata prefix (internal or SD card). Falls back to
@@ -1257,6 +1388,24 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                     actual_exe     = _venv_python
                     start_dir      = os.path.dirname(_cleanup_script)
                     launch_options = f'"{_cleanup_script}" t4mp steam'
+            elif key == "cod1mp":
+                # CoD1x runs from its 1.1 copy, which must be the working folder
+                # (the game loads its paks from there). exe_path stays the stock
+                # CoDMP.exe for the appid, so prefix, art and controller keep theirs.
+                from cod1x import COPY
+                from steam_common import GL_FIX, prelaunch_prefix
+                start_dir      = os.path.join(install_dir, COPY)
+                actual_exe     = os.path.join(start_dir, "CoDMP.exe")
+                launch_options = (f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                                  f'{GL_FIX}{prelaunch_prefix("cod1mp")}%command%')
+            elif key == "coduomp" and os.path.isfile(os.path.join(install_dir, "deckops_coduox", "cod1x.dll")):
+                # CoDUOx runs from its copy (the Steam folder stays stock), same as CoD1x
+                from coduox import COPY
+                from steam_common import GL_FIX, prelaunch_prefix
+                start_dir      = os.path.join(install_dir, COPY)
+                actual_exe     = os.path.join(start_dir, "CoDUOMP.exe")
+                launch_options = (f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" '
+                                  f'{GL_FIX}{prelaunch_prefix("coduomp")}%command%')
             elif key == "t7x":
                 # T7X (AlterWare) -- standalone exe in the DeckOps-T7X
                 # sibling dir. GE-Proton compat tool handles everything;
@@ -1275,6 +1424,13 @@ def create_shortcuts(installed_games: dict, selected_keys: list,
                     if _cfg.get_setup_games().get("cod4mp", {}).get("client") == "cod4r":
                         from steam_common import prelaunch_prefix
                         pre = prelaunch_prefix("cod4mp")
+                elif key == "cod2mp":
+                    # CoD2x update + the Steam CD key into the prefix, before Wine starts
+                    from steam_common import prelaunch_prefix
+                    pre = prelaunch_prefix("cod2mp")
+                from steam_common import GL_FIX, GL_FIX_KEYS
+                if key in GL_FIX_KEYS:
+                    pre = GL_FIX + pre
                 launch_options = f'STEAM_COMPAT_DATA_PATH="{compatdata_path}" {pre}%command%'
 
             shortcut_appid = _calc_shortcut_appid(exe_path, name)
@@ -1405,6 +1561,10 @@ _OWN_MOD_EXES = {"iw4mp": "iw4x.exe", "cod4sp": "iw3sp_mod.exe", "t7x": "t7x.exe
 
 def own_shortcut_exe(key: str, game: dict) -> str:
     mod, d = _OWN_MOD_EXES.get(key), game.get("install_dir")
+    if key == "cod1mp" and d:
+        # CoD1x: in the game folder (1.1 disc copy) or in the 1.1 copy (1.5)
+        from cod1x import client_dir
+        return os.path.join(client_dir(d), "CoDMP.exe")
     return os.path.join(d, mod) if mod and d else game.get("exe_path", "")
 
 
@@ -1538,10 +1698,34 @@ def enrich_own_games(own_games: dict, selected_keys: list,
             # copies; --arch x86 skips its x86/x64 picker.
             launch_options = "bash -c 'exec \"${@/iw4x.exe/iw4x-launcher.exe}\" --arch x86' -- %command%"
 
-        elif key in ("iw4sp", "iw5sp"):
+        elif key in ("iw4sp", "iw5sp", "cod1sp", "coduosp", "cod2sp"):
             # Same exe keeps the appid stable; IW-Pad's launcher picks the AlterWare client.
             from sp_mod import build_sp_launch_option
             launch_options = build_sp_launch_option(key)
+
+        elif key == "cod1mp":
+            from steam_common import GL_FIX, prelaunch_prefix
+            launch_options = GL_FIX + prelaunch_prefix("cod1mp") + "%command%"
+
+        elif key == "coduomp":
+            # Pre-launch writes the UO key for CoDUOx (no-op on a stock exe)
+            from steam_common import GL_FIX, prelaunch_prefix
+            launch_options = GL_FIX + prelaunch_prefix("coduomp") + "%command%"
+
+        elif key == "cod2mp":
+            from steam_common import prelaunch_prefix
+            launch_options = prelaunch_prefix("cod2mp") + "%command%"
+
+        elif key == "cod3":
+            # Prelaunch updates the exe with a verified download. The exe's own
+            # updater would replace it unverified at every start.
+            from steam_common import prelaunch_prefix
+            launch_options = f"COD3_NOUPDATE=1 {prelaunch_prefix(key)}%command%"
+
+        elif key == "bro":
+            # Prelaunch updates the engine from its newest release
+            from steam_common import prelaunch_prefix
+            launch_options = f"{prelaunch_prefix(key)}%command% --fullscreen"
 
         elif key == "t6sp":
             # Same swap as the Steam copy: stock t6sp.exe keeps the appid stable
@@ -1684,7 +1868,9 @@ def write_own_shortcuts(own_games: dict, selected_keys: list,
             if name in existing_names:
                 prog(f"    ⚠ Unexpected name collision after strip")
 
-            entry = _shortcut_entry(shortcut_appid, name, f'"{actual_exe}"', f'"{install_dir}"', icon_path, launch_options)
+            # CoD1x loads its paks from its working folder, the 1.1 copy
+            start = os.path.dirname(actual_exe) if key == "cod1mp" else install_dir
+            entry = _shortcut_entry(shortcut_appid, name, f'"{actual_exe}"', f'"{start}"', icon_path, launch_options)
 
             entry_bytes = _make_shortcut_entry(next_idx, entry)
             new_entries.append(entry_bytes)
@@ -1705,12 +1891,14 @@ def write_own_shortcuts(own_games: dict, selected_keys: list,
                     shortcut_def["template_type"])
             _assign_controller_config(uid, shortcut_appid, _ctrl_def, gyro_mode, prog, name)
 
-            # Set GE-Proton compat tool
+            # Set GE-Proton compat tool. The BRO engine is a Linux program, so it gets none.
             try:
                 import config as _cfg
                 from wrapper import set_compat_tool
                 ge_version = _cfg.get_ge_proton_version()
-                if ge_version:
+                if key == "bro":
+                    _clear_compat_tool(str(shortcut_appid))
+                elif ge_version:
                     set_compat_tool([str(shortcut_appid)], ge_version)
                     prog(f"    ✓ GE-Proton {ge_version} set")
             except Exception as ex:

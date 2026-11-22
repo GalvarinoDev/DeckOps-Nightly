@@ -1,26 +1,25 @@
 """
 game_config.py - DeckOps game config writer
 
-Copies pre-built config files from assets/configs/ into the correct
-destination paths for each game. The source folder is determined by the
-user's device selection:
+Copies pre-built config files from assets/configs/ to where each game
+reads them. The source folder depends on the user's device:
 
     OLED  -> assets/configs/OLED/
     LCD   -> assets/configs/LCD/
     Other -> assets/configs/Other/<resolution>/   (e.g. Other/1920x1200)
 
-Overwrites whatever is currently there.
+Existing files are overwritten.
 
-After copying, replaces the default player name ("Player") with the user's
-chosen name from deckops.json in any config that has `seta name "Player"`.
+After copying, the player name in `seta name "..."` is set to the user's
+name from deckops.json.
 
-LCD users receive MW1, MW2, MW3 SP, Ghosts, and AW configs.
-OLED and Other users receive MW1, MW2, WaW, BO1, MW3, BO2, Ghosts, and AW configs.
+Every device gets configs for MW1, MW2, WaW, BO1, MW3, BO2, BO3, Ghosts, AW,
+CoD1, UO, CoD2 and CoD3.
 
-LCD Plutonium games are additionally mirrored into the Heroic shared default
-prefix (~/Games/Heroic/Prefixes/default), because LCD online play routes
-through Heroic's Wine environment and never touches Steam's per-game
-compatdata prefix. The compatdata write is preserved for future offline mode.
+LCD Plutonium configs are also copied into the Heroic shared default prefix
+(~/Games/Heroic/Prefixes/default). LCD online play runs in Heroic's Wine
+prefix and never reads Steam's per-game compatdata prefix. The compatdata
+copy is still written, for future offline mode.
 """
 
 import os
@@ -31,40 +30,36 @@ from log import get_logger
 _log = get_logger(__name__)
 
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
+# --- Paths
 
 from steam_common import PROJECT_ROOT
 CONFIGS_DIR  = os.path.join(PROJECT_ROOT, "assets", "configs")
 
-# Heroic shared default prefix — used by LCD online play for all Plutonium
-# games. Configs must be mirrored here so LCD online launches see them.
+# Heroic shared default prefix. LCD online play uses it for every Plutonium
+# game, so configs are copied here too.
 HEROIC_DEFAULT_PFX = os.path.expanduser("~/Games/Heroic/Prefixes/default")
 
 
-# ── Config map ────────────────────────────────────────────────────────────────
+# --- Config map
 #
-# Each entry maps a game key to a list of (asset_subpath, dest_resolver) pairs.
+# Each entry maps a game key to a list of (asset_subpath, dest) pairs.
 #
-# asset_subpath  — path relative to assets/configs/<MODEL>/
-# dest_resolver  — callable(install_dir, steam_root) -> absolute destination directory
+# asset_subpath: path relative to assets/configs/<MODEL>/
+# dest: None means _dest_from_install() works it out from install_dir.
+#       A string is a fixed folder in the Wine prefix AppData.
 #
-# Files are copied with their original filename preserved.
+# Files keep their original names.
 #
-# Dest convention:
-#   None  → resolved at runtime from install_dir via _dest_from_install()
-#   str   → fixed path (used for Plutonium games whose configs live in prefix AppData)
-#
-# Only Plutonium games store configs inside the Wine prefix AppData.
-# All other games (CoD4x, IW4x, vanilla Steam) store configs in the
-# game install directory.
+# Only Plutonium games keep configs in the prefix AppData. The others
+# (CoD4x, IW4x, vanilla Steam) keep them in the game install folder.
 
 def _compatdata(steam_root, appid, game_install_dir=None):
     """
     Return the compatdata path for a given appid.
 
-    Uses wrapper.find_compatdata which searches all Steam library folders
-    (internal + SD card) and picks the prefix in the same library as the
-    game install directory. Falls back to steam_root if not found.
+    wrapper.find_compatdata searches every Steam library (internal and SD
+    card) and picks the prefix in the same library as the game. Falls back
+    to steam_root when nothing is found.
     """
     try:
         from wrapper import find_compatdata
@@ -75,7 +70,7 @@ def _compatdata(steam_root, appid, game_install_dir=None):
     except Exception:
         _log.debug("config dest lookup failed", exc_info=True)
 
-    # Fallback — prefix may not exist yet (os.makedirs will create it later)
+    # The prefix may not exist yet. os.makedirs creates it later.
     return os.path.join(steam_root, "steamapps", "compatdata", str(appid))
 
 
@@ -90,12 +85,11 @@ def _pfx_local(steam_root, appid, *parts, game_install_dir=None):
 
 def _heroic_pfx_local(*parts):
     """
-    Return a path inside the Heroic shared default prefix's
-    drive_c/users/steamuser/AppData/Local/ tree.
+    Return a path inside drive_c/users/steamuser/AppData/Local/ of the
+    Heroic shared default prefix.
 
-    Mirrors _pfx_local but rooted at HEROIC_DEFAULT_PFX. No appid or library
-    resolution — the Heroic prefix is a single shared location for all LCD
-    Plutonium games.
+    Same as _pfx_local but rooted at HEROIC_DEFAULT_PFX. There is no appid or
+    library lookup, because all LCD Plutonium games share this one prefix.
     """
     return os.path.join(
         HEROIC_DEFAULT_PFX,
@@ -106,11 +100,11 @@ def _heroic_pfx_local(*parts):
 
 def _heroic_mirror_path(compatdata_dest):
     """
-    Given a destination path inside a compatdata pfx AppData/Local tree,
-    return the equivalent path inside the Heroic shared default prefix.
+    Map a folder under a compatdata pfx AppData/Local to the same folder in
+    the Heroic shared default prefix.
 
-    Returns None if the input does not contain '/AppData/Local/' (i.e. not
-    a prefix-AppData path — install-dir destinations have no Heroic mirror).
+    Returns None when the path has no '/AppData/Local/' in it. Install-folder
+    destinations have no Heroic copy.
     """
     marker = os.path.join("AppData", "Local") + os.sep
     idx = compatdata_dest.find(marker)
@@ -122,10 +116,11 @@ def _heroic_mirror_path(compatdata_dest):
 
 def _offline_mirror_paths(compatdata_dest, key):
     """
-    The same folder inside the game's offline Plutonium copy (Offline Mode),
-    so offline play gets the resolution, FOV, sensitivity and player name too.
+    The same folder in the game's offline Plutonium copy (Offline Mode), so
+    offline play gets the resolution, FOV, sensitivity and player name too.
     compatdata_dest is a folder under .../AppData/Local/Plutonium/. Returns []
-    when Offline Mode is off or the copy isn't built yet (it is never created here).
+    when Offline Mode is off or the copy isn't built yet. This function never
+    builds it.
     """
     marker = os.path.join("AppData", "Local", "Plutonium") + os.sep
     idx = compatdata_dest.find(marker)
@@ -148,55 +143,55 @@ def _offline_mirror_paths(compatdata_dest, key):
     return [dest]
 
 
-# The config map is built inside apply_game_configs so steam_root is available.
-# Keys that are absent for a given model are simply not included.
+# The config map is built inside apply_game_configs, where steam_root is known.
+# A key missing from a model's set is skipped.
 
-_LCD_KEYS  = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "iw5sp", "iw5mp", "iw5mp_ds", "t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "t6sp", "t7", "t7x", "iw6sp", "iw6mp", "s1sp", "s1mp"}
-_OLED_KEYS = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "t4sp", "t4mp", "t5sp", "t5mp", "iw5sp", "iw5mp", "iw5mp_ds", "t6zm", "t6mp", "t6sp", "t7", "t7x", "iw6sp", "iw6mp", "s1sp", "s1mp"}
+_LCD_KEYS  = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "iw5sp", "iw5mp", "iw5mp_ds", "t4sp", "t4mp", "t5sp", "t5mp", "t6zm", "t6mp", "t6sp", "t7", "t7x", "iw6sp", "iw6mp", "s1sp", "s1mp", "cod1sp", "cod1mp", "coduosp", "coduomp", "cod2sp", "cod2mp", "cod3"}
+_OLED_KEYS = {"cod4sp", "cod4mp", "iw4sp", "iw4mp", "t4sp", "t4mp", "t5sp", "t5mp", "iw5sp", "iw5mp", "iw5mp_ds", "t6zm", "t6mp", "t6sp", "t7", "t7x", "iw6sp", "iw6mp", "s1sp", "s1mp", "cod1sp", "cod1mp", "coduosp", "coduomp", "cod2sp", "cod2mp", "cod3"}
 
 
 def _build_config_map(steam_root, installed_games=None):
     """
-    Returns a dict mapping game_key -> list of (asset_subpath, dest_dir) pairs.
-    dest_dir will be created if it does not exist.
+    Return a dict of game_key -> list of (asset_subpath, dest_dir) pairs.
+    dest_dir is created if missing.
 
-    installed_games is used to resolve the correct compatdata for SD card
-    installs (pass game_install_dir so find_compatdata picks the right library).
+    installed_games gives each game's install folder, so find_compatdata
+    picks the right library for SD card installs.
     """
-    # Helper to get install_dir for a game key
+    # install_dir for a game key
     def _game_dir(key):
         if installed_games and key in installed_games:
             return installed_games[key].get("install_dir")
         return None
 
     return {
-        # ── MW1 SP (IW3SP-MOD) ────────────────────────────────────────────────
+        # --- MW1 SP (IW3SP-MOD)
         "cod4sp": [
             ("MW1/iw3sp_mod_config.cfg", None),
         ],
 
-        # ── MW1 MP (CoD4x) ────────────────────────────────────────────────────
-        # Config lives in install_dir/players/profiles/Player/ (same as SP).
-        # CoD4x copies this to AppData/Local/CallofDuty4MW/players/profiles/
-        # on first launch. active.txt in the profiles/ dir controls the
-        # displayed player name — written by _write_cod4_active_txt().
-        # NOT in prefix AppData — only Plutonium uses prefix paths.
+        # --- MW1 MP (CoD4x)
+        # Config goes in install_dir/players/profiles/<profile>/, same as SP.
+        # CoD4x copies it to AppData/Local/CallofDuty4MW/players/profiles/
+        # on first launch. active.txt in profiles/ sets the player name shown
+        # in game. _write_cod4_active_txt() writes it.
+        # Not in the prefix AppData. Only Plutonium uses prefix paths.
         "cod4mp": [
             ("MW1/config_mp.cfg", None),
         ],
 
-        # ── MW2 SP ────────────────────────────────────────────────────────────
+        # --- MW2 SP
         "iw4sp": [
             ("MW2/config.cfg", None),
             ("MW2/iw4x_sp_config.cfg", None),  # read by iw4x-sp (own installs) instead of config.cfg
         ],
 
-        # ── MW2 MP (iw4x) ─────────────────────────────────────────────────────
+        # --- MW2 MP (iw4x)
         "iw4mp": [
             ("MW2/iw4x_config.cfg", None),
         ],
 
-        # ── WaW SP + MP (Plutonium t4) ────────────────────────────────────────
+        # --- WaW SP + MP (Plutonium t4)
         "t4sp": [
             (
                 "WaW/config.cfg",
@@ -218,7 +213,7 @@ def _build_config_map(steam_root, installed_games=None):
             ),
         ],
 
-        # ── BO1 SP (Plutonium t5, appid 42700) ────────────────────────────────
+        # --- BO1 SP (Plutonium t5, appid 42700)
         "t5sp": [
             (
                 "BO1/config.cfg",
@@ -230,7 +225,7 @@ def _build_config_map(steam_root, installed_games=None):
             ),
         ],
 
-        # ── BO1 MP (Plutonium t5, appid 42710) ────────────────────────────────
+        # --- BO1 MP (Plutonium t5, appid 42710)
         "t5mp": [
             (
                 "BO1/config_mp.cfg",
@@ -242,12 +237,12 @@ def _build_config_map(steam_root, installed_games=None):
             ),
         ],
 
-        # ── MW3 SP (via Steam, appid 42690) ───────────────────────────────────
+        # --- MW3 SP (Steam, appid 42680)
         "iw5sp": [
             ("MW3/config.cfg", None),
         ],
 
-        # ── MW3 MP (Plutonium iw5, appid 42690) ───────────────────────────────
+        # --- MW3 MP (Plutonium iw5, appid 42690)
         "iw5mp": [
             (
                 "MW3/config_mp.cfg",
@@ -259,7 +254,7 @@ def _build_config_map(steam_root, installed_games=None):
             ),
         ],
 
-        # ── MW3 DS (Plutonium iw5 via dedicated server, appid 42750) ──────────
+        # --- MW3 DS (Plutonium iw5 on the dedicated server app, appid 42750)
         "iw5mp_ds": [
             (
                 "MW3/config_mp.cfg",
@@ -271,7 +266,7 @@ def _build_config_map(steam_root, installed_games=None):
             ),
         ],
 
-        # ── BO2 ZM (Plutonium t6, appid 212910) ───────────────────────────────
+        # --- BO2 ZM (Plutonium t6, appid 212910)
         "t6zm": [
             (
                 "BO2/plutonium_zm.cfg",
@@ -283,7 +278,7 @@ def _build_config_map(steam_root, installed_games=None):
             ),
         ],
 
-        # ── BO2 MP (Plutonium t6, appid 202990) ───────────────────────────────
+        # --- BO2 MP (Plutonium t6, appid 202990)
         "t6mp": [
             (
                 "BO2/plutonium_mp.cfg",
@@ -304,50 +299,61 @@ def _build_config_map(steam_root, installed_games=None):
             ),
         ],
 
-        # ── BO2 SP (T6SP-MOD, uses stock BO2 install dir) ────────────────────
-        # Binary settings profile — dropped into install_dir/players/.
+        # --- BO2 SP (T6SP-MOD, stock BO2 install folder)
+        # Binary settings profile, copied into install_dir/players/.
         "t6sp": [
             ("BO2/user_sp.cgp", None),
             ("BO2/hardware.chp", None),
         ],
 
-        # ── Ghosts SP (AlterWare iw6, appid 209160) ──────────────────────────
+        # --- Ghosts SP (AlterWare iw6, appid 209160)
         "iw6sp": [
             ("Ghosts/config.cfg", None),
         ],
 
-        # ── Ghosts MP (AlterWare iw6, appid 209170) ──────────────────────────
+        # --- Ghosts MP (AlterWare iw6, appid 209170)
         "iw6mp": [
             ("Ghosts/config_mp.cfg", None),
         ],
 
-        # ── AW SP (AlterWare s1, appid 209650) ───────────────────────────────
+        # --- AW SP (AlterWare s1, appid 209650)
         "s1sp": [
             ("AW/config.cfg", None),
         ],
 
-        # ── AW MP (AlterWare s1, appid 209660) ───────────────────────────────
+        # --- AW MP (AlterWare s1, appid 209660)
         "s1mp": [
             ("AW/config_mp.cfg", None),
         ],
 
-        # ── BO3 (CleanOps t7) ────────────────────────────────────────────────
-        # CleanOps is a DLL overlay — config.ini lives in the stock BO3
-        # players/ directory, same as vanilla.
+        # --- BO3 (CleanOps t7)
+        # CleanOps is a DLL overlay, so config.ini stays in the stock BO3
+        # players/ folder, same as vanilla.
         "t7": [
             ("T7X/config.ini", None),
         ],
 
-        # ── BO3 (T7X / AlterWare) ────────────────────────────────────────────
-        # T7X stores its config.ini inside the t7x/players/ subdirectory
-        # of the DeckOps-T7X sibling dir.
+        # --- BO3 (T7X / AlterWare)
+        # T7X keeps its config.ini in t7x/players/ inside the DeckOps-T7X
+        # sibling folder.
         "t7x": [
             ("T7X/config.ini", None),
         ],
+
+        # --- Classics. MP configs bind the keys the "other" controller
+        # template sends.
+        "cod1sp":  [("CoD1/config.cfg", None)],
+        "cod1mp":  [("CoD1/config_mp.cfg", None)],
+        "coduosp": [("UO/uoconfig.cfg", None)],
+        "coduomp": [("UO/uoconfig_mp.cfg", None)],
+        "cod2sp":  [("CoD2/config.cfg", None)],
+        "cod2mp":  [("CoD2/config_mp.cfg", None)],
+        # CoD3Recomp.ini is the same on every device (resolution = desktop)
+        "cod3":    [("CoD3/CoD3Recomp.ini", None)],
     }
 
 
-# ── Install-dir based dest resolvers ──────────────────────────────────────────
+# --- Destinations under install_dir
 
 def _cod4_profile_name(player_name):
     """CoD4 profile folder name as the game finds it on disk. Wine drops
@@ -358,9 +364,8 @@ def _cod4_profile_name(player_name):
 
 def _dest_from_install(game_key, install_dir, player_name=None):
     """
-    For game keys whose destination is relative to install_dir,
-    return the correct absolute destination directory.
-    Returns None for keys that use a fixed compatdata path instead.
+    Return the absolute destination folder for game keys whose configs live
+    under install_dir. Returns None for keys that use a fixed compatdata path.
     """
     if game_key in ("cod4sp", "cod4mp"):
         return os.path.join(install_dir, "players", "profiles",
@@ -377,21 +382,69 @@ def _dest_from_install(game_key, install_dir, player_name=None):
         return os.path.join(install_dir, "t7x", "players")
     if game_key == "t6sp":
         return os.path.join(install_dir, "players")
+    if game_key == "cod1mp":
+        # CoD1x reads its config where it runs (game folder or the 1.1 copy)
+        from cod1x import client_dir
+        d = client_dir(install_dir)
+        return _child(d, "main") if os.path.isdir(d) else os.path.join(d, "Main")
+    if game_key == "cod1sp":
+        return _child(install_dir, "main")
+    if game_key == "coduomp":
+        # CoDUOx reads its config where it runs (game folder or the Steam copy)
+        from coduox import client_dir
+        d = client_dir(install_dir)
+        return _child(d, "uo") if os.path.isdir(d) else os.path.join(d, "uo")
+    if game_key == "coduosp":
+        return _child(install_dir, "uo")
+    if game_key in ("cod2sp", "cod2mp"):
+        return _cod2_profile_dir(_child(_child(install_dir, "main"), "players"))
+    if game_key == "cod3":
+        return install_dir
     return None
 
 
-# ── Player name replacement ───────────────────────────────────────────────────
+def _child(parent, name):
+    """parent/name, reusing a folder that differs only in case. Copies differ
+    (main vs Main) and Linux would make a second folder the game never reads."""
+    try:
+        for e in os.listdir(parent):
+            if e.lower() == name and os.path.isdir(os.path.join(parent, e)):
+                return os.path.join(parent, e)
+    except OSError:
+        pass
+    return os.path.join(parent, name)
+
+
+def _cod2_profile_dir(players_dir):
+    """The profile folder CoD2 loads: the name in players/active.txt, else
+    Default (written to active.txt so the game picks the same folder)."""
+    try:
+        with open(os.path.join(players_dir, "active.txt"), encoding="utf-8", errors="replace") as f:
+            name = f.read().strip()
+    except OSError:
+        name = ""
+    if not name:
+        name = "Default"
+        try:
+            os.makedirs(players_dir, exist_ok=True)
+            with open(os.path.join(players_dir, "active.txt"), "w", encoding="utf-8") as f:
+                f.write(name)
+        except OSError:
+            pass
+    return os.path.join(players_dir, name)
+
+
+# --- Player name
 
 def _replace_player_name(filepath, player_name):
     """
-    Replace 'seta name "<anything>"' with the user's chosen name in a config file.
+    Set 'seta name "<anything>"' in a config file to the user's name.
 
-    Uses a regex to match any current name value, not just the default
-    "Player". This allows the Settings screen to rename the player after
-    initial install without needing to re-deploy configs from scratch.
+    The regex matches any current name, not only the default "Player", so
+    the Settings screen can rename the player later without copying the
+    configs again.
 
-    Only modifies lines that match `seta name "..."` exactly — other cvars
-    that happen to contain "name" are not affected.
+    Only `seta name "..."` changes. Other cvars with "name" in them stay.
 
     Does nothing if player_name is None or empty.
     """
@@ -414,22 +467,20 @@ def _replace_player_name(filepath, player_name):
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(new_content)
     except (IOError, OSError):
-        pass  # Non-fatal — config still works with current name
+        pass  # Non-fatal. The config still works with the current name.
 
 
 def _write_cod4_active_txt(profiles_dir, player_name):
     """
-    Write (or overwrite) the active.txt file in a CoD4 profiles directory.
+    Write active.txt in a CoD4 profiles folder.
 
-    CoD4 / CoD4x reads active.txt to determine the active profile name
-    displayed in-game. Without this file, or if it still says "Player",
-    the player name will show as "Player" regardless of the seta name
-    cvar in config_mp.cfg.
+    CoD4 / CoD4x reads active.txt for the profile name shown in game. If the
+    file is missing or still says "Player", the game shows "Player" whatever
+    the seta name cvar in config_mp.cfg says.
 
-    profiles_dir — the .../players/profiles/ directory (not the profile
-                   subfolder itself).
-    player_name  — the name to write into active.txt. Does nothing if
-                   None or empty.
+    profiles_dir: the .../players/profiles/ folder (not the profile
+                  subfolder).
+    player_name: the name to write. Does nothing if None or empty.
     """
     if not player_name:
         return
@@ -460,29 +511,29 @@ def _mark_iw3sp_cfg_initialized(profile_dir):
         pass  # Non-fatal
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
+# --- Public API
 
 def apply_game_configs(selected_keys, installed_games, steam_root,
                        deck_model, on_progress=None):
     """
-    Copy pre-built config files into the correct destination for each
-    selected game key, based on the user's deck model.
+    Copy the pre-built configs for each selected game key, using the
+    folder for the user's deck model.
 
-    After copying, replaces `seta name "Player"` with the user's chosen
-    player name from deckops.json (if set).
+    After copying, `seta name` is set to the player name from deckops.json
+    (if set).
 
-    For LCD installs, Plutonium configs (those with a fixed prefix-AppData
-    destination) are additionally mirrored into the Heroic shared default
-    prefix at ~/Games/Heroic/Prefixes/default, since LCD online play routes
-    through Heroic's Wine environment instead of Steam's per-game prefix.
-    The Heroic mirror copy is best-effort and does not affect applied/failed
-    counts — the compatdata write is the source of truth for those.
+    On LCD, Plutonium configs (the ones with a fixed prefix AppData
+    destination) are also copied into the Heroic shared default prefix at
+    ~/Games/Heroic/Prefixes/default, because LCD online play runs in Heroic's
+    Wine prefix instead of Steam's per-game prefix. The Heroic copy is
+    best-effort and does not change the applied/failed counts. Those count
+    the compatdata write only.
 
-    selected_keys   — list of game keys the user selected to install
-    installed_games — dict from detect_games.find_installed_games()
-    steam_root      — path to Steam root
-    deck_model      — 'oled', 'lcd', or 'other'
-    on_progress     — optional callback(msg: str)
+    selected_keys: game keys the user selected to install
+    installed_games: dict from detect_games.find_installed_games()
+    steam_root: path to Steam root
+    deck_model: 'oled', 'lcd', or 'other'
+    on_progress: optional callback(msg: str)
 
     Returns (applied, skipped, failed) counts.
     """
@@ -496,11 +547,9 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
     import config as cfg
     player_name = cfg.get_player_name()
 
-    # ── Sibling key expansion ─────────────────────────────────────────────
-    # MW2 SP (iw4sp) and MW3 SP (iw5sp) have config entries but aren't
-    # tracked by detect_games / ALL_GAMES — they run through vanilla Steam.
-    # When their MP sibling is selected, auto-include the SP key so its
-    # display config also gets written.  The SP shares the same install_dir.
+    # --- Sibling keys
+    # When an MP key is selected, add its SP key too so the SP display
+    # config gets written. SP and MP share the same install_dir.
     _SIBLING_MAP = {
         "iw4mp": "iw4sp",      # MW2 MP  → MW2 SP
         "iw5mp": "iw5sp",      # MW3 MP  → MW3 SP
@@ -512,7 +561,7 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
     for mp_key, sp_key in _SIBLING_MAP.items():
         if mp_key in selected_keys and sp_key not in expanded_keys:
             expanded_keys.append(sp_key)
-            # Re-use the MP game entry so the SP key has a valid install_dir
+            # Reuse the MP game entry so the SP key has a valid install_dir
             if mp_key in installed_games and sp_key not in installed_games:
                 installed_games[sp_key] = installed_games[mp_key]
 
@@ -541,9 +590,9 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
 
             # Resolve destination directory
             if fixed_dest:
-                # For "own" games, fixed_dest was built using the Steam appid-based
-                # compatdata path. Swap the base out for the actual shortcut prefix
-                # stored in the game dict so configs land in the right prefix.
+                # For own games, fixed_dest was built from the Steam appid's
+                # compatdata path. Swap in the shortcut prefix from the game
+                # dict so configs land in the right prefix.
                 if game.get("source") == "own" and game.get("compatdata_path"):
                     pfx_parts = fixed_dest.split("/pfx/", 1)
                     if len(pfx_parts) == 2:
@@ -568,20 +617,19 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
 
             try:
                 shutil.copy2(src, dest)
-                # Replace default player name with user's chosen name
+                # Set the user's player name
                 _replace_player_name(dest, player_name)
                 prog(f"  + {key}: {os.path.basename(src)} -> {dest_dir}")
                 applied += 1
                 if os.path.basename(dest) == "iw3sp_mod_config.cfg":
                     _mark_iw3sp_cfg_initialized(dest_dir)
 
-                # CoD4 / CoD4x uses active.txt in the profiles directory
-                # to determine the displayed player name. Write it after
-                # every config deploy so the profile name stays in sync.
-                # Write to both the install dir AND the AppData prefix —
-                # CoD4x creates its own active.txt on first launch from
-                # the folder name, so pre-seeding the prefix ensures the
-                # correct name is used even on the very first launch.
+                # CoD4 / CoD4x takes the shown player name from active.txt in
+                # the profiles folder. Write it after every config copy so the
+                # profile name stays in sync, in both the install folder and
+                # the AppData prefix. CoD4x creates its own active.txt from
+                # the folder name on first launch, so writing the prefix copy
+                # first gives the right name on the very first launch.
                 if key in ("cod4sp", "cod4mp") and player_name:
                     _write_cod4_active_txt(os.path.dirname(dest_dir), player_name)
                     appdata_profiles = _pfx_local(
@@ -596,12 +644,11 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
                 failed += 1
                 continue
 
-            # ── Heroic shared prefix mirror (LCD only) ────────────────────
-            # LCD online play routes through Heroic's default prefix, which
-            # never touches the per-game compatdata above. Mirror the same
-            # config there so online launches see it. Best-effort: failures
-            # here are logged but don't increment applied/failed.
-            # OLED and Other devices skip this — they launch directly.
+            # --- Heroic shared prefix copy (LCD only)
+            # LCD online play runs in Heroic's default prefix and never reads
+            # the per-game compatdata above, so copy the config there too.
+            # Best-effort: failures are logged but don't count as applied or
+            # failed. OLED and Other skip this because they launch directly.
             if deck_model == "lcd" and fixed_dest:
                 heroic_dest_dir = _heroic_mirror_path(dest_dir)
                 if heroic_dest_dir:
@@ -618,10 +665,10 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
                         prog(f"  ! {key}: HGL mirror failed "
                              f"({os.path.basename(src)}): {ex}")
 
-            # ── Offline copy mirror (Offline Mode) ─────────────────────────
+            # --- Offline copy (Offline Mode)
             # Offline play runs from DeckOps' own Plutonium copy (OLED and LCD),
-            # so it gets the same configs.
-            # Best-effort — does not affect applied/failed counts.
+            # so it gets the same configs. Best-effort, does not change the
+            # applied/failed counts.
             if fixed_dest:
                 for offline_dir in _offline_mirror_paths(dest_dir, key):
                     try:
@@ -637,6 +684,15 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
                         prog(f"  ! {key}: offline copy mirror failed "
                              f"({os.path.basename(src)}): {ex}")
 
+    # --- BRO: an empty profile named after the player, only when it has none
+    if "bro" in selected_keys:
+        try:
+            from bro import seed_profile
+            if seed_profile(player_name):
+                prog("  + bro: profile created")
+        except Exception as ex:
+            prog(f"  ! bro: profile not created: {ex}")
+
     prog(f"Game configs: {applied} applied, {skipped} skipped, {failed} failed.")
     return applied, skipped, failed
 
@@ -644,11 +700,11 @@ def apply_game_configs(selected_keys, installed_games, steam_root,
 def rename_player(player_name, steam_root, installed_games=None,
                   on_progress=None):
     """
-    Update the player name in all deployed config files without re-copying
-    from assets. Scans all setup game keys, resolves their config
-    destinations, and applies _replace_player_name to each file found.
+    Set the player name in every deployed config file without copying from
+    assets again. Goes through all set-up game keys, finds their config
+    folders, and runs _replace_player_name on each file found.
 
-    Also updates the Heroic shared prefix mirror for LCD Plutonium configs.
+    Also updates the Heroic shared prefix copies of LCD Plutonium configs.
 
     Returns the number of files updated.
     """
@@ -688,14 +744,14 @@ def rename_player(player_name, steam_root, installed_games=None,
             else:
                 if not install_dir:
                     continue
-                # For CoD4, we need to find the OLD profile folder first
-                # (could be "Player" or a previous custom name) and rename it.
+                # CoD4: find the old profile folder first ("Player" or an
+                # earlier name) and rename it.
                 if key in ("cod4sp", "cod4mp"):
                     profiles_dir = os.path.join(install_dir, "players", "profiles")
                     new_profile = _cod4_profile_name(player_name)
                     new_profile_dir = os.path.join(profiles_dir, new_profile)
-                    # Find the existing profile folder — check active.txt first,
-                    # then fall back to any single subfolder.
+                    # Find the current profile folder from active.txt, else
+                    # take the only subfolder if there is exactly one.
                     old_profile_dir = None
                     active_path = os.path.join(profiles_dir, "active.txt")
                     if os.path.exists(active_path):
@@ -708,7 +764,7 @@ def rename_player(player_name, steam_root, installed_games=None,
                         except (IOError, OSError):
                             pass
                     if not old_profile_dir:
-                        # Fall back: look for any existing profile subfolder
+                        # Fallback: any existing profile subfolder
                         try:
                             subdirs = [
                                 d for d in os.listdir(profiles_dir)
@@ -744,8 +800,8 @@ def rename_player(player_name, steam_root, installed_games=None,
                 if key in ("cod4sp", "cod4mp"):
                     _write_cod4_active_txt(os.path.dirname(dest_dir), player_name)
 
-            # CoD4x also reads from the AppData prefix — update active.txt
-            # there too so the profile name is correct after first launch.
+            # CoD4x also reads the AppData prefix. Update active.txt there too
+            # so the profile name is right after the first launch.
             if key in ("cod4sp", "cod4mp") and install_dir:
                 appdata_profiles = _pfx_local(
                     steam_root, 7940,
@@ -755,7 +811,7 @@ def rename_player(player_name, steam_root, installed_games=None,
                 _write_cod4_active_txt(appdata_profiles, player_name)
                 prog(f"  + {key}: updated active.txt in AppData prefix")
 
-            # Heroic mirror
+            # Heroic copy
             if fixed_dest:
                 heroic_dest_dir = _heroic_mirror_path(dest_dir)
                 if heroic_dest_dir:
@@ -767,7 +823,7 @@ def rename_player(player_name, steam_root, installed_games=None,
                         updated += 1
                         prog(f"  + {key}: renamed in HGL mirror")
 
-            # Offline copy mirror
+            # Offline copy
             if fixed_dest:
                 for offline_dir in _offline_mirror_paths(dest_dir, key):
                     offline_dest = os.path.join(
@@ -778,17 +834,17 @@ def rename_player(player_name, steam_root, installed_games=None,
                         updated += 1
                         prog(f"  + {key}: renamed in the offline copy")
 
-    # ── T7X special case ─────────────────────────────────────────────────
-    # T7X stores its player name in t7x/players/properties.json as JSON,
-    # not as a seta cvar. Handled separately from the config map.
+    # --- T7X
+    # T7X keeps its player name as JSON in t7x/players/properties.json,
+    # not in a seta cvar, so it is handled outside the config map.
     if "t7x" in setup_keys:
         try:
             from t7x import set_player_name as _t7x_set_name, _get_sibling_dir
             game = (installed_games or {}).get("t7x", {})
-            # t7x install_dir IS the sibling dir (set during install)
+            # The t7x install_dir is the sibling folder (set during install)
             sibling = game.get("install_dir", "")
             if not sibling:
-                # Fall back: look up from the t7 (BO3) install dir
+                # Fallback: work it out from the t7 (BO3) install folder
                 t7_game = (installed_games or {}).get("t7", {})
                 t7_dir = t7_game.get("install_dir", "")
                 if t7_dir:
@@ -800,6 +856,16 @@ def rename_player(player_name, steam_root, installed_games=None,
         except Exception as ex:
             prog(f"  ⚠ t7x: rename failed: {ex}")
 
+    # --- BRO keeps the name in its signed profile file
+    if "bro" in setup_keys:
+        try:
+            from bro import rename_profile
+            if rename_profile(player_name):
+                updated += 1
+                prog("  + bro: renamed in the profile")
+        except Exception as ex:
+            prog(f"  ⚠ bro: rename failed: {ex}")
+
     updated += _rename_in_lan_scripts(player_name, installed_games, prog)
 
     prog(f"Player name updated in {updated} file(s).")
@@ -808,9 +874,9 @@ def rename_player(player_name, steam_root, installed_games=None,
 
 def _rename_in_lan_scripts(player_name, installed_games, prog):
     """
-    Plutonium offline scripts bake the name in as +name "...": the -lan .sh
-    (used by the LAN launcher) and the LCD Steam replaced exe fallback.
-    Rewrite it in each.
+    Plutonium offline scripts have the name written in as +name "...": the
+    -lan .sh (used by the LAN launcher) and the LCD Steam replaced exe
+    fallback. Rewrite it in each.
     """
     import re
     import config as cfg

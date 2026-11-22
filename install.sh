@@ -1,7 +1,7 @@
 #!/bin/bash
 # DeckOps Installer
 
-# ── colours ───────────────────────────────────────────────────────────────────
+# --- colours
 RED='\033[0;31m'
 YELLOW='\033[0;33m'
 GREEN='\033[0;32m'
@@ -19,10 +19,9 @@ die()     {
     exit 1
 }
 
-# ── config ────────────────────────────────────────────────────────────────────
-# Source deckops_identity.sh if available (normal install path).
-# Fallback for curl-piped installs where identity.sh isn't on disk yet.
-# These fallback values must match deckops_identity.sh and be updated together.
+# --- config
+# Normal installs source deckops_identity.sh. Curl-piped installs don't have it on disk yet, so
+# the fallback values below must match deckops_identity.sh and change together with it.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -f "$SCRIPT_DIR/deckops_identity.sh" ]; then
     source "$SCRIPT_DIR/deckops_identity.sh"
@@ -49,7 +48,7 @@ fi
 MUSIC_URL="https://archive.org/download/adrenaline-klickaud/Adrenaline_KLICKAUD.mp3"
 MUSIC_FILE="background.mp3"
 
-# ── header ────────────────────────────────────────────────────────────────────
+# --- header
 echo ""
 echo -e "${BOLD}  ██████╗ ███████╗ ██████╗██╗  ██╗ ██████╗ ██████╗ ███████╗${CLEAR}"
 echo -e "${BOLD}  ██╔══██╗██╔════╝██╔════╝██║ ██╔╝██╔═══██╗██╔══██╗██╔════╝${CLEAR}"
@@ -61,7 +60,7 @@ echo ""
 echo -e "  ${YELLOW}${APP_TITLE:-DeckOps Nightly} — Installer${CLEAR}"
 echo ""
 
-# ── step 1: check core dependencies ──────────────────────────────────────────
+# --- step 1: check core dependencies
 info "Checking dependencies..."
 
 command -v python3 &>/dev/null || die "Python 3 is not installed."
@@ -71,7 +70,7 @@ command -v unzip   &>/dev/null || die "unzip is not installed."
 PYTHON_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 success "Python $PYTHON_VER found."
 
-# ── step 2: download latest release ──────────────────────────────────────────
+# --- step 2: download latest release
 info "Downloading DeckOps..."
 
 TMPZIP="$(mktemp /tmp/deckops_XXXXXX.zip)"
@@ -79,7 +78,7 @@ curl -L --progress-bar "https://github.com/$GITHUB_USER/$GITHUB_REPO/archive/ref
     || die "Download failed. Check your internet connection."
 success "Download complete."
 
-# ── step 3: extract ───────────────────────────────────────────────────────────
+# --- step 3: extract
 info "Installing to $INSTALL_DIR..."
 
 TMPDIR_EXTRACT="$(mktemp -d /tmp/deckops_extract_XXXXXX)"
@@ -96,7 +95,7 @@ rm -rf "$TMPDIR_EXTRACT"
 chmod +x "$ENTRY_POINT" 2>/dev/null || true
 success "DeckOps installed to $INSTALL_DIR"
 
-# ── step 3b: write build info ─────────────────────────────────────────────
+# --- step 3b: write build info
 # Short commit hash + date, read by the Settings screen's About section.
 # Uses the downloaded archive's HEAD, not a local git repo.
 BUILD_DATE=$(date '+%b %d, %Y')
@@ -107,7 +106,7 @@ fi
 echo "$BUILD_HASH ($BUILD_DATE)" > "$INSTALL_DIR/BUILD"
 success "Build info written: $BUILD_HASH ($BUILD_DATE)"
 
-# ── step 4: download background music ────────────────────────────────────────
+# --- step 4: download background music
 info "Downloading background music..."
 
 mkdir -p "$MUSIC_DIR"
@@ -120,7 +119,7 @@ else
     success "Background music already present."
 fi
 
-# ── step 5: set up Python venv + install packages ────────────────────────────
+# --- step 5: set up Python venv + install packages
 info "Setting up Python environment..."
 
 if [ ! -d "$VENV_DIR" ]; then
@@ -158,7 +157,7 @@ if [ "$QT6_OK" = 0 ] && ! "$VENV_PYTHON" -c "from PyQt5.QtWidgets import QApplic
     success "PyQt5 installed."
 fi
 
-# ── step 6: .desktop entry ────────────────────────────────────────────────────
+# --- step 6: .desktop entry
 info "Creating application shortcut..."
 
 mkdir -p "$(dirname "$DESKTOP_FILE")"
@@ -184,11 +183,11 @@ if [ -d "$HOME/Desktop" ]; then
     success "Desktop shortcut created."
 fi
 
-# ── step 7: sweep stale plut_lan.sh sidecars ─────────────────────────────────
-# Pre-Pass-1 installs wrote <gametag>plut_lan.sh into game install dirs at
-# install time (OLED offline-mode plumbing). Pass 1 stopped creating them but
-# left existing files on disk. Sweep all known Steam libraries (internal +
-# libraryfolders.vdf entries + SD card mounts) and remove them.
+# --- step 7: sweep stale plut_lan.sh sidecars
+# Installs from before Pass 1 wrote <gametag>plut_lan.sh into game install dirs (OLED
+# offline-mode plumbing). Pass 1 stopped creating them but left existing files on disk.
+# This removes them from every known Steam library: internal, libraryfolders.vdf entries
+# and SD card mounts.
 info "Sweeping stale plut_lan.sh sidecars..."
 
 STEAM_ROOT_FOR_SWEEP=""
@@ -230,8 +229,8 @@ else
     success "No stale plut_lan.sh sidecars found."
 fi
 
-# ── step 8: write initial version SHA ─────────────────────────────────────────
-# So the first launch doesn't redundantly re-download everything.
+# --- step 8: write initial version SHA
+# Without it the first launch would re-download everything.
 info "Recording current version..."
 INITIAL_SHA=$(curl -sf --max-time 10 \
     "https://api.github.com/repos/$GITHUB_USER/$GITHUB_REPO/commits/main" \
@@ -243,7 +242,7 @@ else
     warn "Could not fetch version SHA — will be set on first update."
 fi
 
-# ── step 9: done ─────────────────────────────────────────────────────────────
+# --- step 9: done
 echo ""
 echo -e "${GREEN}${BOLD}  Download Complete! Welcome to DeckOps.${CLEAR}"
 echo ""

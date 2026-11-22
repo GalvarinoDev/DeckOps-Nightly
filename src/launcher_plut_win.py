@@ -1,31 +1,30 @@
 #!/usr/bin/env python3
 """
 launcher_plut_win.py - Offline LAN launcher for Plutonium on Steam Deck
-(Windows .exe version -- runs inside Proton)
+(Windows .exe version, runs inside Proton)
 
-A lightweight PyQt5 app that shows installed Plutonium games and lets
-the user pick a mode (MP, S/Z, ZM) to launch in offline LAN mode.
-Designed to run as a non-Steam shortcut with Proton in Game Mode.
+A small PyQt5 app that lists the installed Plutonium games and lets the
+user pick a mode (MP, S/Z, ZM, DS) to launch in offline LAN mode. It is
+a Windows executable built with PyInstaller and runs under GE-Proton as
+a non-Steam shortcut in Game Mode.
 
-This is a Windows executable built with PyInstaller. It runs inside
-GE-Proton as a non-Steam shortcut.
-
-Launching writes an intent file (.lan_intent.json) and exits; the wrapper
-script (launcher_offline.sh) reads it and exec's the game's -lan wrapper,
-which runs the game in its own Proton prefix. Same flow on every device.
+Picking a mode writes an intent file (.lan_intent.json) and exits. The
+wrapper script (launcher_offline.sh) reads it and execs the game's -lan
+wrapper, which runs the game in its own Proton prefix. Every device uses
+this flow.
 
 Every launch attempt is logged to .lan_launch.log on the Linux filesystem.
 
 Flow:
-  1. Read deckops.json (via Wine Z: drive) for installed Plutonium games
-     and each game's stored lan_wrapper_path.
+  1. Read deckops.json (through the Wine Z: drive) for the installed
+     Plutonium games and each game's stored lan_wrapper_path.
   2. Show compact game rows with hero background art and mode buttons.
-  3. User taps a mode -- the exe writes the intent file and lets the
-     wrapper script take over.
+  3. When the user taps a mode, the exe writes the intent file and the
+     wrapper script takes over.
 
-Gamepad input: Steam Deck Game Mode maps D-pad to arrow keys and A/B to
-Return/Escape. Qt sees these as keyPressEvents. evdev is not available
-inside Wine, but the keyboard mapping works identically.
+Gamepad input: Steam Deck Game Mode maps the D-pad to arrow keys and A/B
+to Return/Escape, so Qt gets them as keyPressEvents. evdev is not
+available inside Wine, but the keyboard mapping works the same.
 """
 
 import os
@@ -43,14 +42,14 @@ from PyQt5.QtCore import (
     Qt, QTimer, QRect, QObject, QThread, pyqtSignal, pyqtSlot,
 )
 
-# ── paths ────────────────────────────────────────────────────────────────────
+# --- Paths
 # Inside Wine/Proton, Z: maps to the Linux root filesystem.
-# All paths are derived from the exe location so they work on any Linux
-# username, not just "deck".  The exe lives at:
+# Every path comes from the exe location, so any Linux username works,
+# not only "deck". The exe lives at:
 #   ~/<INSTALL_DIR_NAME>/assets/LAN/DeckOps_Offline.exe
-# so walking four parents up gives us the Linux home directory via Z:.
+# so four parents up is the Linux home directory on Z:.
 
-# ── Branch identity (mirrors identity.py -- keep in sync) ─────────────────────
+# --- Branch identity (copy of identity.py, keep in sync)
 _BRANCH = "nightly"  # "nightly" or "stable"
 _INSTALL_DIR_NAME = "DeckOps-Nightly" if _BRANCH == "nightly" else "DeckOps"
 _GITHUB_USER = "GalvarinoDev"
@@ -59,24 +58,24 @@ _GITHUB_RAW = f"https://raw.githubusercontent.com/{_GITHUB_USER}/{_GITHUB_REPO}/
 
 
 def _detect_linux_home() -> str:
-    """Derive the Linux home directory (as a Wine Z: path) from the exe location.
+    """Find the Linux home directory (as a Wine Z: path) from the exe location.
 
-    PyInstaller sets sys.executable to the .exe path, which sits at:
+    PyInstaller sets sys.executable to the .exe path:
         Z:\\home\\<user>\\<INSTALL_DIR_NAME>\\assets\\LAN\\DeckOps_Offline.exe
 
-    Walking four parents up (LAN -> assets -> <INSTALL_DIR_NAME> -> home dir)
-    gives us Z:\\home\\<user>.
+    Four parents up (LAN -> assets -> <INSTALL_DIR_NAME> -> home dir) is
+    Z:\\home\\<user>.
 
-    Falls back to Z:\\home\\deck if detection fails.
+    Falls back to Z:\\home\\deck if that fails.
     """
     try:
         exe = os.path.abspath(sys.executable)
         # exe  = .../<INSTALL_DIR_NAME>/assets/LAN/DeckOps_Offline.exe
-        # We want four levels up: exe -> LAN -> assets -> <INSTALL_DIR_NAME> -> home
+        # Four levels up: exe -> LAN -> assets -> <INSTALL_DIR_NAME> -> home
         home = os.path.dirname(os.path.dirname(os.path.dirname(
             os.path.dirname(exe)
         )))
-        # Sanity check: the install dir should exist one level down
+        # The install dir must exist one level down, or the guess is wrong
         deckops_dir = os.path.join(home, _INSTALL_DIR_NAME)
         if os.path.isdir(deckops_dir):
             return home
@@ -91,16 +90,15 @@ _LINUX_HOME = _detect_linux_home()
 _LINUX_PROJECT_ROOT = os.path.join(_LINUX_HOME, _INSTALL_DIR_NAME)
 _DECKOPS_JSON = os.path.join(_LINUX_PROJECT_ROOT, "deckops.json")
 
-# Intent file -- written by the exe when the user picks a game.
-# launcher_offline.sh reads this after the exe exits and exec's the
-# per-game LAN wrapper script. Used by all deck models.
+# The exe writes the intent file when the user picks a game.
+# launcher_offline.sh reads it after the exe exits and execs the
+# per-game LAN wrapper script. All Deck models use it.
 _INTENT_FILE = os.path.join(_LINUX_PROJECT_ROOT, ".lan_intent.json")
 # The launcher's own settings (music mute). deckops.json is only read here.
 _SETTINGS_FILE = os.path.join(_LINUX_PROJECT_ROOT, ".lan_launcher.json")
 
-# Launch diagnostics log (Linux filesystem, via Z:). Written before and
-# after every launch attempt so a failed launch leaves evidence rather
-# than failing silently.
+# Launch log (Linux filesystem, through Z:). Written before and after
+# every launch attempt, so a failed launch leaves a trace.
 _LAN_LOG = os.path.join(_LINUX_PROJECT_ROOT, ".lan_launch.log")
 
 
@@ -121,7 +119,7 @@ MUSIC_PATH = os.path.join(_LINUX_PROJECT_ROOT, "assets", "music",
                            "background.mp3")
 
 
-# ── colors (match DeckOps ui_qt.py) ──────────────────────────────────────────
+# --- Colors (same as DeckOps ui_qt.py)
 
 C_BG       = "#141416"
 C_CARD     = "#1E1E26"
@@ -130,7 +128,7 @@ C_TREY     = "#F47B20"
 C_DIM      = "#888899"
 C_DARK_BTN = "#33333F"
 
-# ── layout constants for 1280x800 ───────────────────────────────────────────
+# --- Layout for 1280x800
 
 HEADER_H = 52
 ROW_H    = 160
@@ -138,7 +136,7 @@ ROW_GAP  = 10
 PAD_X    = 16
 PAD_Y    = 12
 
-# ── font ─────────────────────────────────────────────────────────────────────
+# --- Font
 
 _FONT_FAMILY = "Sans Serif"
 _FONT_LOADED = False
@@ -160,7 +158,7 @@ def _font(size=13, bold=False):
     f.setBold(bold)
     return f
 
-# ── Plutonium game data ──────────────────────────────────────────────────────
+# --- Plutonium games
 
 PLUT_GAMES = [
     {
@@ -194,10 +192,10 @@ PLUT_GAMES = [
 ]
 
 
-# ── XInput gamepad polling ────────────────────────────────────────────────────
-# Uses XInput-Python to read the Steam Deck's gamepad inside Wine/Proton.
-# Steam Deck presents as an XInput controller in Game Mode.
-# Polls on a QTimer -- no threading needed.
+# --- XInput gamepad polling
+# XInput-Python reads the Steam Deck's gamepad inside Wine/Proton.
+# In Game Mode the Deck shows up as an XInput controller.
+# A QTimer does the polling, so no thread is needed.
 
 _XINPUT_AVAILABLE = False
 try:
@@ -271,12 +269,12 @@ class GamepadPoller:
                 was_pressed = bool(self._prev_buttons & btn)
 
                 if is_pressed and not was_pressed:
-                    # Fresh press -- fire immediately
+                    # New press, fire at once
                     self._fire(btn)
                     self._held_button = btn
                     self._held_time_ms = 0
                 elif is_pressed and was_pressed and self._held_button == btn:
-                    # Held -- handle repeat
+                    # Held, repeat after the delay
                     self._held_time_ms += _GAMEPAD_POLL_MS
                     if self._held_time_ms >= _GAMEPAD_REPEAT_DELAY_MS:
                         if (self._held_time_ms - _GAMEPAD_REPEAT_DELAY_MS) % _GAMEPAD_REPEAT_RATE_MS < _GAMEPAD_POLL_MS:
@@ -301,7 +299,7 @@ class GamepadPoller:
             cb()
 
 
-# ── audio (background music) ─────────────────────────────────────────────
+# --- Background music
 
 LAUNCHER_VOLUME_MULT = 0.5
 FADEOUT_MS           = 1000
@@ -372,10 +370,10 @@ def _fadeout_audio(ms: int = FADEOUT_MS):
         pass
 
 
-# ── config helpers ────────────────────────────────────────────────────────
+# --- Config
 
 def _load_deckops_config() -> dict:
-    """Load deckops.json from the Linux filesystem via Z: drive."""
+    """Load deckops.json from the Linux filesystem through the Z: drive."""
     if not os.path.exists(_DECKOPS_JSON):
         return {}
     try:
@@ -386,11 +384,11 @@ def _load_deckops_config() -> dict:
 
 
 
-# ── launch helper ────────────────────────────────────────────────────────
+# --- Launch
 
 _LAUNCH_FIRED = False
 
-# Set by LauncherWindow: swaps the game list for the "Starting ..." message
+# LauncherWindow sets this. It swaps the game list for the "Starting ..." message
 _ON_LAUNCH = None
 _LAUNCH_MESSAGE_MS = 3000
 
@@ -398,14 +396,14 @@ _LAUNCH_MESSAGE_MS = 3000
 def _launch_lan_lcd(lan_wrapper_path: str, title: str = ""):
     """Write a launch intent file and exit.
 
-    launcher_offline.sh reads the intent after this exe exits and exec's
+    launcher_offline.sh reads the intent after this exe exits and execs
     the per-game LAN wrapper script. The LAN wrapper runs the Plutonium
     bootstrapper with -lan inside the game's own Proton prefix, so each
-    game gets a fully initialized Wine environment with the correct DLLs
-    and DXVK state.
+    game gets a fully set up Wine environment with the right DLLs and
+    DXVK state.
 
-    Used by all deck models (OLED, LCD, Other). The function name retains
-    "lcd" for backward compatibility with any external callers.
+    All Deck models use it (OLED, LCD, Other). The name keeps "lcd" for
+    backward compatibility with any external callers.
     """
     global _LAUNCH_FIRED
     if _LAUNCH_FIRED:
@@ -429,12 +427,12 @@ def _launch_lan_lcd(lan_wrapper_path: str, title: str = ""):
 
 def _dispatch_launch(info: dict, title: str = ""):
     """Write a launch intent and exit. launcher_offline.sh reads the
-    intent after this exe exits and exec's the per-game LAN wrapper
-    script, which launches the game in its own Proton prefix.
+    intent after this exe exits and execs the per-game LAN wrapper
+    script, which starts the game in its own Proton prefix.
 
-    This is the same flow for all deck models (OLED, LCD, Other).
-    The per-game LAN wrapper handles prefix selection, so the launcher
-    exe never needs to run game code inside its own Wine environment.
+    All Deck models (OLED, LCD, Other) use this flow. The per-game LAN
+    wrapper picks the prefix, so the launcher exe never runs game code
+    inside its own Wine environment.
     """
     lan_path = info.get("lan_wrapper_path", "")
     if lan_path:
@@ -443,7 +441,7 @@ def _dispatch_launch(info: dict, title: str = ""):
         _lan_log(f"Launch skipped: no lan_wrapper_path in {info!r}")
 
 
-# ── helpers ──────────────────────────────────────────────────────────────────
+# --- Helpers
 
 def _hero_path(hero_file: str) -> str:
     return os.path.join(HEROES_DIR, hero_file)
@@ -451,17 +449,17 @@ def _hero_path(hero_file: str) -> str:
 
 def _get_setup_plut_keys() -> dict:
     """
-    Return Plutonium game keys that have been set up, with the data each
+    Return the Plutonium game keys that are set up, with the data each
     launch path needs.
 
-    All models now use the intent-file bridge: the exe writes
+    All models use the intent-file bridge: the exe writes
     .lan_intent.json with the lan_wrapper_path and exits.
-    launcher_offline.sh reads the intent and exec's the per-game LAN
-    wrapper script, which runs the bootstrapper in the correct per-game
-    Proton prefix.
+    launcher_offline.sh reads the intent and execs the per-game LAN
+    wrapper script, which runs the bootstrapper in that game's Proton
+    prefix.
 
-    Returns dict -- {game_key: {...}} where a game is included only if
-    it has a valid lan_wrapper_path on disk.
+    Returns {game_key: {...}}. A game is included only if its
+    lan_wrapper_path exists on disk.
     """
     try:
         deckops     = _load_deckops_config()
@@ -479,7 +477,7 @@ def _get_setup_plut_keys() -> dict:
         return {}
 
 
-# ── widgets ──────────────────────────────────────────────────────────────────
+# --- Widgets
 
 class GameRow(QWidget):
     """
@@ -541,10 +539,10 @@ class GameRow(QWidget):
         if self._has_modes:
             for key, label in self._available:
                 info = setup_info[key]
-                # A game is launchable if its info dict carries what its
+                # A game is launchable if its info dict has what its
                 # model's launch path needs. _get_setup_plut_keys only
-                # includes games that passed that check, so presence in
-                # setup_info is sufficient.
+                # returns games that pass that check, so being in
+                # setup_info is enough.
                 launchable = bool(info)
 
                 btn = QPushButton(label)
@@ -672,7 +670,7 @@ class GameRow(QWidget):
 
 
 class LauncherWindow(QWidget):
-    """Main fullscreen launcher window -- fits 1280x800 with no scrolling."""
+    """Fullscreen launcher window. Fits 1280x800 with no scrolling."""
 
     def __init__(self):
         super().__init__()
@@ -685,7 +683,7 @@ class LauncherWindow(QWidget):
         root_lay.setContentsMargins(0, 0, 0, 0)
         root_lay.setSpacing(0)
 
-        # ── header bar ──
+        # --- Header bar
         hdr = QWidget()
         hdr.setFixedHeight(HEADER_H)
         hdr.setStyleSheet(f"background:{C_CARD};")
@@ -730,7 +728,7 @@ class LauncherWindow(QWidget):
         hl.addWidget(quit_btn)
         root_lay.addWidget(hdr)
 
-        # ── game rows ──
+        # --- Game rows
         rows_container = QWidget()
         rows_container.setStyleSheet(f"background:{C_BG};")
         rows_lay = QVBoxLayout(rows_container)
@@ -775,7 +773,7 @@ class LauncherWindow(QWidget):
             empty.setStyleSheet(f"color:{C_DIM};background:transparent;")
             rows_lay.insertWidget(0, empty)
 
-        # ── keyboard focus tracking ──
+        # --- Keyboard focus
         self._focus_rows = [r for r in installed if r.launchable_count() > 0]
         self._row_idx = 0
         if self._focus_rows:
@@ -784,7 +782,7 @@ class LauncherWindow(QWidget):
 
         self.setFocusPolicy(Qt.StrongFocus)
 
-        # ── XInput gamepad ──
+        # --- XInput gamepad
         self._gamepad = GamepadPoller(
             on_up=lambda: self.on_move_row(-1),
             on_down=lambda: self.on_move_row(+1),
@@ -881,7 +879,7 @@ class LauncherWindow(QWidget):
         QTimer.singleShot(FADEOUT_MS, QApplication.instance().quit)
 
 
-# ── main ─────────────────────────────────────────────────────────────────────
+# --- Main
 
 def main():
     app = QApplication(sys.argv)

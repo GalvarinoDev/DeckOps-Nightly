@@ -1,5 +1,5 @@
 """
-steam_appinfo.py - add launch menu entries to Steam's appinfo.vdf
+steam_appinfo.py: add launch menu entries to Steam's appinfo.vdf
 
 Steam shows its "choose a launch option" dialog when an app's cached
 appinfo has more than one launch entry for the current OS. DeckOps uses
@@ -11,6 +11,7 @@ go after the last existing key and are matched by `executable`. The one
 edit to a stock entry is a "tag" argument (VANILLA_TAG): Steam drops it
 together with our entries, so a launch option can tell a stock pick from
 a lost menu.
+
 Steam rewrites appinfo.vdf from Valve's servers now and then, so every
 menu we add is recorded in deckops.json (`launch_menus`) and
 reapply_all() puts them back. Only call with Steam closed.
@@ -154,7 +155,7 @@ class _AppInfo:
 
 
 def _text_vdf(node, depth: int = 0) -> bytes:
-    # Valve's text checksum can't be reproduced exactly by any known tool;
+    # Valve's text checksum can't be reproduced exactly by any known tool.
     # Steam accepts a recomputed one, so use the conventional text layout.
     tabs, out = b"\t" * depth, b""
     esc = lambda s: s.replace(b"\\", b"\\\\")
@@ -322,7 +323,7 @@ def remove_launch_entries(steam_root: str, appid: int, executables: list) -> boo
 
 
 def reapply_all(steam_root: str):
-    """Re-add every recorded menu; Steam may have refreshed appinfo since."""
+    """Re-add every recorded menu. Steam may have refreshed appinfo since."""
     import config as cfg
     for appid, entries in cfg.load().get("launch_menus", {}).items():
         add_launch_entries(steam_root, int(appid), entries, record=False)

@@ -1,16 +1,18 @@
 """
-net.py — DeckOps shared network utilities
+net.py: DeckOps shared network utilities
 
 Provides a reusable download-with-retry helper used by mod client
-installers (cod4x, iw3sp, iw4x, cleanops). Centralises the browser
-UA string and retry/backoff logic so changes propagate everywhere.
+installers (cod4x, iw3sp, iw4x, cleanops). Keeps the browser UA string
+and retry/backoff logic in one place.
 """
 
 import hashlib
+import io
 import json
 import os
 import time
 import urllib.request
+import zipfile
 
 from log import get_logger
 
@@ -35,9 +37,9 @@ class DownloadError(RuntimeError):
     and a target folder for the user to place the file in.
 
     Attributes:
-        url       -- the URL that failed to download
-        dest      -- the local file path the download was targeting
-        label     -- human-readable name (e.g. "Plutonium bootstrapper")
+        url:   the URL that failed to download
+        dest:  the local file path the download was targeting
+        label: human-readable name (e.g. "Plutonium bootstrapper")
     """
     def __init__(self, url: str, dest: str, label: str, cause: Exception):
         self.url   = url
@@ -89,15 +91,15 @@ def download(url: str, dest: str, on_progress=None, label: str = "",
     "AlterWare launcher  412 MB / 1.2 GB  ·  8.4 MB/s". Callbacks are
     capped at UPDATE_HZ per second.
 
-    url         — remote URL to fetch
-    dest        — local file path to write
-    on_progress — optional callback(percent: int, status: str)
-    label       — human-readable name shown in progress messages
-    timeout     — socket timeout in seconds (default 60)
-    headers     — request headers, default BROWSER_UA
-    digest      — optional "algo:hex" (e.g. GitHub's "sha256:..."); a
+    url         : remote URL to fetch
+    dest        : local file path to write
+    on_progress : optional callback(percent: int, status: str)
+    label       : human-readable name shown in progress messages
+    timeout     : socket timeout in seconds (default 60)
+    headers     : request headers, default BROWSER_UA
+    digest      : optional "algo:hex" (e.g. GitHub's "sha256:..."); a
                   mismatch discards the part file and counts as a failed try
-    tries       — attempts before giving up (1 for quick checks that must
+    tries       : attempts before giving up (1 for quick checks that must
                   not hold anything up, e.g. before a game launch)
     """
     part = dest + ".part"
@@ -138,8 +140,8 @@ def download(url: str, dest: str, on_progress=None, label: str = "",
                             rate = (done - resume) / max(now - t0, 0.001)
                             on_progress(int(done / total * 100) if total else 0,
                                         _detail(label, done, total, rate))
-            # A stream that ends early used to look like success and get
-            # renamed into place. Force a retry, which now resumes.
+            # A stream that ends early must not be renamed into place.
+            # Raise so the retry resumes from the part file.
             if total and done < total:
                 raise IOError(f"incomplete download: {done} of {total} bytes")
             if digest:
@@ -171,19 +173,81 @@ def _check_digest(path: str, digest: str):
         raise IOError(f"{algo} mismatch for {os.path.basename(path)}")
 
 
-def github_asset(repo: str, suffix: str, fallback: str = None, timeout: int = 30):
+class _Ranged(io.RawIOBase):
+    """Seekable read-only view of a remote file through HTTP Range requests."""
+    def __init__(self, url, timeout, seen):
+        with urllib.request.urlopen(urllib.request.Request(url, method="HEAD", headers=BROWSER_UA), timeout=timeout) as r:
+            self.url, self.size = r.geturl(), int(r.headers["Content-Length"])
+        self.pos, self.timeout, self.seen = 0, timeout, seen
+
+    def readable(self): return True
+    def seekable(self): return True
+    def tell(self): return self.pos
+
+    def seek(self, off, whence=0):
+        self.pos = (off, self.pos + off, self.size + off)[whence]
+        return self.pos
+
+    def readinto(self, b):
+        n = min(len(b), self.size - self.pos)
+        if n <= 0:
+            return 0
+        req = urllib.request.Request(self.url, headers={**BROWSER_UA, "Range": f"bytes={self.pos}-{self.pos + n - 1}"})
+        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            if r.status != 206:
+                raise IOError(f"server ignored the range request (HTTP {r.status})")
+            d = r.read()
+        b[:len(d)] = d
+        self.pos += len(d)
+        self.seen(len(d))
+        return len(d)
+
+
+def zip_member(url: str, member: str, sha256: str, on_progress=None, label: str = "",
+               timeout: int = 60, tries: int = 3) -> bytes:
+    """One file out of a remote zip, fetched with HTTP Range requests instead of
+    the whole archive, and checked against its sha256 (hex). Raises DownloadError."""
+    label = label or os.path.basename(member)
+    last = None
+    for attempt in range(tries):
+        got, total = [0], [0]
+        def seen(n):
+            got[0] += n
+            if on_progress and total[0]:
+                on_progress(min(99, got[0] * 100 // total[0]), _detail(label, min(got[0], total[0]), total[0], 0))
+        try:
+            with zipfile.ZipFile(io.BufferedReader(_Ranged(url, timeout, seen), CHUNK)) as zf:
+                total[0] = zf.getinfo(member).compress_size
+                data = zf.read(member)
+            if hashlib.sha256(data).hexdigest() != sha256.lower():
+                raise IOError(f"sha256 mismatch for {member}")
+            return data
+        except Exception as ex:
+            last = ex
+            _log.warning(f"{label}: attempt {attempt + 1} of {tries} failed: {ex}")
+            if attempt + 1 < tries:
+                time.sleep(2 * (attempt + 1))
+    raise DownloadError(url, member, label, last)
+
+
+def github_asset(repo: str, suffix: str, fallback: str = None, timeout: int = 30,
+                 prerelease: bool = False):
     """
     (url, digest) of the latest release asset of repo whose name ends with
     suffix. digest is GitHub's "sha256:..." or None. If the API lookup
     fails and fallback is given, returns (fallback, None) so an API outage
     or rate limit doesn't block the install, just skips verification.
+    prerelease: take the newest release even if it is a pre-release.
+    releases/latest skips those, and some repos only publish pre-releases.
     """
     try:
         req = urllib.request.Request(
-            f"https://api.github.com/repos/{repo}/releases/latest",
+            f"https://api.github.com/repos/{repo}/releases" + ("?per_page=1" if prerelease else "/latest"),
             headers={"Accept": "application/vnd.github+json", "User-Agent": "DeckOps"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             data = json.loads(r.read())
+        if prerelease:
+            data = data[0] if data else {}
         for a in data.get("assets", []):
             if a["name"].endswith(suffix):
                 return a["browser_download_url"], a.get("digest")

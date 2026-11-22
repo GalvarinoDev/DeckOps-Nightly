@@ -1,14 +1,14 @@
 """
-preflight.py - checks worth running before a long install starts
+preflight.py - checks to run before a long install starts
 
-Disk space was only ever checked inside the depot downgrade, after
-Steam had already been killed and the install was underway. These run
-first, while backing out is still free.
+The depot downgrade checks disk space itself, but only after Steam has
+been killed and the install is underway. These checks run first, while
+backing out still costs nothing.
 
-Only sizes the codebase already knows are checked: the depot downgrade
-headroom, the IW4x DLC pack and the Zombies Declassified pack. There is
-deliberately no estimate for the clients themselves. Guessing a number
-and then refusing to install based on it is worse than not checking.
+Only sizes DeckOps already knows are checked: the depot downgrade
+headroom, the IW4x DLC pack and the Zombies Declassified pack. The
+clients themselves get no estimate on purpose. Refusing an install over
+a guessed number is worse than not checking.
 """
 
 import os
@@ -22,8 +22,8 @@ _log = get_logger(__name__)
 Check = namedtuple("Check", "level title detail")
 OK, WARN, BLOCK = "ok", "warn", "block"
 
-# Mirrors _DG_KEY_MAP in ui_install._run_inner. Kept here so preflight
-# stays a leaf module; update both if the depot game list changes.
+# Copy of _DG_KEY_MAP in ui_install._run_inner, kept here so preflight
+# stays a leaf module. Update both if the depot game list changes.
 DOWNGRADE_KEYS = {"iw5mp", "iw5mp_ds", "iw5sp", "iw6mp", "iw6sp", "s1mp", "s1sp"}
 
 
@@ -50,7 +50,7 @@ def _probe(path: str):
 
 
 def _on_ac() -> bool:
-    """True when any mains or USB supply reports online. No sysfs reads as plugged in."""
+    """True when any mains or USB supply reports online. If sysfs lists none, assume plugged in."""
     base = "/sys/class/power_supply"
     seen = False
     try:
@@ -84,9 +84,9 @@ def check(selected, iw4x_dlc=False, zd=False, downgrade_keys=()):
     """
     Run the pre-install checks.
 
-    selected       -- list of (key, client, install_dir)
-    downgrade_keys -- selected keys that will need a depot downgrade
-    Returns a list of Check(level, title, detail); empty means nothing to say.
+    selected:       list of (key, client, install_dir)
+    downgrade_keys: selected keys that will need a depot downgrade
+    Returns a list of Check(level, title, detail). Empty means nothing to say.
     """
     from depot_downgrade import REQUIRED_FREE_SPACE_GB
     from iw4x import DLC_SIZE_GB

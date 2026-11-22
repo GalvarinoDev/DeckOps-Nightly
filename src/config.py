@@ -1,15 +1,15 @@
 """
 config.py - DeckOps configuration manager
 
-Handles reading and writing deckops.json which lives at the
-install directory (path provided by identity.py).
+Reads and writes deckops.json in the install directory (path from
+identity.py).
 
-The config file tracks:
-    - Whether first-time setup has been completed
-    - Which device the user has (oled, lcd, other, or steam_machine)
-    - For 'other' and 'steam_machine' devices, which resolution profile to use
-    - Which games have been set up and when
-    - The Steam root path found during setup
+The config file tracks, among other things:
+    - whether first-time setup is done
+    - the device (oled, lcd, other, or steam_machine)
+    - the resolution profile for 'other' and 'steam_machine' devices
+    - which games are set up and when
+    - the Steam root path found during setup
 """
 
 import copy
@@ -35,15 +35,15 @@ DEFAULTS = {
                                   # "legion_go", "legion_go_2", "legion_go_s", "2btn", "generic", "steam_machine"
     "gyro_mode":  None,          # "on", "off", "hold", or "toggle"
     "play_mode":  None,          # "handheld" or "docked"
-    "external_controller": None, # "playstation", "xbox", "steamcontroller", or "other" -- only used when play_mode is "docked"
-    "docked_resolution": None,   # "1280x720", "1280x800", "1920x1080", "1920x1200", or "own" -- only used when play_mode is "docked"
-                                 # NOTE: this will also be used for future Bazzite, Steam Box, and other handheld support on SteamOS
+    "external_controller": None, # "playstation", "xbox", "steamcontroller", or "other". Only used when play_mode is "docked"
+    "docked_resolution": None,   # "1280x720", "1280x800", "1920x1080", "1920x1200", or "own". Only used when play_mode is "docked"
+                                 # Planned for future Bazzite, Steam Box, and other handheld support on SteamOS
     "ge_proton_version": None,   # e.g. "GE-Proton10-32"
     "steam_root": None,
     "setup_games": {},           # key: game key, value: { "client": ..., "source": "steam"|"own", "setup_at": timestamp,
                                  #   "lan_wrapper_path": path to -lan bash script for offline launcher (all sources) }
-    "depot_patched": {},         # legacy (read-only): pre-receipt Ghosts/AW downgrade flag; receipts now live in the game folder
-    "game_source": None,         # "steam" or "own"
+    "depot_patched": {},         # legacy (read-only): pre-receipt Ghosts/AW downgrade flag. Receipts now live in the game folder
+    "game_source": None,         # "both" since the unified game list. Older installs may have "steam" or "own"
     "music_enabled": True,       # background music on/off
     "music_volume":  0.4,        # 0.0 to 1.0
     "player_name": None,         # in-game player name for configs and LCD Plutonium
@@ -56,10 +56,10 @@ DEFAULTS = {
 }
 
 
-# ── In-memory cache ──────────────────────────────────────────────────────────
-# Avoids re-reading and re-parsing deckops.json on every getter call.
-# The cache is invalidated on save() and on external file changes (mtime check).
-# Thread-safe: all cache access is guarded by _lock.
+# --- In-memory cache
+# Saves re-reading and re-parsing deckops.json on every getter call.
+# save() clears it, and an mtime check catches changes made outside DeckOps.
+# All cache access holds _lock.
 
 _lock = threading.Lock()
 _cache = None        # cached merged dict, or None if invalidated
@@ -70,27 +70,27 @@ def load() -> dict:
     """
     Load config from disk with in-memory caching.
 
-    Returns a fresh copy of the cached config if the file hasn't changed
-    since the last read (mtime check). Re-reads from disk if the file
-    was modified externally or if save() invalidated the cache.
+    Returns a fresh copy of the cached config if the file's mtime hasn't
+    changed since the last read. Re-reads from disk if something else
+    changed the file or save() cleared the cache.
 
-    Returns defaults if the file doesn't exist or is corrupt.
+    Returns defaults if the file is missing or corrupt.
     """
     global _cache, _cache_mtime
 
     with _lock:
-        # Check if file exists
+        # Does the file exist?
         try:
             current_mtime = os.path.getmtime(CONFIG_PATH)
         except OSError:
-            # File doesn't exist or can't be stat'd — return defaults
+            # Missing or can't be stat'd, so use defaults
             return copy.deepcopy(DEFAULTS)
 
-        # Return cached copy if file hasn't changed
+        # File unchanged, use the cache
         if _cache is not None and current_mtime == _cache_mtime:
             return copy.deepcopy(_cache)
 
-        # Cache miss or stale — re-read from disk
+        # No cache or stale cache, re-read from disk
         try:
             with open(CONFIG_PATH, "r") as f:
                 data = json.load(f)
@@ -114,7 +114,7 @@ def load() -> dict:
 
 def save(config: dict):
     """
-    Write config to disk and invalidate the cache.
+    Write config to disk and clear the cache.
     Creates the directory if needed.
     """
     global _cache, _cache_mtime
@@ -140,7 +140,7 @@ def is_first_run() -> bool:
 def set_os_type(os_type: str):
     """Save the user's operating system type.
 
-    os_type -- 'steamos', 'bazzite', 'cachyos', 'armada', or 'other_linux'
+    os_type: 'steamos', 'bazzite', 'cachyos', 'armada', or 'other_linux'
     """
     config = load()
     config["os_type"] = os_type
@@ -155,7 +155,7 @@ def get_deck_model() -> str | None:
 def set_deck_model(model: str):
     """Save the user's device model.
 
-    model -- 'oled', 'lcd', 'other', or 'steam_machine'
+    model: 'oled', 'lcd', 'other', or 'steam_machine'
     """
     config = load()
     config["deck_model"] = model
@@ -178,20 +178,20 @@ def is_steam_machine() -> bool:
 
 
 def uses_oled_path() -> bool:
-    """True for devices that use the direct Plutonium launcher path.
+    """True for devices that launch Plutonium directly.
 
-    OLED, Other, and Steam Machine devices launch Plutonium directly via
-    the protocol URL in Steam's compatdata prefix. LCD uses Heroic instead.
-    Use this for launch pipeline decisions, NOT for config folder resolution.
+    OLED, Other, and Steam Machine launch Plutonium through the protocol
+    URL in Steam's compatdata prefix. LCD uses Heroic instead.
+    Use this for launch decisions, not for picking the config folder.
     """
     return load().get("deck_model") != "lcd"
 
 
 def get_other_device() -> str | None:
-    """Returns the resolution key for Other/Steam Machine devices.
-
+    """Returns the resolution key for Other and Steam Machine devices,
     e.g. '1920x1200', '1920x1080', or None.
-    Steam Machine also stores its user-picked resolution here.
+
+    Steam Machine stores the resolution the user picked here too.
     """
     return load().get("other_device")
 
@@ -199,8 +199,8 @@ def get_other_device() -> str | None:
 def set_other_device(device: str):
     """Save the resolution key, e.g. '1920x1200_144hz'.
 
-    Used by both Other devices (preset per device) and Steam Machine
-    (user-picked from the resolution screen).
+    Other devices get a preset per device. Steam Machine gets the one the
+    user picks on the resolution screen.
     """
     config = load()
     config["other_device"] = device
@@ -212,7 +212,7 @@ def get_other_device_type() -> str | None:
 
     Values: 'legion_go', 'legion_go_2', 'legion_go_s', '2btn', 'generic',
             'steam_machine', or None.
-    Used by controller_profiles.py to pick the correct profile variant.
+    controller_profiles.py uses it to pick the profile variant.
     """
     return load().get("other_device_type")
 
@@ -220,9 +220,9 @@ def get_other_device_type() -> str | None:
 def set_other_device_type(device_type: str):
     """Save the device type for controller profile selection.
 
-    device_type -- 'legion_go' (Go 1), 'legion_go_2' (Go 2),
-                   'legion_go_s', '2btn' (ROG Ally,
-                   MSI Claw), 'generic', or 'steam_machine'
+    device_type: 'legion_go' (Go 1), 'legion_go_2' (Go 2),
+                 'legion_go_s', '2btn' (ROG Ally, MSI Claw),
+                 'generic', or 'steam_machine'
     """
     config = load()
     config["other_device_type"] = device_type
@@ -258,8 +258,8 @@ def set_gyro_mode(mode: str):
 
 def get_offline_mode() -> bool:
     """Offline Mode: the offline launcher, Steam menu Offline entries and the
-    WaW/BO1/BO2/MW3 MP bot matches. Older installs set up offline for every Plutonium
-    game, so they keep it."""
+    WaW/BO1/BO2/MW3 MP bot matches. Older installs set up offline for every
+    Plutonium game, so they keep it on."""
     c = load()
     if c.get("offline_mode") is None:
         on = any(e.get("lan_wrapper_path") for e in c.get("setup_games", {}).values())
@@ -273,7 +273,7 @@ def set_offline_mode(on: bool):
 
 
 def set_play_mode(mode: str):
-    """Save the user's play mode. mode should be 'handheld' or 'docked'."""
+    """Save the user's play mode: 'handheld' or 'docked'."""
     _set("play_mode", mode)
 
 
@@ -287,12 +287,12 @@ def get_external_controller() -> str | None:
 
 
 def set_external_controller(controller_type: str):
-    """Save the user's external controller type. Should be 'playstation', 'xbox', 'steamcontroller', or 'other'."""
+    """Save the user's external controller type: 'playstation', 'xbox', 'steamcontroller', or 'other'."""
     _set("external_controller", controller_type)
 
 
 def set_docked_resolution(resolution: str):
-    """Save the user's docked display resolution. 'own' means user sets it in-game."""
+    """Save the user's docked display resolution. 'own' means the user sets it in game."""
     _set("docked_resolution", resolution)
 
 
@@ -317,7 +317,7 @@ def get_music_volume() -> float:
 
 
 def set_music_volume(volume: float):
-    """Save music volume. Clamped to 0.0 - 1.0."""
+    """Save music volume, clamped to 0.0 to 1.0."""
     _set("music_volume", max(0.0, min(1.0, volume)))
 
 
@@ -345,11 +345,11 @@ def get_steam_display_name(steam_root: str | None = None) -> str | None:
     """
     Read the active Steam user's display name from loginusers.vdf.
 
-    Looks for the account with MostRecent=1 and returns its PersonaName.
-    Falls back to the first account if MostRecent is not set.
-    Returns None if the file can't be read or parsed.
+    Returns the PersonaName of the account with MostRecent=1, or of the
+    first account if none has it. Returns None if the file can't be read
+    or parsed.
 
-    steam_root -- path to Steam root. Defaults to ~/.local/share/Steam
+    steam_root: path to the Steam root. Defaults to ~/.local/share/Steam
     """
     if not steam_root:
         steam_root = os.path.expanduser("~/.local/share/Steam")
@@ -362,11 +362,11 @@ def get_steam_display_name(steam_root: str | None = None) -> str | None:
     except (IOError, OSError):
         return None
 
-    # Parse all accounts: find PersonaName and MostRecent per block
-    # VDF is simple enough here to use regex instead of a full parser
+    # Find PersonaName and MostRecent in each account block.
+    # This VDF is simple enough for regex, no full parser needed.
     first_name = None
     most_recent_name = None
-    # Split into per-account blocks by finding Steam ID headers
+    # Split into account blocks at each Steam ID header
     blocks = re.split(r'"\d{17}"\s*\{', content)
     for block in blocks[1:]:  # skip the "users" { header
         persona = re.search(r'"PersonaName"\s+"([^"]*)"', block)
@@ -385,15 +385,15 @@ def mark_game_setup(game_key: str, client: str, source: str = "steam",
                     wrapper_path: str = None,
                     lan_wrapper_path: str = None):
     """
-    Record that a game has been set up successfully.
-    game_key         -- e.g. 'cod4mp', 'iw4mp', 't5sp'
-    client           -- e.g. 'cod4x', 'iw4x', 'plutonium'
-    source           -- 'steam' or 'own' (which install path was used)
-    wrapper_path     -- optional path to the online launcher wrapper script
-                        (OLED own games, used by legacy callers)
-    lan_wrapper_path -- optional path to the -lan bash script for offline
-                        mode. Used by the offline launcher for all sources
-                        and both hardware models.
+    Record that a game was set up.
+    game_key:         e.g. 'cod4mp', 'iw4mp', 't5sp'
+    client:           e.g. 'cod4x', 'iw4x', 'plutonium'
+    source:           'steam' or 'own' (the install path used)
+    wrapper_path:     optional path to the online launcher wrapper script
+                      (OLED own games, legacy callers)
+    lan_wrapper_path: optional path to the -lan bash script for Offline
+                      Mode. The offline launcher uses it for all sources
+                      and both hardware models.
     """
     config = load()
     entry = {
@@ -416,9 +416,9 @@ def is_game_setup(game_key: str) -> bool:
 
 def unmark_game_setup(game_keys):
     """
-    Remove one or more game keys from setup_games so they appear as
-    'not set up' in ManagementScreen. Accepts a single string or a list.
-    Used when the user wants to do a clean reinstall of a game.
+    Remove one or more game keys (a string or a list) from setup_games so
+    they show as 'not set up' in ManagementScreen. Used for a clean
+    reinstall of a game.
     """
     if isinstance(game_keys, str):
         game_keys = [game_keys]
@@ -434,7 +434,7 @@ def unmark_game_setup(game_keys):
 
 def is_game_setup_for_source(game_key: str, source: str) -> bool:
     """Returns True if this game key has been set up from the given source.
-    Entries without a 'source' field are treated as 'steam' for backward compat."""
+    Entries without a 'source' field count as 'steam' (older configs)."""
     entry = load().get("setup_games", {}).get(game_key)
     if entry is None:
         return False
@@ -460,17 +460,16 @@ def clear_depot_patched(game_id: str):
 
 def get_cod4mp_profile_type(default: str = "other") -> str:
     """
-    Return the controller profile type for the CoD4 MP shortcut based on
-    the client the user selected during setup.
+    Return the controller profile type for the CoD4 MP shortcut, based on
+    the client picked during setup.
 
-    CoD4R has native controller support, so it uses the standard gamepad
-    layout. CoD4x has no native controller support and needs the KB+M
-    "other" layout driven by Steam Input.
+    CoD4R has native controller support, so it gets the standard gamepad
+    layout. CoD4x has none and needs the KB+M "other" layout through
+    Steam Input.
 
     Returns `default` if setup state is unavailable or the client is
-    unrecognized. Single source of truth for this policy; previously the
-    same check was copy-pasted at five call sites across
-    controller_profiles.py and shortcut.py.
+    unknown. This is the only place for this check. It used to be copied
+    at five call sites in controller_profiles.py and shortcut.py.
     """
     try:
         client = get_setup_games().get("cod4mp", {}).get("client")
@@ -494,7 +493,7 @@ def set_iw_pad(game_key: str, info: dict):
 
 
 def mark_zd_installed(manifest_hash: str = ""):
-    """Record that Zombies Declassified has been installed."""
+    """Record that Zombies Declassified is installed."""
     config = load()
     config["zd_installed"] = {
         "manifest_hash": manifest_hash,
@@ -519,7 +518,7 @@ def unmark_zd_installed():
 
 def complete_first_run(steam_root: str):
     """
-    Call this at the end of the setup wizard to mark first run as done.
+    Marks first run as done. Call at the end of the setup wizard.
     """
     config = load()
     config["first_run_complete"] = True
@@ -529,7 +528,7 @@ def complete_first_run(steam_root: str):
 
 def reset():
     """
-    Wipe the config and start fresh. Useful for testing or reinstalling.
+    Delete the config and start fresh. For testing or reinstalling.
     """
     global _cache, _cache_mtime
 

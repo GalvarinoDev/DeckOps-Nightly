@@ -1,14 +1,14 @@
 """
-main.py — DeckOps entry point
+main.py: DeckOps entry point.
 
-Initialises logging, then runs the bootstrap asset check before
-handing off to the Qt UI.
+Sets up logging, then hands off to the Qt UI, which runs the
+bootstrap asset check first.
 """
 
 import os
 import sys
 
-# Ensure src/ is on the path when run directly
+# Put src/ on the path when run directly
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from log import setup_logging, get_logger
@@ -39,7 +39,7 @@ def _ensure_qt6():
     try:
         ok = subprocess.run([pip, "install", "--quiet", "--disable-pip-version-check", "PyQt6"],
                             capture_output=True, timeout=900).returncode == 0
-        # A wheel that installs but can't load the platform plugin would abort the app, so try it in a child
+        # A wheel that installs but can't load the platform plugin would abort the app, so test it in a child process first
         if ok and subprocess.run([sys.executable, "-c", "from PyQt6.QtWidgets import QApplication; QApplication([])"],
                                  capture_output=True, timeout=60).returncode != 0:
             subprocess.run([pip, "uninstall", "-y", "-q", "PyQt6", "PyQt6-Qt6", "PyQt6-sip"], capture_output=True)

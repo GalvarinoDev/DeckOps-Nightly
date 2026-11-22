@@ -1,5 +1,5 @@
 """
-manifest_mods.py -- manifest-driven mod installer for DeckOps
+manifest_mods.py: manifest-driven mod installer for DeckOps
 
 Finds known manifest files in the Games folders (home and SD card)
 and installs the files for one chosen option into a Games folder
@@ -7,8 +7,8 @@ and installs the files for one chosen option into a Games folder
 do not need to be installed yet; mod files overwrite whatever is
 already there.
 
-Manifests never carry links; DeckOps rejects any manifest containing
-one. The manifest only says what to install, the user says where it
+Manifests never carry links. DeckOps rejects any manifest containing
+one. The manifest says what to install and the user says where it
 comes from. Files are installed as-is (no archives, nothing is
 executed) and every file is size checked, plus hash checked when the
 manifest gives one (md5, sha1, sha256, sha512 or blake2b hex, told apart
@@ -61,7 +61,7 @@ MOD_HEADERS = {"User-Agent": "curl/8.9.1", "Accept": "*/*"}
 
 _LINK_RE = re.compile(r"://|^//|^www\.", re.I)
 _HEX = re.compile(r"^(?:[0-9a-f]{16}|[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}|[0-9a-f]{128})$")
-# The "sha256" field name is kept for receipts; any of these is accepted by length.
+# The "sha256" field name is kept for receipts. Any of these is accepted by length.
 try:
     import xxhash as _xxhash
 except ImportError:
@@ -104,7 +104,7 @@ def games_roots() -> list:
 # --- Scan
 
 def manifest_dirs() -> list:
-    """Games on home, then Games on each card/drive; only ones that exist."""
+    """Games on home, then Games on each card/drive. Only ones that exist."""
     return [d for d in games_roots() if os.path.isdir(d)]
 
 
@@ -247,7 +247,7 @@ def load_manifest(path: str) -> dict:
 
 
 def _load_components(raw: dict, path: str) -> dict:
-    # Component format: components can be combined; files are [path, size, sha256, component] rows.
+    # Component format: components can be combined. Files are [path, size, sha256, component] rows.
     stem = re.sub(r"^manifest[_-]?", "", os.path.splitext(os.path.basename(path))[0], flags=re.I)
     mid = raw.get("id", re.sub(r"[^a-z0-9_-]", "", stem.lower())[:32])
     if not isinstance(mid, str) or not _SLUG.match(mid):
@@ -273,7 +273,7 @@ def _load_components(raw: dict, path: str) -> dict:
             raise ManifestError(f"{r[0]!r} names unknown component {r[3]!r}")
         out[r[3]]["files"].append({"path": r[0], "size": r[1], "sha256": r[2]})
     _check_files([f for c in out.values() for f in c["files"]], "files")
-    # Empty components have nothing to install; hidden optional ones could never be picked.
+    # Empty components have nothing to install. Hidden optional ones could never be picked.
     keep = [c for c in out.values() if c["files"] and (c["show"] or c["required"])]
     if not keep:
         raise ManifestError("no installable components")
@@ -439,7 +439,7 @@ def _write_receipt(root: str, m: dict, opt: dict, cdn: str, overwritten: list, f
 # --- Install / update
 
 def _hash_ok(path: str, want: str) -> bool:
-    # Algorithm is picked by hash length; 128 hex could be sha512 or blake2b, so try both in one read.
+    # Algorithm is picked by hash length. 128 hex could be sha512 or blake2b, so try both in one read.
     want = want.lower()
     algos = _HASH_ALGOS.get(len(want), ())
     if not algos:
@@ -544,7 +544,7 @@ def install_manifest(m: dict, option_id: str, cdn_text: str, games_root: str,
     log(f"CDN: {cdn}")
     log(f"Target: {dest_root}")
     log(f"{len(plan)} files, {total_size(opt) >> 20} MB total")
-    # Remember the base only; cdn_path differs per manifest.
+    # Remember the base only. cdn_path differs per manifest.
     save_cdn(base)
     old = get_receipt(dest_root, m["id"])
     ours = old.get("files") or {}

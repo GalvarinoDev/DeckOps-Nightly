@@ -1,16 +1,13 @@
 """
-cleanops.py - DeckOps installer for the CleanOps mod (Black Ops III)
+cleanops.py: DeckOps installer for the CleanOps mod (Black Ops III)
 
-CleanOps is a lightweight DLL mod that improves performance and fixes
-various issues. Drops d3d11.dll into the install directory.
+CleanOps is a lightweight DLL mod for BO3 that improves performance and
+fixes various issues. Both Steam and own installs get d3d11.dll in the
+install directory.
 
-For Steam games:
-  - Drops d3d11.dll into the install directory
-  - Sets launch options: WINEDLLOVERRIDES="d3d11=n,b" %command%
-
-For own games:
-  - Drops d3d11.dll into the install directory
-  - Launch options are handled by the non-Steam shortcut instead
+Steam games also get the launch option
+WINEDLLOVERRIDES="d3d11=n,b" %command%. Own games get it from the
+non-Steam shortcut instead.
 
 Progress is reported via a callback:
     on_progress(percent: int, status: str)
@@ -26,7 +23,7 @@ from log import get_logger
 _log = get_logger(__name__)
 
 
-# ── CleanOps constants ────────────────────────────────────────────────────────
+# --- CleanOps constants
 
 DLL_URL       = "https://raw.githubusercontent.com/notnightwolf/cleanopsT7/main/d3d11.dll"
 DLL_NAME      = "d3d11.dll"
@@ -35,9 +32,9 @@ LAUNCH_OPTS   = 'WINEDLLOVERRIDES="d3d11=n,b" %command%'
 APPID         = "311210"
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# --- helpers
 
-# ── CleanOps public API ──────────────────────────────────────────────────────
+# --- CleanOps public API
 
 def install_cleanops(game: dict, steam_root: str,
                      proton_path: str, compatdata_path: str,
@@ -45,22 +42,22 @@ def install_cleanops(game: dict, steam_root: str,
     """
     Install CleanOps for Call of Duty: Black Ops III.
 
-    Downloads d3d11.dll from GitHub and drops it into the BO3 install
-    directory. For Steam copies, sets the Wine DLL override launch option
-    so the DLL loads under Proton.
+    Downloads d3d11.dll from GitHub into the BO3 install directory. Steam
+    copies also get the Wine DLL override launch option so the DLL loads
+    under Proton.
 
-    game            — entry from detect_games
-    steam_root      — path to Steam root
-    proton_path     — path to the proton executable (kept for API consistency)
-    compatdata_path — path to the BO3 compatdata prefix (kept for API consistency)
-    on_progress     — optional callback(percent: int, status: str)
-    source          — "steam" or "own", controls whether launch options are set
+    game            entry from detect_games
+    steam_root      path to Steam root
+    proton_path     path to the proton executable (unused, kept for API consistency)
+    compatdata_path path to the BO3 compatdata prefix (unused, kept for API consistency)
+    on_progress     optional callback(percent: int, status: str)
+    source          "steam" or "own", controls whether launch options are set
     """
     install_dir = game["install_dir"]
 
     prog = on_progress or (lambda *a: None)
 
-    # Download DLL
+    # Download the DLL
     dll_dest = os.path.join(install_dir, DLL_NAME)
     prog(5, "Downloading CleanOps d3d11.dll...")
     _download(
@@ -79,7 +76,7 @@ def install_cleanops(game: dict, steam_root: str,
         except Exception as ex:
             prog(70, f"⚠ Could not set launch options: {ex}")
 
-    # Write metadata
+    # Write the metadata file
     prog(90, "Saving metadata...")
     meta_path = os.path.join(install_dir, METADATA_FILE)
     with open(meta_path, "w") as f:

@@ -1,12 +1,12 @@
 """
-ui_qt.py — DeckOps main UI entry point
+ui_qt.py: DeckOps main UI entry point
 
-Slim shell: BootstrapScreen, DeckOpsWindow, and run().
-All screen classes are imported from split modules:
-    ui_constants  — shared constants, helpers, navigation
-    ui_setup      — first-run setup flow (OS → Device → Gyro → ...)
-    ui_install    — install pipeline (Welcome, Setup, Install)
-    ui_manage     — post-install (Management, Configure, SetupComplete, Update)
+Slim shell with BootstrapScreen, DeckOpsWindow, and run().
+The other screen classes live in these modules:
+    ui_constants: shared constants, helpers, navigation
+    ui_setup: first-run setup flow (OS, Device, Gyro, ...)
+    ui_install: install pipeline (Welcome, Setup, Install)
+    ui_manage: post-install (Management, Configure, SetupComplete, Update)
 """
 
 import sys, os, threading
@@ -32,7 +32,7 @@ from ui_manifest import ManifestModsScreen
 from ui_manage import ManagementScreen, ConfigureScreen, SetupCompleteScreen, UpdateScreen
 
 
-# ── BootstrapScreen ───────────────────────────────────────────────────────────
+# --- BootstrapScreen
 class BootstrapScreen(QWidget):
     def __init__(self, stack):
         super().__init__(); self.stack = stack; self.screen_name = "BootstrapScreen"
@@ -61,15 +61,14 @@ class BootstrapScreen(QWidget):
         ), daemon=True).start()
 
     def _proceed(self):
-        # Re-load font and re-apply stylesheet now that bootstrap has completed.
-        # This is a no-op if the font was already loaded at startup, but ensures
-        # the correct font is applied even on a fresh install where bootstrap
-        # runs for the first time.
+        # Reload the font and stylesheet now that bootstrap is done. Does nothing
+        # if the font loaded at startup, but a fresh install only has the font
+        # after the first bootstrap.
         try:
             _load_font()
             QApplication.instance().setStyleSheet(_app_style())
         except FileNotFoundError:
-            pass  # Font missing — fall back gracefully, app still works
+            pass  # Font missing: the app still works without it
 
         if cfg.is_first_run():
             go_to(self.stack, "SetupFlowScreen")
@@ -77,7 +76,7 @@ class BootstrapScreen(QWidget):
             go_to(self.stack, "ManagementScreen")
 
 
-# ── DeckOpsWindow ─────────────────────────────────────────────────────────────
+# --- DeckOpsWindow
 class DeckOpsWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -87,7 +86,7 @@ class DeckOpsWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
 
-        # Register all screens — order doesn't matter, navigation is by name
+        # Register all screens. Order doesn't matter, navigation is by name
         for cls in [
             BootstrapScreen,
             SetupFlowScreen,
@@ -104,7 +103,7 @@ class DeckOpsWindow(QMainWindow):
 
         self.stack.setCurrentIndex(0)
 
-        # Debug label — shows current screen name and index in bottom-left
+        # Debug label: current screen name and index, bottom-left
         self._dbg_label = QLabel(self)
         self._dbg_label.setStyleSheet(
             "color:#444455;background:transparent;padding:4px 8px;"
@@ -116,7 +115,7 @@ class DeckOpsWindow(QMainWindow):
         self.stack.currentChanged.connect(self._update_dbg_label)
         self._update_dbg_label(0)
 
-        # Persistent mute button — bottom-right, always visible
+        # Mute button: bottom-right, always visible
         self._muted = not cfg.get_music_enabled()
         self._mute_btn = QPushButton("\U0001F507" if self._muted else "\U0001F50A", self)
         self._mute_btn.setFixedSize(42, 42)
@@ -159,7 +158,7 @@ class DeckOpsWindow(QMainWindow):
         super().closeEvent(e)
 
 
-# ── Entry point ───────────────────────────────────────────────────────────────
+# --- Entry point
 def run():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")

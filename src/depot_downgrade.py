@@ -3,13 +3,13 @@ depot_downgrade.py - Unified 32-bit depot downgrade helper
 
 Activision pushed 64-bit updates for MW3, Ghosts, and Advanced
 Warfare that break community client compatibility (Plutonium,
-AlterWare). This module detects 64-bit installs, assists the user
-through either an automated QR-code login flow (via DepotDownloader)
-or a manual Steam console paste flow, and merges the 32-bit depot
-files over the game directory.
+AlterWare). This module detects 64-bit installs, walks the user
+through a QR-code login (DepotDownloader) or a manual Steam console
+paste, and merges the 32-bit depot files into the game folder
+(MW3: into downgrade/).
 
-Only applies to Steam-sourced installs. Own-source installs are
-unaffected since users provide their own files.
+Steam installs only. Own installs are left alone because the user
+supplies the files.
 """
 
 import json
@@ -28,7 +28,7 @@ _log = get_logger(__name__)
 
 # --- Game configurations
 
-# Each game config defines the depots needed for a 32-bit downgrade.
+# The depots each game needs for a 32-bit downgrade.
 
 GAME_CONFIGS = {
     "iw5": {
@@ -39,7 +39,7 @@ GAME_CONFIGS = {
             {"depot": 42682, "manifest": "2661317971072643596", "app": 42690},
             {"depot": 42683, "manifest": "1595601894688570808", "app": 42690},
             {"depot": 42691, "manifest": "4104640605720756125", "app": 42690},
-            # Dedicated Server only; app 42750 also lists 42682/42683, so a
+            # Dedicated Server only. App 42750 also lists 42682/42683, so a
             # DS-only install fetches its whole set under the DS license.
             {"depot": 42751, "manifest": "9089183337461621316", "app": 42750},
         ),
@@ -212,7 +212,7 @@ REQUIRED_FREE_SPACE_GB = 15
 
 def is_pe_64bit(exe_path: str) -> bool | None:
     """
-    Read the PE header of a Windows exe to determine bitness.
+    Read a Windows exe's PE header to get its bitness.
     Returns True (64-bit), False (32-bit), or None (not a valid PE).
     """
     try:
@@ -238,9 +238,9 @@ def is_pe_64bit(exe_path: str) -> bool | None:
 # --- Downgrade receipt
 #
 # After a merge, deckops_depot.json in the game folder records every file the
-# old depots put there and its size. That is the single source of truth for
-# "already downgraded" for all games: it survives a DeckOps config reset, and
-# a Steam update/verify shows up as missing or resized files.
+# old depots put there and its size. It alone decides "already downgraded"
+# for every game. It survives a DeckOps config reset, and a Steam
+# update/verify shows up as missing or resized files.
 # Only data files are compared: mod clients and the DeckOps wrapper overwrite
 # exes/dlls (iw5mp.exe, iw5mp_server.exe, ...), which must not count as an upgrade.
 
@@ -333,7 +333,7 @@ def _receipt_status(game_id: str, install_dir: str):
 def is_downgrade_needed(game_id: str, install_dir: str) -> bool:
     """
     Check whether a game install needs older depot files. The receipt written
-    by merge_depots decides for every game; installs from before receipts
+    by merge_depots decides for every game. Installs from before receipts
     fall back to the old per-game checks.
     """
     if game_id not in GAME_CONFIGS:
@@ -359,8 +359,7 @@ def _legacy_downgrade_needed(game_id: str, install_dir: str) -> bool:
                    cfg["name"], not needed, needed)
         return needed
 
-    # MW3: depot files live in downgrade/ subfolder. If the folder
-    # doesn't exist yet, the downgrade hasn't been done.
+    # MW3 depot files live in downgrade/. No folder means no downgrade yet.
     if game_id == "iw5":
         dg_dir = _merge_dir("iw5", install_dir)
         if not os.path.isdir(dg_dir):
@@ -414,8 +413,7 @@ def detect_dlc_status(game_id: str, install_dir: str) -> dict:
       "missing" - not installed
       "wrong"   - installed but wrong size (needs downgrade)
 
-    Only works for games with marker-based DLC detection (MW3).
-    For games without markers, returns empty dict.
+    Only MW3 has DLC markers. Games without them get an empty dict.
     """
     cfg = GAME_CONFIGS.get(game_id)
     if not cfg:
@@ -444,10 +442,9 @@ def detect_dlc_status(game_id: str, install_dir: str) -> dict:
 
 def detect_installed_dlc(game_id: str, steam_root: str) -> list[str]:
     """
-    Parse the game's appmanifest to find which DLC packs are installed.
-    Steam tracks installed DLC depots under InstalledDepots with a
-    "dlcappid" field. Returns list of DLC keys from GAME_CONFIGS that
-    are present on disk.
+    Read the game's appmanifests to find which DLC packs are installed.
+    Steam lists installed DLC depots under InstalledDepots with a
+    "dlcappid" field. Returns the GAME_CONFIGS DLC keys found there.
     """
     cfg = GAME_CONFIGS.get(game_id)
     if not cfg:
@@ -457,8 +454,8 @@ def detect_installed_dlc(game_id: str, steam_root: str) -> list[str]:
     if not dlc_map:
         return []
 
-    # Build reverse lookup: dlc app_id -> dlc key
-    # Some games use the DLC depot ID as the dlcappid in the manifest
+    # Reverse lookup: DLC app id or depot id -> DLC key.
+    # Some games put the DLC depot ID in the manifest's dlcappid.
     appid_to_key = {}
     for key, dlc in dlc_map.items():
         dlc_app = dlc.get("app")
@@ -468,12 +465,12 @@ def detect_installed_dlc(game_id: str, steam_root: str) -> list[str]:
         if dlc_depot:
             appid_to_key[str(dlc_depot)] = key
 
-    # Find the appmanifest for the MP app (DLC is tracked there)
+    # Base app manifest first. The MP app manifest is checked below.
     from detect_games import _all_library_dirs
     found_keys = set()
 
     for steamapps_dir in _all_library_dirs(steam_root):
-        # DLC depots may be under the base app or the MP app manifest
+        # DLC depots can sit under the base app or the MP app manifest
         for check_app in {cfg["app_id"]}:
             acf = os.path.join(steamapps_dir, f"appmanifest_{check_app}.acf")
             if not os.path.isfile(acf):
@@ -488,7 +485,7 @@ def detect_installed_dlc(game_id: str, steam_root: str) -> list[str]:
             except OSError as ex:
                 _log.warning("Failed to read %s: %s", acf, ex)
 
-    # Also check the MP app manifest if different from base
+    # Then the MP app manifest, if it differs from the base app
     mp_apps = {d.get("app") for d in cfg["depots"] if d.get("app")}
     for mp_app in mp_apps:
         if mp_app == cfg["app_id"]:
@@ -597,7 +594,7 @@ def ensure_depotdownloader(on_progress=None) -> str:
     try:
         from detect_hw import is_arm
         _dd_arch = "linux-arm64" if is_arm() else "linux-x64"
-        # Its releases carry no GitHub digest yet; download() checks one if they ever do
+        # Its releases carry no GitHub digest yet. download() checks one if they ever do
         dl_url, digest = github_asset("SteamRE/DepotDownloader", f"{_dd_arch}.zip")
     except Exception as ex:
         raise RuntimeError(f"Failed to get DepotDownloader release: {ex}")
@@ -715,8 +712,8 @@ def run_depot_download_qr(
     """
     Run DepotDownloader for a single depot with QR code authentication.
 
-    app_id overrides the depot_info's own "app" key if provided; falls
-    back to depot_info["app"] then the caller must ensure one is set.
+    Uses depot_info["app"] if set, else app_id. With neither, returns None.
+    On success returns the Steam username, else None.
     """
     os.makedirs(staging_dir, exist_ok=True)
 
@@ -921,12 +918,12 @@ def _merge_tree(src: str, dst: str, prog):
 def merge_depots(game_id: str, staging_dir: str, install_dir: str,
                  on_progress=None):
     """
-    Merge 32-bit depot files into the game directory.
+    Merge 32-bit depot files into the game folder.
 
     MW3 (iw5) merges into a downgrade/ subfolder so the 64-bit Steam
-    install stays intact. All other games merge directly into install_dir.
+    install stays intact. Other games merge straight into install_dir.
 
-    Handles both manual path (depot_XXXXX subdirs) and QR path
+    Handles the manual path (depot_XXXXX subdirs) and the QR path
     (files directly in staging_dir).
     """
     cfg = GAME_CONFIGS.get(game_id)
@@ -989,9 +986,9 @@ def merge_depots(game_id: str, staging_dir: str, install_dir: str,
 def trim_iw5_duplicates(install_dir: str, on_progress=None) -> int:
     """
     Delete files from the MW3 game root that also exist in downgrade/.
-    Saves disk by removing duplicate 64-bit copies that Plutonium no
-    longer reads. Steam Verify restores them if the user wants vanilla
-    SP back. Returns the number of files removed.
+    Saves disk space: Plutonium no longer reads these 64-bit copies.
+    Steam Verify restores them if the user wants vanilla SP back.
+    Returns the number of files removed.
 
     Root .exe files are always kept: the Plutonium Steam wrapper replaces
     iw5mp.exe / iw5mp_server.exe in the root, and trim runs before the
@@ -1075,6 +1072,6 @@ def migrate_legacy_iw5(install_dir: str) -> bool:
 
 def iw5sp_needs_verify(install_dir: str) -> bool:
     """True if the root iw5sp.exe is the CEG-less 32-bit depot exe left by
-    an old in-place downgrade. Read-only; a Steam Verify of 42680 fixes it."""
+    an old in-place downgrade. Read-only. A Steam Verify of 42680 fixes it."""
     exe = os.path.join(install_dir, GAME_CONFIGS["iw5"]["detection_exe"])
     return os.path.isfile(exe) and is_pe_64bit(exe) is False
